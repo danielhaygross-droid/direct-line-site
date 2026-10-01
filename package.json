@@ -1,0 +1,15 @@
+{
+  "name": "direct-line-control",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-worker.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0",
+    "@vercel/functions": "^2.0.0"
+  }
+}
