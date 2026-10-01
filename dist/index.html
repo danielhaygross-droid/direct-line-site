@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="he" dir="rtl" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#071813">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Direct Line Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=30">
+</head>
+<body>
+  <a class="skip-link" href="#main">דילוג לתוכן</a>
+  <section class="login-screen" id="login-screen" aria-labelledby="login-title">
+    <div class="login-brand" dir="ltr">direct<span>↗</span>line.<small>CONTROL</small></div>
+    <div class="login-card">
+      <div class="login-copy"><span>כניסה מאובטחת</span><h1 id="login-title">כל הפעילות שלכם.<br><em>במקום אחד.</em></h1><p>היכנסו כדי לראות הזמנות, משלוחים, רווחיות, מלאי ובקרות איכות בהתאם להרשאות שלכם.</p></div>
+      <form id="login-form" method="post" action="/api/auth/login"><label><span>שם משתמש</span><input name="username" type="text" autocomplete="username" required placeholder="שם המשתמש שלך"></label><label><span>סיסמה</span><input name="password" type="password" autocomplete="current-password" required placeholder="••••••••"></label><button class="primary-button login-submit" type="submit">כניסה למערכת ←</button><p class="login-error" data-login-error hidden>שם המשתמש או הסיסמה אינם נכונים</p></form>
+      <div class="demo-access"><span>כניסה מהירה להדגמה</span><button type="button" data-demo-login="admin"><b>מנהל מערכת</b><small>כל הלקוחות והחנויות</small></button><button type="button" data-demo-login="client"><b>לקוח</b><small>החשבון והחנויות שלו בלבד</small></button></div>
+      <small class="login-security">הכניסה מתבצעת באמצעות החשבון שהוגדר עבורכם.</small>
+    </div>
+  </section>
+  <aside class="sidebar" aria-label="ניווט ראשי">
+    <div class="brand" dir="ltr">direct<span>↗</span>line.<small>CONTROL</small></div>
+    <nav>
+      <span class="nav-label">מרכז שליטה</span>
+      <button class="nav-item active" data-section="overview" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg><span>סקירה</span></button>
+      <button class="nav-item" data-section="profit" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3"/></svg><span>רווחיות</span></button>
+      <button class="nav-item nav-secondary" data-section="marketing" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 15 5-5 4 4 7-8M16 6h4v4"/></svg><span>שיווק</span></button>
+      <span class="nav-label">תפעול</span>
+      <button class="nav-item" data-section="inventory" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 7 8-4 8 4-8 4-8-4Zm0 0v10l8 4 8-4V7M12 11v10"/></svg><span>מלאי</span><b data-risk-count>2</b></button>
+      <button class="nav-item" data-section="shipments" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7zM7 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm11 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg><span>משלוחים</span></button>
+      <button class="nav-item" data-section="orders" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18H6V3Zm3 5h6M9 12h6M9 16h4"/></svg><span>הזמנות</span></button>
+      <button class="nav-item" data-section="customers" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>לקוחות</span></button>
+      <button class="nav-item" data-section="products" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 7 8-4 8 4v10l-8 4-8-4V7Zm0 0 8 4 8-4M12 11v10"/></svg><span>מוצרים ועלויות</span></button>
+      <button class="nav-item nav-secondary" data-section="data" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 19h14"/></svg><span>חיבורים ואוטומציות</span></button>
+      <span class="nav-label nav-secondary">ערך וניהול</span>
+      <button class="nav-item nav-secondary" data-section="value" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3"/></svg><span>ערך וחיסכון</span></button>
+      <button class="nav-item nav-secondary" data-section="management" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5zM8 8h8M8 12h8M8 16h5"/></svg><span>דוחות ויעדים</span></button>
+      <button class="nav-item nav-secondary" data-section="clients" data-admin-only type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m7-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm13 10v-2a4 4 0 0 1 0 7.8"/></svg><span>חנויות וצוות</span></button>
+      <button class="nav-item nav-more" id="nav-more" type="button" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>עוד כלים</span><em>⌄</em></button>
+    </nav>
+    <div class="sidebar-foot"><span class="live-dot"></span><div><strong>המערכת פעילה</strong><small>עודכן לפני 2 דקות</small></div><button id="logout" type="button">יציאה</button></div>
+  </aside>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="mobile-menu" type="button" aria-label="פתיחת תפריט" aria-expanded="false">☰</button>
+      <div class="context-controls">
+        <label><span>לקוח</span><select id="client-select"><option value="daniel" selected>Daniel Group</option><option value="maya">Maya Commerce</option><option value="all">כל הלקוחות</option></select></label>
+        <label><span>חנות</span><select id="store-select"><option value="all">כל החנויות · 3</option><option value="nova">Nova Home</option><option value="muse">Muse Jewelry</option><option value="north">North Studio</option></select></label>
+        <label><span>טווח</span><select id="range-select"><option value="today">היום</option><option value="7d">7 ימים</option><option value="30d" selected>30 יום</option><option value="4m">4 חודשים</option><option value="custom">בחירת תאריכים…</option></select></label>
+        <label><span>תצוגה</span><select id="role-select"><option value="admin">Agency Admin</option><option value="client">Client View</option></select></label>
+      </div>
+      <div class="top-actions">
+        <button class="global-search-trigger" id="global-search" type="button" aria-label="חיפוש חכם"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>שאלו את Control</span><kbd>⌘ K</kbd></button>
+        <button class="icon-button" id="language-toggle" type="button" aria-label="Switch language">EN</button>
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="החלפת מצב תצוגה"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c-5 2-11-4-9-9Z"/></svg></button>
+        <button class="notifications" type="button" aria-label="התראות"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><i>3</i></button>
+        <div class="profile"><b>DL</b><span><strong>דניאל</strong><small>מנהל מערכת</small></span></div>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="page-head" id="overview">
+        <div><p class="eyebrow" data-view-eyebrow>DIRECT LINE CONTROL</p><h1 data-view-title>בוקר טוב, <span data-user-name>דניאל</span>.</h1><p data-view-description>תמונת מצב מלאה של הפעילות, הרווחיות וההזמנות.</p></div>
+        <div class="page-head-actions"><div class="sync-state"><span class="live-dot"></span><div><b>מתחבר ל־Z‑Royal</b><small>טוען נתונים שמורים מ־Shopify</small></div></div><button class="secondary-button" id="refresh-data" type="button">רענון עכשיו</button></div>
+      </section>
+
+      <section class="store-context" aria-label="החנויות בחשבון">
+        <div class="store-context-copy"><span>תצוגת חשבון</span><strong data-store-context-title>כל החנויות יחד</strong><small data-store-context-subtitle>3 חנויות מחוברות · הנתונים מאוחדים</small></div>
+        <div class="store-switcher" data-store-switcher></div>
+        <button class="store-connect" type="button" id="connect-store">＋ חיבור חנות</button>
+      </section>
+
+      <section class="control-pulse" id="control-pulse" aria-label="תקציר יומי חכם">
+        <div class="pulse-goal"><div class="pulse-ring" aria-label="84 אחוז מהיעד החודשי"><b>84%</b></div><span><small>יעד רווח חודשי</small><strong>$48,600 מתוך $58,000</strong></span><button type="button" data-pulse-action="goal">עדכון יעד</button></div>
+        <button class="pulse-recommendation" type="button" data-pulse-action="recommendation"><i>✦</i><span><small>הפעולה עם ההשפעה הגבוהה ביותר</small><strong>העבירו את משלוח המנורות לאוויר</strong></span><em>+$6,240 רווח מוגן</em></button>
+        <div class="pulse-live"><span class="live-dot"></span><p><b>Control עובד ברקע</b><small data-live-update>הזמנה DL-2518 נקלטה לפני דקה</small></p><button type="button" data-pulse-action="activity">יומן חי</button></div>
+        <button class="pulse-focus" id="focus-mode" type="button" aria-pressed="false"><span>◎</span><b>מצב מיקוד</b><small>רק מה שדורש החלטה</small></button>
+      </section>
+
+      <section class="kpi-grid" aria-label="מדדים מרכזיים" data-kpi-grid></section>
+
+      <section class="performance-hero" id="performance-hero">
+        <article class="trend-panel"><div class="trend-head"><div><span>ביצועים לאורך זמן</span><h2>הכנסה ורווח נקי</h2></div><div class="trend-periods"><button class="active" type="button" data-trend-period="30">30 יום</button><button type="button" data-trend-period="90">90 יום</button><button type="button" data-trend-period="365">שנה</button></div></div><div class="trend-summary"><strong data-trend-revenue>$545,410</strong><span>הכנסה בתקופה</span><b>↑ 12.4%</b></div><div class="trend-chart-wrap"><svg class="trend-chart" viewBox="0 0 900 230" preserveAspectRatio="none" aria-label="גרף הכנסה ורווח"><defs><linearGradient id="premiumArea" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#bd9550" stop-opacity=".28"/><stop offset="1" stop-color="#bd9550" stop-opacity="0"/></linearGradient></defs><g class="chart-grid"><path d="M0 45H900M0 95H900M0 145H900M0 195H900"/></g><path class="trend-area" d="M0 188 C85 172 118 131 195 142 S330 168 405 112 545 137 625 79 770 97 900 34 L900 230 0 230Z"/><path class="trend-revenue-line" d="M0 188 C85 172 118 131 195 142 S330 168 405 112 545 137 625 79 770 97 900 34"/><path class="trend-profit-line" d="M0 211 C92 202 130 181 205 188 S335 199 410 171 548 182 628 144 770 158 900 112"/><g class="trend-points"><circle tabindex="0" data-chart-label="שבוע 1" data-chart-value="$116,400" cx="195" cy="142" r="6"/><circle tabindex="0" data-chart-label="שבוע 2" data-chart-value="$132,750" cx="405" cy="112" r="6"/><circle tabindex="0" data-chart-label="שבוע 3" data-chart-value="$141,930" cx="625" cy="79" r="6"/><circle tabindex="0" data-chart-label="השבוע" data-chart-value="$154,330" cx="892" cy="34" r="6"/></g></svg><div class="chart-tooltip" role="status"><span>השבוע</span><b>$154,330</b><small>↑ 9.1% מהשבוע הקודם</small></div></div><div class="trend-legend"><span><i></i>הכנסה</span><span><i></i>רווח נקי</span><button type="button" data-section-jump="profit">ניתוח מלא ←</button></div></article>
+        <aside class="business-brief"><span>התובנה החשובה השבוע</span><h2>הרווח עלה בעיקר בזכות Nova Home</h2><p>החנות יצרה 46% מהרווח הנקי, לאחר ירידה בעלות המוצר ושיפור ב־ROAS של Meta.</p><div><b>+$8,420</b><small>שיפור ברווח</small></div><button type="button" data-account-store="nova">פתיחת החנות ←</button></aside>
+      </section>
+
+      <section class="command-center" id="command-center">
+        <div class="section-title"><div><span>מה קורה עכשיו</span><h2>מרכז השליטה היומי</h2></div><div class="command-actions"><div class="command-time"><i class="live-dot"></i> בריאות 89 · מצב טוב</div><button class="secondary-button" id="toggle-visuals" type="button" aria-expanded="false">הצגת גרפים</button></div></div>
+        <div class="command-grid">
+          <article class="health-card">
+            <div class="health-ring" data-health-ring><strong data-health-score>87</strong><small>בריאות החנות</small></div>
+            <div class="health-copy"><span class="status good">מצב טוב</span><h3>הפעילות יציבה</h3><p>הרווחיות והמכירות במגמה חיובית. שני נושאים דורשים תשומת לב היום.</p><button class="text-button action-scroll" data-target="inventory" type="button">לבדיקת הסיכונים ←</button></div>
+          </article>
+          <article class="today-card">
+            <div class="mini-head"><div><span>היום בתפעול</span><h3>מה צריך לדעת</h3></div><button class="primary-button" id="quick-order" type="button">＋ הזמנה ידנית</button></div>
+            <div class="today-stats">
+              <button type="button" class="today-stat action-scroll" data-target="orders"><b>18</b><span>הזמנות חדשות</span><small>3 מהשעה האחרונה</small></button>
+              <button type="button" class="today-stat action-scroll" data-target="orders"><b>26</b><span>נשלחו</span><small>היום מסין</small></button>
+              <button type="button" class="today-stat attention action-scroll" data-target="orders"><b>3</b><span>דורשות טיפול</span><small>עיכוב או חוסר מידע</small></button>
+              <button type="button" class="today-stat action-scroll" data-target="quality"><b>7</b><span>ממתינות לאישור</span><small>בקרת איכות</small></button>
+            </div>
+          </article>
+        </div>
+        <div class="smart-alerts">
+          <div class="alert-title"><span>התראות חכמות</span><b>3 פתוחות</b></div>
+          <button type="button" class="smart-alert danger action-scroll" data-target="inventory"><i>!</i><span><b>המלאי של מנורת השולחן נמוך</b><small>נשארו 14 ימי כיסוי בזמן שקמפיין Meta פעיל</small></span><em>בדיקה ←</em></button>
+          <button type="button" class="smart-alert action-scroll" data-target="shipments"><i>↗</i><span><b>משלוח DL-2506 מתעכב במכס</b><small>העדכון האחרון התקבל לפני 6 שעות</small></span><em>מעקב ←</em></button>
+          <button type="button" class="smart-alert opportunity action-scroll" data-target="forecast"><i>+</i><span><b>הרווח החזוי גבוה מהיעד</b><small>בקצב הנוכחי החודש ייסגר 8.4% מעל היעד</small></span><em>תחזית ←</em></button>
+        </div>
+      </section>
+
+      <section class="visual-summary" id="overview-charts" aria-label="תמונת מצב חזותית">
+        <article class="visual-card">
+          <div class="visual-card-head"><div><span>חלוקת ההכנסה</span><h3>לאן הכסף הולך</h3></div><button class="icon-more" type="button" aria-label="פירוט חלוקת הכנסה">↗</button></div>
+          <div class="donut-layout">
+            <div class="donut revenue-donut" data-donut="revenue"><div><strong data-donut-value>28.9%</strong><small data-donut-label>רווח נקי</small></div></div>
+            <div class="donut-legend" data-legend="revenue">
+              <button class="active" type="button" data-value="28.9%" data-label="רווח נקי"><i style="--dot:var(--mint)"></i><span>רווח נקי</span><b>28.9%</b></button>
+              <button type="button" data-value="30.6%" data-label="עלות סחורה"><i style="--dot:var(--gold)"></i><span>עלות סחורה</span><b>30.6%</b></button>
+              <button type="button" data-value="22.7%" data-label="פרסום"><i style="--dot:var(--blue)"></i><span>פרסום</span><b>22.7%</b></button>
+              <button type="button" data-value="17.8%" data-label="תפעול ועמלות"><i style="--dot:var(--orange)"></i><span>תפעול ועמלות</span><b>17.8%</b></button>
+            </div>
+          </div>
+        </article>
+        <article class="visual-card">
+          <div class="visual-card-head"><div><span>מצב ההזמנות</span><h3>מה קורה עכשיו</h3></div><button class="icon-more" type="button" aria-label="פירוט מצב ההזמנות">↗</button></div>
+          <div class="donut-layout">
+            <div class="donut orders-donut" data-donut="orders"><div><strong data-donut-value>64%</strong><small data-donut-label>נמסרו</small></div></div>
+            <div class="donut-legend" data-legend="orders">
+              <button class="active" type="button" data-value="64%" data-label="נמסרו"><i style="--dot:var(--mint)"></i><span>נמסרו</span><b>1,481</b></button>
+              <button type="button" data-value="21%" data-label="בדרך"><i style="--dot:var(--blue)"></i><span>בדרך</span><b>486</b></button>
+              <button type="button" data-value="12%" data-label="בטיפול"><i style="--dot:var(--gold)"></i><span>בטיפול</span><b>278</b></button>
+              <button type="button" data-value="3%" data-label="דורשות טיפול"><i style="--dot:var(--red)"></i><span>חריגות</span><b>69</b></button>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="future-grid" id="forecast">
+        <article class="panel forecast-panel">
+          <div class="panel-head"><div><span>תחזית חכמה</span><h2>איך החודש צפוי להיסגר</h2></div><span class="forecast-confidence">דיוק חזוי 91%</span></div>
+          <div class="forecast-main"><div><small>רווח נקי חזוי</small><strong data-forecast-profit>—</strong><span class="trend">↑ 8.4% מעל היעד</span></div><div class="forecast-arc"><i style="--progress:78%"></i><b>78%</b><small>מהחודש</small></div></div>
+          <div class="scenario-row"><button class="scenario" data-scenario="safe"><span>שמרני</span><b data-safe>—</b></button><button class="scenario active" data-scenario="expected"><span>צפוי</span><b data-expected>—</b></button><button class="scenario" data-scenario="growth"><span>צמיחה</span><b data-growth>—</b></button></div>
+        </article>
+        <article class="panel leak-panel">
+          <div class="panel-head"><div><span>שמירה על הרווח</span><h2>איפה כסף בורח</h2></div><span class="saved-pill">פוטנציאל חיסכון $3,840</span></div>
+          <div class="leak-list"><div><i class="leak-icon">01</i><span><b>שילוח אווירי יקר</b><small>2 מוצרים יכולים לעבור לים בלי לפגוע במלאי</small></span><strong>$1,920</strong></div><div><i class="leak-icon">02</i><span><b>החזרות חריגות</b><small>מנורת שולחן מעל ממוצע החנות</small></span><strong>$1,140</strong></div><div><i class="leak-icon">03</i><span><b>תקציב לא יעיל</b><small>TikTok יקר ב־22% מהערוץ המוביל</small></span><strong>$780</strong></div></div>
+        </article>
+      </section>
+
+      <section class="shipments-section" id="shipments">
+        <div class="section-title"><div><span>מסין עד הלקוח</span><h2>משלוחים חיים</h2></div><button class="secondary-button" type="button">כל המשלוחים</button></div>
+        <div class="shipment-board">
+          <div class="route-map" aria-label="מפת משלוחים פעילים"><div class="map-grid"></div><span class="location china"><i></i>גואנגג׳ואו</span><span class="location israel"><i></i>ישראל</span><span class="location usa"><i></i>ארה״ב</span><svg viewBox="0 0 900 270" preserveAspectRatio="none"><path d="M760 190 Q560 25 330 130 T80 90"/><path d="M760 190 Q600 230 420 180 T150 220"/></svg><div class="moving-parcel one">▣</div><div class="moving-parcel two">▣</div></div>
+          <div class="shipment-list"><div class="shipment-row active"><span class="shipment-code">DL-2508</span><div><b>גואנגג׳ואו ← תל אביב</b><small>טיסה יצאה · הגעה בעוד 4 ימים</small></div><em>בדרך</em></div><div class="shipment-row"><span class="shipment-code">DL-2506</span><div><b>שנג׳ן ← ניו יורק</b><small>בדיקת מכס · עדכון לפני 6 שעות</small></div><em class="warn-text">בעיכוב</em></div><div class="shipment-row"><span class="shipment-code">DL-2507</span><div><b>הונג קונג ← לונדון</b><small>נמסר למוביל המקומי</small></div><em>שלב אחרון</em></div></div>
+        </div>
+      </section>
+
+      <section class="service-grid" id="quality">
+        <article class="panel quality-panel"><div class="panel-head"><div><span>בקרת איכות</span><h2>ממתין לאישור שלכם</h2></div><b class="count-badge">7</b></div><div class="quality-preview"><div class="product-shot"><span>QC</span><i>✓</i></div><div><small>DL-BAG-01 · בדיקה 22/09</small><h3>תיק נסיעות שחור</h3><p>מידות, רוכסנים, תפירה ואריזה נבדקו. צורפו 12 תמונות וסרטון.</p><div class="quality-actions"><button class="primary-button approve-qc" type="button">אישור למשלוח</button><button class="secondary-button" type="button">צפייה בבדיקה</button></div></div></div></article>
+        <article class="panel workspace-panel"><div class="panel-head"><div><span>מרכז ההזמנה</span><h2>הכול מחובר להזמנה</h2></div><span class="status good">DL-2508</span></div><div class="workspace-tabs"><button class="active" data-workspace="timeline" type="button">ציר זמן</button><button data-workspace="docs" type="button">מסמכים</button><button data-workspace="chat" type="button">שיחה</button></div><div class="workspace-content" data-workspace-content></div></article>
+      </section>
+
+      <section class="value-section" id="value">
+        <div class="section-title"><div><span>הערך של Direct Line</span><h2>מה חסכנו ושיפרנו עבורכם</h2></div><select class="compact-select" aria-label="תקופת דוח"><option>החודש</option><option>רבעון נוכחי</option></select></div>
+        <div class="value-grid">
+          <article class="savings-hero"><div><span>חיסכון מצטבר</span><strong>$12,480</strong><p>סכום שנחסך במשא ומתן, שילוח, מניעת תקלות ושיפור תהליכים.</p></div><svg viewBox="0 0 280 100" preserveAspectRatio="none"><path d="M0 86 C35 77 52 82 79 62 S130 70 159 45 212 48 280 12"/></svg><b>↑ 18% מהחודש הקודם</b></article>
+          <article class="value-card"><i>01</i><span><b>$5,240</b><small>מחירי מוצר</small></span><p>משא ומתן מול המפעל</p></article>
+          <article class="value-card"><i>02</i><span><b>$3,910</b><small>שילוח ואריזה</small></span><p>איחוד משלוחים והתאמת שיטה</p></article>
+          <article class="value-card"><i>03</i><span><b>$2,180</b><small>מניעת תקלות</small></span><p>בקרת איכות לפני יציאה</p></article>
+          <article class="value-card"><i>04</i><span><b>$1,150</b><small>עמלות והחזרות</small></span><p>זיהוי דליפות רווח</p></article>
+        </div>
+      </section>
+
+      <section class="decision-grid" id="decisions">
+        <article class="panel simulator-panel"><div class="panel-head"><div><span>סימולטור רווח</span><h2>בדקו החלטה לפני שמבצעים</h2></div><span class="status info">LIVE</span></div><div class="simulator-layout"><div class="sim-controls"><label><span>מחיר מכירה <b data-sim-price-label>$89</b></span><input id="sim-price" type="range" min="45" max="160" value="89"></label><label><span>עלות מוצר <b data-sim-cost-label>$22</b></span><input id="sim-cost" type="range" min="8" max="70" value="22"></label><label><span>עלות שילוח <b data-sim-ship-label>$9</b></span><input id="sim-ship" type="range" min="3" max="35" value="9"></label></div><div class="sim-result"><small>רווח נקי להזמנה</small><strong data-sim-profit>$—</strong><span data-sim-margin>—% שוליים</span><div><b data-sim-monthly>$—</b><small>רווח חודשי ב־240 הזמנות</small></div></div></div></article>
+        <article class="panel exceptions-panel"><div class="panel-head"><div><span>חריגות בלבד</span><h2>רק מה שדורש החלטה</h2></div><button class="exception-toggle active" type="button" aria-pressed="true">מצב מיקוד פעיל</button></div><div class="exception-list"><button type="button" data-target="inventory" class="action-scroll"><i class="severity high"></i><span><b>מלאי נמוך בזמן שקמפיין פעיל</b><small>DL-LAMP-04 · החלטה עד היום ב־17:00</small></span><em>מלאי ←</em></button><button type="button" data-target="shipments" class="action-scroll"><i class="severity medium"></i><span><b>משלוח ללא עדכון 6 שעות</b><small>DL-2506 · נמצא בבדיקת מכס</small></span><em>מעקב ←</em></button><button type="button" data-open-claim="true"><i class="severity medium"></i><span><b>3 יחידות דווחו כפגומות</b><small>נדרשת החלטה לגבי פיצוי</small></span><em>טיפול ←</em></button></div></article>
+      </section>
+
+      <section class="products-section real-product-center" id="products">
+        <div class="section-title"><div><span>קטלוג ועלויות</span><h2>המוצרים האמיתיים שלכם, עם עלות אחת מסודרת לכל וריאציה</h2><p>עלות מוצר נמשכת מהספק. משלוח ללקוח ועלויות נוספות מוזנים פעם אחת ומחושבים בכל ההזמנות של אותו מוצר.</p></div><span class="data-save-note">נשמר בענן המאובטח</span></div>
+        <div class="catalog-summary" data-product-summary></div>
+        <article class="panel product-catalog-panel"><div class="panel-head"><div><span>קטלוג מוצרים</span><h2>השלמת עלויות לפי מוצר</h2></div><small>אין כאן נתוני דמו</small></div><div class="table-scroll"><table class="product-catalog-table"><thead><tr><th>מוצר / וריאציה</th><th>חנות</th><th>נמכרו</th><th>מחיר מכירה</th><th>עלות ספק</th><th>משלוח ללקוח</th><th>רווח ליחידה</th><th>פעולה</th></tr></thead><tbody data-product-catalog></tbody></table></div></article>
+        <div class="catalog-lower-grid"><article class="panel data-quality-panel"><div class="panel-head"><div><span>בקרת נתונים</span><h2>מה עדיין חסר לחישוב מדויק</h2></div><span class="status warn" data-quality-status>בודק</span></div><div data-quality-list></div></article><article class="panel monthly-real-panel"><div class="panel-head"><div><span>דוח אמיתי</span><h2>סיכום חודשי לפי המקורות המחוברים</h2></div><small>רווח מוצג רק כשכל העלויות הוזנו</small></div><div class="table-scroll"><table class="monthly-real-table"><thead><tr><th>חודש</th><th>הזמנות</th><th>מכירות מאומתות</th><th>עלות ספק</th><th>רווח מחושב</th><th>מצב</th></tr></thead><tbody data-monthly-real></tbody></table></div></article></div>
+      </section>
+
+      <section class="management-grid" id="management">
+        <article class="panel weekly-panel"><div class="panel-head"><div><span>דוח מנהלים שבועי</span><h2>השבוע ב־60 שניות</h2></div><button class="secondary-button" type="button">הורדת PDF</button></div><div class="weekly-score"><strong>טוב יותר</strong><span>מהשבוע הקודם</span><b>+12.6%</b></div><div class="weekly-list"><p><i>✓</i><span><b>384 הזמנות נמסרו</b><small>96.8% בזמן שהובטח</small></span></p><p><i>✓</i><span><b>הרווח הנקי עלה ב־$4,280</b><small>בעיקר בזכות Meta ושיפור עלות המוצר</small></span></p><p><i>!</i><span><b>מוצר אחד דורש הזמנה מחדש</b><small>מומלץ להזמין 240 יחידות השבוע</small></span></p></div><button class="text-button" type="button">שליחת הדוח ב־WhatsApp ←</button></article>
+        <article class="panel cycle-panel"><div class="panel-head"><div><span>זמני תהליך</span><h2>איפה ההזמנה מבלה זמן</h2></div><span class="trend">↓ 1.8 ימים</span></div><div class="cycle-flow"><div><b>0.4</b><span>קליטה</span></div><i></i><div><b>1.2</b><span>טיפול</span></div><i></i><div><b>0.8</b><span>בדיקה</span></div><i class="slow"></i><div class="slow"><b>2.6</b><span>הכנה</span></div><i></i><div><b>6.4</b><span>שילוח</span></div></div><p class="cycle-note"><b>הזדמנות:</b> שלב ההכנה ארוך ב־0.9 יום מהממוצע. איחוד איסופים יכול לקצר אותו.</p></article>
+        <article class="panel goals-panel"><div class="panel-head"><div><span>יעדי החודש</span><h2>מתקדמים לפי התוכנית</h2></div><button class="text-button" type="button">עריכת יעדים</button></div><div class="goal-list"><div><span><b>רווח נקי</b><em>$184K מתוך $210K</em></span><progress value="88" max="100"></progress><small>88%</small></div><div><span><b>שולי רווח</b><em>28.9% מתוך 30%</em></span><progress value="96" max="100"></progress><small>96%</small></div><div><span><b>מסירה בזמן</b><em>96.8% מתוך 98%</em></span><progress value="98" max="100"></progress><small>98%</small></div></div></article>
+      </section>
+
+      <section class="account-center" id="account-center">
+        <div class="section-title"><div><span>ניהול החשבון</span><h2>חנויות, צוות וחיבורים במקום אחד</h2></div><button class="primary-button" id="account-connect-store" type="button">＋ חיבור חנות</button></div>
+        <div class="store-health-grid" data-store-health></div>
+        <article class="panel store-compare-panel"><div class="panel-head"><div><span>השוואת חנויות</span><h2>איפה העסק מתקדם ואיפה נדרש טיפול</h2></div><span class="status good">LIVE</span></div><div class="table-scroll"><table class="store-compare-table"><thead><tr><th>חנות</th><th>הכנסה</th><th>רווח נקי</th><th>ROAS</th><th>הזמנות</th><th>החזרות</th><th>מצב</th></tr></thead><tbody data-store-compare></tbody></table></div></article>
+        <div class="account-grid">
+          <article class="panel"><div class="panel-head"><div><span>חיבורים</span><h2>מקורות הנתונים</h2></div><button class="text-button" id="add-integration" type="button">הוספת חיבור</button></div><div class="integration-list"><button type="button" data-shopify-store="by-z-royal.myshopify.com"><i>SH</i><span><b>Shopify · Z-Royal</b><small>by-z-royal.myshopify.com</small></span><em class="status info" id="shopify-source-status">בודק…</em></button><button type="button"><i>ET</i><span><b>Etsy</b><small>3 חנויות זוהו · ממתין לאישור</small></span><em class="status warn">בהכנה</em></button><button type="button"><i>ME</i><span><b>Meta Ads</b><small>קמפיינים ועלויות פרסום</small></span><em class="status warn">טרם חובר</em></button><button type="button"><i>TK</i><span><b>TikTok Ads</b><small>קמפיינים, עלויות והמרות</small></span><em class="status warn">טרם חובר</em></button><button type="button"><i>GO</i><span><b>Google Ads & GA4</b><small>שיווק, המרות והתנהגות באתר</small></span><em class="status warn">טרם חובר</em></button></div></article>
+          <article class="panel"><div class="panel-head"><div><span>הרשאות</span><h2>מי רואה ומה</h2></div><button class="text-button" id="invite-member" type="button">הזמנת איש צוות</button></div><div class="team-list"><div><b>DH</b><span><strong>דניאל</strong><small>בעלים · גישה מלאה</small></span><em>מנהל</em></div><div><b>MR</b><span><strong>מאיה</strong><small>מכירות, הזמנות ושיווק</small></span><em>מנהלת חנות</em></div><div><b>SL</b><span><strong>שחר · Direct Line</strong><small>תפעול, שילוח ובקרת איכות</small></span><em>תפעול</em></div></div></article>
+          <article class="panel"><div class="panel-head"><div><span>התראות</span><h2>רק מה שבאמת חשוב</h2></div><span class="status info">אישי</span></div><div class="preference-list"><label><span><b>עיכוב במשלוח</b><small>WhatsApp ומערכת</small></span><input type="checkbox" checked></label><label><span><b>מלאי מתחת ל־30 יום</b><small>מערכת ומייל</small></span><input type="checkbox" checked></label><label><span><b>אישור בקרת איכות</b><small>WhatsApp</small></span><input type="checkbox" checked></label><label><span><b>סיכום שבועי</b><small>כל יום ראשון במייל</small></span><input type="checkbox" checked></label></div></article>
+          <article class="panel"><div class="panel-head"><div><span>דף הבית שלי</span><h2>מה תרצו לראות קודם</h2></div><span class="status good">נשמר אוטומטית</span></div><div class="preference-list home-prefs"><label><span><b>פעולות שמחכות לי</b><small>מוצג ראשון</small></span><input type="checkbox" checked data-home-pref="actions"></label><label><span><b>מדדי רווחיות</b><small>3 כרטיסים מרכזיים</small></span><input type="checkbox" checked data-home-pref="kpis"></label><label><span><b>גרפים חזותיים</b><small>ניתן לפתיחה לפי צורך</small></span><input type="checkbox" data-home-pref="charts"></label><label><span><b>התראות חכמות</b><small>חריגות והזדמנויות</small></span><input type="checkbox" checked data-home-pref="alerts"></label></div></article>
+        </div>
+      </section>
+
+      <section class="data-center" id="data-center">
+        <article class="shopify-connect-board">
+          <div class="shopify-connect-copy"><span id="shopify-board-kicker">SHOPIFY זוהתה</span><h2>Z‑Royal מוכנה להרשאה</h2><p>הדומיין הראשי <b>by-z-royal.myshopify.com</b> נשמר. החיבור יבוצע דרך מסך האישור הרשמי של Shopify עם הרשאות קריאה בלבד.</p></div><div class="shopify-connect-action"><em class="status info">שלב 1 מתוך 2</em><button type="button" data-shopify-store="by-z-royal.myshopify.com">המשך להכנת החיבור</button></div>
+        </article>
+        <article class="etsy-connect-board">
+          <div class="etsy-connect-head"><div><span>חנויות אמיתיות</span><h2>שלוש חנויות Etsy מוכנות לחיבור</h2><p>כל חנות תאושר בנפרד דרך Etsy ותסונכרן לחשבון Direct Line שלכם.</p></div><div class="connection-readiness"><b>שלב 2 מתוך 3</b><small>האפליקציה אושרה · החנויות מוכנות לחיבור</small></div></div>
+          <div class="real-store-list"><article><i>ET</i><span><b>CursedCarvingsDesign</b><a href="https://www.etsy.com/shop/CursedCarvingsDesign" target="_blank" rel="noreferrer">etsy.com/shop/CursedCarvingsDesign</a></span><em class="status warn">מוכנה לחיבור</em><button type="button" data-etsy-shop="CursedCarvingsDesign">פרטי החיבור</button></article><article><i>ET</i><span><b>SelectSpark</b><a href="https://www.etsy.com/shop/SelectSpark" target="_blank" rel="noreferrer">etsy.com/shop/SelectSpark</a></span><em class="status warn">מוכנה לחיבור</em><button type="button" data-etsy-shop="SelectSpark">פרטי החיבור</button></article><article><i>ET</i><span><b>NerdSparkArt</b><a href="https://www.etsy.com/shop/NerdSparkArt" target="_blank" rel="noreferrer">etsy.com/shop/NerdSparkArt</a></span><em class="status warn">מוכנה לחיבור</em><button type="button" data-etsy-shop="NerdSparkArt">פרטי החיבור</button></article></div>
+          <div class="connection-security"><span>✓</span><p><b>חיבור קריאה בטוח</b><small>Direct Line לא מקבלת את סיסמת Etsy. החנות מאשרת גישה מוגבלת במסך הרשמי של Etsy.</small></p></div>
+        </article>
+        <article class="campaign-connect-board">
+          <div class="campaign-connect-head"><div><span>מרכז נתוני קמפיינים</span><h2>מהקליק ועד לרווח שנשאר בבנק</h2><p>המערכת תחבר את הוצאות הפרסום להזמנות ולעלויות בפועל, כדי שהלקוח יבין איזה קמפיין באמת מרוויח.</p></div><div class="connection-readiness"><b>0 מתוך 3 ערוצים</b><small>ממתינים להרשאות מנהל</small></div></div>
+          <div class="campaign-source-grid">
+            <article class="meta"><i>ME</i><span><b>Meta Ads</b><small>Facebook ו־Instagram · הוצאה, קמפיינים, המרות ו־ROAS</small></span><em class="status warn">טרם חובר</em><button type="button" data-campaign-platform="Meta Ads">הכנת חיבור</button></article>
+            <article class="tiktok"><i>TK</i><span><b>TikTok Ads</b><small>הוצאה, קהלים, קריאייטיבים, המרות ו־CPA</small></span><em class="status warn">טרם חובר</em><button type="button" data-campaign-platform="TikTok Ads">הכנת חיבור</button></article>
+            <article class="google"><i>GO</i><span><b>Google Ads + GA4</b><small>חיפוש, שופינג, תנועה, המרות והכנסה מיוחסת</small></span><em class="status warn">טרם חובר</em><button type="button" data-campaign-platform="Google Ads & GA4">הכנת חיבור</button></article>
+          </div>
+          <div class="profit-link-flow" aria-label="זרימת חישוב הרווח"><span><i>1</i><b>הוצאה על מודעה</b></span><strong>←</strong><span><i>2</i><b>הזמנה בחנות</b></span><strong>←</strong><span><i>3</i><b>מוצר ומשלוח</b></span><strong>←</strong><span><i>4</i><b>רווח נקי אמיתי</b></span></div>
+          <div class="connection-security"><span>✓</span><p><b>הרשאות רשמיות בלבד</b><small>כל חשבון מתחבר במסך הרשמי של הפלטפורמה. Direct Line לא מקבלת סיסמאות ולא מפרסמת או משנה קמפיינים ללא הרשאה מפורשת.</small></p></div>
+        </article>
+        <article class="data-trust-center">
+          <div class="data-trust-head"><div><span>בקרת אמינות</span><h2>כל מספר מגיע עם הוכחה</h2><p>לפני שמציגים רווח, המערכת בודקת שכל המכירות, ההוצאות והעלויות נכנסו לאותו טווח זמן.</p></div><button type="button" data-run-reconciliation>הרצת בדיקת התאמה</button></div>
+          <div class="trust-score-card"><div class="trust-ring" style="--trust:35"><strong>35%</strong><small>מוכנות נתונים</small></div><div><b>Shopify מחוברת ו־Etsy אושרה; החנויות מוכנות לחיבור</b><p>הציון יעלה אוטומטית לאחר חיבור שלוש חנויות Etsy, חשבונות הפרסום והשלמת עלויות המוצר.</p></div></div>
+          <div class="source-health-grid">
+            <button type="button" data-source-health="stores"><i class="pending"></i><span><b>מכירות והחזרים</b><small>Etsy + Shopify</small></span><em>ממתין לחיבור</em></button>
+            <button type="button" data-source-health="ads"><i class="pending"></i><span><b>הוצאות פרסום</b><small>Meta + TikTok + Google</small></span><em>ממתין להרשאה</em></button>
+            <button type="button" data-source-health="costs"><i class="pending"></i><span><b>עלויות מוצר ומשלוח</b><small>לפי SKU ושיטת שילוח</small></span><em>נדרש ייבוא</em></button>
+            <button type="button" data-source-health="audit"><i class="ready"></i><span><b>מנוע התאמה</b><small>פערים, כפילויות ונתונים חסרים</small></span><em>מוכן</em></button>
+          </div>
+          <div class="calculation-contract"><span>הכנסות</span><b>−</b><span>פרסום</span><b>−</b><span>עלות נחיתה</span><b>−</b><span>עמלות והחזרים</span><b>=</b><strong>רווח נקי מאומת</strong></div>
+        </article>
+        <div class="section-title"><div><span>הקמה וחיבורים</span><h2>כל הנתונים נכנסים למקום אחד</h2></div><span class="status info">חיבורי אמת בהקמה</span></div>
+        <article class="onboarding-card"><div class="onboarding-copy"><span>הקמת החשבון</span><h2>מכינים את שכבת הנתונים המלאה</h2><p>לאחר אישור Etsy נחבר כל חנות בנפרד, ואז נוסיף את חשבונות הפרסום ועלויות המוצר.</p></div><div class="onboarding-progress"><i style="--progress:35%"></i><b>35%</b></div><div class="onboarding-steps"><button class="done" type="button"><i>✓</i><span><b>חשבון נפתח</b><small>הושלם</small></span></button><button class="done" type="button"><i>✓</i><span><b>אפליקציית Etsy אושרה</b><small>הושלם</small></span></button><button type="button" id="onboarding-connect"><i>3</i><span><b>חיבור חנויות ופרסום</b><small>מוכן לחיבור</small></span></button><button type="button"><i>4</i><span><b>השלמת עלויות</b><small>Google Sheets או קובץ</small></span></button></div></article>
+        <div class="data-grid">
+          <article class="panel import-panel"><div class="panel-head"><div><span>ייבוא נתונים</span><h2>בחרו מאיפה להתחיל</h2></div><span class="status info">מאובטח</span></div><div class="import-options"><button type="button" data-import="Shopify"><i>SH</i><span><b>Shopify</b><small>הזמנות, מוצרים ומלאי בזמן אמת</small></span><em>חיבור ←</em></button><button type="button" data-import="Etsy"><i>ET</i><span><b>Etsy</b><small>מכירות, עמלות והחזרים</small></span><em>חיבור ←</em></button><button type="button" data-import="Google Sheets"><i>GS</i><span><b>Google Sheets</b><small>עלויות מוצר, שילוח ונתוני ספק</small></span><em>חיבור ←</em></button><button type="button" data-import="CSV"><i>CSV</i><span><b>קובץ CSV</b><small>ייבוא חד־פעמי עם התאמת עמודות</small></span><em>העלאה ←</em></button></div></article>
+          <article class="panel automation-panel"><div class="panel-head"><div><span>אוטומציות</span><h2>המערכת עובדת גם כשאתם לא כאן</h2></div><button class="text-button" type="button" id="new-automation">＋ אוטומציה</button></div><div class="automation-list"><label><i>01</i><span><b>מלאי מתחת ל־30 יום</b><small>שליחת WhatsApp ועצירת קמפיין לבדיקה</small></span><input type="checkbox" checked></label><label><i>02</i><span><b>משלוח ללא עדכון 8 שעות</b><small>פתיחת התראה לצוות התפעול</small></span><input type="checkbox" checked></label><label><i>03</i><span><b>דוח מנהלים שבועי</b><small>כל יום ראשון בשעה 09:00</small></span><input type="checkbox" checked></label><label><i>04</i><span><b>רווח להזמנה מתחת ליעד</b><small>התרעה כאשר הרווח יורד מתחת ל־$18</small></span><input type="checkbox"></label></div></article>
+        </div>
+      </section>
+
+      <section class="dashboard-grid" id="profit">
+        <article class="panel profit-panel">
+          <div class="panel-head"><div><span>מנוע רווחיות</span><h2>מההכנסה לרווח הנקי</h2></div><div class="net-badge"><small>שולי רווח</small><strong data-net-margin>—</strong></div></div>
+          <div class="waterfall" data-waterfall></div>
+          <div class="profit-bottom"><div><span>רווח נקי</span><strong data-net-profit>—</strong></div><div class="profit-line" aria-hidden="true"><svg viewBox="0 0 420 90" preserveAspectRatio="none"><defs><linearGradient id="area" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#69d1bd" stop-opacity=".22"/><stop offset="1" stop-color="#69d1bd" stop-opacity="0"/></linearGradient></defs><path class="area" d="M0 77 C45 62 58 70 95 49 S150 55 185 34 250 56 286 25 350 36 420 12 L420 90 L0 90Z"/><path class="line" d="M0 77 C45 62 58 70 95 49 S150 55 185 34 250 56 286 25 350 36 420 12"/></svg></div></div>
+        </article>
+
+        <article class="panel marketing-panel" id="marketing">
+          <div class="panel-head"><div><span>שיווק רב ערוצי</span><h2>ביצועים לפי ערוץ</h2></div><button class="text-button" type="button">לדוח המלא ←</button></div>
+          <div class="channel-tabs" role="tablist"><button class="active" type="button" data-channel="all">הכול</button><button type="button" data-channel="meta">Meta</button><button type="button" data-channel="tiktok">TikTok</button><button type="button" data-channel="google">Google</button></div>
+          <div class="channel-chart"><div class="chart-y"><span>4x</span><span>3x</span><span>2x</span><span>1x</span></div><div class="bars" data-channel-bars></div></div>
+          <div class="channel-summary" data-channel-summary></div>
+        </article>
+      </section>
+
+      <section class="insight-strip" aria-live="polite">
+        <div class="ai-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 9.5 9.5 3 12l6.5 2.5L12 21l2.5-6.5L21 12l-6.5-2.5L12 3Z"/></svg><span>AI INSIGHTS</span></div>
+        <div class="insight-list" data-insights></div>
+      </section>
+
+      <section class="inventory-section" id="inventory">
+        <div class="section-title"><div><span>שרשרת אספקה</span><h2>מלאי וסיכוני פרסום</h2></div><button class="secondary-button" type="button" data-admin-only>עדכון מלאי</button></div>
+        <div class="risk-banner" data-risk-banner></div>
+        <div class="table-card"><div class="table-scroll"><table><thead><tr><th>מוצר / SKU</th><th>מלאי</th><th>ימי כיסוי</th><th>נקודת הזמנה</th><th>משלוח נכנס</th><th>עלות נחיתה</th><th>סטטוס</th></tr></thead><tbody data-inventory-body></tbody></table></div></div>
+      </section>
+
+      <section class="orders-section" id="orders">
+        <div class="section-title"><div><span>תפעול</span><h2>ניהול הזמנות</h2></div><button class="primary-button" id="new-order" type="button">＋ הזמנה ידנית</button></div>
+        <div class="order-toolbar"><label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="order-search" type="search" placeholder="חיפוש הזמנה, לקוח או פריט"></label><select id="status-filter"><option value="all">כל הסטטוסים</option><option value="בטיפול">בטיפול</option><option value="נשלח">נשלח</option><option value="נמסר">נמסר</option><option value="בעיכוב">בעיכוב</option><option value="הוחזר">הוחזר</option><option value="Chargeback">Chargeback</option></select><select id="platform-filter"><option value="all">כל הפלטפורמות</option><option value="Shopify">Shopify</option><option value="Etsy">Etsy</option></select></div>
+        <div class="table-card"><div class="table-scroll"><table class="orders-table"><thead><tr><th>הזמנה</th><th>לקוח</th><th>פריט</th><th>פלטפורמה</th><th>סכום</th><th>משלוח</th><th>רווח נקי</th><th>סטטוס</th><th data-admin-only>פעולה</th></tr></thead><tbody data-orders-body></tbody></table></div><div class="table-footer"><span data-order-count></span><div><button type="button" disabled>→</button><b>1</b><button type="button">←</button></div></div></div>
+      </section>
+
+      <section class="customers-section" id="customers">
+        <div class="section-title"><div><span>מרכז לקוחות מאובטח</span><h2>הלקוחות שלכם, במקום אחד</h2><p>היסטוריית רכישות ופילוח לקוחות. שימוש שיווקי זמין רק לאחר תיעוד הסכמה.</p></div><button class="secondary-button" id="export-consented" type="button" disabled title="כרגע אין לקוחות עם הסכמה מתועדת">ייצוא מאושרי דיוור</button></div>
+        <div class="customer-summary"><article><span>לקוחות ייחודיים</span><strong data-customer-total>0</strong></article><article><span>לקוחות חוזרים</span><strong data-customer-repeat>0</strong></article><article><span>מאושרים לשיווק</span><strong data-customer-consented>0</strong></article></div>
+        <div class="order-toolbar customer-toolbar"><label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="customer-search" type="search" placeholder="חיפוש לפי שם או חנות"></label><select id="customer-type-filter"><option value="all">כל הלקוחות</option><option value="repeat">לקוחות חוזרים</option><option value="new">לקוחות חדשים</option></select></div>
+        <div class="table-card"><div class="table-scroll"><table class="customers-table"><thead><tr><th>לקוח</th><th>חנות</th><th>הזמנות</th><th>סכום רכישות</th><th>הזמנה אחרונה</th><th>סוג לקוח</th><th>הסכמה לשיווק</th></tr></thead><tbody data-customers-body></tbody></table></div><div class="table-footer"><span data-customer-count></span><small>כתובות, טלפונים ופרטי משלוח אינם מוצגים כאן</small></div></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="order-dialog" aria-labelledby="dialog-title">
+    <form method="dialog" id="order-form">
+      <div class="dialog-head"><div><span>הזמנה ידנית</span><h2 id="dialog-title">הוספת הזמנה</h2></div><button value="cancel" type="submit" aria-label="סגירה">×</button></div>
+      <div class="form-grid"><label><span>שם לקוח</span><input name="customer" required placeholder="לדוגמה: Sarah Miller"></label><label><span>פריט</span><input name="item" required placeholder="שם המוצר"></label><label><span>מחיר מכירה</span><input name="price" type="number" min="1" value="89" required></label><label><span>פלטפורמה</span><select name="platform"><option>Shopify</option><option>Etsy</option></select></label><label><span>ערוץ שיווק</span><select name="channel"><option>Meta</option><option>TikTok</option><option>Google</option><option>Organic</option></select></label><label><span>עלות משלוח</span><input name="shipping" type="number" min="0" value="9" required></label><label><span>עלות מוצר</span><input name="product" type="number" min="0" value="22" required></label><label><span>סטטוס</span><select name="status"><option>ממתין</option><option>בטיפול</option><option>נשלח</option></select></label></div>
+      <div class="estimate"><span>רווח נקי משוער</span><strong data-order-estimate>$—</strong><small data-fee-note></small></div>
+      <div class="dialog-actions"><button value="cancel" type="submit" class="secondary-button">ביטול</button><button value="default" type="submit" class="primary-button">שמירת הזמנה</button></div>
+    </form>
+  </dialog>
+  <dialog id="detail-dialog" aria-labelledby="detail-title"><div class="detail-dialog-head"><div><span data-detail-eyebrow>כרטיס מוצר</span><h2 id="detail-title" data-detail-title>פרטים</h2></div><button class="dialog-close" type="button" aria-label="סגירה">×</button></div><div data-detail-content></div></dialog>
+  <dialog id="date-range-dialog" aria-labelledby="date-range-title"><form method="dialog" id="date-range-form"><div class="dialog-head"><div><span>טווח מותאם אישית</span><h2 id="date-range-title">בחירת תאריכים</h2></div><button value="cancel" type="submit" aria-label="סגירה">×</button></div><p class="date-range-copy">בחרו את התקופה שתרצו לראות בדשבורד.</p><div class="form-grid"><label><span>מתאריך</span><input id="range-start" name="start" type="date" required></label><label><span>עד תאריך</span><input id="range-end" name="end" type="date" required></label></div><p class="login-error" id="date-range-error" hidden>תאריך הסיום חייב להיות אחרי תאריך ההתחלה.</p><div class="dialog-actions"><button value="cancel" type="submit" class="secondary-button">ביטול</button><button value="default" type="submit" class="primary-button">הצגת נתונים</button></div></form></dialog>
+  <dialog id="search-dialog" aria-labelledby="search-title"><div class="search-command"><label><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="smart-query" autocomplete="off" placeholder="לדוגמה: אילו משלוחים מתעכבים?" aria-labelledby="search-title"></label><h2 id="search-title">אפשר לשאול על כל מה שקורה בעסק</h2><div class="query-suggestions"><button type="button">מה מחכה לאישור שלי?</button><button type="button">איפה אנחנו מפסידים כסף?</button><button type="button">איזה מלאי עומד להיגמר?</button></div><div class="query-answer" data-query-answer hidden></div></div></dialog>
+  <a class="whatsapp-dock" href="https://wa.me/" target="_blank" rel="noopener" aria-label="פתיחת שיחה עם Direct Line בוואטסאפ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.6A8 8 0 0 1 8.1 18.5L4 20l1.4-4A8 8 0 1 1 20 11.6Z"/><path d="M9 8.5c.5 2 2 3.5 4 4l1-1c.4-.4.8-.2 1.1 0l1.5.7c.4.2.5.5.4.9-.4 1.2-1.5 1.9-2.7 1.7-3.6-.5-6.8-3.7-7.3-7.3-.2-1.2.5-2.3 1.7-2.7.4-.1.7 0 .9.4l.7 1.5c.2.3.4.7 0 1.1l-1.3.7Z"/></svg><span><b>צריכים תשובה?</b><small>הצוות זמין בעברית</small></span></a>
+  <div class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="app.js?v=48"></script>
+</body>
+</html>
