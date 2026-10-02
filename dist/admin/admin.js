@@ -1,7 +1,8 @@
 (function () {
-  const { api, money, esc, date, trackingUrl, logout, renderLogin, mountCalculator, $, $$ } = window.DL;
+  const { api, money, esc, date, trackingUrl, logout, renderLogin, mountCalculator, quote, countryOptions, categoryOptions, $, $$ } = window.DL;
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-  const state = { overview: null, selected: null, orders: [], payments: [], search: '' };
+  const state = { overview: null, selected: null, orders: [], payments: [], search: '', editing: null };
+  const of = $('#admin-order-form');
   let calc;
 
   async function boot() {
@@ -15,6 +16,9 @@
     $('#boot').hidden = true; $('#app').hidden = false;
     $('[data-portal-url]').textContent = location.origin + '/portal/';
     calc = mountCalculator($('#calculator'), { divisor: Number(me.settings.volumetric_divisor) || 6000 });
+    state.divisor = Number(me.settings.volumetric_divisor) || 6000;
+    of.destination.innerHTML = countryOptions('');
+    of.category.innerHTML = categoryOptions('general');
     await loadOverview();
   }
 
@@ -63,6 +67,7 @@
     af.name.value = state.selected.name; af.commissionPerOrder.value = state.selected.commissionPerOrder ?? '';
     af.password.value = ''; af.active.value = String(state.selected.active);
     const d = new Date(); $('#payment-form').paidAt.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    setOrderEditing(null);
     setTab('orders');
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     await Promise.all([loadClientOrders(), loadPayments()]);
@@ -84,8 +89,9 @@
       <td>${esc(o.destination) || '—'}</td><td class="num">${money(o.price)}</td><td class="num">${money(o.sellingPrice)}</td>
       <td class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${money(o.profit)}</td><td class="num">${money(o.commission)}</td>
       <td><select class="inline-select" data-status="${o.id}">${STATUSES.map(s => `<option${s === o.status ? ' selected' : ''}>${s}</option>`).join('')}</select></td>
-      <td class="notes">${esc(o.notes)}</td></tr>`).join('')
-      : '<tr><td colspan="10" class="empty">This client has no orders yet.</td></tr>';
+      <td class="notes">${esc(o.notes)}</td>
+      <td><button class="btn btn-small" type="button" data-edit-order="${o.id}">Edit</button></td></tr>`).join('')
+      : '<tr><td colspan="11" class="empty">This client has no orders yet. Add one above.</td></tr>';
   }
 
   async function loadPayments() {
@@ -163,6 +169,61 @@
       await loadOverview();
     } catch (ex) { msg('[data-settings-msg]', ex.message, 'err'); }
   });
+  // ----- admin adds / edits orders on a client's behalf -----
+  function updateAdminProfit() {
+    const p = parseFloat(of.price.value), sp = parseFloat(of.sellingPrice.value), el = $('[data-admin-profit]');
+    if (!Number.isFinite(p) || !Number.isFinite(sp)) { el.innerHTML = 'Client profit: —'; return; }
+    const v = sp - p; el.innerHTML = `Client profit: <b class="${v >= 0 ? 'pos' : 'neg'}">${money(v)}</b>`;
+  }
+  function setOrderEditing(order) {
+    state.editing = order;
+    $('[data-admin-order-title]').textContent = order ? 'Edit order' : 'Add order for this client';
+    $('[data-admin-order-submit]').textContent = order ? 'Save changes' : 'Add order';
+    $('[data-admin-cancel-edit]').hidden = !order;
+    of.reset();
+    of.destination.value = order?.destination || '';
+    of.category.value = order?.category || 'general';
+    if (order) {
+      of.orderRef.value = order.orderRef; of.trackingNumber.value = order.trackingNumber;
+      of.weightKg.value = order.weightKg ?? ''; of.price.value = order.price ?? '';
+      of.sellingPrice.value = order.sellingPrice ?? ''; of.notes.value = order.notes;
+    }
+    updateAdminProfit(); msg('[data-admin-order-msg]', '');
+  }
+  of.addEventListener('input', updateAdminProfit);
+  $('[data-admin-cancel-edit]').addEventListener('click', () => setOrderEditing(null));
+  $('[data-admin-fill-quote]').addEventListener('click', () => {
+    const q = quote({ country: of.destination.value, category: of.category.value, weightKg: of.weightKg.value, divisor: state.divisor });
+    if (!q) { msg('[data-admin-order-msg]', 'Choose a destination and enter the weight first.', 'err'); return; }
+    of.price.value = q.total.toFixed(2); updateAdminProfit(); msg('[data-admin-order-msg]', 'Price filled with the shipping quote (' + money(q.total) + ').', 'okm');
+  });
+  $('[data-detail-orders]').addEventListener('click', e => {
+    const id = e.target.closest('[data-edit-order]')?.dataset.editOrder;
+    if (!id) return;
+    setOrderEditing(state.orders.find(o => String(o.id) === id));
+    of.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  of.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (of.price.value === '') { msg('[data-admin-order-msg]', 'Please enter the price.', 'err'); of.price.focus(); return; }
+    const body = {
+      clientId: state.selected.id, orderRef: of.orderRef.value, trackingNumber: of.trackingNumber.value,
+      destination: of.destination.value, category: of.category.value,
+      weightKg: of.weightKg.value === '' ? null : of.weightKg.value, price: of.price.value,
+      sellingPrice: of.sellingPrice.value === '' ? null : of.sellingPrice.value, notes: of.notes.value,
+    };
+    const btn = $('[data-admin-order-submit]'); btn.disabled = true;
+    try {
+      const wasEditing = !!state.editing;
+      if (wasEditing) await api('/orders/' + state.editing.id, { method: 'PUT', body });
+      else await api('/orders', { method: 'POST', body });
+      setOrderEditing(null);
+      msg('[data-admin-order-msg]', wasEditing ? 'Order updated.' : 'Order added.', 'okm');
+      await Promise.all([loadOverview(), loadClientOrders()]);
+    } catch (ex) { msg('[data-admin-order-msg]', ex.message, 'err'); }
+    finally { btn.disabled = false; }
+  });
+
   $('[data-logout]').addEventListener('click', logout);
 
   boot();

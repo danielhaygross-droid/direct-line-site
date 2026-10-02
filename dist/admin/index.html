@@ -51,8 +51,25 @@
       <div class="tabs"><button class="tab active" type="button" data-tab="orders">Orders</button><button class="tab" type="button" data-tab="payments">Payments</button><button class="tab" type="button" data-tab="account">Account</button></div>
 
       <div data-pane="orders">
+        <div class="panel-head" style="margin-top:4px"><h2 data-admin-order-title style="font-size:15px">Add order for this client</h2><button class="btn btn-small" type="button" data-admin-cancel-edit hidden>Cancel edit</button></div>
+        <form class="form" id="admin-order-form" novalidate style="margin-bottom:16px">
+          <label class="field">Order number / reference<input name="orderRef" maxlength="120" placeholder="e.g. Etsy #3412"></label>
+          <label class="field">Tracking number<input name="trackingNumber" maxlength="120" placeholder="e.g. LX123456789CN"></label>
+          <label class="field">Destination<select name="destination"></select></label>
+          <label class="field">Product type<select name="category"></select></label>
+          <label class="field">Weight (kg)<input name="weightKg" type="number" min="0" step="0.01" inputmode="decimal"></label>
+          <label class="field">Price — what the client pays us (USD)<input name="price" type="number" min="0" step="0.01" inputmode="decimal"></label>
+          <label class="field">Selling price — what their customer paid (USD)<input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal"></label>
+          <div class="field" style="justify-content:flex-end"><span class="profit-preview" data-admin-profit>Client profit: —</span></div>
+          <label class="field full">Notes<textarea name="notes" maxlength="2000"></textarea></label>
+          <div class="form-actions">
+            <button class="btn btn-gold" type="submit" data-admin-order-submit>Add order</button>
+            <button class="btn" type="button" data-admin-fill-quote>Fill price from shipping quote</button>
+            <p class="msg" data-admin-order-msg></p>
+          </div>
+        </form>
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Order</th><th>Tracking</th><th>To</th><th class="num">Price</th><th class="num">Sold for</th><th class="num">Client profit</th><th class="num">Commission</th><th>Status</th><th>Notes</th></tr></thead>
+          <thead><tr><th>Date</th><th>Order</th><th>Tracking</th><th>To</th><th class="num">Price</th><th class="num">Sold for</th><th class="num">Client profit</th><th class="num">Commission</th><th>Status</th><th>Notes</th><th></th></tr></thead>
           <tbody data-detail-orders></tbody>
         </table></div>
       </div>
@@ -101,6 +118,6 @@
 </div>
 <script src="/p/login-extras.js?v=1"></script>
 <script src="/p/common.js?v=2"></script>
-<script src="/admin/admin.js?v=3"></script>
+<script src="/admin/admin.js?v=4"></script>
 </body>
 </html>
