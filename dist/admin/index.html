@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Direct Line · Admin</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/p/common.css?v=1">
+</head>
+<body>
+<div class="empty" id="boot">Loading…</div>
+<div id="app" hidden>
+  <header class="topbar">
+    <a class="brand" href="/admin/">direct<b>↗</b>line.<small>ADMIN</small></a>
+    <span class="spacer"></span>
+    <a class="top-link" href="/">Store dashboard</a>
+    <button class="btn btn-ghost btn-small" type="button" data-logout>Log out</button>
+  </header>
+  <main>
+    <h1>Clients &amp; payments</h1>
+    <p class="sub">Every client's orders, what they owe, and our commission. Click a client to see details and record payments.</p>
+
+    <section class="cards" data-totals></section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Clients</h2><div class="toolbar"><input type="search" placeholder="Search clients…" data-client-search><button class="btn btn-gold btn-small" type="button" data-show-add-user>+ Add client</button></div></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Client</th><th>Username</th><th class="num">Orders</th><th class="num">Billed</th><th class="num">Paid</th><th class="num">Outstanding</th><th class="num">Our commission</th><th class="num">$/order</th><th>Status</th></tr></thead>
+        <tbody data-clients></tbody>
+      </table></div>
+    </section>
+
+    <section class="panel" data-add-user-panel hidden>
+      <div class="panel-head"><h2>Add an account</h2></div>
+      <form class="form" id="user-form" novalidate>
+        <label class="field">Account type<select name="role"><option value="client">Client</option><option value="admin">Admin (full access)</option></select></label>
+        <label class="field">Name<input name="name" maxlength="120" placeholder="Client or store name"></label>
+        <label class="field">Username<input name="username" maxlength="60" autocomplete="off" placeholder="letters, numbers, . _ - @"></label>
+        <label class="field">Password (8+ characters)<input name="password" type="password" autocomplete="new-password"></label>
+        <label class="field" data-cpo-field>Commission per order (USD, leave empty for default)<input name="commissionPerOrder" type="number" min="0" step="0.01"></label>
+        <div class="form-actions"><button class="btn btn-gold" type="submit">Create account</button><button class="btn" type="button" data-hide-add-user>Close</button><p class="msg" data-user-msg></p></div>
+      </form>
+      <p class="note-box">Share the username and password with the client privately. They sign in at <b data-portal-url></b>.</p>
+    </section>
+
+    <section class="panel" data-client-detail hidden>
+      <div class="panel-head"><h2 data-detail-title></h2><button class="btn btn-small" type="button" data-close-detail>Close</button></div>
+      <section class="cards" data-detail-cards></section>
+      <div class="tabs"><button class="tab active" type="button" data-tab="orders">Orders</button><button class="tab" type="button" data-tab="payments">Payments</button><button class="tab" type="button" data-tab="account">Account</button></div>
+
+      <div data-pane="orders">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th>Order</th><th>Tracking</th><th>To</th><th class="num">Price</th><th class="num">Sold for</th><th class="num">Client profit</th><th class="num">Commission</th><th>Status</th><th>Notes</th></tr></thead>
+          <tbody data-detail-orders></tbody>
+        </table></div>
+      </div>
+
+      <div data-pane="payments" hidden>
+        <form class="form" id="payment-form" novalidate style="margin-bottom:14px">
+          <label class="field">Amount received (USD)<input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal"></label>
+          <label class="field">Date<input name="paidAt" type="date"></label>
+          <label class="field">Method<select name="method"><option>PayPal</option><option>Wise</option><option>Bank transfer</option><option>Other</option></select></label>
+          <label class="field">Note<input name="note" maxlength="500"></label>
+          <div class="form-actions"><button class="btn btn-gold" type="submit">Record payment</button><p class="msg" data-pay-msg></p></div>
+        </form>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th class="num">Amount</th><th>Method</th><th>Note</th><th></th></tr></thead>
+          <tbody data-detail-payments></tbody>
+        </table></div>
+      </div>
+
+      <div data-pane="account" hidden>
+        <form class="form" id="account-form" novalidate>
+          <label class="field">Name<input name="name" maxlength="120"></label>
+          <label class="field">Commission per order (USD, empty = default)<input name="commissionPerOrder" type="number" min="0" step="0.01"></label>
+          <label class="field">New password (leave empty to keep)<input name="password" type="password" autocomplete="new-password"></label>
+          <label class="field">Status<select name="active"><option value="true">Active</option><option value="false">Disabled (can't sign in)</option></select></label>
+          <div class="form-actions"><button class="btn btn-gold" type="submit">Save account</button><p class="msg" data-account-msg></p></div>
+        </form>
+        <p class="note-box">Changing the commission only affects new orders. Existing orders keep the commission they were created with (you can see it in the Orders tab).</p>
+      </div>
+    </section>
+
+    <div class="grid-2">
+      <section class="panel" id="calculator"></section>
+      <section class="panel">
+        <div class="panel-head"><h2>Settings</h2></div>
+        <form class="form" id="settings-form" novalidate>
+          <label class="field">Default commission per order (USD)<input name="commission_per_order" type="number" min="0" step="0.01"></label>
+          <label class="field">Size-to-weight divisor (cm³ per kg)<input name="volumetric_divisor" type="number" min="1000" max="10000" step="1"></label>
+          <div class="form-actions"><button class="btn btn-gold" type="submit">Save settings</button><p class="msg" data-settings-msg></p></div>
+        </form>
+        <p class="note-box">The $2 commission and the 6000 divisor are starting values until Daniel and the supplier confirm them. Volumetric weight = L × W × H (cm) ÷ divisor; the higher of real and volumetric weight is charged.</p>
+        <h2 style="margin-top:18px">Admin accounts</h2>
+        <div data-admins class="hint"></div>
+      </section>
+    </div>
+  </main>
+</div>
+<script src="/p/common.js?v=1"></script>
+<script src="/admin/admin.js?v=1"></script>
+</body>
+</html>
