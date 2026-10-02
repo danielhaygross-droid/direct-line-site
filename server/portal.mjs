@@ -76,10 +76,12 @@ async function sign(value, secret) {
   const key = await crypto.subtle.importKey('raw', utf8.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return b64url(await crypto.subtle.sign('HMAC', key, utf8.encode(value)));
 }
-export async function createSessionCookie(role, secret) {
-  const payload = role + '.' + (now() + SESSION_SECONDS);
+export const REMEMBER_SECONDS = 30 * 24 * 3600; // "Remember me": 30 days
+export async function createSessionCookie(role, secret, { remember = false } = {}) {
+  const seconds = remember ? REMEMBER_SECONDS : SESSION_SECONDS;
+  const payload = role + '.' + (now() + seconds);
   const token = payload + '.' + await sign(payload, secret);
-  return 'dl_session=' + encodeURIComponent(token) + `; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_SECONDS}`;
+  return 'dl_session=' + encodeURIComponent(token) + `; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${seconds}`;
 }
 export async function readSessionRole(request, secret) {
   const match = (request.headers.get('cookie') || '').match(/(?:^|;\s*)dl_session=([^;]+)/);
@@ -150,7 +152,7 @@ export async function handlePortal(request, url, ctx) {
     if (!role) return json({ ok: false, error: 'Invalid credentials' }, 401);
     const info = parseRole(role);
     return json({ ok: true, role: info.admin ? 'admin' : 'client', redirect: info.admin ? '/admin/' : '/portal/' }, 200,
-      { 'set-cookie': await createSessionCookie(role, env.APP_SESSION_SECRET) });
+      { 'set-cookie': await createSessionCookie(role, env.APP_SESSION_SECRET, { remember: body.remember === true }) });
   }
 
   const role = await readSessionRole(request, env.APP_SESSION_SECRET);
