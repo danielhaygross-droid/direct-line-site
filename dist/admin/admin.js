@@ -22,7 +22,7 @@
     state.overview = await api('/admin/overview');
     const { totals, settings, clients, admins } = state.overview;
     $('[data-totals]').innerHTML = [
-      ['Clients', clients.filter(c => c.active).length, ''], ['Orders', totals.orders, ''], ['Billed', money(totals.billed), ''],
+      ['Active clients', clients.filter(c => c.active).length, ''], ['Orders', totals.orders, ''], ['Billed', money(totals.billed), ''],
       ['Paid', money(totals.paid), ''], ['Outstanding', money(totals.outstanding), totals.outstanding > 0 ? 'bad' : ''],
       ['Our commission', money(totals.commission), 'accent'],
     ].map(([k, v, cls]) => `<div class="card stat ${cls}"><small>${k}</small><strong>${v}</strong></div>`).join('');
