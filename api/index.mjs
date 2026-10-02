@@ -42,7 +42,7 @@ export async function route(request, { db = DB, env: baseEnv = process.env } = {
       if (!role) return json({ ok: false, error: 'Invalid credentials' }, 401);
       const who = parseRole(role);
       return json({ ok: true, role: who.admin ? 'admin' : 'client', ...(who.admin ? {} : { redirect: '/portal/' }) }, 200,
-        { 'set-cookie': await createSessionCookie(role, env.APP_SESSION_SECRET) });
+        { 'set-cookie': await createSessionCookie(role, env.APP_SESSION_SECRET, { remember: body.remember === true }) });
     }
     if (path === '/api/auth/session') {
       const who = parseRole(await readSessionRole(request, env.APP_SESSION_SECRET));
