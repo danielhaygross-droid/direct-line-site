@@ -79,6 +79,7 @@
       <form novalidate>
         <label class="field">Username<input name="username" autocomplete="username" required></label>
         <label class="field">Password<input name="password" type="password" autocomplete="current-password" required></label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer"><input name="remember" type="checkbox" checked style="width:16px;height:16px;margin:0;accent-color:var(--gold)">Remember me (stay signed in for 30 days)</label>
         <button class="btn btn-gold" type="submit">Sign in</button>
         <p class="msg err" hidden></p>
       </form></div>`;
@@ -88,12 +89,13 @@
       e.preventDefault();
       const btn = $('button', form); btn.disabled = true; err.hidden = true;
       try {
-        const data = await api('/login', { method: 'POST', body: { username: form.username.value.trim(), password: form.password.value } });
+        const data = await api('/login', { method: 'POST', body: { username: form.username.value.trim(), password: form.password.value, remember: form.remember.checked } });
         if (data.redirect && !location.pathname.startsWith(data.redirect)) location.href = data.redirect; else location.reload();
       } catch (ex) {
         err.textContent = ex.status === 401 ? 'Wrong username or password.' : ex.message; err.hidden = false;
       } finally { btn.disabled = false; }
     });
+    window.DLEnhancePasswords?.(wrap);
     form.username.focus();
   }
 
