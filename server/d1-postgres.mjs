@@ -17,10 +17,10 @@ export function toPostgres(sql) {
   return sql.replace(/\?/g, () => '$' + ++n).replace(/\bREAL\b/g, 'DOUBLE PRECISION');
 }
 
-export function createD1(connectionString, query) {
+export function createD1(connectionString, query, extraSchema = []) {
   const run = query || ((text, params) => neon(connectionString).query(text, params));
   let ready;
-  const migrate = () => (ready ||= (async () => { for (const stmt of SCHEMA) await run(stmt, []); })().catch(error => { ready = undefined; throw error; }));
+  const migrate = () => (ready ||= (async () => { for (const stmt of [...SCHEMA, ...extraSchema]) await run(stmt, []); })().catch(error => { ready = undefined; throw error; }));
   const exec = async (sql, params) => { await migrate(); return run(toPostgres(sql), params); };
   const statement = (sql, params = []) => ({
     bind: (...values) => statement(sql, values),
