@@ -276,8 +276,17 @@
     loading = true; await Promise.allSettled(need); loading = false;
     if (state.view === view && !section.classList.contains('view-hidden')) draw();
   }
+  let defaulted = false;
   function after() {
     const live = document.body.classList.contains('real-data-mode');
+    // Until Shopify is connected Z-Royal has no data, so start on "All stores" (once).
+    if (live && !defaulted) {
+      defaulted = true;
+      if (state.store === 'zroyal' && !shopifyConnected() && supplierRaw().length) {
+        state.store = 'all'; const s = $('#store-select'); if (s) s.value = 'all';
+        setTimeout(() => renderAll(), 0); return;
+      }
+    }
     if (live && RENDER[state.view]) {
       $('.kpi-grid')?.classList.add('view-hidden');
       section.classList.remove('view-hidden');
