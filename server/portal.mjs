@@ -51,6 +51,9 @@ export const SCHEMA = [
   'CREATE TABLE IF NOT EXISTS portal_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
   // Fee split: of the per-order fee ("commission"), this part goes to the supplier; the rest is ours.
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS supplier_share DOUBLE PRECISION NOT NULL DEFAULT 1',
+  // What the client sees on each order: product cost (our $2 fee is already inside it) + shipping fee = price.
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS product_cost DOUBLE PRECISION',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS shipping_fee DOUBLE PRECISION',
 ];
 
 export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000' };
@@ -113,6 +116,9 @@ function orderOut(r) {
   return {
     id: r.id, clientId: r.client_id, orderRef: r.order_ref, trackingNumber: r.tracking_number,
     destination: r.destination, category: r.category, weightKg: r.weight_kg === null ? null : Number(r.weight_kg),
+    // price = what the client pays for the order = product cost (incl. our hidden fee) + shipping fee.
+    productCost: r.product_cost === null || r.product_cost === undefined ? null : Number(r.product_cost),
+    shippingFee: r.shipping_fee === null || r.shipping_fee === undefined ? null : Number(r.shipping_fee),
     price, sellingPrice: sell, profit: sell === null ? null : round2(sell - price),
     commission: Number(r.commission || 0), supplierShare: round2(r.supplier_share),
     ourShare: round2(Math.max(0, Number(r.commission || 0) - Number(r.supplier_share || 0))),
@@ -127,10 +133,13 @@ function orderFields(body) {
     order_ref: text(body.orderRef, 120), tracking_number: text(body.trackingNumber, 120),
     destination: (d => (/^[a-z]{2}$/i.test(d) ? d.toUpperCase() : d))(text(body.destination, 60)), category: text(body.category, 20),
     weight_kg: money(body.weightKg), price: money(body.price), selling_price: money(body.sellingPrice),
+    product_cost: money(body.productCost), shipping_fee: money(body.shippingFee),
     notes: text(body.notes, 2000),
   };
+  if (![f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee].every(isMoney)) throw new Error('Numbers must be zero or more');
+  // When the parts are given, the price is their sum.
+  if (f.product_cost !== null || f.shipping_fee !== null) f.price = round2((f.product_cost || 0) + (f.shipping_fee || 0));
   if (f.price === null) f.price = 0;
-  if (![f.weight_kg, f.price, f.selling_price].every(isMoney)) throw new Error('Numbers must be zero or more');
   return f;
 }
 
@@ -173,7 +182,7 @@ export async function handlePortal(request, url, ctx) {
     if (who.admin) return json({ ok: true, role: 'admin', name: 'Admin', settings });
     const u = await DB.prepare('SELECT id, username, display_name, active FROM users WHERE id = ?').bind(who.clientId).first();
     if (!u || !u.active) return json({ ok: false, error: 'Account disabled' }, 403);
-    return json({ ok: true, role: 'client', id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor }, summary: await clientSummary(DB, u.id, settings) });
+    return json({ ok: true, role: 'client', id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor }, summary: (({ commission, supplierShare, ourShare, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
   }
 
   // ----- client routes -----
@@ -195,8 +204,8 @@ export async function handlePortal(request, url, ctx) {
     const commission = client.commission_per_order ?? Number(settings.commission_per_order);
     const supplierShare = Math.min(commission, Number(settings.supplier_share_per_order) || 0);
     const t = now();
-    const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, commission, supplier_share, notes, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
-      .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, commission, supplierShare, f.notes, 'pending', t, t).first();
+    const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
+      .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t).first();
     const out = orderOut(row);
     if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; }
     return json({ ok: true, order: out });
@@ -216,8 +225,8 @@ export async function handlePortal(request, url, ctx) {
       : (body.status === 'cancelled' ? 'cancelled' : existing.status);
     const commission = who.admin && body.commission != null && body.commission !== '' && isMoney(money(body.commission)) ? money(body.commission) : existing.commission;
     const supplierShare = who.admin && body.supplierShare != null && body.supplierShare !== '' && isMoney(money(body.supplierShare)) ? money(body.supplierShare) : existing.supplier_share;
-    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=? WHERE id = ? RETURNING *')
-      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.notes, status, commission, supplierShare, now(), id).first();
+    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=? WHERE id = ? RETURNING *')
+      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), id).first();
     const out = orderOut(row);
     if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; }
     return json({ ok: true, order: out });
