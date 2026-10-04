@@ -54,7 +54,7 @@
         group.appendChild(o);
       });
       if (!group.children.length) {
-        const o = document.createElement('option'); o.disabled = true;
+        const o = document.createElement('option'); o.disabled = true; o.value = 'dl:none';
         o.textContent = he ? 'אין לקוחות עדיין' : 'No clients yet'; group.appendChild(o);
       }
       select.appendChild(group);
@@ -71,8 +71,9 @@
       e.stopImmediatePropagation();
       const id = Number(select.value.slice(3));
       select.value = previous;
-      showClient(id);
+      if (id) showClient(id);
     }, true);
+    select.addEventListener('change', () => { if (!select.value.startsWith('dl:')) previous = select.value; });
     new MutationObserver(() => { if (document.body.classList.contains('authenticated')) loadClients(); })
       .observe(document.body, { attributes: true, attributeFilter: ['class'] });
     loadClients();
