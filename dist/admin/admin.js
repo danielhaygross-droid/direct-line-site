@@ -20,6 +20,13 @@
     state.divisor = Number(me.settings.volumetric_divisor) || 6000;
     of.category.innerHTML = categoryOptions('general');
     await loadOverview();
+    if (window.top !== window.self) {
+      window.addEventListener('message', e => {
+        if (e.origin !== location.origin || e.source !== window.parent) return;
+        if (e.data?.type === 'dl-open-client' && state.overview.clients.some(c => c.id === e.data.id)) openClient(e.data.id);
+      });
+      parent.postMessage({ type: 'dl-admin-ready' }, location.origin);
+    }
   }
 
   async function loadOverview() {
@@ -125,6 +132,7 @@
     try {
       await api('/admin/users', { method: 'POST', body: { role: f.role.value, name: f.name.value, username: f.username.value.trim(), password: f.password.value, commissionPerOrder: f.commissionPerOrder.value === '' ? null : f.commissionPerOrder.value } });
       msg('[data-user-msg]', `Account "${f.username.value.trim()}" created.`, 'okm');
+      if (window.top !== window.self) parent.postMessage({ type: 'dl-clients-changed' }, location.origin);
       f.reset(); $('[data-cpo-field]').hidden = false;
       await loadOverview();
     } catch (ex) { msg('[data-user-msg]', ex.message, 'err'); }
@@ -160,6 +168,7 @@
     try {
       await api('/admin/users/' + state.selected.id, { method: 'POST', body });
       msg('[data-account-msg]', 'Saved.', 'okm'); f.password.value = '';
+      if (window.top !== window.self) parent.postMessage({ type: 'dl-clients-changed' }, location.origin);
       await loadOverview(); $('[data-detail-title]').textContent = state.selected.name;
     } catch (ex) { msg('[data-account-msg]', ex.message, 'err'); }
   });
