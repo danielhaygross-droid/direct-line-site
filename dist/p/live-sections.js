@@ -39,7 +39,7 @@
   const dateOf = v => { try { return parseOrderDate(v); } catch (e) { return null; } };
   const fmtDate = v => { const d = dateOf(v); return d ? d.toLocaleDateString(HE ? 'he-IL' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : (v || '—'); };
   const track = n => 'https://t.17track.net/en#nums=' + encodeURIComponent(n);
-  const rangeLabel = () => ({ today: L('today', 'היום'), '7d': L('last 7 days', '7 הימים האחרונים'), '30d': L('last 30 days', '30 הימים האחרונים'), '4m': L('last 4 months', '4 החודשים האחרונים'), custom: L('selected dates', 'התאריכים שנבחרו') }[state.range] || '');
+  const rangeLabel = () => ({ all: L('all time', 'כל הזמן'), today: L('today', 'היום'), '7d': L('last 7 days', '7 הימים האחרונים'), '30d': L('last 30 days', '30 הימים האחרונים'), '4m': L('last 4 months', '4 החודשים האחרונים'), custom: L('selected dates', 'התאריכים שנבחרו') }[state.range] || '');
   const salesKnown = list => list.some(o => Number(o.total) > 0);
   const shopifyConnected = () => typeof liveShopify !== 'undefined' && !!liveShopify;
 
@@ -84,7 +84,7 @@
     const byItem = new Map();
     list.forEach(o => { const k = o.client + '|' + (o.listingId || o.item); const c = byItem.get(k) || { item: itemName(o.item), store: o.client, n: 0, units: 0, cost: 0 }; c.n++; c.units += Number(o.quantity || 1); c.cost += Number(o.product || 0); byItem.set(k, c); });
     const items = [...byItem.values()].sort((a, b) => b.n - a.n).slice(0, 10);
-    return head(L('Profitability', 'רווחיות'), L('Where the money goes', 'לאן הכסף הולך'), L(`Real orders from the ${rangeLabel()}.`, `הזמנות אמיתיות מ${rangeLabel()}.`), btn(L('Open orders', 'פתח הזמנות'), 'goto', 'data-view="orders"'))
+    return head(L('Profitability', 'רווחיות'), L('Where the money goes', 'לאן הכסף הולך'), L(`Real orders, ${rangeLabel()}.`, `הזמנות אמיתיות, ${rangeLabel()}.`), btn(L('Open orders', 'פתח הזמנות'), 'goto', 'data-view="orders"'))
       + cards([
         [L('Orders', 'הזמנות'), num(list.length), L('cancelled orders not counted', 'בלי הזמנות שבוטלו')],
         [L('Sales', 'מכירות'), salesKnown(list) ? money(sales) : '—', salesKnown(list) ? '' : L('waiting for store connection', 'ממתין לחיבור החנויות')],
@@ -151,7 +151,7 @@
     const shown = list.filter(o => (filter.ship === 'all' || (filter.ship === 'notrack' ? !o.trackingNumber && statusKey(o.status) !== 'cancelled' : statusKey(o.status) === filter.ship))
       && (!q || [o.id, o.customer, o.trackingNumber, o.client, o.courier].join(' ').toLowerCase().includes(q)));
     const kind = { shipped: 'good', processing: 'info', waiting: 'warn', cancelled: 'bad', other: '' };
-    let html = head(L('Shipments', 'משלוחים'), L('Every parcel and where it is', 'כל חבילה ואיפה היא'), L(`Orders from the ${rangeLabel()} with their courier and tracking number. Click a tracking number to follow the parcel.`, `הזמנות מ${rangeLabel()} עם חברת השילוח ומספר המעקב. לחצו על מספר מעקב כדי לעקוב אחרי החבילה.`), btn(L('Sync supplier sheet', 'סנכרון גיליון ספק'), 'sync'))
+    let html = head(L('Shipments', 'משלוחים'), L('Every parcel and where it is', 'כל חבילה ואיפה היא'), L(`Orders (${rangeLabel()}) with their courier and tracking number. Click a tracking number to follow the parcel.`, `הזמנות (${rangeLabel()}) עם חברת השילוח ומספר המעקב. לחצו על מספר מעקב כדי לעקוב אחרי החבילה.`), btn(L('Sync supplier sheet', 'סנכרון גיליון ספק'), 'sync'))
       + cards([[STATUS_LABEL.shipped, num(counts.shipped), ''], [L('In progress', 'בתהליך'), num(counts.processing + counts.waiting), L('processing or waiting', 'בטיפול או ממתין')], [STATUS_LABEL.cancelled, num(counts.cancelled), ''], [L('Missing tracking', 'חסר מספר מעקב'), num(noTrack), noTrack ? L('check with the supplier', 'לבדוק מול הספק') : '', noTrack ? 'bad' : '']])
       + `<div class="ls-toolbar"><div class="ls-chips">${chips.map(([k, label, n]) => `<button type="button" class="ls-chip${filter.ship === k ? ' active' : ''}" data-ls="shipfilter" data-f="${k}">${label} <span>${n}</span></button>`).join('')}</div><input type="search" class="ls-search" data-ls-search placeholder="${L('Search order, customer, tracking…', 'חיפוש הזמנה, לקוח, מעקב…')}" value="${esc(filter.q)}"></div>`
       + table([{ label: L('Date', 'תאריך') }, { label: L('Order', 'הזמנה') }, { label: L('Store', 'חנות') }, { label: L('Customer', 'לקוח') }, { label: L('Courier', 'חברת שילוח') }, { label: L('Tracking', 'מעקב') }, { label: L('Status', 'סטטוס') }],
@@ -233,7 +233,7 @@
     return head(L('Stores & team', 'חנויות וצוות'), L('Your stores and who has access', 'החנויות שלכם ומי מקבל גישה'), '', btn(L('Connect a store', 'חבר חנות'), 'connect', '', 'primary-button'))
       + table([{ label: L('Store', 'חנות') }, { label: L('Platform', 'פלטפורמה') }, { label: L('Connection', 'חיבור') }, { label: L('Orders', 'הזמנות'), num: 1 }, { label: L('Supplier cost', 'עלות ספק'), num: 1 }, { label: '' }],
         REAL_STORES.filter(id => stores[id]).map(id => { const os = list.filter(o => o.client === stores[id].name); return `<tr><td><b>${esc(stores[id].name)}</b></td><td>${esc(stores[id].platformName)}</td><td>${status(id)}</td><td class="num">${num(os.length)}</td><td class="num">${money(os.reduce((t, o) => t + Number(o.product || 0), 0))}</td><td class="ls-row-actions">${btn(L('View', 'הצג'), 'store', `data-store="${id}"`)}${btn(id === 'zroyal' ? L('Setup', 'הגדרה') : L('Connect', 'חיבור'), id === 'zroyal' ? 'shopify' : 'etsy', id === 'zroyal' ? '' : `data-shop="${ETSY_SHOP[id]}"`)}</td></tr>`; }),
-        '', L(`Orders and cost for the ${rangeLabel()}`, `הזמנות ועלויות ב${rangeLabel()}`))
+        '', L(`Orders and cost, ${rangeLabel()}`, `הזמנות ועלויות, ${rangeLabel()}`))
       + `<div class="ls-grid"><div class="panel"><h3>${L('Team (admin access)', 'צוות (גישת מנהל)')}</h3><div class="ls-list">`
       + `<div><i>★</i><span><b>${L('Main admin login', 'כניסת המנהל הראשית')}</b><small>${L('Full access', 'גישה מלאה')}</small></span>${badge(L('Admin', 'מנהל'), 'good')}</div>`
       + admins.map(a => `<div><i>${esc((a.name || a.username).slice(0, 2).toUpperCase())}</i><span><b>${esc(a.name)}</b><small>${esc(a.username)}</small></span>${badge(a.active ? L('Admin', 'מנהל') : L('Disabled', 'מושבת'), a.active ? 'good' : '')}</div>`).join('')
@@ -295,7 +295,22 @@
   }
   const original = renderAll;
   // eslint-disable-next-line no-global-assign
-  renderAll = function () { if (stores.zroyal && !shopifyConnected()) stores.zroyal.status = L('Waiting for API keys', 'ממתין למפתחות API'); const r = original.apply(this, arguments); try { after(); } catch (e) { console.warn('live sections', e); } return r; };
+  renderAll = function () {
+    if (stores.zroyal) stores.zroyal.status = shopifyConnected() ? L('Connected · LIVE', 'מחובר · LIVE') : L('Waiting for API keys', 'ממתין למפתחות API');
+    const r = original.apply(this, arguments);
+    try { after(); labelKpiPeriod(); } catch (e) { console.warn('live sections', e); }
+    return r;
+  };
+  // Show which period the live numbers cover, so "LIVE" isn't mistaken for "everything".
+  function labelKpiPeriod() {
+    if (!document.body.classList.contains('real-data-mode')) return;
+    const label = state.range === 'custom' && state.customRange ? `${state.customRange.start} → ${state.customRange.end}` : rangeLabel();
+    $$('[data-kpi-grid] .kpi-card.live-kpi > span:first-child').forEach(s => {
+      let p = s.querySelector('.kpi-period');
+      if (!p) { p = document.createElement('small'); p.className = 'kpi-period'; s.appendChild(p); }
+      p.textContent = ' · ' + label;
+    });
+  }
 
   // ---------- actions ----------
   const clickHidden = sel => { const el = $(sel); if (el) el.click(); return !!el; };
