@@ -131,3 +131,9 @@ div.field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:
   .stack-table td a{word-break:break-all}
 }
 @media (max-width:720px){.stack-table td.cell-title{order:-2;font-size:15px}.stack-table td.cell-status{order:-1}.stack-table td.cell-title::before,.stack-table td.cell-status::before{display:none!important}}
+/* admin view embedded in the store dashboard */
+html.embed body{background:transparent}
+html.embed .topbar{display:none}
+html.embed main{padding:0 0 8px;max-width:none}
+html.embed #boot{padding:40px}
+html.embed .panel,html.embed form{scroll-margin-top:110px}
