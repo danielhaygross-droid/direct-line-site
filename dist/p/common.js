@@ -14,6 +14,17 @@
     NL: { name: 'Netherlands', general: 15, battery: 17, cosmetic: 20, eu: true },
     IL: { name: 'Israel', general: 18, battery: 20, cosmetic: 22 },
   };
+  // Countries clients can pick, in order of how often we ship there. Ones without a
+  // supplier rate yet still work: the client enters the price and we confirm shipping.
+  const COUNTRIES = [
+    ['US', 'United States'], ['DE', 'Germany'], ['CA', 'Canada'], ['AU', 'Australia'], ['UK', 'United Kingdom'],
+    ['NL', 'Netherlands'], ['CH', 'Switzerland'], ['IT', 'Italy'], ['NO', 'Norway'], ['AT', 'Austria'],
+    ['DK', 'Denmark'], ['ES', 'Spain'], ['FR', 'France'], ['PL', 'Poland'], ['BE', 'Belgium'],
+    ['BG', 'Bulgaria'], ['CZ', 'Czechia'], ['LV', 'Latvia'], ['PT', 'Portugal'], ['SK', 'Slovakia'],
+    ['IL', 'Israel'],
+  ];
+  const OTHER = '__other';
+  const countryName = code => (COUNTRIES.find(([c]) => c === code) || [])[1] || code;
   const CATEGORIES = {
     general: 'General goods',
     battery: 'Battery / sensitive (electronics, magnets)',
@@ -61,9 +72,32 @@
   }
 
   function countryOptions(selected) {
-    return '<option value="">Select country…</option>' + Object.entries(RATES)
-      .map(([code, r]) => `<option value="${code}"${code === selected ? ' selected' : ''}>${esc(r.name)} (${code})</option>`).join('');
+    return '<option value="">Select country…</option>' + COUNTRIES
+      .map(([code, name]) => `<option value="${code}"${code === selected ? ' selected' : ''}>${esc(name)} (${code})</option>`).join('')
+      + `<option value="${OTHER}">Other (type the country)</option>`;
   }
+
+  // Wires a destination <select> to an "Other" text box. Returns get/set helpers.
+  function destinationPicker(select, otherWrap) {
+    const input = otherWrap.querySelector('input');
+    const sync = () => { otherWrap.hidden = select.value !== OTHER; };
+    select.innerHTML = countryOptions('');
+    select.addEventListener('change', () => { sync(); if (select.value === OTHER) input.focus(); });
+    return {
+      get: () => (select.value === OTHER ? input.value.trim() : select.value),
+      isOther: () => select.value === OTHER,
+      label: () => (select.value === OTHER ? input.value.trim() : select.value ? countryName(select.value) : ''),
+      set(value) {
+        const v = String(value || '');
+        if (!v) { select.value = ''; input.value = ''; }
+        else if (COUNTRIES.some(([c]) => c === v.toUpperCase())) { select.value = v.toUpperCase(); input.value = ''; }
+        else { select.value = OTHER; input.value = v; }
+        sync();
+      },
+      reset() { select.value = ''; input.value = ''; sync(); },
+    };
+  }
+  const hasRate = code => !!RATES[code];
   function categoryOptions(selected) {
     return Object.entries(CATEGORIES).map(([k, v]) => `<option value="${k}"${k === selected ? ' selected' : ''}>${esc(v)}</option>`).join('');
   }
@@ -103,7 +137,7 @@
   function mountCalculator(el, { divisor = 6000, onUse } = {}) {
     el.innerHTML = `<div class="panel-head"><h2>Shipping quote calculator</h2></div>
       <div class="form">
-        <label class="field">Destination<select name="country">${countryOptions('US')}</select></label>
+        <label class="field">Destination<select name="country">${COUNTRIES.filter(([c]) => RATES[c]).map(([c, n]) => `<option value="${c}"${c === 'US' ? ' selected' : ''}>${esc(n)} (${c})</option>`).join('')}</select></label>
         <label class="field">Product type<select name="category">${categoryOptions('general')}</select></label>
         <label class="field">Weight (kg)<input name="weight" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 0.25"></label>
         <label class="field">Size L × W × H (cm, optional)<span style="display:flex;gap:6px"><input name="l" type="number" min="0" step="0.1" placeholder="L"><input name="w" type="number" min="0" step="0.1" placeholder="W"><input name="h" type="number" min="0" step="0.1" placeholder="H"></span></label>
@@ -127,5 +161,5 @@
     return { setDivisor(d) { divisor = Number(d) || 6000; update(); } };
   }
 
-  window.DL = { RATES, CATEGORIES, quote, money, esc, date, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  window.DL = { RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();
