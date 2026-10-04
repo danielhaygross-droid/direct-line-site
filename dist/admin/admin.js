@@ -97,12 +97,12 @@
     $('[data-detail-orders]').innerHTML = state.orders.length ? state.orders.map(o => `<tr>
       <td>${date(o.createdAt)}</td><td>${esc(o.orderRef) || '—'}</td>
       <td>${o.trackingNumber ? `<a href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${esc(o.trackingNumber)}</a>` : '—'}</td>
-      <td>${esc(o.destination) || '—'}</td><td class="num">${money(o.price)}</td><td class="num">${money(o.sellingPrice)}</td>
+      <td>${esc(o.destination) || '—'}</td><td class="num">${money(o.productCost)}</td><td class="num">${money(o.shippingFee)}</td><td class="num"><b>${money(o.price)}</b></td><td class="num">${money(o.sellingPrice)}</td>
       <td class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${money(o.profit)}</td><td class="num">${money(o.commission)}</td><td class="num">${money(o.supplierShare)}</td><td class="num pos">${money(o.ourShare)}</td>
       <td><select class="inline-select" data-status="${o.id}">${STATUSES.map(s => `<option${s === o.status ? ' selected' : ''}>${s}</option>`).join('')}</select></td>
       <td class="notes">${esc(o.notes)}</td>
       <td><button class="btn btn-small" type="button" data-edit-order="${o.id}">Edit</button></td></tr>`).join('')
-      : '<tr><td colspan="13" class="empty">This client has no orders yet. Add one above.</td></tr>';
+      : '<tr><td colspan="14" class="empty">This client has no orders yet. Add one above.</td></tr>';
   }
 
   async function loadPayments() {
@@ -191,9 +191,15 @@
   }
   $('#settings-form').addEventListener('input', updateSplitPreview);
   // ----- admin adds / edits orders on a client's behalf -----
+  function adminTotal() {
+    const pc = parseFloat(of.productCost.value), sh = parseFloat(of.price.value);
+    if (!Number.isFinite(pc) && !Number.isFinite(sh)) return null;
+    return (Number.isFinite(pc) ? pc : 0) + (Number.isFinite(sh) ? sh : 0);
+  }
   function updateAdminProfit() {
-    const p = parseFloat(of.price.value), sp = parseFloat(of.sellingPrice.value), el = $('[data-admin-profit]');
-    if (!Number.isFinite(p) || !Number.isFinite(sp)) { el.innerHTML = 'Client profit: —'; return; }
+    const p = adminTotal(), sp = parseFloat(of.sellingPrice.value), el = $('[data-admin-profit]');
+    $('[data-admin-total]').innerHTML = p === null ? 'Client pays: —' : `Client pays: <b>${money(p)}</b> <span class="hint">(product + shipping)</span>`;
+    if (p === null || !Number.isFinite(sp)) { el.innerHTML = 'Client profit: —'; return; }
     const v = sp - p; el.innerHTML = `Client profit: <b class="${v >= 0 ? 'pos' : 'neg'}">${money(v)}</b>`;
   }
   function setOrderEditing(order) {
@@ -206,7 +212,8 @@
     of.category.value = order?.category || 'general';
     if (order) {
       of.orderRef.value = order.orderRef; of.trackingNumber.value = order.trackingNumber;
-      of.weightKg.value = order.weightKg ?? ''; of.price.value = order.price ?? '';
+      of.weightKg.value = order.weightKg ?? ''; of.productCost.value = order.productCost ?? '';
+      of.price.value = order.shippingFee ?? (order.productCost == null ? order.price ?? '' : '');
       of.sellingPrice.value = order.sellingPrice ?? ''; of.notes.value = order.notes;
     }
     updateAdminProfit(); msg('[data-admin-order-msg]', '');
@@ -217,7 +224,7 @@
     if (dest.get() && !hasRate(dest.get())) { msg('[data-admin-order-msg]', 'No supplier rate for ' + dest.label() + ' yet — enter the price by hand.', 'err'); return; }
     const q = quote({ country: dest.get(), category: of.category.value, weightKg: of.weightKg.value, divisor: state.divisor });
     if (!q) { msg('[data-admin-order-msg]', 'Choose a destination and enter the weight first.', 'err'); return; }
-    of.price.value = q.total.toFixed(2); updateAdminProfit(); msg('[data-admin-order-msg]', 'Price filled with the shipping quote (' + money(q.total) + ').', 'okm');
+    of.price.value = q.total.toFixed(2); updateAdminProfit(); msg('[data-admin-order-msg]', 'Shipping fee filled from the quote (' + money(q.total) + ').', 'okm');
   });
   $('[data-detail-orders]').addEventListener('click', e => {
     const id = e.target.closest('[data-edit-order]')?.dataset.editOrder;
@@ -228,11 +235,11 @@
   of.addEventListener('submit', async e => {
     e.preventDefault();
     if (dest.isOther() && !dest.get()) { msg('[data-admin-order-msg]', 'Please type the country name.', 'err'); of.otherCountry.focus(); return; }
-    if (of.price.value === '') { msg('[data-admin-order-msg]', 'Please enter the price.', 'err'); of.price.focus(); return; }
+    if (of.productCost.value === '' && of.price.value === '') { msg('[data-admin-order-msg]', 'Please enter the product cost and shipping fee.', 'err'); of.productCost.focus(); return; }
     const body = {
       clientId: state.selected.id, orderRef: of.orderRef.value, trackingNumber: of.trackingNumber.value,
       destination: dest.get(), category: of.category.value,
-      weightKg: of.weightKg.value === '' ? null : of.weightKg.value, price: of.price.value,
+      weightKg: of.weightKg.value === '' ? null : of.weightKg.value, productCost: of.productCost.value === '' ? null : of.productCost.value, shippingFee: of.price.value === '' ? null : of.price.value,
       sellingPrice: of.sellingPrice.value === '' ? null : of.sellingPrice.value, notes: of.notes.value,
     };
     const btn = $('[data-admin-order-submit]'); btn.disabled = true;

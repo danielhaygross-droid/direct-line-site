@@ -60,18 +60,19 @@
         <label class="field" data-other-country hidden>Country name<input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="off"></label>
           <label class="field">Product type<select name="category"></select></label>
           <label class="field">Weight (kg)<input name="weightKg" type="number" min="0" step="0.01" inputmode="decimal"></label>
-          <label class="field">Price — what the client pays us (USD)<input name="price" type="number" min="0" step="0.01" inputmode="decimal"></label>
+          <label class="field">Product cost (USD) — includes our $2 fee<input name="productCost" type="number" min="0" step="0.01" inputmode="decimal"></label>
+          <label class="field">Shipping fee (USD)<input name="price" type="number" min="0" step="0.01" inputmode="decimal"></label>
           <label class="field">Selling price — what their customer paid (USD)<input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal"></label>
-          <div class="field" style="justify-content:flex-end"><span class="profit-preview" data-admin-profit>Client profit: —</span></div>
+          <div class="field" style="justify-content:flex-end"><span class="profit-preview" data-admin-total>Client pays: —</span><span class="profit-preview" data-admin-profit>Client profit: —</span></div>
           <label class="field full">Notes<textarea name="notes" maxlength="2000"></textarea></label>
           <div class="form-actions">
             <button class="btn btn-gold" type="submit" data-admin-order-submit>Add order</button>
-            <button class="btn" type="button" data-admin-fill-quote>Fill price from shipping quote</button>
+            <button class="btn" type="button" data-admin-fill-quote>Fill shipping from quote</button>
             <p class="msg" data-admin-order-msg></p>
           </div>
         </form>
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Order</th><th>Tracking</th><th>To</th><th class="num">Price</th><th class="num">Sold for</th><th class="num">Client profit</th><th class="num">Fee</th><th class="num">Supplier</th><th class="num">Our earnings</th><th>Status</th><th>Notes</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Order</th><th>Tracking</th><th>To</th><th class="num">Product</th><th class="num">Shipping</th><th class="num">Total</th><th class="num">Sold for</th><th class="num">Client profit</th><th class="num">Fee (in product)</th><th class="num">Supplier</th><th class="num">Our earnings</th><th>Status</th><th>Notes</th><th></th></tr></thead>
           <tbody data-detail-orders></tbody>
         </table></div>
       </div>
@@ -113,7 +114,7 @@
           <label class="field">Size-to-weight divisor (cm³ per kg)<input name="volumetric_divisor" type="number" min="1000" max="10000" step="1"></label>
           <div class="form-actions"><button class="btn btn-gold" type="submit">Save settings</button><p class="msg" data-settings-msg></p></div>
         </form>
-        <p class="note-box">Each order has a $2 fee: $1 goes to the supplier and $1 is ours. Changes only apply to new orders. The 6000 divisor is a starting value until the supplier confirms it. Volumetric weight = L × W × H (cm) ÷ divisor; the higher of real and volumetric weight is charged.</p>
+        <p class="note-box">Each order has a $2 fee that is already included in the product cost the client pays (clients don’t see it separately): $1 goes to the supplier and $1 is ours. "Billed" = product cost + shipping fee. Changes only apply to new orders. The 6000 divisor is a starting value until the supplier confirms it. Volumetric weight = L × W × H (cm) ÷ divisor; the higher of real and volumetric weight is charged.</p>
         <h2 style="margin-top:18px">Admin accounts</h2>
         <div data-admins class="hint"></div>
       </section>
@@ -121,7 +122,7 @@
   </main>
 </div>
 <script src="/p/login-extras.js?v=1"></script>
-<script src="/p/common.js?v=3"></script>
-<script src="/admin/admin.js?v=8"></script>
+<script src="/p/common.js?v=4"></script>
+<script src="/admin/admin.js?v=10"></script>
 </body>
 </html>
