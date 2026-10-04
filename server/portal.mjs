@@ -181,6 +181,10 @@ export async function handlePortal(request, url, ctx) {
     const rows = (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? ORDER BY created_at DESC, id DESC').bind(who.clientId).all()).results || [];
     return json({ ok: true, orders: rows.map(orderOut).map(({ commission, supplierShare, ourShare, ...o }) => o) });
   }
+  if (path === '/payments' && method === 'GET' && !who.admin) {
+    const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
+    return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })) });
+  }
   if (path === '/orders' && method === 'POST') {
     const body = await readBody(request);
     const clientId = who.admin ? Number(body.clientId) : who.clientId;
@@ -204,8 +208,12 @@ export async function handlePortal(request, url, ctx) {
     if (!existing || (!who.admin && existing.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
     const body = await readBody(request);
     let f; try { f = orderFields({ ...orderOut(existing), ...body }); } catch (e) { return json({ ok: false, error: e.message }, 400); }
-    // Clients can edit their own order details; only admins change status/commission.
-    const status = who.admin && ORDER_STATUSES.includes(body.status) ? body.status : existing.status;
+    // Clients can edit their own order details and cancel a pending order; only admins change other statuses/fees.
+    if (!who.admin && existing.status === 'cancelled') return json({ ok: false, error: 'This order was cancelled.' }, 409);
+    if (!who.admin && body.status === 'cancelled' && existing.status !== 'pending') return json({ ok: false, error: 'This order is already being handled, so it can’t be cancelled here. Message us instead.' }, 409);
+    const status = who.admin
+      ? (ORDER_STATUSES.includes(body.status) ? body.status : existing.status)
+      : (body.status === 'cancelled' ? 'cancelled' : existing.status);
     const commission = who.admin && body.commission != null && body.commission !== '' && isMoney(money(body.commission)) ? money(body.commission) : existing.commission;
     const supplierShare = who.admin && body.supplierShare != null && body.supplierShare !== '' && isMoney(money(body.supplierShare)) ? money(body.supplierShare) : existing.supplier_share;
     const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=? WHERE id = ? RETURNING *')
