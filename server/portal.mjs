@@ -301,6 +301,7 @@ export async function handlePortal(request, url, ctx) {
     const fee = Number(updates.commission_per_order ?? (await getSettings(DB)).commission_per_order);
     const sup = Number(updates.supplier_share_per_order ?? (await getSettings(DB)).supplier_share_per_order);
     if (sup > fee) return json({ ok: false, error: "The supplier's share can't be more than the fee per order" }, 400);
+    if (body.monthly_order_goal !== undefined) { const v = Number(body.monthly_order_goal); if (!(Number.isInteger(v) && v >= 0 && v <= 1e6)) return json({ ok: false, error: 'Goal must be a whole number' }, 400); updates.monthly_order_goal = String(v); }
     if (body.volumetric_divisor !== undefined) { const v = Number(body.volumetric_divisor); if (!(v >= 1000 && v <= 10000)) return json({ ok: false, error: 'Divisor must be 1000-10000' }, 400); updates.volumetric_divisor = String(v); }
     for (const [k, v] of Object.entries(updates)) await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k, v).run();
     return json({ ok: true, settings: await getSettings(DB) });
