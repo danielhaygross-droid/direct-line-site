@@ -1,8 +1,9 @@
 (function () {
-  const { api, money, esc, date, trackingUrl, logout, renderLogin, quote, countryOptions, categoryOptions, $, $$ } = window.DL;
+  const { api, money, esc, date, trackingUrl, logout, renderLogin, quote, destinationPicker, hasRate, categoryOptions, $, $$ } = window.DL;
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
   const state = { me: null, orders: [], payments: [], editing: null, search: '', filter: 'all', autoPrice: null };
   const form = $('#order-form');
+  const dest = destinationPicker(form.destination, $('[data-other-country]', form));
   const divisor = () => Number(state.me?.settings?.volumetric_divisor) || 6000;
 
   async function boot() {
@@ -16,7 +17,6 @@
     $('#boot').hidden = true; $('#app').hidden = false;
     $('[data-name]').textContent = state.me.name;
     $('[data-username]').textContent = state.me.username;
-    form.destination.innerHTML = countryOptions('');
     form.category.innerHTML = categoryOptions('general');
     renderSummary(state.me.summary);
     await Promise.all([loadOrders(), loadPayments()]);
@@ -81,14 +81,18 @@
 
   // ----- order form -----
   function currentQuote() {
-    return quote({ country: form.destination.value, category: form.category.value, weightKg: form.weightKg.value,
+    return quote({ country: dest.get(), category: form.category.value, weightKg: form.weightKg.value,
       lengthCm: form.lengthCm.value, widthCm: form.widthCm.value, heightCm: form.heightCm.value, divisor: divisor() });
   }
 
   function updateQuote() {
     const q = currentQuote(), box = $('[data-quote]');
     if (!q) {
-      box.innerHTML = 'Pick a destination and enter the weight to see the shipping price.';
+      const name = dest.label();
+      box.innerHTML = name && !hasRate(dest.get())
+        ? `We don’t have a set shipping rate for <b>${esc(name)}</b> yet. Enter the price yourself and we’ll confirm the shipping cost with you.`
+        : dest.isOther() ? 'Type the country name, then enter the price. We’ll confirm the shipping cost with you.'
+        : 'Pick a destination and enter the weight to see the shipping price.';
       if (state.autoPrice !== null && form.price.value === state.autoPrice) form.price.value = '';
       state.autoPrice = null; return;
     }
@@ -117,7 +121,7 @@
     $('[data-cancel-edit]').hidden = !order;
     form.reset();
     state.autoPrice = null;
-    form.destination.value = order?.destination || '';
+    dest.set(order?.destination || '');
     form.category.value = order?.category || 'general';
     if (order) {
       form.orderRef.value = order.orderRef; form.trackingNumber.value = order.trackingNumber;
@@ -133,7 +137,7 @@
 
   form.addEventListener('input', e => {
     if (e.target.name === 'price') state.autoPrice = null; // the client typed their own price
-    if (['destination', 'category', 'weightKg', 'lengthCm', 'widthCm', 'heightCm'].includes(e.target.name)) updateQuote();
+    if (['destination', 'otherCountry', 'category', 'weightKg', 'lengthCm', 'widthCm', 'heightCm'].includes(e.target.name)) updateQuote();
     updateProfit();
   });
   form.addEventListener('change', e => { if (['destination', 'category'].includes(e.target.name)) { updateQuote(); updateProfit(); } });
@@ -146,9 +150,10 @@
 
   form.addEventListener('submit', async e => {
     e.preventDefault();
+    if (dest.isOther() && !dest.get()) { setMsg('Please type the country name.', 'err'); form.otherCountry.focus(); return; }
     if (form.price.value === '') { setMsg('Please enter the price, or pick a destination and weight to fill it in.', 'err'); form.price.focus(); return; }
     const body = {
-      orderRef: form.orderRef.value, trackingNumber: form.trackingNumber.value, destination: form.destination.value,
+      orderRef: form.orderRef.value, trackingNumber: form.trackingNumber.value, destination: dest.get(),
       category: form.category.value, weightKg: form.weightKg.value === '' ? null : form.weightKg.value,
       price: form.price.value, sellingPrice: form.sellingPrice.value === '' ? null : form.sellingPrice.value, notes: form.notes.value,
     };

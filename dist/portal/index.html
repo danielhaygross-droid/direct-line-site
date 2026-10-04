@@ -30,6 +30,7 @@
         <label class="field">Order number / reference<input name="orderRef" maxlength="120" placeholder="e.g. Etsy #3412"></label>
         <label class="field">Tracking number<input name="trackingNumber" maxlength="120" placeholder="e.g. LX123456789CN"></label>
         <label class="field">Destination<select name="destination"></select></label>
+        <label class="field" data-other-country hidden>Country name<input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="off"></label>
         <label class="field">Product type<select name="category"></select></label>
         <label class="field">Weight (kg)<input name="weightKg" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 0.25"></label>
         <div class="field">Size L × W × H (cm, optional)
@@ -66,7 +67,7 @@
   </main>
 </div>
 <script src="/p/login-extras.js?v=1"></script>
-<script src="/p/common.js?v=2"></script>
-<script src="/portal/portal.js?v=3"></script>
+<script src="/p/common.js?v=3"></script>
+<script src="/portal/portal.js?v=4"></script>
 </body>
 </html>
