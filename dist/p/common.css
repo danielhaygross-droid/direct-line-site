@@ -85,3 +85,5 @@ tr.selected td{background:#f5ecda}
 .inline-select{border:1px solid var(--line);border-radius:7px;padding:3px 6px;background:#fff;font-size:13px}
 .note-box{font-size:12px;color:var(--muted);background:var(--cream);border-radius:10px;padding:10px 12px;margin-top:10px}
 @media (max-width:860px){.grid-2{grid-template-columns:1fr}.topbar{padding:10px 16px;flex-wrap:wrap}main{padding:16px}.form{grid-template-columns:1fr}.topbar .who{display:none}}
+.cards.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:760px){.cards.cols-4{grid-template-columns:repeat(2,minmax(0,1fr))}}
