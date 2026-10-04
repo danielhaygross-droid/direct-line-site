@@ -24,6 +24,7 @@
       window.addEventListener('message', e => {
         if (e.origin !== location.origin || e.source !== window.parent) return;
         if (e.data?.type === 'dl-open-client' && state.overview.clients.some(c => c.id === e.data.id)) openClient(e.data.id);
+        if (e.data?.type === 'dl-add-admin') { $('[data-show-add-user]').click(); const f = $('#user-form'); f.role.value = 'admin'; f.role.dispatchEvent(new Event('change')); f.name.focus(); }
       });
       parent.postMessage({ type: 'dl-admin-ready' }, location.origin);
     }
