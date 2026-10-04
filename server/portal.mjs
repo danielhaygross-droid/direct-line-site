@@ -49,9 +49,11 @@ export const SCHEMA = [
      paid_at INTEGER NOT NULL,
      created_at INTEGER NOT NULL)`,
   'CREATE TABLE IF NOT EXISTS portal_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+  // Fee split: of the per-order fee ("commission"), this part goes to the supplier; the rest is ours.
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS supplier_share DOUBLE PRECISION NOT NULL DEFAULT 1',
 ];
 
-export const DEFAULT_SETTINGS = { commission_per_order: '2', volumetric_divisor: '6000' };
+export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000' };
 const ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -112,7 +114,9 @@ function orderOut(r) {
     id: r.id, clientId: r.client_id, orderRef: r.order_ref, trackingNumber: r.tracking_number,
     destination: r.destination, category: r.category, weightKg: r.weight_kg === null ? null : Number(r.weight_kg),
     price, sellingPrice: sell, profit: sell === null ? null : round2(sell - price),
-    commission: Number(r.commission || 0), notes: r.notes, status: r.status,
+    commission: Number(r.commission || 0), supplierShare: round2(r.supplier_share),
+    ourShare: round2(Math.max(0, Number(r.commission || 0) - Number(r.supplier_share || 0))),
+    notes: r.notes, status: r.status,
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   };
 }
@@ -131,10 +135,11 @@ function orderFields(body) {
 }
 
 async function clientSummary(DB, clientId, settings) {
-  const o = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS billed, COALESCE(SUM(commission),0) AS commission, COALESCE(SUM(selling_price - price) FILTER (WHERE selling_price IS NOT NULL),0) AS profit FROM client_orders WHERE client_id = ? AND status <> 'cancelled'").bind(clientId).first();
+  const o = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS billed, COALESCE(SUM(commission),0) AS commission, COALESCE(SUM(LEAST(supplier_share, commission)),0) AS supplier, COALESCE(SUM(selling_price - price) FILTER (WHERE selling_price IS NOT NULL),0) AS profit FROM client_orders WHERE client_id = ? AND status <> 'cancelled'").bind(clientId).first();
   const p = await DB.prepare('SELECT COALESCE(SUM(amount),0) AS paid FROM client_payments WHERE client_id = ?').bind(clientId).first();
   const billed = round2(o.billed), paid = round2(p.paid);
-  return { orders: Number(o.n), billed, paid, outstanding: round2(billed - paid), commission: round2(o.commission), clientProfit: round2(o.profit) };
+  const commission = round2(o.commission), supplierShare = round2(o.supplier);
+  return { orders: Number(o.n), billed, paid, outstanding: round2(billed - paid), commission, supplierShare, ourShare: round2(commission - supplierShare), clientProfit: round2(o.profit) };
 }
 
 // ---------- request handler ----------
@@ -174,7 +179,7 @@ export async function handlePortal(request, url, ctx) {
   // ----- client routes -----
   if (path === '/orders' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? ORDER BY created_at DESC, id DESC').bind(who.clientId).all()).results || [];
-    return json({ ok: true, orders: rows.map(orderOut).map(({ commission, ...o }) => o) });
+    return json({ ok: true, orders: rows.map(orderOut).map(({ commission, supplierShare, ourShare, ...o }) => o) });
   }
   if (path === '/orders' && method === 'POST') {
     const body = await readBody(request);
@@ -184,10 +189,13 @@ export async function handlePortal(request, url, ctx) {
     let f; try { f = orderFields(body); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     const settings = await getSettings(DB);
     const commission = client.commission_per_order ?? Number(settings.commission_per_order);
+    const supplierShare = Math.min(commission, Number(settings.supplier_share_per_order) || 0);
     const t = now();
-    const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, commission, notes, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
-      .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, commission, f.notes, 'pending', t, t).first();
-    return json({ ok: true, order: orderOut(row) });
+    const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, commission, supplier_share, notes, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
+      .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, commission, supplierShare, f.notes, 'pending', t, t).first();
+    const out = orderOut(row);
+    if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; }
+    return json({ ok: true, order: out });
   }
   const orderMatch = /^\/orders\/(\d+)$/.exec(path);
   if (orderMatch && (method === 'PUT' || method === 'POST')) {
@@ -198,11 +206,12 @@ export async function handlePortal(request, url, ctx) {
     let f; try { f = orderFields({ ...orderOut(existing), ...body }); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     // Clients can edit their own order details; only admins change status/commission.
     const status = who.admin && ORDER_STATUSES.includes(body.status) ? body.status : existing.status;
-    const commission = who.admin && isMoney(money(body.commission)) && body.commission !== undefined ? money(body.commission) : existing.commission;
-    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, notes=?, status=?, commission=?, updated_at=? WHERE id = ? RETURNING *')
-      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.notes, status, commission, now(), id).first();
+    const commission = who.admin && body.commission != null && body.commission !== '' && isMoney(money(body.commission)) ? money(body.commission) : existing.commission;
+    const supplierShare = who.admin && body.supplierShare != null && body.supplierShare !== '' && isMoney(money(body.supplierShare)) ? money(body.supplierShare) : existing.supplier_share;
+    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=? WHERE id = ? RETURNING *')
+      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.notes, status, commission, supplierShare, now(), id).first();
     const out = orderOut(row);
-    if (!who.admin) delete out.commission;
+    if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; }
     return json({ ok: true, order: out });
   }
 
@@ -214,7 +223,9 @@ export async function handlePortal(request, url, ctx) {
     const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, active, created_at FROM users ORDER BY role, display_name').all()).results || [];
     const clients = [];
     for (const u of users.filter(u => u.role === 'client')) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, commissionPerOrder: u.commission_per_order, ...(await clientSummary(DB, u.id, settings)) });
-    const totals = clients.reduce((t, c) => ({ orders: t.orders + c.orders, billed: round2(t.billed + c.billed), paid: round2(t.paid + c.paid), outstanding: round2(t.outstanding + c.outstanding), commission: round2(t.commission + c.commission) }), { orders: 0, billed: 0, paid: 0, outstanding: 0, commission: 0 });
+    const keys = ['billed', 'paid', 'outstanding', 'commission', 'supplierShare', 'ourShare'];
+    const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
+      { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
     return json({ ok: true, settings, totals, clients, admins });
   }
@@ -277,7 +288,11 @@ export async function handlePortal(request, url, ctx) {
   if (path === '/admin/settings' && method === 'POST') {
     const body = await readBody(request);
     const updates = {};
-    if (body.commission_per_order !== undefined) { const v = money(body.commission_per_order); if (!isMoney(v)) return json({ ok: false, error: 'Invalid commission' }, 400); updates.commission_per_order = String(v); }
+    if (body.commission_per_order !== undefined) { const v = money(body.commission_per_order); if (v === null || !isMoney(v)) return json({ ok: false, error: 'Invalid commission' }, 400); updates.commission_per_order = String(v); }
+    if (body.supplier_share_per_order !== undefined) { const v = money(body.supplier_share_per_order); if (v === null || !isMoney(v)) return json({ ok: false, error: "Invalid supplier's share" }, 400); updates.supplier_share_per_order = String(v); }
+    const fee = Number(updates.commission_per_order ?? (await getSettings(DB)).commission_per_order);
+    const sup = Number(updates.supplier_share_per_order ?? (await getSettings(DB)).supplier_share_per_order);
+    if (sup > fee) return json({ ok: false, error: "The supplier's share can't be more than the fee per order" }, 400);
     if (body.volumetric_divisor !== undefined) { const v = Number(body.volumetric_divisor); if (!(v >= 1000 && v <= 10000)) return json({ ok: false, error: 'Divisor must be 1000-10000' }, 400); updates.volumetric_divisor = String(v); }
     for (const [k, v] of Object.entries(updates)) await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k, v).run();
     return json({ ok: true, settings: await getSettings(DB) });
