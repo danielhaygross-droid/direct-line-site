@@ -13,6 +13,19 @@
     ES: { name: 'Spain', general: 15, battery: 17, cosmetic: 20, eu: true },
     NL: { name: 'Netherlands', general: 15, battery: 17, cosmetic: 20, eu: true },
     IL: { name: 'Israel', general: 18, battery: 20, cosmetic: 22 },
+    // Not on the supplier's sheet yet. Estimated from the supplier's own rates:
+    // EU countries use the highest EU level (+ EU tax); non-EU Europe uses the UK level.
+    AT: { name: 'Austria', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    BE: { name: 'Belgium', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    BG: { name: 'Bulgaria', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    CZ: { name: 'Czechia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    DK: { name: 'Denmark', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    LV: { name: 'Latvia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    PL: { name: 'Poland', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    PT: { name: 'Portugal', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    SK: { name: 'Slovakia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    CH: { name: 'Switzerland', general: 10, battery: 12, cosmetic: 15, est: true },
+    NO: { name: 'Norway', general: 10, battery: 12, cosmetic: 15, est: true },
   };
   // Countries clients can pick, in order of how often we ship there. Ones without a
   // supplier rate yet still work: the client enters the price and we confirm shipping.
@@ -42,7 +55,7 @@
     const chargeable = Math.max(actual, volumetric);
     const freight = round2(perKg * chargeable);
     const eu = rate.eu ? EU_TAX : 0;
-    return { total: round2(freight + REGISTRATION_FEE + eu), perKg, chargeable: round2(chargeable * 1000) / 1000, volumetric: round2(volumetric * 1000) / 1000, usedVolumetric: volumetric > actual, freight, registration: REGISTRATION_FEE, euTax: eu };
+    return { total: round2(freight + REGISTRATION_FEE + eu), estimated: !!rate.est, perKg, chargeable: round2(chargeable * 1000) / 1000, volumetric: round2(volumetric * 1000) / 1000, usedVolumetric: volumetric > actual, freight, registration: REGISTRATION_FEE, euTax: eu };
   }
 
   const money = v => (v === null || v === undefined || v === '' ? '—' : (Number(v) < 0 ? '-$' : '$') + Math.abs(Number(v)).toFixed(2));
@@ -153,7 +166,7 @@
       if (use) use.disabled = !q;
       if (!q) { out.innerHTML = '<span class="hint">Pick a destination and enter a weight to get a quote.</span>'; return; }
       out.innerHTML = `<span class="hint">Estimated shipping cost</span><strong>${money(q.total)}</strong>
-        <div class="breakdown">$${q.perKg}/kg × ${q.chargeable} kg${q.usedVolumetric ? ' (size-based weight)' : ''} = ${money(q.freight)} + $${q.registration} registration${q.euTax ? ' + $' + q.euTax + ' EU tax' : ''}</div>`;
+        <div class="breakdown">$${q.perKg}/kg × ${q.chargeable} kg${q.usedVolumetric ? ' (size-based weight)' : ''} = ${money(q.freight)} + $${q.registration} registration${q.euTax ? ' + $' + q.euTax + ' EU tax' : ''}${q.estimated ? '<br><b>Estimated rate</b>: the supplier hasn’t confirmed this country yet.' : ''}</div>`;
     };
     $$('input,select', el).forEach(i => i.addEventListener('input', update));
     if (use) use.addEventListener('click', () => last && onUse(last.total));
