@@ -28,10 +28,13 @@
     $('[data-totals]').innerHTML = [
       ['Active clients', clients.filter(c => c.active).length, ''], ['Orders', totals.orders, ''], ['Billed', money(totals.billed), ''],
       ['Paid', money(totals.paid), ''], ['Outstanding', money(totals.outstanding), totals.outstanding > 0 ? 'bad' : ''],
-      ['Our commission', money(totals.commission), 'accent'],
+      ['Fees collected', money(totals.commission), ''], ["Supplier's share", money(totals.supplierShare), ''],
+      ['Our earnings', money(totals.ourShare), 'accent'],
     ].map(([k, v, cls]) => `<div class="card stat ${cls}"><small>${k}</small><strong>${v}</strong></div>`).join('');
     const sf = $('#settings-form');
     sf.commission_per_order.value = settings.commission_per_order;
+    sf.supplier_share_per_order.value = settings.supplier_share_per_order;
+    updateSplitPreview();
     sf.volumetric_divisor.value = settings.volumetric_divisor;
     calc?.setDivisor(settings.volumetric_divisor);
     $('[data-admins]').innerHTML = admins.length
@@ -52,9 +55,9 @@
       <td><strong>${esc(c.name)}</strong></td><td>${esc(c.username)}</td><td class="num">${c.orders}</td>
       <td class="num">${money(c.billed)}</td><td class="num">${money(c.paid)}</td>
       <td class="num ${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</td>
-      <td class="num">${money(c.commission)}</td><td class="num">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="hint">default</span>' : ''}</td>
+      <td class="num">${money(c.supplierShare)}</td><td class="num pos"><b>${money(c.ourShare)}</b></td><td class="num">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="hint">default</span>' : ''}</td>
       <td>${c.active ? '<span class="badge delivered">active</span>' : '<span class="badge off">disabled</span>'}</td></tr>`).join('')
-      : `<tr><td colspan="9" class="empty">${state.overview.clients.length ? 'No clients match.' : 'No clients yet. Click "+ Add client" to create the first account.'}</td></tr>`;
+      : `<tr><td colspan="10" class="empty">${state.overview.clients.length ? 'No clients match.' : 'No clients yet. Click "+ Add client" to create the first account.'}</td></tr>`;
   }
 
   async function openClient(id) {
@@ -77,7 +80,7 @@
     const c = state.selected;
     $('[data-detail-cards]').innerHTML = [
       ['Orders', c.orders, ''], ['Billed', money(c.billed), ''], ['Paid', money(c.paid), ''],
-      ['Outstanding', money(c.outstanding), c.outstanding > 0 ? 'bad' : ''], ['Our commission', money(c.commission), 'accent'], ['Client profit', money(c.clientProfit), ''],
+      ['Outstanding', money(c.outstanding), c.outstanding > 0 ? 'bad' : ''], ["Supplier's share", money(c.supplierShare), ''], ['Our earnings', money(c.ourShare), 'accent'], ['Client profit', money(c.clientProfit), ''],
     ].map(([k, v, cls]) => `<div class="card stat ${cls}"><small>${k}</small><strong>${v}</strong></div>`).join('');
   }
 
@@ -87,11 +90,11 @@
       <td>${date(o.createdAt)}</td><td>${esc(o.orderRef) || '—'}</td>
       <td>${o.trackingNumber ? `<a href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${esc(o.trackingNumber)}</a>` : '—'}</td>
       <td>${esc(o.destination) || '—'}</td><td class="num">${money(o.price)}</td><td class="num">${money(o.sellingPrice)}</td>
-      <td class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${money(o.profit)}</td><td class="num">${money(o.commission)}</td>
+      <td class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${money(o.profit)}</td><td class="num">${money(o.commission)}</td><td class="num">${money(o.supplierShare)}</td><td class="num pos">${money(o.ourShare)}</td>
       <td><select class="inline-select" data-status="${o.id}">${STATUSES.map(s => `<option${s === o.status ? ' selected' : ''}>${s}</option>`).join('')}</select></td>
       <td class="notes">${esc(o.notes)}</td>
       <td><button class="btn btn-small" type="button" data-edit-order="${o.id}">Edit</button></td></tr>`).join('')
-      : '<tr><td colspan="11" class="empty">This client has no orders yet. Add one above.</td></tr>';
+      : '<tr><td colspan="13" class="empty">This client has no orders yet. Add one above.</td></tr>';
   }
 
   async function loadPayments() {
@@ -164,11 +167,19 @@
   $('#settings-form').addEventListener('submit', async e => {
     e.preventDefault(); const f = e.target;
     try {
-      await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, volumetric_divisor: f.volumetric_divisor.value } });
-      msg('[data-settings-msg]', 'Settings saved. New orders use the new commission.', 'okm');
+      await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_share_per_order: f.supplier_share_per_order.value, volumetric_divisor: f.volumetric_divisor.value } });
+      msg('[data-settings-msg]', 'Settings saved. New orders use the new fee split.', 'okm');
       await loadOverview();
     } catch (ex) { msg('[data-settings-msg]', ex.message, 'err'); }
   });
+  function updateSplitPreview() {
+    const f = $('#settings-form'), fee = parseFloat(f.commission_per_order.value), sup = parseFloat(f.supplier_share_per_order.value);
+    const el = $('[data-split-preview]');
+    if (!Number.isFinite(fee) || !Number.isFinite(sup)) { el.textContent = 'Our earnings per order: —'; return; }
+    const v = fee - sup;
+    el.innerHTML = `Our earnings per order: <b class="${v >= 0 ? 'pos' : 'neg'}">${money(v)}</b>`;
+  }
+  $('#settings-form').addEventListener('input', updateSplitPreview);
   // ----- admin adds / edits orders on a client's behalf -----
   function updateAdminProfit() {
     const p = parseFloat(of.price.value), sp = parseFloat(of.sellingPrice.value), el = $('[data-admin-profit]');
