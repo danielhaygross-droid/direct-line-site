@@ -1,8 +1,9 @@
 (function () {
-  const { api, money, esc, date, trackingUrl, logout, renderLogin, mountCalculator, quote, countryOptions, categoryOptions, $, $$ } = window.DL;
+  const { api, money, esc, date, trackingUrl, logout, renderLogin, mountCalculator, quote, destinationPicker, hasRate, categoryOptions, $, $$ } = window.DL;
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
   const state = { overview: null, selected: null, orders: [], payments: [], search: '', editing: null };
   const of = $('#admin-order-form');
+  const dest = destinationPicker(of.destination, $('[data-other-country]', of));
   let calc;
 
   async function boot() {
@@ -17,7 +18,6 @@
     $('[data-portal-url]').textContent = location.origin + '/portal/';
     calc = mountCalculator($('#calculator'), { divisor: Number(me.settings.volumetric_divisor) || 6000 });
     state.divisor = Number(me.settings.volumetric_divisor) || 6000;
-    of.destination.innerHTML = countryOptions('');
     of.category.innerHTML = categoryOptions('general');
     await loadOverview();
   }
@@ -192,7 +192,7 @@
     $('[data-admin-order-submit]').textContent = order ? 'Save changes' : 'Add order';
     $('[data-admin-cancel-edit]').hidden = !order;
     of.reset();
-    of.destination.value = order?.destination || '';
+    dest.set(order?.destination || '');
     of.category.value = order?.category || 'general';
     if (order) {
       of.orderRef.value = order.orderRef; of.trackingNumber.value = order.trackingNumber;
@@ -204,7 +204,8 @@
   of.addEventListener('input', updateAdminProfit);
   $('[data-admin-cancel-edit]').addEventListener('click', () => setOrderEditing(null));
   $('[data-admin-fill-quote]').addEventListener('click', () => {
-    const q = quote({ country: of.destination.value, category: of.category.value, weightKg: of.weightKg.value, divisor: state.divisor });
+    if (dest.get() && !hasRate(dest.get())) { msg('[data-admin-order-msg]', 'No supplier rate for ' + dest.label() + ' yet — enter the price by hand.', 'err'); return; }
+    const q = quote({ country: dest.get(), category: of.category.value, weightKg: of.weightKg.value, divisor: state.divisor });
     if (!q) { msg('[data-admin-order-msg]', 'Choose a destination and enter the weight first.', 'err'); return; }
     of.price.value = q.total.toFixed(2); updateAdminProfit(); msg('[data-admin-order-msg]', 'Price filled with the shipping quote (' + money(q.total) + ').', 'okm');
   });
@@ -216,10 +217,11 @@
   });
   of.addEventListener('submit', async e => {
     e.preventDefault();
+    if (dest.isOther() && !dest.get()) { msg('[data-admin-order-msg]', 'Please type the country name.', 'err'); of.otherCountry.focus(); return; }
     if (of.price.value === '') { msg('[data-admin-order-msg]', 'Please enter the price.', 'err'); of.price.focus(); return; }
     const body = {
       clientId: state.selected.id, orderRef: of.orderRef.value, trackingNumber: of.trackingNumber.value,
-      destination: of.destination.value, category: of.category.value,
+      destination: dest.get(), category: of.category.value,
       weightKg: of.weightKg.value === '' ? null : of.weightKg.value, price: of.price.value,
       sellingPrice: of.sellingPrice.value === '' ? null : of.sellingPrice.value, notes: of.notes.value,
     };
