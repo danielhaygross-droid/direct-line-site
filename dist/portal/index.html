@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/p/common.css?v=4">
+<link rel="stylesheet" href="/p/common.css?v=5">
 </head>
 <body class="portal">
 <div class="empty" id="boot">Loading…</div>
@@ -20,7 +20,7 @@
   </header>
   <main>
     <h1>Your orders</h1>
-    <p class="sub">Add each order with its tracking number, what it costs you and what you sold it for. We work out the shipping price and your profit.</p>
+    <p class="sub">Add each order with its tracking number, what it costs you and what you sold it for. We work out the shipping fee and show your profit.</p>
 
     <section class="cards" data-summary></section>
 
@@ -37,9 +37,10 @@
           <div class="dims"><input name="lengthCm" type="number" min="0" step="0.1" inputmode="decimal" placeholder="L" aria-label="Length (cm)"><input name="widthCm" type="number" min="0" step="0.1" inputmode="decimal" placeholder="W" aria-label="Width (cm)"><input name="heightCm" type="number" min="0" step="0.1" inputmode="decimal" placeholder="H" aria-label="Height (cm)"></div>
         </div>
         <div class="quote full" data-quote>Pick a destination and enter the weight to see the shipping price.</div>
-        <label class="field">Price — what you pay us (USD)<input name="price" type="number" min="0" step="0.01" inputmode="decimal"></label>
+        <label class="field">Product cost (USD)<input name="productCost" type="number" min="0" step="0.01" inputmode="decimal"></label>
+        <label class="field">Shipping fee (USD)<input name="price" type="number" min="0" step="0.01" inputmode="decimal"></label>
         <label class="field">Selling price — what your customer paid (USD)<input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal"></label>
-        <div class="field profit-box"><span class="profit-preview" data-profit>Your profit: —</span></div>
+        <div class="field profit-box"><span class="profit-preview" data-total>Total you pay: —</span><span class="profit-preview" data-profit>Your profit: —</span></div>
         <label class="field full">Notes<textarea name="notes" maxlength="2000" placeholder="Anything we should know about this order"></textarea></label>
         <div class="form-actions">
           <button class="btn btn-gold" type="submit" data-submit>Add order</button>
@@ -52,7 +53,7 @@
       <div class="panel-head"><h2>All orders</h2><div class="toolbar"><input type="search" placeholder="Search orders…" aria-label="Search by tracking, order number or notes" data-search></div></div>
       <div class="chips" data-filters></div>
       <div class="table-wrap"><table class="stack-table">
-        <thead><tr><th>Date</th><th>Order</th><th>Tracking</th><th>To</th><th class="num">Price</th><th class="num">Sold for</th><th class="num">Profit</th><th>Status</th><th>Notes</th><th></th></tr></thead>
+        <thead><tr><th>Date</th><th>Order</th><th>Tracking</th><th>To</th><th class="num">Product</th><th class="num">Shipping</th><th class="num">Total</th><th class="num">Sold for</th><th class="num">Profit</th><th>Status</th><th>Notes</th><th></th></tr></thead>
         <tbody data-orders></tbody>
       </table></div>
     </section>
@@ -67,7 +68,7 @@
   </main>
 </div>
 <script src="/p/login-extras.js?v=1"></script>
-<script src="/p/common.js?v=3"></script>
-<script src="/portal/portal.js?v=4"></script>
+<script src="/p/common.js?v=4"></script>
+<script src="/portal/portal.js?v=7"></script>
 </body>
 </html>

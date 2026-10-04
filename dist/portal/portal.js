@@ -52,7 +52,7 @@
       && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination].join(' ').toLowerCase().includes(q)));
     const body = $('[data-orders]');
     if (!rows.length) {
-      body.innerHTML = `<tr class="empty-row"><td colspan="10" class="empty">${state.orders.length ? 'No orders match.' : 'No orders yet. Add your first one above.'}</td></tr>`;
+      body.innerHTML = `<tr class="empty-row"><td colspan="12" class="empty">${state.orders.length ? 'No orders match.' : 'No orders yet. Add your first one above.'}</td></tr>`;
       return;
     }
     body.innerHTML = rows.map(o => `<tr${state.editing?.id === o.id ? ' class="selected"' : ''}>
@@ -60,7 +60,9 @@
       <td data-label="Order" class="cell-title">${esc(o.orderRef) || '—'}</td>
       <td data-label="Tracking">${o.trackingNumber ? `<a href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener" title="Track this parcel">${esc(o.trackingNumber)}</a>` : '—'}</td>
       <td data-label="To">${esc(o.destination) || '—'}</td>
-      <td data-label="Price" class="num">${money(o.price)}</td>
+      <td data-label="Product" class="num">${money(o.productCost)}</td>
+      <td data-label="Shipping" class="num">${money(o.shippingFee)}</td>
+      <td data-label="Total" class="num"><b>${money(o.price)}</b></td>
       <td data-label="Sold for" class="num">${money(o.sellingPrice)}</td>
       <td data-label="Profit" class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${money(o.profit)}</td>
       <td data-label="Status" class="cell-status"><span class="badge ${esc(o.status)}">${esc(o.status)}</span></td>
@@ -90,26 +92,34 @@
     if (!q) {
       const name = dest.label();
       box.innerHTML = name && !hasRate(dest.get())
-        ? `We don’t have a set shipping rate for <b>${esc(name)}</b> yet. Enter the price yourself and we’ll confirm the shipping cost with you.`
-        : dest.isOther() ? 'Type the country name, then enter the price. We’ll confirm the shipping cost with you.'
+        ? `We don’t have a set shipping rate for <b>${esc(name)}</b> yet. Enter the shipping fee yourself and we’ll confirm it with you.`
+        : dest.isOther() ? 'Type the country name, then enter the shipping fee. We’ll confirm it with you.'
         : 'Pick a destination and enter the weight to see the shipping price.';
       if (state.autoPrice !== null && form.price.value === state.autoPrice) form.price.value = '';
       state.autoPrice = null; return;
     }
     const kg = q.usedVolumetric ? `${q.chargeable} kg (size-based weight)` : `${q.chargeable} kg`;
-    box.innerHTML = `<span class="quote-label">Shipping price</span><strong>${money(q.total)}</strong>
-      <div class="breakdown">${kg} × ${money(q.perKg)}/kg = ${money(q.freight)} + ${money(q.registration)} registration${q.euTax ? ` + ${money(q.euTax)} EU tax` : ''}</div>
-      <button class="btn btn-small" type="button" data-use-quote>Use this price</button>`;
+    box.innerHTML = `<span class="quote-label">Shipping fee</span><strong>${money(q.total)}</strong>
+      <div class="breakdown">${kg} × ${money(q.perKg)}/kg = ${money(q.freight)} + ${money(q.registration)} registration${q.euTax ? ` + ${money(q.euTax)} EU tax` : ''}${q.estimated ? '<br>Estimated: we’ll confirm the final shipping fee for this country.' : ''}</div>
+      <button class="btn btn-small" type="button" data-use-quote>Use this fee</button>`;
     // Keep the price in sync with the quote unless the client typed their own.
     if (form.price.value === '' || form.price.value === state.autoPrice) {
       form.price.value = q.total.toFixed(2); state.autoPrice = form.price.value;
     }
   }
 
+  // Fee for this order: an existing order keeps the fee it was created with.
+  // Total the client pays = product cost + shipping fee.
+  function orderTotal() {
+    const pc = parseFloat(form.productCost.value), sh = parseFloat(form.price.value);
+    if (!Number.isFinite(pc) && !Number.isFinite(sh)) return null;
+    return (Number.isFinite(pc) ? pc : 0) + (Number.isFinite(sh) ? sh : 0);
+  }
   function updateProfit() {
-    const p = parseFloat(form.price.value), s = parseFloat(form.sellingPrice.value);
-    const el = $('[data-profit]');
-    if (!Number.isFinite(p) || !Number.isFinite(s)) { el.innerHTML = 'Your profit: —'; return; }
+    const p = orderTotal(), s = parseFloat(form.sellingPrice.value);
+    const el = $('[data-profit]'), tot = $('[data-total]');
+    tot.innerHTML = p === null ? 'Total you pay: —' : `Total you pay: <b>${money(p)}</b> <span class="hint">(product + shipping)</span>`;
+    if (p === null || !Number.isFinite(s)) { el.innerHTML = 'Your profit: —'; return; }
     const v = s - p;
     el.innerHTML = `Your profit: <b class="${v >= 0 ? 'pos' : 'neg'}">${money(v)}</b>`;
   }
@@ -125,7 +135,8 @@
     form.category.value = order?.category || 'general';
     if (order) {
       form.orderRef.value = order.orderRef; form.trackingNumber.value = order.trackingNumber;
-      form.weightKg.value = order.weightKg ?? ''; form.price.value = order.price == null ? '' : Number(order.price).toFixed(2);
+      form.weightKg.value = order.weightKg ?? ''; form.productCost.value = order.productCost == null ? '' : Number(order.productCost).toFixed(2);
+      form.price.value = order.shippingFee != null ? Number(order.shippingFee).toFixed(2) : (order.productCost == null && order.price != null ? Number(order.price).toFixed(2) : '');
       form.sellingPrice.value = order.sellingPrice == null ? '' : Number(order.sellingPrice).toFixed(2); form.notes.value = order.notes;
       $('#order-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -145,17 +156,18 @@
     if (!e.target.closest('[data-use-quote]')) return;
     const q = currentQuote(); if (!q) return;
     form.price.value = q.total.toFixed(2); state.autoPrice = form.price.value; updateProfit();
-    setMsg('Price set to the shipping price (' + money(q.total) + ').', 'okm');
+    setMsg('Shipping fee set to ' + money(q.total) + '.', 'okm');
   });
 
   form.addEventListener('submit', async e => {
     e.preventDefault();
     if (dest.isOther() && !dest.get()) { setMsg('Please type the country name.', 'err'); form.otherCountry.focus(); return; }
-    if (form.price.value === '') { setMsg('Please enter the price, or pick a destination and weight to fill it in.', 'err'); form.price.focus(); return; }
+    if (form.productCost.value === '') { setMsg('Please enter the product cost.', 'err'); form.productCost.focus(); return; }
+    if (form.price.value === '') { setMsg('Please enter the shipping fee, or pick a destination and weight to fill it in.', 'err'); form.price.focus(); return; }
     const body = {
       orderRef: form.orderRef.value, trackingNumber: form.trackingNumber.value, destination: dest.get(),
       category: form.category.value, weightKg: form.weightKg.value === '' ? null : form.weightKg.value,
-      price: form.price.value, sellingPrice: form.sellingPrice.value === '' ? null : form.sellingPrice.value, notes: form.notes.value,
+      productCost: form.productCost.value, shippingFee: form.price.value, sellingPrice: form.sellingPrice.value === '' ? null : form.sellingPrice.value, notes: form.notes.value,
     };
     const btn = $('[data-submit]'); btn.disabled = true;
     try {
