@@ -125,7 +125,7 @@ async function readBody(request) { return request.json().catch(() => ({})); }
 function orderFields(body) {
   const f = {
     order_ref: text(body.orderRef, 120), tracking_number: text(body.trackingNumber, 120),
-    destination: text(body.destination, 8).toUpperCase(), category: text(body.category, 20),
+    destination: (d => (/^[a-z]{2}$/i.test(d) ? d.toUpperCase() : d))(text(body.destination, 60)), category: text(body.category, 20),
     weight_kg: money(body.weightKg), price: money(body.price), selling_price: money(body.sellingPrice),
     notes: text(body.notes, 2000),
   };
