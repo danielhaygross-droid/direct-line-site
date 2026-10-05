@@ -139,6 +139,11 @@
   }
 
   // ---------- clients tab ----------
+  function archivedHTML() {
+    const a = S.ov.archived || [];
+    if (!a.length) return '';
+    return `<details class="archived"><summary>Archived clients (${a.length})</summary><div class="acc-list" style="padding:0 16px 16px">${a.map(c => `<div><span class="ava">${esc(initials(c.name))}</span><span class="who" style="flex:1"><span><b>${esc(c.name)}</b><small>@${esc(c.username)} · ${c.orders} order${c.orders === 1 ? '' : 's'} · hidden from totals</small></span></span><button type="button" class="btn btn-sm" data-restore="${c.id}">Restore</button></div>`).join('')}</div></details>`;
+  }
   function renderClients() {
     const q = S.cq.toLowerCase(), def = Number(S.ov.settings.commission_per_order);
     const list = S.ov.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q));
@@ -149,7 +154,7 @@
         <td data-label="Outstanding" class="num ${c.outstanding > 0 ? 'neg' : ''}"><b>${money(c.outstanding)}</b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
         <td data-label="Fee / order" class="num">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="dim" style="font-size:12px">default</span>' : ''}</td>
         <td data-label="Status">${c.active ? '<span class="st st-delivered">Active</span>' : '<span class="st st-cancelled">Disabled</span>'}</td></tr>`).join('')}
-      </tbody></table></div>` : empty(S.ov.clients.length ? 'No clients match' : 'No clients yet', S.ov.clients.length ? 'Try another search.' : 'Add a client account, then share the username and password with them.', '<button type="button" class="btn btn-primary" data-add-account="client">Add client</button>');
+      </tbody></table></div>${archivedHTML()}` : empty(S.ov.clients.length ? 'No clients match' : 'No clients yet', S.ov.clients.length ? 'Try another search.' : 'Add a client account, then share the username and password with them.', '<button type="button" class="btn btn-primary" data-add-account="client">Add client</button>') + (list.length ? '' : archivedHTML());
   }
 
   // ---------- settings tab ----------
@@ -288,7 +293,8 @@
             <label class="field"><span>Status</span><select name="active"><option value="true"${c.active ? ' selected' : ''}>Active</option><option value="false"${c.active ? '' : ' selected'}>Disabled (can’t sign in)</option></select></label>
             <label class="field full"><span>New password <small>leave empty to keep it</small></span><input name="password" type="password" autocomplete="new-password"></label>
             <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Save account</button><p class="form-msg" data-account-msg></p></div></form>
-            <p class="note" style="margin-top:12px">A new fee only applies to new orders. Existing orders keep the fee they were created with.</p></section>`;
+            <p class="note" style="margin-top:12px">A new fee only applies to new orders. Existing orders keep the fee they were created with.</p></section>
+          <section class="card card-pad"><h3 class="sec-title">Archive</h3><p class="muted" style="margin:0 0 12px;font-size:14px">For test accounts or clients you no longer work with. It hides this client, their orders and payments from every list and total, and stops them signing in. Nothing is deleted, and you can restore them any time from the Clients tab.</p><button type="button" class="btn btn-danger" data-archive="${c.id}">Archive client</button></section>`;
     d.body.innerHTML = `
       <section class="card card-pad"><dl class="kv" style="grid-template-columns:repeat(3,minmax(0,1fr))">
         <div><dt>Orders</dt><dd><b>${c.orders}</b></dd></div><div><dt>Billed</dt><dd><b>${money(c.billed)}</b></dd></div><div><dt>Paid</dt><dd><b class="pos">${money(c.paid)}</b></dd></div>
@@ -409,9 +415,21 @@
     const f = t.closest('[data-filter]'); if (f) { S.filter = f.dataset.filter; renderOrders(); return; }
     const acc = t.closest('[data-add-account]'); if (acc) { openAddAccount(acc.dataset.addAccount); return; }
     const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
+    const rs = t.closest('[data-restore]');
+    if (rs) { setArchived(Number(rs.dataset.restore), false, rs); return; }
     if (t.closest('select')) return;
     const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
     const oo = t.closest('[data-open-order]'); if (oo) openOrder(oo.dataset.openOrder);
+  }
+  async function setArchived(id, archived, el) {
+    if (el) el.disabled = true;
+    try {
+      await api('/admin/users/' + id, { method: 'POST', body: { archived } });
+      tell({ type: 'dl-clients-changed' });
+      if (archived) UI.getDrawer().close();
+      await loadAll(); renderList();
+      toast(archived ? 'Client archived. Their orders and payments no longer count in the totals.' : 'Client restored.');
+    } catch (ex) { toast(ex.message); if (el) el.disabled = false; }
   }
   function onInput(e) {
     if (e.target.matches('[data-q]')) { S.q = e.target.value; renderOrders(); }
@@ -440,6 +458,11 @@
     const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
     const oo = t.closest('[data-open-order]'); if (oo) { openOrder(oo.dataset.openOrder, null, oo.dataset.back ? Number(oo.dataset.back) : null); return; }
     const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; fillClient(clientOf(S.drawer.id)); return; }
+    const ar = t.closest('[data-archive]');
+    if (ar) {
+      if (!ar.dataset.armed) { ar.dataset.armed = '1'; ar.textContent = 'Click again to archive'; setTimeout(() => { if (ar.isConnected) { delete ar.dataset.armed; ar.textContent = 'Archive client'; } }, 4000); return; }
+      setArchived(Number(ar.dataset.archive), true, ar); return;
+    }
     const dp = t.closest('[data-del-payment]');
     if (dp) {
       if (!dp.dataset.armed) { dp.dataset.armed = '1'; dp.textContent = 'Click again to remove'; setTimeout(() => { if (dp.isConnected) { delete dp.dataset.armed; dp.textContent = 'Remove'; } }, 4000); return; }

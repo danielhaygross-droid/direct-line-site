@@ -57,3 +57,6 @@ html.embed .adm{padding:4px 0 24px}
 @media(max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.settings-grid{grid-template-columns:1fr}}
 @media(max-width:760px){.adm{padding:16px}.bar .search,.bar select{width:100%}.bar-r{width:100%}.seg{width:100%}.seg button{flex:1;padding:0 8px}.split{grid-template-columns:1fr}}
 @media(max-width:480px){.kpis .stat strong{font-size:20px}.kpis .stat .stat-ic{display:none}}
+.archived{border-top:1px solid var(--line)}
+.archived summary{padding:14px 16px;color:var(--muted);font-size:14px;font-weight:600;cursor:pointer}
+.archived summary:hover{color:var(--text)}
