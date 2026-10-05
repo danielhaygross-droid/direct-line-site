@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=36">
+  <link rel="stylesheet" href="styles.css?v=37">
 </head>
 <body>
   <a class="skip-link" href="#main">דילוג לתוכן</a>
@@ -51,13 +51,13 @@
     <header class="topbar">
       <button class="mobile-menu" type="button" aria-label="פתיחת תפריט" aria-expanded="false">☰</button>
       <div class="context-controls">
-        <label><span>לקוח</span><select id="client-select"><option value="daniel" selected>Daniel Group</option><option value="maya">Maya Commerce</option><option value="all">כל הלקוחות</option></select></label>
+        <label><span>לקוח</span><select id="client-select"><option value="all" selected>כל הלקוחות</option></select></label>
         <label><span>חנות</span><select id="store-select"><option value="all">כל החנויות · 3</option><option value="nova">Nova Home</option><option value="muse">Muse Jewelry</option><option value="north">North Studio</option></select></label>
         <label><span>טווח</span><select id="range-select"><option value="all" selected>כל הזמן</option><option value="today">היום</option><option value="7d">7 ימים</option><option value="30d">30 יום</option><option value="4m">4 חודשים</option><option value="custom">בחירת תאריכים…</option></select></label>
-        <label><span>תצוגה</span><select id="role-select"><option value="admin">Agency Admin</option><option value="client">Client View</option></select></label>
+        <label hidden><span>תצוגה</span><select id="role-select"><option value="admin">Agency Admin</option><option value="client">Client View</option></select></label>
       </div>
       <div class="top-actions">
-        <button class="global-search-trigger" id="global-search" type="button" aria-label="חיפוש חכם"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>שאלו את Control</span><kbd>⌘ K</kbd></button>
+        <button class="global-search-trigger" id="global-search" hidden type="button" aria-label="חיפוש חכם"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>שאלו את Control</span><kbd>⌘ K</kbd></button>
         <button class="icon-button" id="language-toggle" type="button" aria-label="Switch language">EN</button>
         <button class="icon-button" id="theme-toggle" type="button" aria-label="החלפת מצב תצוגה"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c-5 2-11-4-9-9Z"/></svg></button>
         <button class="notifications" type="button" aria-label="התראות"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><i>3</i></button>
@@ -300,8 +300,8 @@
   <dialog id="detail-dialog" aria-labelledby="detail-title"><div class="detail-dialog-head"><div><span data-detail-eyebrow>כרטיס מוצר</span><h2 id="detail-title" data-detail-title>פרטים</h2></div><button class="dialog-close" type="button" aria-label="סגירה">×</button></div><div data-detail-content></div></dialog>
   <dialog id="date-range-dialog" aria-labelledby="date-range-title"><form method="dialog" id="date-range-form"><div class="dialog-head"><div><span>טווח מותאם אישית</span><h2 id="date-range-title">בחירת תאריכים</h2></div><button value="cancel" type="submit" aria-label="סגירה">×</button></div><p class="date-range-copy">בחרו את התקופה שתרצו לראות בדשבורד.</p><div class="form-grid"><label><span>מתאריך</span><input id="range-start" name="start" type="date" required></label><label><span>עד תאריך</span><input id="range-end" name="end" type="date" required></label></div><p class="login-error" id="date-range-error" hidden>תאריך הסיום חייב להיות אחרי תאריך ההתחלה.</p><div class="dialog-actions"><button value="cancel" type="submit" class="secondary-button">ביטול</button><button value="default" type="submit" class="primary-button">הצגת נתונים</button></div></form></dialog>
   <dialog id="search-dialog" aria-labelledby="search-title"><div class="search-command"><label><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="smart-query" autocomplete="off" placeholder="לדוגמה: אילו משלוחים מתעכבים?" aria-labelledby="search-title"></label><h2 id="search-title">אפשר לשאול על כל מה שקורה בעסק</h2><div class="query-suggestions"><button type="button">מה מחכה לאישור שלי?</button><button type="button">איפה אנחנו מפסידים כסף?</button><button type="button">איזה מלאי עומד להיגמר?</button></div><div class="query-answer" data-query-answer hidden></div></div></dialog>
-  <a class="whatsapp-dock" href="https://wa.me/" target="_blank" rel="noopener" aria-label="פתיחת שיחה עם Direct Line בוואטסאפ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.6A8 8 0 0 1 8.1 18.5L4 20l1.4-4A8 8 0 1 1 20 11.6Z"/><path d="M9 8.5c.5 2 2 3.5 4 4l1-1c.4-.4.8-.2 1.1 0l1.5.7c.4.2.5.5.4.9-.4 1.2-1.5 1.9-2.7 1.7-3.6-.5-6.8-3.7-7.3-7.3-.2-1.2.5-2.3 1.7-2.7.4-.1.7 0 .9.4l.7 1.5c.2.3.4.7 0 1.1l-1.3.7Z"/></svg><span><b>צריכים תשובה?</b><small>הצוות זמין בעברית</small></span></a>
+  <a class="whatsapp-dock" hidden href="https://wa.me/" target="_blank" rel="noopener" aria-label="פתיחת שיחה עם Direct Line בוואטסאפ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.6A8 8 0 0 1 8.1 18.5L4 20l1.4-4A8 8 0 1 1 20 11.6Z"/><path d="M9 8.5c.5 2 2 3.5 4 4l1-1c.4-.4.8-.2 1.1 0l1.5.7c.4.2.5.5.4.9-.4 1.2-1.5 1.9-2.7 1.7-3.6-.5-6.8-3.7-7.3-7.3-.2-1.2.5-2.3 1.7-2.7.4-.1.7 0 .9.4l.7 1.5c.2.3.4.7 0 1.1l-1.3.7Z"/></svg><span><b>צריכים תשובה?</b><small>הצוות זמין בעברית</small></span></a>
   <div class="toast" role="status" aria-live="polite" hidden></div>
-  <script src="/p/login-extras.js?v=1" defer></script><script src="app.js?v=53"></script><script src="/p/clients-section.js?v=2"></script><script src="/p/live-sections.js?v=3"></script>
+  <script src="/p/login-extras.js?v=1" defer></script><script src="app.js?v=53"></script><script src="/p/clients-section.js?v=2"></script><script src="/p/live-sections.js?v=3"></script><script src="/p/real-ui.js?v=1"></script>
 </body>
 </html>

@@ -353,3 +353,5 @@ body.real-data-mode [data-risk-count]{display:none}
 @media (max-width:600px){.ls-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.ls-cards strong{font-size:20px}.ls-bars>div{grid-template-columns:minmax(80px,110px) 1fr auto}}
 .live-section,.live-section>*,.ls-grid>*{min-width:0;max-width:100%}
 .kpi-period{color:var(--muted);font-weight:400;font-size:.85em}
+/* hidden demo controls + real notification badge */
+.global-search-trigger[hidden],.whatsapp-dock[hidden],.context-controls label[hidden],.notifications i[hidden]{display:none!important}
