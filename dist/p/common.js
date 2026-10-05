@@ -116,25 +116,29 @@
   }
 
   // Login screen. On success, follows the server's redirect if it points elsewhere.
-  function renderLogin(root, { title = 'Sign in', subtitle = '' } = {}) {
+  function renderLogin(root, { title = 'Sign in', subtitle = '', portal = false } = {}) {
     document.body.innerHTML = '';
     const wrap = document.createElement('div');
     wrap.className = 'login-wrap';
-    wrap.innerHTML = `<div class="login-card">
-      <span class="brand">direct<b>↗</b>line.<small>CONTROL</small></span>
-      <h1>${esc(title)}</h1><p class="sub" style="margin:0">${esc(subtitle)}</p>
+    const tag = portal ? 'CLIENT PORTAL' : 'CONTROL';
+    wrap.innerHTML = `<section class="login-art"><span class="brand"><span>direct<b>↗</b>line.</span><small>${tag}</small></span>
+      <div><h2>Your orders, <em>shipped and tracked</em> in one place.</h2>
+      <ul class="login-points"><li>Add an order and see the shipping fee right away</li><li>Follow every order from pending to delivered</li><li>Message our team about any order</li></ul></div>
+      <p>Direct Line · fulfilment and shipping</p></section>
+      <div class="login-card"><span class="brand login-brand"><span>direct<b>↗</b>line.</span><small>${tag}</small></span>
+      <div><h1>${esc(title)}</h1><p class="sub">${esc(subtitle)}</p></div>
       <form novalidate>
         <label class="field">Username<input name="username" autocomplete="username" required></label>
         <label class="field">Password<input name="password" type="password" autocomplete="current-password" required></label>
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer"><input name="remember" type="checkbox" checked style="width:16px;height:16px;margin:0;accent-color:var(--gold)">Remember me (stay signed in for 30 days)</label>
-        <button class="btn btn-gold" type="submit">Sign in</button>
-        <p class="msg err" hidden></p>
+        <label class="check"><input name="remember" type="checkbox" checked>Remember me for 30 days</label>
+        <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+        <p class="form-msg err" hidden></p>
       </form></div>`;
     document.body.appendChild(wrap);
-    const form = $('form', wrap), err = $('.msg', wrap);
+    const form = $('form', wrap), err = $('.form-msg', wrap);
     form.addEventListener('submit', async e => {
       e.preventDefault();
-      const btn = $('button', form); btn.disabled = true; err.hidden = true;
+      const btn = $('button[type=submit]', form); btn.disabled = true; err.hidden = true;
       try {
         const data = await api('/login', { method: 'POST', body: { username: form.username.value.trim(), password: form.password.value, remember: form.remember.checked } });
         if (data.redirect && !location.pathname.startsWith(data.redirect)) location.href = data.redirect; else location.reload();
@@ -241,5 +245,5 @@
     load();
   }
 
-  window.DL = { toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  window.DL = { visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();
