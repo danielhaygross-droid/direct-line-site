@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../styles.css?v=38">
+  <link rel="stylesheet" href="../styles.css?v=39">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -26,6 +26,7 @@
   <aside class="sidebar" aria-label="Main navigation">
     <a class="brand" dir="ltr" href="/en/" aria-label="Direct Line Control — Home" title="Go to Home" style="text-decoration:none">direct<span>↗</span>line.<small>CONTROL</small></a>
     <nav>
+      <span class="nav-group-title">Daniel’s stores</span>
       <span class="nav-label">Control Center</span>
       <button class="nav-item active" data-section="overview" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg><span>Overview</span></button>
       <button class="nav-item" data-section="profit" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3"/></svg><span>Profitability</span></button>
@@ -41,6 +42,7 @@
       <button class="nav-item nav-secondary" data-section="value" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3"/></svg><span>Value & Savings</span></button>
       <button class="nav-item nav-secondary" data-section="management" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5zM8 8h8M8 12h8M8 16h5"/></svg><span>Reports & Goals</span></button>
       <button class="nav-item nav-secondary" data-section="clients" data-admin-only type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m7-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm13 10v-2a4 4 0 0 1 0 7.8"/></svg><span>Stores & Team</span></button>
+      <span class="nav-group-title nav-client-group">Direct Line clients</span>
       <button class="nav-item" id="nav-client-orders" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h12"/></svg><span>Clients & orders</span></button>
       <button class="nav-item nav-more" id="nav-more" type="button" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More tools</span><em>⌄</em></button>
     </nav>
@@ -51,7 +53,7 @@
     <header class="topbar">
       <button class="mobile-menu" type="button" aria-label="Open item" aria-expanded="false">☰</button>
       <div class="context-controls">
-        <label><span>Client</span><select id="client-select"><option value="all" selected>All clients</option></select></label>
+        <label><span>Store owner</span><select id="client-select"><option value="all" selected>Daniel’s stores</option></select></label>
         <label><span>Store</span><select id="store-select"><option value="all">All stores · 3</option><option value="nova">Nova Home</option><option value="muse">Muse Jewelry</option><option value="north">North Studio</option></select></label>
         <label><span>Range</span><select id="range-select"><option value="all" selected>All time</option><option value="today">Today</option><option value="7d">7 days</option><option value="30d">30 days</option><option value="4m">4 months</option><option value="custom">Custom dates…</option></select></label>
         <label hidden><span>View</span><select id="role-select"><option value="admin">Agency Admin</option><option value="client">Client View</option></select></label>
@@ -187,7 +189,7 @@
       <section class="products-section real-product-center" id="products">
         <div class="section-title"><div><span>Catalog &amp; costs</span><h2>Your real products, with one clear cost for every variant</h2><p>Product cost comes from the supplier. Customer shipping and extra costs are entered once and applied to every order of that product.</p></div><span class="data-save-note">Saved in the secure cloud</span></div>
         <div class="catalog-summary" data-product-summary></div>
-        <article class="panel product-catalog-panel"><div class="panel-head"><div><span>Product catalog</span><h2>Complete costs per product</h2></div><small>No demo data here</small></div><div class="table-scroll"><table class="product-catalog-table"><thead><tr><th>Product / variant</th><th>Store</th><th>Sold</th><th>Sale price</th><th>Supplier cost</th><th>Customer shipping</th><th>Profit per unit</th><th>Action</th></tr></thead><tbody data-product-catalog></tbody></table></div></article>
+        <article class="panel product-catalog-panel"><div class="panel-head"><div><span>Product catalog</span><h2>Complete costs per product</h2></div><small>No demo data here</small></div><div class="table-scroll"><table class="product-catalog-table"><thead><tr><th>Product / variant</th><th>Store</th><th>Last order</th><th>Sold</th><th>Sale price</th><th>Supplier cost</th><th>Customer shipping</th><th>Profit per unit</th><th>Action</th></tr></thead><tbody data-product-catalog></tbody></table></div></article>
         <div class="catalog-lower-grid"><article class="panel data-quality-panel"><div class="panel-head"><div><span>Data check</span><h2>What's still missing for an exact calculation</h2></div><span class="status warn" data-quality-status>Checking</span></div><div data-quality-list></div></article><article class="panel monthly-real-panel"><div class="panel-head"><div><span>Real report</span><h2>Monthly summary from connected sources</h2></div><small>Profit is shown only when all costs are entered</small></div><div class="table-scroll"><table class="monthly-real-table"><thead><tr><th>Month</th><th>Orders</th><th>Verified sales</th><th>Supplier cost</th><th>Calculated profit</th><th>Status</th></tr></thead><tbody data-monthly-real></tbody></table></div></article></div>
       </section>
 
@@ -276,7 +278,7 @@
       <section class="orders-section" id="orders">
         <div class="section-title"><div><span>Operations</span><h2>Order management</h2></div><button class="primary-button" id="new-order" type="button">＋ Manual order</button></div>
         <div class="order-toolbar"><label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="order-search" type="search" placeholder="Search order, customer or item"></label><select id="status-filter"><option value="all">All statuses</option><option value="Processing">Processing</option><option value="Shipped">Shipped</option><option value="Delivered">Delivered</option><option value="Delayed">Delayed</option><option value="Refunded">Refunded</option><option value="Chargeback">Chargeback</option></select><select id="platform-filter"><option value="all">All platforms</option><option value="Shopify">Shopify</option><option value="Etsy">Etsy</option></select></div>
-        <div class="table-card"><div class="table-scroll"><table class="orders-table"><thead><tr><th>Order</th><th>Client</th><th>Item</th><th>Platform</th><th>Amount</th><th>Shipping</th><th>Net profit</th><th>Status</th><th data-admin-only>Action</th></tr></thead><tbody data-orders-body></tbody></table></div><div class="table-footer"><span data-order-count></span><div><button type="button" disabled>→</button><b>1</b><button type="button">←</button></div></div></div>
+        <div class="table-card"><div class="table-scroll"><table class="orders-table"><thead><tr><th>Order #</th><th>Date</th><th>Store</th><th>Item</th><th>Platform</th><th>Amount</th><th>Shipping</th><th>Net profit</th><th>Status</th><th data-admin-only>Action</th></tr></thead><tbody data-orders-body></tbody></table></div><div class="table-footer"><span data-order-count></span><div><button type="button" disabled>→</button><b>1</b><button type="button">←</button></div></div></div>
       </section>
       <section class="customers-section" id="customers">
         <div class="section-title"><div><span>Secure customer center</span><h2>Your customers, in one place</h2><p>Purchase history and customer segments. Marketing use is only available after consent is recorded.</p></div><button class="secondary-button" id="export-consented" type="button" disabled title="No customers with recorded consent yet">Export opted-in customers</button></div>
@@ -301,6 +303,6 @@
   <dialog id="search-dialog" aria-labelledby="search-title"><div class="search-command"><label><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="smart-query" autocomplete="off" placeholder="Example: Which shipments are delayed?" aria-labelledby="search-title"></label><h2 id="search-title">Ask about anything happening in the business</h2><div class="query-suggestions"><button type="button">What is waiting for my approval?</button><button type="button">Where are we losing money?</button><button type="button">Which inventory is about to run out?</button></div><div class="query-answer" data-query-answer hidden></div></div></dialog>
   <a class="whatsapp-dock" href="https://wa.me/972549313468" target="_blank" rel="noopener" aria-label="Open WhatsApp chat with Direct Line"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.6A8 8 0 0 1 8.1 18.5L4 20l1.4-4A8 8 0 1 1 20 11.6Z"/><path d="M9 8.5c.5 2 2 3.5 4 4l1-1c.4-.4.8-.2 1.1 0l1.5.7c.4.2.5.5.4.9-.4 1.2-1.5 1.9-2.7 1.7-3.6-.5-6.8-3.7-7.3-7.3-.2-1.2.5-2.3 1.7-2.7.4-.1.7 0 .9.4l.7 1.5c.2.3.4.7 0 1.1l-1.3.7Z"/></svg><span><b>Need an answer?</b><small>Our team is available in English</small></span></a>
   <div class="toast" role="status" aria-live="polite" hidden></div>
-  <script src="/p/login-extras.js?v=1" defer></script><script src="app.js?v=58"></script><script src="/p/clients-section.js?v=2"></script><script src="/p/live-sections.js?v=3"></script><script src="/p/notify.js?v=1"></script><script src="/p/real-ui.js?v=3"></script>
+  <script src="/p/login-extras.js?v=1" defer></script><script src="app.js?v=59"></script><script src="/p/clients-section.js?v=3"></script><script src="/p/live-sections.js?v=3"></script><script src="/p/notify.js?v=1"></script><script src="/p/real-ui.js?v=3"></script>
 </body>
 </html>

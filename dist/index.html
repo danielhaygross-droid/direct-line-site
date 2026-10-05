@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=38">
+  <link rel="stylesheet" href="styles.css?v=39">
 </head>
 <body>
   <a class="skip-link" href="#main">דילוג לתוכן</a>
@@ -26,6 +26,7 @@
   <aside class="sidebar" aria-label="ניווט ראשי">
     <a class="brand" dir="ltr" href="/" aria-label="Direct Line Control — דף הבית" title="חזרה לדף הבית" style="text-decoration:none">direct<span>↗</span>line.<small>CONTROL</small></a>
     <nav>
+      <span class="nav-group-title">החנויות של דניאל</span>
       <span class="nav-label">מרכז שליטה</span>
       <button class="nav-item active" data-section="overview" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg><span>סקירה</span></button>
       <button class="nav-item" data-section="profit" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3"/></svg><span>רווחיות</span></button>
@@ -41,6 +42,7 @@
       <button class="nav-item nav-secondary" data-section="value" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9m5 10V5m6 14v-7m5 7V3"/></svg><span>ערך וחיסכון</span></button>
       <button class="nav-item nav-secondary" data-section="management" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5zM8 8h8M8 12h8M8 16h5"/></svg><span>דוחות ויעדים</span></button>
       <button class="nav-item nav-secondary" data-section="clients" data-admin-only type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m7-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm13 10v-2a4 4 0 0 1 0 7.8"/></svg><span>חנויות וצוות</span></button>
+      <span class="nav-group-title nav-client-group">לקוחות Direct Line</span>
       <button class="nav-item" id="nav-client-orders" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h12"/></svg><span>לקוחות והזמנות</span></button>
       <button class="nav-item nav-more" id="nav-more" type="button" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>עוד כלים</span><em>⌄</em></button>
     </nav>
@@ -51,7 +53,7 @@
     <header class="topbar">
       <button class="mobile-menu" type="button" aria-label="פתיחת תפריט" aria-expanded="false">☰</button>
       <div class="context-controls">
-        <label><span>לקוח</span><select id="client-select"><option value="all" selected>כל הלקוחות</option></select></label>
+        <label><span>בעל החנויות</span><select id="client-select"><option value="all" selected>החנויות של דניאל</option></select></label>
         <label><span>חנות</span><select id="store-select"><option value="all">כל החנויות · 3</option><option value="nova">Nova Home</option><option value="muse">Muse Jewelry</option><option value="north">North Studio</option></select></label>
         <label><span>טווח</span><select id="range-select"><option value="all" selected>כל הזמן</option><option value="today">היום</option><option value="7d">7 ימים</option><option value="30d">30 יום</option><option value="4m">4 חודשים</option><option value="custom">בחירת תאריכים…</option></select></label>
         <label hidden><span>תצוגה</span><select id="role-select"><option value="admin">Agency Admin</option><option value="client">Client View</option></select></label>
@@ -187,7 +189,7 @@
       <section class="products-section real-product-center" id="products">
         <div class="section-title"><div><span>קטלוג ועלויות</span><h2>המוצרים האמיתיים שלכם, עם עלות אחת מסודרת לכל וריאציה</h2><p>עלות מוצר נמשכת מהספק. משלוח ללקוח ועלויות נוספות מוזנים פעם אחת ומחושבים בכל ההזמנות של אותו מוצר.</p></div><span class="data-save-note">נשמר בענן המאובטח</span></div>
         <div class="catalog-summary" data-product-summary></div>
-        <article class="panel product-catalog-panel"><div class="panel-head"><div><span>קטלוג מוצרים</span><h2>השלמת עלויות לפי מוצר</h2></div><small>אין כאן נתוני דמו</small></div><div class="table-scroll"><table class="product-catalog-table"><thead><tr><th>מוצר / וריאציה</th><th>חנות</th><th>נמכרו</th><th>מחיר מכירה</th><th>עלות ספק</th><th>משלוח ללקוח</th><th>רווח ליחידה</th><th>פעולה</th></tr></thead><tbody data-product-catalog></tbody></table></div></article>
+        <article class="panel product-catalog-panel"><div class="panel-head"><div><span>קטלוג מוצרים</span><h2>השלמת עלויות לפי מוצר</h2></div><small>אין כאן נתוני דמו</small></div><div class="table-scroll"><table class="product-catalog-table"><thead><tr><th>מוצר / וריאציה</th><th>חנות</th><th>הזמנה אחרונה</th><th>נמכרו</th><th>מחיר מכירה</th><th>עלות ספק</th><th>משלוח ללקוח</th><th>רווח ליחידה</th><th>פעולה</th></tr></thead><tbody data-product-catalog></tbody></table></div></article>
         <div class="catalog-lower-grid"><article class="panel data-quality-panel"><div class="panel-head"><div><span>בקרת נתונים</span><h2>מה עדיין חסר לחישוב מדויק</h2></div><span class="status warn" data-quality-status>בודק</span></div><div data-quality-list></div></article><article class="panel monthly-real-panel"><div class="panel-head"><div><span>דוח אמיתי</span><h2>סיכום חודשי לפי המקורות המחוברים</h2></div><small>רווח מוצג רק כשכל העלויות הוזנו</small></div><div class="table-scroll"><table class="monthly-real-table"><thead><tr><th>חודש</th><th>הזמנות</th><th>מכירות מאומתות</th><th>עלות ספק</th><th>רווח מחושב</th><th>מצב</th></tr></thead><tbody data-monthly-real></tbody></table></div></article></div>
       </section>
 
@@ -276,7 +278,7 @@
       <section class="orders-section" id="orders">
         <div class="section-title"><div><span>תפעול</span><h2>ניהול הזמנות</h2></div><button class="primary-button" id="new-order" type="button">＋ הזמנה ידנית</button></div>
         <div class="order-toolbar"><label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="order-search" type="search" placeholder="חיפוש הזמנה, לקוח או פריט"></label><select id="status-filter"><option value="all">כל הסטטוסים</option><option value="בטיפול">בטיפול</option><option value="נשלח">נשלח</option><option value="נמסר">נמסר</option><option value="בעיכוב">בעיכוב</option><option value="הוחזר">הוחזר</option><option value="Chargeback">Chargeback</option></select><select id="platform-filter"><option value="all">כל הפלטפורמות</option><option value="Shopify">Shopify</option><option value="Etsy">Etsy</option></select></div>
-        <div class="table-card"><div class="table-scroll"><table class="orders-table"><thead><tr><th>הזמנה</th><th>לקוח</th><th>פריט</th><th>פלטפורמה</th><th>סכום</th><th>משלוח</th><th>רווח נקי</th><th>סטטוס</th><th data-admin-only>פעולה</th></tr></thead><tbody data-orders-body></tbody></table></div><div class="table-footer"><span data-order-count></span><div><button type="button" disabled>→</button><b>1</b><button type="button">←</button></div></div></div>
+        <div class="table-card"><div class="table-scroll"><table class="orders-table"><thead><tr><th>מספר הזמנה</th><th>תאריך</th><th>חנות</th><th>פריט</th><th>פלטפורמה</th><th>סכום</th><th>משלוח</th><th>רווח נקי</th><th>סטטוס</th><th data-admin-only>פעולה</th></tr></thead><tbody data-orders-body></tbody></table></div><div class="table-footer"><span data-order-count></span><div><button type="button" disabled>→</button><b>1</b><button type="button">←</button></div></div></div>
       </section>
 
       <section class="customers-section" id="customers">
@@ -302,6 +304,6 @@
   <dialog id="search-dialog" aria-labelledby="search-title"><div class="search-command"><label><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="smart-query" autocomplete="off" placeholder="לדוגמה: אילו משלוחים מתעכבים?" aria-labelledby="search-title"></label><h2 id="search-title">אפשר לשאול על כל מה שקורה בעסק</h2><div class="query-suggestions"><button type="button">מה מחכה לאישור שלי?</button><button type="button">איפה אנחנו מפסידים כסף?</button><button type="button">איזה מלאי עומד להיגמר?</button></div><div class="query-answer" data-query-answer hidden></div></div></dialog>
   <a class="whatsapp-dock" href="https://wa.me/972549313468" target="_blank" rel="noopener" aria-label="פתיחת שיחה עם Direct Line בוואטסאפ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.6A8 8 0 0 1 8.1 18.5L4 20l1.4-4A8 8 0 1 1 20 11.6Z"/><path d="M9 8.5c.5 2 2 3.5 4 4l1-1c.4-.4.8-.2 1.1 0l1.5.7c.4.2.5.5.4.9-.4 1.2-1.5 1.9-2.7 1.7-3.6-.5-6.8-3.7-7.3-7.3-.2-1.2.5-2.3 1.7-2.7.4-.1.7 0 .9.4l.7 1.5c.2.3.4.7 0 1.1l-1.3.7Z"/></svg><span><b>צריכים תשובה?</b><small>הצוות זמין בעברית</small></span></a>
   <div class="toast" role="status" aria-live="polite" hidden></div>
-  <script src="/p/login-extras.js?v=1" defer></script><script src="app.js?v=53"></script><script src="/p/clients-section.js?v=2"></script><script src="/p/live-sections.js?v=3"></script><script src="/p/notify.js?v=1"></script><script src="/p/real-ui.js?v=3"></script>
+  <script src="/p/login-extras.js?v=1" defer></script><script src="app.js?v=54"></script><script src="/p/clients-section.js?v=3"></script><script src="/p/live-sections.js?v=3"></script><script src="/p/notify.js?v=1"></script><script src="/p/real-ui.js?v=3"></script>
 </body>
 </html>

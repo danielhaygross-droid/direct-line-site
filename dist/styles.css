@@ -359,3 +359,12 @@ body.real-data-mode [data-risk-count]{display:none}
 @media(max-width:560px){.notifications{display:grid}}
 [dir=ltr] .notifications i{left:auto;right:-4px}
 .notifications[aria-expanded=true]{border-color:var(--gold);color:var(--gold)}
+
+/* Separate Daniel's stores from Direct Line client accounts */
+.nav-group-title{display:block;margin:0 13px 7px;color:var(--gold);font:700 11px/1.2 "IBM Plex Mono",monospace;letter-spacing:1.2px;text-transform:uppercase}
+.nav-client-group{margin-top:17px;padding-top:17px;border-top:1px solid rgba(255,255,255,.09)}
+[data-theme=dark] .nav-client-group{border-top-color:var(--line)}
+.orders-table th:nth-child(2),.orders-table td:nth-child(2){white-space:nowrap}
+.order-date{display:grid;gap:2px;color:var(--text);font-weight:600}.order-date small{color:var(--dim);font-weight:400}
+@media(max-width:560px){.nav-group-title{margin-inline:13px}.nav-client-group{margin-top:12px;padding-top:12px}}
+.product-catalog-table .price-source{display:block;margin-top:4px;color:var(--dim);font:500 11px/1.3 "IBM Plex Mono",monospace;white-space:normal}
