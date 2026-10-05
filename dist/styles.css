@@ -355,3 +355,7 @@ body.real-data-mode [data-risk-count]{display:none}
 .kpi-period{color:var(--muted);font-weight:400;font-size:.85em}
 /* hidden demo controls + real notification badge */
 .global-search-trigger[hidden],.whatsapp-dock[hidden],.context-controls label[hidden],.notifications i[hidden]{display:none!important}
+/* notifications: bell also on phones; badge on the reading-end corner */
+@media(max-width:560px){.notifications{display:grid}}
+[dir=ltr] .notifications i{left:auto;right:-4px}
+.notifications[aria-expanded=true]{border-color:var(--gold);color:var(--gold)}
