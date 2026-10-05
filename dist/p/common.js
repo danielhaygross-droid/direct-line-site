@@ -174,5 +174,72 @@
     return { setDivisor(d) { divisor = Number(d) || 6000; update(); } };
   }
 
-  window.DL = { RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  // Inside the dashboard the admin view is a tall iframe, so "fixed" means the middle of the
+  // whole frame. This returns the part of the frame the user can actually see.
+  function visibleArea() {
+    try {
+      if (window.top === window.self || !window.frameElement) return null;
+      const r = window.frameElement.getBoundingClientRect(), vh = window.parent.innerHeight;
+      const bar = window.parent.document.querySelector('.topbar'); // the dashboard's sticky top bar
+      const barBottom = bar ? Math.max(0, bar.getBoundingClientRect().bottom) : 0;
+      const top = Math.max(0, barBottom - r.top), bottom = Math.min(window.innerHeight, vh - r.top);
+      return { top, height: Math.max(240, bottom - top) };
+    } catch (e) { return null; }
+  }
+
+  // Small toast at the bottom of the page.
+  function toast(text) {
+    let el = document.querySelector('.dl-toast');
+    if (!el) { el = document.createElement('div'); el.className = 'dl-toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    const area = visibleArea();
+    if (area) { el.style.top = (area.top + area.height - 70) + 'px'; el.style.bottom = 'auto'; }
+    el.textContent = text; el.classList.add('show');
+    clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 4000);
+  }
+
+  // Follow-up thread for one order (client ↔ Direct Line). role: 'client' | 'admin'.
+  function openThread({ orderId, title, subtitle = '', role, onChange }) {
+    let dlg = document.querySelector('dialog.dl-thread');
+    if (!dlg) { dlg = document.createElement('dialog'); dlg.className = 'dl-thread'; document.body.appendChild(dlg); }
+    const quick = role === 'client'
+      ? ['Any update on this order?', 'Can you please check this order?', 'The customer is asking where the parcel is.']
+      : ['We’re checking this now.', 'Shipped, tracking is updated.', 'Delayed at the supplier, we’ll update you soon.'];
+    dlg.innerHTML = `<div class="dl-thread-head"><div><small>${role === 'client' ? 'Follow up with Direct Line' : 'Follow-ups from the client'}</small><h3>${esc(title)}</h3>${subtitle ? `<p>${esc(subtitle)}</p>` : ''}</div><button type="button" class="btn btn-small" data-close aria-label="Close">✕</button></div>
+      <div class="dl-thread-list" aria-live="polite"><p class="hint">Loading…</p></div>
+      <div class="dl-quick">${quick.map(q => `<button type="button" class="chip" data-quick>${esc(q)}</button>`).join('')}</div>
+      <form class="dl-thread-form"><textarea name="body" maxlength="2000" rows="3" placeholder="${role === 'client' ? 'Write your follow-up…' : 'Write a reply…'}" aria-label="Message"></textarea>
+      <div class="dl-thread-actions"><button class="btn btn-gold" type="submit">Send</button><p class="msg" data-thread-msg></p></div></form>`;
+    const list = dlg.querySelector('.dl-thread-list'), form = dlg.querySelector('form'), msg = dlg.querySelector('[data-thread-msg]');
+    const render = msgs => {
+      list.innerHTML = msgs.length ? msgs.map(m => `<div class="dl-bubble ${m.author === role ? 'mine' : 'theirs'}"><span>${esc(m.body)}</span><small>${m.author === 'admin' ? 'Direct Line' : 'Client'} · ${new Date(m.createdAt * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small></div>`).join('')
+        : `<p class="hint">No messages yet. ${role === 'client' ? 'Send a follow-up and we’ll get back to you here.' : ''}</p>`;
+      list.scrollTop = list.scrollHeight;
+    };
+    const load = async () => { try { render((await api(`/orders/${orderId}/messages`)).messages); onChange && onChange(); } catch (e) { list.innerHTML = `<p class="msg err">${esc(e.message)}</p>`; } };
+    dlg.querySelector('[data-close]').onclick = () => dlg.close();
+    dlg.querySelectorAll('[data-quick]').forEach(b => { b.onclick = () => { form.body.value = b.textContent; form.body.focus(); }; });
+    form.onsubmit = async e => {
+      e.preventDefault();
+      const body = form.body.value.trim(); if (!body) { msg.textContent = 'Please write a message.'; msg.className = 'msg err'; return; }
+      const btn = form.querySelector('[type=submit]'); btn.disabled = true;
+      try { render((await api(`/orders/${orderId}/messages`, { method: 'POST', body: { body } })).messages); form.body.value = ''; msg.textContent = 'Sent.'; msg.className = 'msg okm'; onChange && onChange(); }
+      catch (ex) { msg.textContent = ex.message; msg.className = 'msg err'; }
+      finally { btn.disabled = false; }
+    };
+    clearInterval(openThread.timer);
+    openThread.timer = setInterval(() => { if (dlg.open && !document.hidden) load(); }, 15000);
+    dlg.addEventListener('close', () => clearInterval(openThread.timer), { once: true });
+    if (!dlg.open) dlg.showModal();
+    // Inside the dashboard: keep the box in the part of the page the user is looking at, even while they scroll.
+    const place = () => { const area = visibleArea(); if (area) Object.assign(dlg.style, { top: area.top + 12 + 'px', bottom: 'auto', margin: '0 auto', maxHeight: Math.min(720, area.height - 24) + 'px' }); };
+    place();
+    if (visibleArea()) {
+      const host = window.parent;
+      host.addEventListener('scroll', place, { passive: true }); host.addEventListener('resize', place);
+      dlg.addEventListener('close', () => { host.removeEventListener('scroll', place); host.removeEventListener('resize', place); }, { once: true });
+    }
+    load();
+  }
+
+  window.DL = { toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();

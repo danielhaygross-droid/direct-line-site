@@ -137,3 +137,27 @@ html.embed .topbar{display:none}
 html.embed main{padding:0 0 8px;max-width:none}
 html.embed #boot{padding:40px}
 html.embed .panel,html.embed form{scroll-margin-top:110px}
+/* follow-up threads + toast */
+.dl-thread{width:min(560px,calc(100vw - 24px));max-height:min(720px,calc(100vh - 24px));padding:0;border:1px solid var(--line);border-radius:16px;background:var(--paper);color:var(--text);box-shadow:0 30px 80px rgba(17,27,39,.3)}
+.dl-thread[open]{display:flex;flex-direction:column}
+.dl-thread::backdrop{background:rgba(17,27,39,.45)}
+.dl-thread-head{display:flex;justify-content:space-between;gap:12px;align-items:start;padding:16px 18px;border-bottom:1px solid var(--line)}
+.dl-thread-head small{color:var(--muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.dl-thread-head h3{margin:2px 0 0;font-size:18px}
+.dl-thread-head p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.dl-thread-list{flex:1;overflow:auto;padding:14px 18px;display:flex;flex-direction:column;gap:10px;min-height:120px;background:var(--cream)}
+.dl-bubble{max-width:82%;display:flex;flex-direction:column;gap:3px;padding:9px 12px;border-radius:12px;background:#fff;border:1px solid var(--line);align-self:flex-start;white-space:pre-wrap;word-break:break-word}
+.dl-bubble.mine{align-self:flex-end;background:#f4ead5;border-color:#ead9b4}
+.dl-bubble small{color:var(--muted);font-size:11.5px}
+.dl-quick{display:flex;flex-wrap:wrap;gap:6px;padding:10px 18px 0}
+.dl-thread-form{padding:10px 18px 16px;display:grid;gap:8px}
+.dl-thread-form textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font:inherit;font-size:14px;resize:vertical}
+.dl-thread-actions{display:flex;gap:10px;align-items:center}
+.pill-new{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:999px;background:var(--bad);color:#fff;font-size:11px;font-weight:700}
+tr.updated td{background:#eef6f0}
+.dl-toast{position:fixed;left:50%;bottom:20px;transform:translate(-50%,20px);opacity:0;z-index:50;padding:10px 16px;border-radius:12px;background:var(--navy);color:#fff;font-size:14px;box-shadow:0 12px 30px rgba(0,0,0,.25);transition:.25s;pointer-events:none;max-width:calc(100vw - 32px)}
+.dl-toast.show{opacity:1;transform:translate(-50%,0)}
+.chip.chip-alert{border-color:var(--bad);color:var(--bad)}
+.chip.chip-alert.active{background:var(--bad);border-color:var(--bad);color:#fff}
+.chip.chip-alert.active span{color:#fff}
+.cell-status .pill-new{background:var(--ok)}

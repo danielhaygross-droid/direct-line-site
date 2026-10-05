@@ -11,9 +11,9 @@
   const readSeen = () => { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}'); } catch (e) { return {}; } };
   const writeSeen = v => { try { localStorage.setItem(SEEN_KEY, JSON.stringify(v)); } catch (e) { /* private mode */ } };
 
-  let portal = null, portalOrders = null, lastPortalLoad = 0;
+  let portal = null, portalOrders = null, lastPortalLoad = 0, lastUnread = null, knownIds = null;
   async function loadPortal(force) {
-    if (!force && Date.now() - lastPortalLoad < 60000) return;
+    if (!force && Date.now() - lastPortalLoad < 25000) return;
     lastPortalLoad = Date.now();
     try {
       const [o, ord] = await Promise.all([
@@ -22,6 +22,16 @@
       ]);
       portal = o && o.ok ? o : null; portalOrders = ord && ord.ok ? ord.orders : null;
     } catch (e) { /* offline or not signed in */ }
+    if (portalOrders) {
+      // Pop a message when a client sends a new order or follow-up while the dashboard is open.
+      const unread = portalOrders.reduce((t, o) => t + (o.unreadMessages || 0), 0);
+      const ids = new Set(portalOrders.map(o => o.id));
+      const added = knownIds ? [...ids].filter(id => !knownIds.has(id)).length : 0;
+      const say = typeof toast === 'function' ? toast : () => {};
+      if (lastUnread !== null && unread > lastUnread) say(L('New follow-up from a client. Open Clients & orders to reply.', 'פנייה חדשה מלקוח. פתחו לקוחות והזמנות כדי להשיב.'));
+      else if (added) say(L(`${added} new client order${added > 1 ? 's' : ''} came in.`, `${added} הזמנות לקוח חדשות התקבלו.`));
+      lastUnread = unread; knownIds = ids;
+    }
   }
 
   const SHIPPED = ['נשלח', 'Shipped', 'Delivered'], CANCELLED = ['בוטלה', 'בוטל', 'Cancelled'];
@@ -51,6 +61,10 @@
       title: L(`${unpaid.length} order${unpaid.length > 1 ? 's' : ''} unpaid to the supplier`, `${unpaid.length} הזמנות שלא שולמו לספק`),
       text: money(unpaid.reduce((t, o) => t + Number(o.supplierCost || 0) * Number(o.quantity || 1), 0)) });
     if (portalOrders) {
+      const asking = portalOrders.filter(o => o.unreadMessages > 0);
+      if (asking.length) list.push({ id: 'client-followups', sig: asking.map(o => o.id + ':' + o.unreadMessages).join(','), level: 'high', view: 'client-orders',
+        title: L(`${asking.length} order${asking.length > 1 ? 's' : ''} with new client follow-ups`, `${asking.length} הזמנות עם פניות חדשות מלקוחות`),
+        text: L('Open Clients & orders → New follow-ups to reply.', 'פתחו לקוחות והזמנות ← פניות חדשות כדי להשיב.') });
       const pending = portalOrders.filter(o => o.status === 'pending');
       if (pending.length) list.push({ id: 'client-pending', sig: pending.map(o => o.id).join(','), level: 'high', view: 'client-orders',
         title: L(`${pending.length} new client order${pending.length > 1 ? 's' : ''} waiting`, `${pending.length} הזמנות לקוח חדשות ממתינות`),
@@ -117,7 +131,12 @@
 
   const original = renderAll;
   renderAll = function () { const r = original.apply(this, arguments); try { updateBadge(); updateSidebar(); } catch (e) { console.warn('real ui', e); } return r; };
-  setInterval(() => { updateSidebar(); if (document.body.classList.contains('authenticated')) loadPortal().then(updateBadge); }, 60000);
+  setInterval(() => { updateSidebar(); if (!document.hidden && document.body.classList.contains('authenticated')) loadPortal().then(updateBadge); }, 30000);
+  // The admin view (Clients & orders) tells us when follow-ups were read or arrived.
+  window.addEventListener('message', e => {
+    if (e.origin !== location.origin || e.data?.type !== 'dl-followups') return;
+    if (lastUnread !== e.data.unread) loadPortal(true).then(updateBadge);
+  });
   let started = false;
   const start = () => { if (started || !document.body.classList.contains('authenticated')) return; started = true; loadPortal(true).then(updateBadge); };
   new MutationObserver(start).observe(document.body, { attributes: true, attributeFilter: ['class'] });
