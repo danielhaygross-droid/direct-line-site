@@ -49,6 +49,17 @@ export const SCHEMA = [
      paid_at INTEGER NOT NULL,
      created_at INTEGER NOT NULL)`,
   'CREATE TABLE IF NOT EXISTS portal_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+  // Follow-ups / nudges on an order, between the client and us.
+  `CREATE TABLE IF NOT EXISTS order_messages (
+     id SERIAL PRIMARY KEY,
+     order_id INTEGER NOT NULL REFERENCES client_orders(id),
+     client_id INTEGER NOT NULL REFERENCES users(id),
+     author TEXT NOT NULL CHECK (author IN ('client','admin')),
+     body TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     read_by_admin BOOLEAN NOT NULL DEFAULT FALSE,
+     read_by_client BOOLEAN NOT NULL DEFAULT FALSE)`,
+  'CREATE INDEX IF NOT EXISTS order_messages_order_idx ON order_messages (order_id, created_at)',
   // Fee split: of the per-order fee ("commission"), this part goes to the supplier; the rest is ours.
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS supplier_share DOUBLE PRECISION NOT NULL DEFAULT 1',
   // What the client sees on each order: product cost (our $2 fee is already inside it) + shipping fee = price.
@@ -126,6 +137,19 @@ function orderOut(r) {
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   };
 }
+// Adds message counts to orders: messages, unread (for the viewer's side).
+async function withMessages(DB, orders, forAdmin) {
+  if (!orders.length) return orders;
+  const ids = orders.map(o => o.id);
+  const rows = (await DB.prepare(`SELECT order_id, COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE author = 'client' AND NOT read_by_admin) AS unread_admin,
+      COUNT(*) FILTER (WHERE author = 'admin' AND NOT read_by_client) AS unread_client,
+      MAX(created_at) AS last_at
+    FROM order_messages WHERE order_id IN (${ids.map(() => '?').join(',')}) GROUP BY order_id`).bind(...ids).all()).results || [];
+  const by = new Map(rows.map(r => [Number(r.order_id), r]));
+  return orders.map(o => { const r = by.get(o.id); return { ...o, messages: Number(r?.total || 0), unreadMessages: Number((forAdmin ? r?.unread_admin : r?.unread_client) || 0), lastMessageAt: r ? Number(r.last_at) : null }; });
+}
+const messageOut = m => ({ id: m.id, orderId: m.order_id, author: m.author, body: m.body, createdAt: Number(m.created_at) });
 async function readBody(request) { return request.json().catch(() => ({})); }
 
 function orderFields(body) {
@@ -188,7 +212,7 @@ export async function handlePortal(request, url, ctx) {
   // ----- client routes -----
   if (path === '/orders' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? ORDER BY created_at DESC, id DESC').bind(who.clientId).all()).results || [];
-    return json({ ok: true, orders: rows.map(orderOut).map(({ commission, supplierShare, ourShare, ...o }) => o) });
+    return json({ ok: true, orders: await withMessages(DB, rows.map(orderOut).map(({ commission, supplierShare, ourShare, ...o }) => o), false) });
   }
   if (path === '/payments' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
@@ -209,6 +233,25 @@ export async function handlePortal(request, url, ctx) {
     const out = orderOut(row);
     if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; }
     return json({ ok: true, order: out });
+  }
+  // ----- follow-up messages on an order (client ↔ us) -----
+  const msgMatch = /^\/orders\/(\d+)\/messages$/.exec(path);
+  if (msgMatch) {
+    const id = Number(msgMatch[1]);
+    const order = await DB.prepare('SELECT id, client_id FROM client_orders WHERE id = ?').bind(id).first();
+    if (!order || (!who.admin && order.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
+    if (method === 'POST') {
+      const body = await readBody(request);
+      const msg = text(body.body, 2000);
+      if (!msg) return json({ ok: false, error: 'Please write a message' }, 400);
+      await DB.prepare('INSERT INTO order_messages (order_id, client_id, author, body, created_at, read_by_admin, read_by_client) VALUES (?,?,?,?,?,?,?)')
+        .bind(id, order.client_id, who.admin ? 'admin' : 'client', msg, now(), who.admin, !who.admin).run();
+    } else if (method !== 'GET') return json({ ok: false, error: 'Method not allowed' }, 405);
+    // Reading the thread marks the other side's messages as read.
+    await DB.prepare(who.admin ? "UPDATE order_messages SET read_by_admin = TRUE WHERE order_id = ? AND author = 'client'"
+      : "UPDATE order_messages SET read_by_client = TRUE WHERE order_id = ? AND author = 'admin'").bind(id).run();
+    const rows = (await DB.prepare('SELECT * FROM order_messages WHERE order_id = ? ORDER BY created_at, id').bind(id).all()).results || [];
+    return json({ ok: true, messages: rows.map(messageOut) });
   }
   const orderMatch = /^\/orders\/(\d+)$/.exec(path);
   if (orderMatch && (method === 'PUT' || method === 'POST')) {
@@ -251,7 +294,7 @@ export async function handlePortal(request, url, ctx) {
     const rows = clientId
       ? (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? ORDER BY created_at DESC, id DESC').bind(clientId).all()).results
       : (await DB.prepare('SELECT * FROM client_orders ORDER BY created_at DESC, id DESC LIMIT 500').all()).results;
-    return json({ ok: true, orders: (rows || []).map(orderOut) });
+    return json({ ok: true, orders: await withMessages(DB, (rows || []).map(orderOut), true) });
   }
   if (path === '/admin/payments' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
