@@ -1,7 +1,7 @@
 (function () {
-  const { api, money, esc, date, trackingUrl, logout, renderLogin, quote, destinationPicker, hasRate, categoryOptions, $, $$ } = window.DL;
+  const { api, money, esc, date, trackingUrl, logout, renderLogin, quote, destinationPicker, hasRate, categoryOptions, toast, openThread, $, $$ } = window.DL;
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-  const state = { me: null, orders: [], payments: [], editing: null, search: '', filter: 'all', autoPrice: null };
+  const state = { me: null, orders: [], payments: [], editing: null, search: '', filter: 'all', autoPrice: null, updated: new Set(), unread: null };
   const form = $('#order-form');
   const dest = destinationPicker(form.destination, $('[data-other-country]', form));
   const divisor = () => Number(state.me?.settings?.volumetric_divisor) || 6000;
@@ -20,6 +20,24 @@
     form.category.innerHTML = categoryOptions('general');
     renderSummary(state.me.summary);
     await Promise.all([loadOrders(), loadPayments()]);
+    // Keep orders, statuses and replies up to date while the page is open.
+    setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 20000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh().catch(() => {}); });
+  }
+
+  // Status changes since the client last looked, and new replies from us.
+  function detectUpdates(orders) {
+    const key = 'dl_seen_status_' + state.me.id;
+    let seen = {}; try { seen = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) { /* ignore */ }
+    const changed = orders.filter(o => seen[o.id] && seen[o.id] !== o.status);
+    changed.forEach(o => state.updated.add(o.id));
+    orders.forEach(o => { seen[o.id] = o.status; });
+    try { localStorage.setItem(key, JSON.stringify(seen)); } catch (e) { /* ignore */ }
+    if (changed.length === 1) toast(`Order ${changed[0].orderRef || '#' + changed[0].id} is now ${changed[0].status}.`);
+    else if (changed.length > 1) toast(`${changed.length} of your orders were updated.`);
+    const unread = orders.reduce((t, o) => t + (o.unreadMessages || 0), 0);
+    if (state.unread !== null && unread > state.unread) toast('New reply from Direct Line on one of your orders.');
+    state.unread = unread;
   }
 
   function renderSummary(s) {
@@ -37,6 +55,7 @@
   // ----- orders list -----
   async function loadOrders() {
     state.orders = (await api('/orders')).orders;
+    detectUpdates(state.orders);
     renderFilters(); renderOrders();
   }
 
@@ -55,7 +74,7 @@
       body.innerHTML = `<tr class="empty-row"><td colspan="12" class="empty">${state.orders.length ? 'No orders match.' : 'No orders yet. Add your first one above.'}</td></tr>`;
       return;
     }
-    body.innerHTML = rows.map(o => `<tr${state.editing?.id === o.id ? ' class="selected"' : ''}>
+    body.innerHTML = rows.map(o => `<tr class="${state.editing?.id === o.id ? 'selected' : ''}${state.updated.has(o.id) ? ' updated' : ''}">
       <td data-label="Date">${date(o.createdAt)}</td>
       <td data-label="Order" class="cell-title">${esc(o.orderRef) || '—'}</td>
       <td data-label="Tracking">${o.trackingNumber ? `<a href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener" title="Track this parcel">${esc(o.trackingNumber)}</a>` : '—'}</td>
@@ -65,9 +84,9 @@
       <td data-label="Total" class="num"><b>${money(o.price)}</b></td>
       <td data-label="Sold for" class="num">${money(o.sellingPrice)}</td>
       <td data-label="Profit" class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${money(o.profit)}</td>
-      <td data-label="Status" class="cell-status"><span class="badge ${esc(o.status)}">${esc(o.status)}</span></td>
+      <td data-label="Status" class="cell-status"><span class="badge ${esc(o.status)}">${esc(o.status)}</span>${state.updated.has(o.id) ? '<span class="pill-new">Updated</span>' : ''}</td>
       <td data-label="Notes" class="notes${o.notes ? '' : ' no-notes'}">${esc(o.notes)}</td>
-      <td class="cell-actions">${o.status === 'cancelled' ? '' : `<button class="btn btn-small" type="button" data-edit="${o.id}">Edit</button>`}${o.status === 'pending' ? ` <button class="btn btn-small btn-danger" type="button" data-cancel="${o.id}">Cancel</button>` : ''}</td></tr>`).join('');
+      <td class="cell-actions"><button class="btn btn-small" type="button" data-msg="${o.id}">Follow up${o.unreadMessages ? `<span class="pill-new">${o.unreadMessages} new</span>` : ''}</button>${o.status === 'cancelled' ? '' : ` <button class="btn btn-small" type="button" data-edit="${o.id}">Edit</button>`}${o.status === 'pending' ? ` <button class="btn btn-small btn-danger" type="button" data-cancel="${o.id}">Cancel</button>` : ''}</td></tr>`).join('');
   }
 
   // ----- payments list -----
@@ -183,6 +202,12 @@
 
   $('[data-cancel-edit]').addEventListener('click', () => setEditing(null));
   $('[data-orders]').addEventListener('click', async e => {
+    const msgId = e.target.closest('[data-msg]')?.dataset.msg;
+    if (msgId) {
+      const o = state.orders.find(x => String(x.id) === msgId);
+      openThread({ orderId: o.id, role: 'client', title: o.orderRef || 'Order #' + o.id, subtitle: `Status: ${o.status}${o.trackingNumber ? ' · Tracking ' + o.trackingNumber : ''}`, onChange: () => loadOrders().catch(() => {}) });
+      return;
+    }
     const editId = e.target.closest('[data-edit]')?.dataset.edit;
     if (editId) { setEditing(state.orders.find(o => String(o.id) === editId)); return; }
     const btn = e.target.closest('[data-cancel]');
