@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/p/common.css?v=5">
+<link rel="stylesheet" href="/p/common.css?v=6">
 <script src="/admin/embed.js?v=1"></script>
 </head>
 <body>
@@ -24,6 +24,16 @@
     <p class="sub">Every client's orders, what they owe, the supplier's share and what we earn. Click a client to see details and record payments.</p>
 
     <section class="cards cols-4" data-totals></section>
+
+    <section class="panel" id="all-orders-panel">
+      <div class="panel-head"><h2>All client orders</h2><div class="toolbar"><select data-ao-client aria-label="Filter by client"><option value="">All clients</option></select><input type="search" placeholder="Search orders…" aria-label="Search by order, tracking, client or notes" data-ao-search></div></div>
+      <p class="sub" style="margin:-4px 0 10px">Every order your clients submitted, newest first. Update the status here as you process each one.</p>
+      <div class="chips" data-ao-filters></div>
+      <div class="table-wrap"><table class="stack-table">
+        <thead><tr><th>Date</th><th>Client</th><th>Order</th><th>Tracking</th><th>To</th><th class="num">Product</th><th class="num">Shipping</th><th class="num">Total</th><th>Status</th><th>Notes</th><th></th></tr></thead>
+        <tbody data-ao-body></tbody>
+      </table></div>
+    </section>
 
     <section class="panel">
       <div class="panel-head"><h2>Clients</h2><div class="toolbar"><input type="search" placeholder="Search clients…" data-client-search><button class="btn btn-gold btn-small" type="button" data-show-add-user>+ Add client</button></div></div>
@@ -122,7 +132,7 @@
   </main>
 </div>
 <script src="/p/login-extras.js?v=1"></script>
-<script src="/p/common.js?v=4"></script>
-<script src="/admin/admin.js?v=10"></script>
+<script src="/p/common.js?v=5"></script>
+<script src="/admin/admin.js?v=12"></script>
 </body>
 </html>

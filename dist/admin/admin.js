@@ -1,5 +1,5 @@
 (function () {
-  const { api, money, esc, date, trackingUrl, logout, renderLogin, mountCalculator, quote, destinationPicker, hasRate, categoryOptions, $, $$ } = window.DL;
+  const { api, money, esc, date, trackingUrl, logout, renderLogin, mountCalculator, quote, destinationPicker, hasRate, categoryOptions, toast, openThread, $, $$ } = window.DL;
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
   const state = { overview: null, selected: null, orders: [], payments: [], search: '', editing: null };
   const of = $('#admin-order-form');
@@ -40,20 +40,110 @@
       ['Our earnings', money(totals.ourShare), 'accent'],
     ].map(([k, v, cls]) => `<div class="card stat ${cls}"><small>${k}</small><strong>${v}</strong></div>`).join('');
     const sf = $('#settings-form');
-    sf.commission_per_order.value = settings.commission_per_order;
-    sf.supplier_share_per_order.value = settings.supplier_share_per_order;
-    updateSplitPreview();
-    sf.volumetric_divisor.value = settings.volumetric_divisor;
+    if (!sf.contains(document.activeElement)) { // don't overwrite what the admin is typing
+      sf.commission_per_order.value = settings.commission_per_order;
+      sf.supplier_share_per_order.value = settings.supplier_share_per_order;
+      updateSplitPreview();
+      sf.volumetric_divisor.value = settings.volumetric_divisor;
+    }
     calc?.setDivisor(settings.volumetric_divisor);
     $('[data-admins]').innerHTML = admins.length
       ? admins.map(a => `${esc(a.name)} (${esc(a.username)})${a.active ? '' : ' — disabled'}`).join('<br>') + '<br>Plus the main admin login.'
       : 'Only the main admin login so far. Use "+ Add client" and choose "Admin" to add one for Erwin.';
     renderClients();
+    loadAllOrders();
     if (state.selected) {
       const fresh = clients.find(c => c.id === state.selected.id);
       if (fresh) { state.selected = fresh; renderDetailCards(); }
     }
   }
+
+  // ----- all client orders in one place -----
+  const ao = { list: [], filter: null, q: '', client: '', sig: null, unread: null };
+  const sigOf = list => list.map(o => o.id + ':' + o.status).join(',');
+  const unreadOf = list => list.reduce((t, o) => t + (o.unreadMessages || 0), 0);
+  async function loadAllOrders() {
+    try { ao.list = (await api('/admin/orders')).orders; } catch (e) { return; }
+    ao.sig = sigOf(ao.list); ao.unread = unreadOf(ao.list);
+    if (window.top !== window.self) parent.postMessage({ type: 'dl-followups', unread: ao.unread }, location.origin);
+    if (ao.filter === null) ao.filter = ao.list.some(o => o.status === 'pending') ? 'pending' : 'all';
+    const sel = $('[data-ao-client]'), cur = sel.value;
+    sel.innerHTML = '<option value="">All clients</option>' + state.overview.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    sel.value = cur;
+    renderAllOrders();
+  }
+  function renderAllOrders() {
+    const name = id => state.overview.clients.find(c => c.id === id)?.name || '—';
+    const inClient = ao.list.filter(o => !ao.client || String(o.clientId) === ao.client);
+    const match = (o, s) => s === 'all' || (s === 'followups' ? o.unreadMessages > 0 : o.status === s);
+    const count = s => inClient.filter(o => match(o, s)).length;
+    const label = s => s === 'all' ? 'All' : s === 'followups' ? 'New follow-ups' : s[0].toUpperCase() + s.slice(1);
+    $('[data-ao-filters]').innerHTML = ['all', 'followups', ...STATUSES].filter(s => s === 'all' || count(s) || s === ao.filter)
+      .map(s => `<button type="button" class="chip${ao.filter === s ? ' active' : ''}${s === 'followups' ? ' chip-alert' : ''}" data-ao-filter="${s}">${label(s)} <span>${count(s)}</span></button>`).join('');
+    const q = ao.q.toLowerCase();
+    const rows = inClient.filter(o => match(o, ao.filter)
+      && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, name(o.clientId)].join(' ').toLowerCase().includes(q)));
+    $('[data-ao-body]').innerHTML = rows.length ? rows.map(o => `<tr${o.unreadMessages ? ' class="updated"' : ''}>
+      <td data-label="Date">${date(o.createdAt)}</td>
+      <td data-label="Client" class="cell-title"><b>${esc(name(o.clientId))}</b></td>
+      <td data-label="Order">${esc(o.orderRef) || '—'}</td>
+      <td data-label="Tracking">${o.trackingNumber ? `<a href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${esc(o.trackingNumber)}</a>` : '—'}</td>
+      <td data-label="To">${esc(o.destination) || '—'}</td>
+      <td data-label="Product" class="num">${money(o.productCost)}</td>
+      <td data-label="Shipping" class="num">${money(o.shippingFee)}</td>
+      <td data-label="Total" class="num"><b>${money(o.price)}</b></td>
+      <td data-label="Status" class="cell-status"><select class="inline-select" data-ao-status="${o.id}" aria-label="Status">${STATUSES.map(s => `<option${s === o.status ? ' selected' : ''}>${s}</option>`).join('')}</select></td>
+      <td data-label="Notes" class="notes${o.notes ? '' : ' no-notes'}">${esc(o.notes)}</td>
+      <td class="cell-actions"><button class="btn btn-small" type="button" data-ao-msg="${o.id}">${o.unreadMessages ? 'Reply' : 'Messages'}${o.unreadMessages ? `<span class="pill-new">${o.unreadMessages} new</span>` : o.messages ? ` <span class="hint">(${o.messages})</span>` : ''}</button> <button class="btn btn-small" type="button" data-ao-open="${o.clientId}">Open client</button></td></tr>`).join('')
+      : `<tr class="empty-row"><td colspan="11" class="empty">${ao.list.length ? 'No orders match.' : 'No client orders yet. They show up here as soon as a client adds one in their portal.'}</td></tr>`;
+  }
+  $('[data-ao-filters]').addEventListener('click', e => { const f = e.target.closest('[data-ao-filter]')?.dataset.aoFilter; if (f) { ao.filter = f; renderAllOrders(); } });
+  $('[data-ao-search]').addEventListener('input', e => { ao.q = e.target.value; renderAllOrders(); });
+  $('[data-ao-client]').addEventListener('change', e => { ao.client = e.target.value; renderAllOrders(); });
+  $('[data-ao-body]').addEventListener('click', e => {
+    const id = e.target.closest('[data-ao-open]')?.dataset.aoOpen; if (id) openClient(Number(id));
+    const mid = e.target.closest('[data-ao-msg]')?.dataset.aoMsg; if (mid) openOrderThread(Number(mid));
+  });
+  function openOrderThread(id) {
+    const o = ao.list.find(x => x.id === id); if (!o) return;
+    const client = state.overview.clients.find(c => c.id === o.clientId)?.name || 'Client';
+    openThread({ orderId: o.id, role: 'admin', title: `${client} · ${o.orderRef || 'Order #' + o.id}`,
+      subtitle: `Status: ${o.status}${o.trackingNumber ? ' · Tracking ' + o.trackingNumber : ''}`, onChange: () => loadAllOrders() });
+  }
+
+  // Keep the list live: new client orders, status changes and follow-ups show up without reloading.
+  async function poll() {
+    if (document.hidden || !state.overview) return;
+    // Don't redraw under the admin while they're picking a status.
+    if ($('[data-ao-body]').contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
+    let list; try { list = (await api('/admin/orders')).orders; } catch (e) { return; }
+    const unread = unreadOf(list);
+    // Inside the dashboard, the dashboard itself shows these messages (so they're seen on any page).
+    const say = window.top === window.self ? toast : () => {};
+    if (ao.unread !== null && unread > ao.unread) {
+      const o = list.find(x => x.unreadMessages > 0 && !(ao.list.find(y => y.id === x.id)?.unreadMessages >= x.unreadMessages)) || list.find(x => x.unreadMessages > 0);
+      const client = state.overview.clients.find(c => c.id === o?.clientId)?.name;
+      say(`New follow-up${client ? ' from ' + client : ''}${o?.orderRef ? ' on ' + o.orderRef : ''}.`);
+    }
+    const added = list.filter(o => !ao.list.some(x => x.id === o.id)).length;
+    if (added) say(`${added} new client order${added > 1 ? 's' : ''} came in.`);
+    if (sigOf(list) !== ao.sig) await loadOverview(); // totals and balances change too
+    else {
+      ao.list = list; ao.unread = unread; renderAllOrders();
+      if (window.top !== window.self) parent.postMessage({ type: 'dl-followups', unread }, location.origin);
+    }
+  }
+  setInterval(poll, 20000);
+  document.addEventListener('visibilitychange', poll);
+  $('[data-ao-body]').addEventListener('change', async e => {
+    const id = e.target.dataset.aoStatus; if (!id) return;
+    e.target.disabled = true;
+    try {
+      await api('/orders/' + id, { method: 'PUT', body: { status: e.target.value } });
+      await loadOverview();
+      if (state.selected) await loadClientOrders();
+    } catch (ex) { alert(ex.message); e.target.disabled = false; }
+  });
 
   function renderClients() {
     const q = state.search.toLowerCase();
