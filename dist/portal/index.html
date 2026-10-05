@@ -1,74 +1,24 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr" data-theme="light">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Direct Line · Client Portal</title>
 <meta name="robots" content="noindex">
+<meta name="theme-color" content="#111b27">
+<script>try{var t=localStorage.getItem('dl_portal_theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/p/common.css?v=6">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/p/ui.css?v=1">
+<link rel="stylesheet" href="/portal/portal.css?v=1">
 </head>
-<body class="portal">
-<div class="empty" id="boot">Loading…</div>
-<div id="app" hidden>
-  <header class="topbar">
-    <a class="brand" href="/portal/">direct<b>↗</b>line.<small>CLIENT PORTAL</small></a>
-    <span class="spacer"></span>
-    <div class="who keep"><strong data-name></strong><span data-username></span></div>
-    <button class="btn btn-ghost btn-small" type="button" data-logout>Log out</button>
-  </header>
-  <main>
-    <h1>Your orders</h1>
-    <p class="sub">Add each order with its tracking number, what it costs you and what you sold it for. We work out the shipping fee and show your profit.</p>
-
-    <section class="cards" data-summary></section>
-
-    <section class="panel" id="order-panel">
-      <div class="panel-head"><h2 data-form-title>Add an order</h2><button class="btn btn-small" type="button" data-cancel-edit hidden>Cancel edit</button></div>
-      <form class="form form-3" id="order-form" novalidate>
-        <label class="field">Order number / reference<input name="orderRef" maxlength="120" placeholder="e.g. Etsy #3412"></label>
-        <label class="field">Tracking number<input name="trackingNumber" maxlength="120" placeholder="e.g. LX123456789CN"></label>
-        <label class="field">Destination<select name="destination"></select></label>
-        <label class="field" data-other-country hidden>Country name<input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="off"></label>
-        <label class="field">Product type<select name="category"></select></label>
-        <label class="field">Weight (kg)<input name="weightKg" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 0.25"></label>
-        <div class="field">Size L × W × H (cm, optional)
-          <div class="dims"><input name="lengthCm" type="number" min="0" step="0.1" inputmode="decimal" placeholder="L" aria-label="Length (cm)"><input name="widthCm" type="number" min="0" step="0.1" inputmode="decimal" placeholder="W" aria-label="Width (cm)"><input name="heightCm" type="number" min="0" step="0.1" inputmode="decimal" placeholder="H" aria-label="Height (cm)"></div>
-        </div>
-        <div class="quote full" data-quote>Pick a destination and enter the weight to see the shipping price.</div>
-        <label class="field">Product cost (USD)<input name="productCost" type="number" min="0" step="0.01" inputmode="decimal"></label>
-        <label class="field">Shipping fee (USD)<input name="price" type="number" min="0" step="0.01" inputmode="decimal"></label>
-        <label class="field">Selling price — what your customer paid (USD)<input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal"></label>
-        <div class="field profit-box"><span class="profit-preview" data-total>Total you pay: —</span><span class="profit-preview" data-profit>Your profit: —</span></div>
-        <label class="field full">Notes<textarea name="notes" maxlength="2000" placeholder="Anything we should know about this order"></textarea></label>
-        <div class="form-actions">
-          <button class="btn btn-gold" type="submit" data-submit>Add order</button>
-          <p class="msg" data-form-msg></p>
-        </div>
-      </form>
-    </section>
-
-    <section class="panel">
-      <div class="panel-head"><h2>All orders</h2><div class="toolbar"><input type="search" placeholder="Search orders…" aria-label="Search by tracking, order number or notes" data-search></div></div>
-      <div class="chips" data-filters></div>
-      <div class="table-wrap"><table class="stack-table">
-        <thead><tr><th>Date</th><th>Order</th><th>Tracking</th><th>To</th><th class="num">Product</th><th class="num">Shipping</th><th class="num">Total</th><th class="num">Sold for</th><th class="num">Profit</th><th>Status</th><th>Notes</th><th></th></tr></thead>
-        <tbody data-orders></tbody>
-      </table></div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-head"><h2>Your payments</h2><span class="hint" data-pay-hint></span></div>
-      <div class="table-wrap"><table class="stack-table">
-        <thead><tr><th>Date</th><th class="num">Amount</th><th>Method</th><th>Note</th></tr></thead>
-        <tbody data-payments></tbody>
-      </table></div>
-    </section>
-  </main>
-</div>
+<body>
+<div id="boot" style="display:grid;place-items:center;min-height:100vh"><div class="brand" style="color:var(--text)"><span>direct<b>↗</b>line.</span><small>CLIENT PORTAL</small></div></div>
+<div id="app" class="app" hidden></div>
 <script src="/p/login-extras.js?v=1"></script>
-<script src="/p/common.js?v=5"></script>
-<script src="/portal/portal.js?v=8"></script>
+<script src="/p/common.js?v=6"></script>
+<script src="/p/notify.js?v=1"></script>
+<script src="/p/order-ui.js?v=1"></script>
+<script src="/portal/portal.js?v=9"></script>
 </body>
 </html>
