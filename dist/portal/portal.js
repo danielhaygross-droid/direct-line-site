@@ -54,14 +54,46 @@
       if (e.status === 401 || e.status === 403) return renderLogin(document.body, { title: 'Welcome back', subtitle: 'Sign in to add and track your orders.', portal: true });
       $('#boot').textContent = e.message; return;
     }
-    if (S.me.role === 'admin') { location.href = '/en/#client-orders'; return; }
+    if (S.me.role === 'admin') {
+      // Admins don't get bounced to the dashboard any more: they pick a client and preview their portal (view only).
+      const as = Number(new URLSearchParams(location.search).get('as'));
+      if (!as) return adminScreen();
+      window.DL_VIEW_AS = as;
+      try { S.me = await api('/me'); } catch (e) { return adminScreen(e.message); }
+    }
     shell();
+    if (S.me.preview) previewBanner();
     $('#boot').remove(); $('#app').hidden = false;
     await refresh(true);
     route();
     addEventListener('hashchange', route);
     setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 20000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh().catch(() => {}); });
+  }
+
+  // ---------- admin opening the client portal ----------
+  async function adminScreen(err) {
+    let clients = [];
+    try { clients = (await api('/admin/overview')).clients; } catch (e) { /* ignore */ }
+    $('#boot')?.remove();
+    const app = $('#app'); app.hidden = false; app.className = 'admin-pick';
+    app.innerHTML = `<div class="pick-card card">
+      <a class="brand" href="/portal/" style="color:var(--text)"><span>direct<b>↗</b>line.</span><small>CLIENT PORTAL</small></a>
+      <div><h1>You’re signed in as the Direct Line admin</h1><p class="muted">This page is the client portal, what your clients see. Pick a client to see their portal exactly as they do (view only), or go back to the admin dashboard.</p></div>
+      ${err ? `<p class="form-msg err">${esc(err)}</p>` : ''}
+      <div class="pick-list">${clients.length ? clients.map(c => `<a class="pick-row" href="/portal/?as=${c.id}"><span class="avatar">${esc((c.name || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase())}</span><span><b>${esc(c.name)}</b><small>@${esc(c.username)} · ${c.orders} order${c.orders === 1 ? '' : 's'}${c.active ? '' : ' · disabled'}</small></span><em>See their portal →</em></a>`).join('')
+        : '<p class="muted">No client accounts yet. Add one in the admin dashboard → Clients & orders.</p>'}</div>
+      <div class="pick-actions"><a class="btn btn-primary" href="/en/#client-orders">Go to admin dashboard</a><button type="button" class="btn" data-pick-logout>Sign out (to log in as a client)</button></div>
+      <p class="note">To test as a client (add orders, send messages), open this page in an incognito window and sign in with the client’s username and password.</p>
+    </div>`;
+    $('[data-pick-logout]').addEventListener('click', logout);
+  }
+  function previewBanner() {
+    const bar = document.createElement('div');
+    bar.className = 'preview-bar';
+    bar.innerHTML = `<span><b>Preview:</b> you’re seeing ${esc(S.me.name)}’s portal as admin. View only, nothing you click here changes their account.</span><a href="/portal/">Pick another client</a><a href="/en/#client-orders">Back to admin dashboard</a>`;
+    document.body.prepend(bar);
+    document.body.classList.add('is-preview');
   }
 
   // ---------- data ----------

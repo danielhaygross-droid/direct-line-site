@@ -150,3 +150,20 @@
 .bar-col small{font:500 11.5px var(--mono);color:var(--dim)}
 .brand>span{display:block}
 @media(max-width:560px){.bars{gap:6px;padding-inline:14px}.bar-val{font-size:10px}}
+/* admin opening the client portal */
+.admin-pick{display:grid!important;place-items:center;min-height:100vh;padding:24px;grid-template-columns:1fr!important}
+.pick-card{width:min(620px,100%);display:grid;gap:18px;padding:30px}
+.pick-card h1{font-size:24px;margin-bottom:6px}
+.pick-card p{margin:0}
+.pick-list{display:grid;gap:8px}
+.pick-row{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);color:var(--text);text-decoration:none}
+.pick-row:hover{border-color:var(--gold)}
+.pick-row span{display:grid;min-width:0}.pick-row small{color:var(--dim);font-size:12.5px}
+.pick-row em{font-style:normal;color:var(--gold-2);font-weight:600;font-size:13.5px;white-space:nowrap}
+[data-theme=dark] .pick-row em{color:var(--gold)}
+.pick-actions{display:flex;gap:8px;flex-wrap:wrap}
+.preview-bar{position:relative;z-index:60;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 20px;background:#b98a3e;color:#fff;font-size:14px}
+.preview-bar span{flex:1;min-width:220px}
+.preview-bar a{color:#fff;font-weight:700;text-decoration:underline;white-space:nowrap}
+.is-preview .side{top:0}
+@media(max-width:560px){.pick-row{grid-template-columns:40px 1fr}.pick-row em{grid-column:2}.pick-card{padding:20px}}
