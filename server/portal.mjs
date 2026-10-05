@@ -79,6 +79,9 @@ export const SCHEMA = [
   'CREATE INDEX IF NOT EXISTS order_events_actor_idx ON order_events (actor, created_at)',
   // When the client last opened their notifications (everything newer shows as "New").
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS notif_seen_at INTEGER NOT NULL DEFAULT 0',
+  // Archived clients (e.g. test accounts) are hidden from lists, totals and notifications and can't sign in.
+  // Nothing is deleted: an admin can restore them.
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE',
 ];
 
 export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000' };
@@ -234,8 +237,8 @@ export async function handlePortal(request, url, ctx) {
     who = { admin: false, clientId: c.id, preview: true };
   }
   if (!who.admin) {
-    const me = await DB.prepare("SELECT active FROM users WHERE id = ? AND role = 'client'").bind(who.clientId).first();
-    if (!me || !me.active) return json({ ok: false, error: 'Account disabled' }, 403);
+    const me = await DB.prepare("SELECT active, archived FROM users WHERE id = ? AND role = 'client'").bind(who.clientId).first();
+    if (!me || !me.active || me.archived) return json({ ok: false, error: 'Account disabled' }, 403);
   }
 
   if (path === '/me' && method === 'GET') {
@@ -334,24 +337,26 @@ export async function handlePortal(request, url, ctx) {
 
   if (path === '/admin/overview' && method === 'GET') {
     const settings = await getSettings(DB);
-    const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, active, created_at FROM users ORDER BY role, display_name').all()).results || [];
+    const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, active, archived, created_at FROM users ORDER BY role, display_name').all()).results || [];
     const clients = [];
-    for (const u of users.filter(u => u.role === 'client')) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, commissionPerOrder: u.commission_per_order, ...(await clientSummary(DB, u.id, settings)) });
+    const archived = [];
+    for (const u of users.filter(u => u.role === 'client' && u.archived)) archived.push({ id: u.id, username: u.username, name: u.display_name, orders: Number((await DB.prepare('SELECT COUNT(*) AS n FROM client_orders WHERE client_id = ?').bind(u.id).first()).n) });
+    for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, commissionPerOrder: u.commission_per_order, ...(await clientSummary(DB, u.id, settings)) });
     const keys = ['billed', 'paid', 'outstanding', 'commission', 'supplierShare', 'ourShare'];
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
-    return json({ ok: true, settings, totals, clients, admins });
+    return json({ ok: true, settings, totals, clients, admins, archived });
   }
   if (path === '/admin/notifications' && method === 'GET') {
-    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE e.actor = 'client' ORDER BY e.created_at DESC, e.id DESC LIMIT 60").all()).results || [];
+    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE e.actor = 'client' AND NOT u.archived ORDER BY e.created_at DESC, e.id DESC LIMIT 60").all()).results || [];
     return json({ ok: true, items: rows.map(eventOut), now: now() });
   }
   if (path === '/admin/orders' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
     const rows = clientId
       ? (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? ORDER BY created_at DESC, id DESC').bind(clientId).all()).results
-      : (await DB.prepare('SELECT * FROM client_orders ORDER BY created_at DESC, id DESC LIMIT 500').all()).results;
+      : (await DB.prepare('SELECT * FROM client_orders WHERE client_id NOT IN (SELECT id FROM users WHERE archived) ORDER BY created_at DESC, id DESC LIMIT 500').all()).results;
     return json({ ok: true, orders: await withMessages(DB, (rows || []).map(orderOut), true) });
   }
   if (path === '/admin/payments' && method === 'GET') {
@@ -400,7 +405,8 @@ export async function handlePortal(request, url, ctx) {
     if (body.commissionPerOrder !== undefined) { cpo = money(body.commissionPerOrder); if (!isMoney(cpo)) return json({ ok: false, error: 'Invalid commission' }, 400); }
     let hash = u.password_hash;
     if (body.password) { if (String(body.password).length < 8) return json({ ok: false, error: 'Password must be at least 8 characters' }, 400); hash = await hashPassword(String(body.password)); }
-    await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=? WHERE id = ?').bind(name, active, cpo, hash, id).run();
+    const archived = body.archived !== undefined && u.role === 'client' ? Boolean(body.archived) : u.archived;
+    await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=?, archived=? WHERE id = ?').bind(name, active, cpo, hash, archived, id).run();
     return json({ ok: true });
   }
   if (path === '/admin/settings' && method === 'POST') {
@@ -425,7 +431,7 @@ export async function authenticate(DB, env, username, password) {
   if (!username || !password) return null;
   if (env.ADMIN_USERNAME && env.ADMIN_PASSWORD && username === env.ADMIN_USERNAME && password === env.ADMIN_PASSWORD) return 'admin';
   if (!DB) return null;
-  const u = await DB.prepare('SELECT id, role, password_hash, active FROM users WHERE LOWER(username) = LOWER(?)').bind(username).first();
-  if (!u || !u.active || !(await verifyPassword(password, u.password_hash))) return null;
+  const u = await DB.prepare('SELECT id, role, password_hash, active, archived FROM users WHERE LOWER(username) = LOWER(?)').bind(username).first();
+  if (!u || !u.active || u.archived || !(await verifyPassword(password, u.password_hash))) return null;
   return u.role === 'admin' ? 'admin' : 'client-' + u.id;
 }
