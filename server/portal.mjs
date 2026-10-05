@@ -222,8 +222,17 @@ export async function handlePortal(request, url, ctx) {
   }
 
   const role = await readSessionRole(request, env.APP_SESSION_SECRET);
-  const who = parseRole(role);
+  let who = parseRole(role);
   if (!who) return json({ ok: false, error: 'Unauthorized' }, 401);
+  // Admin preview of a client's portal ("see what the client sees"): read-only.
+  const viewAs = request.headers.get('x-dl-view-as');
+  if (who.admin && viewAs) {
+    if (method !== 'GET') return json({ ok: false, error: 'Preview is view only. Sign in as the client to make changes.' }, 403);
+    const vid = Number(viewAs);
+    const c = Number.isInteger(vid) && vid > 0 ? await DB.prepare("SELECT id FROM users WHERE id = ? AND role = 'client'").bind(vid).first() : null;
+    if (!c) return json({ ok: false, error: 'Unknown client' }, 404);
+    who = { admin: false, clientId: c.id, preview: true };
+  }
   if (!who.admin) {
     const me = await DB.prepare("SELECT active FROM users WHERE id = ? AND role = 'client'").bind(who.clientId).first();
     if (!me || !me.active) return json({ ok: false, error: 'Account disabled' }, 403);
@@ -234,7 +243,7 @@ export async function handlePortal(request, url, ctx) {
     if (who.admin) return json({ ok: true, role: 'admin', name: 'Admin', settings });
     const u = await DB.prepare('SELECT id, username, display_name, active FROM users WHERE id = ?').bind(who.clientId).first();
     if (!u || !u.active) return json({ ok: false, error: 'Account disabled' }, 403);
-    return json({ ok: true, role: 'client', id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor }, summary: (({ commission, supplierShare, ourShare, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
+    return json({ ok: true, role: 'client', preview: !!who.preview, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor }, summary: (({ commission, supplierShare, ourShare, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
   }
 
   // ----- client routes -----
@@ -287,8 +296,8 @@ export async function handlePortal(request, url, ctx) {
         .bind(id, order.client_id, who.admin ? 'admin' : 'client', msg, now(), who.admin, !who.admin).run();
       await logEvent(DB, id, order.client_id, 'message', who.admin ? 'admin' : 'client', msg);
     } else if (method !== 'GET') return json({ ok: false, error: 'Method not allowed' }, 405);
-    // Reading the thread marks the other side's messages as read.
-    await DB.prepare(who.admin ? "UPDATE order_messages SET read_by_admin = TRUE WHERE order_id = ? AND author = 'client'"
+    // Reading the thread marks the other side's messages as read (not in admin preview).
+    if (!who.preview) await DB.prepare(who.admin ? "UPDATE order_messages SET read_by_admin = TRUE WHERE order_id = ? AND author = 'client'"
       : "UPDATE order_messages SET read_by_client = TRUE WHERE order_id = ? AND author = 'admin'").bind(id).run();
     const rows = (await DB.prepare('SELECT * FROM order_messages WHERE order_id = ? ORDER BY created_at, id').bind(id).all()).results || [];
     const events = (await DB.prepare("SELECT * FROM order_events WHERE order_id = ? AND kind <> 'message' ORDER BY created_at, id").bind(id).all()).results || [];
