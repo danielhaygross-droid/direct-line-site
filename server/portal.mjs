@@ -65,6 +65,20 @@ export const SCHEMA = [
   // What the client sees on each order: product cost (our $2 fee is already inside it) + shipping fee = price.
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS product_cost DOUBLE PRECISION',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS shipping_fee DOUBLE PRECISION',
+  // Activity log: what happened to each order and when (powers notifications and the order timeline).
+  `CREATE TABLE IF NOT EXISTS order_events (
+     id SERIAL PRIMARY KEY,
+     order_id INTEGER NOT NULL REFERENCES client_orders(id),
+     client_id INTEGER NOT NULL REFERENCES users(id),
+     kind TEXT NOT NULL,
+     actor TEXT NOT NULL CHECK (actor IN ('client','admin')),
+     detail TEXT NOT NULL DEFAULT '',
+     created_at INTEGER NOT NULL)`,
+  'CREATE INDEX IF NOT EXISTS order_events_client_idx ON order_events (client_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS order_events_order_idx ON order_events (order_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS order_events_actor_idx ON order_events (actor, created_at)',
+  // When the client last opened their notifications (everything newer shows as "New").
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS notif_seen_at INTEGER NOT NULL DEFAULT 0',
 ];
 
 export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000' };
@@ -147,9 +161,23 @@ async function withMessages(DB, orders, forAdmin) {
       MAX(created_at) AS last_at
     FROM order_messages WHERE order_id IN (${ids.map(() => '?').join(',')}) GROUP BY order_id`).bind(...ids).all()).results || [];
   const by = new Map(rows.map(r => [Number(r.order_id), r]));
-  return orders.map(o => { const r = by.get(o.id); return { ...o, messages: Number(r?.total || 0), unreadMessages: Number((forAdmin ? r?.unread_admin : r?.unread_client) || 0), lastMessageAt: r ? Number(r.last_at) : null }; });
+  const last = rows.length ? (await DB.prepare(`SELECT DISTINCT ON (order_id) order_id, author, body FROM order_messages
+    WHERE order_id IN (${ids.map(() => '?').join(',')}) ORDER BY order_id, created_at DESC, id DESC`).bind(...ids).all()).results || [] : [];
+  const lastBy = new Map(last.map(r => [Number(r.order_id), r]));
+  return orders.map(o => {
+    const r = by.get(o.id), m = lastBy.get(o.id);
+    return { ...o, messages: Number(r?.total || 0), unreadMessages: Number((forAdmin ? r?.unread_admin : r?.unread_client) || 0), lastMessageAt: r ? Number(r.last_at) : null,
+      lastMessage: m ? { author: m.author, body: String(m.body).slice(0, 160) } : null };
+  });
 }
 const messageOut = m => ({ id: m.id, orderId: m.order_id, author: m.author, body: m.body, createdAt: Number(m.created_at) });
+const eventOut = e => ({ id: e.id, orderId: e.order_id, clientId: e.client_id, kind: e.kind, actor: e.actor, detail: e.detail, createdAt: Number(e.created_at),
+  ...(e.order_ref !== undefined ? { orderRef: e.order_ref, status: e.status } : {}), ...(e.client_name !== undefined ? { clientName: e.client_name } : {}) });
+async function logEvent(DB, orderId, clientId, kind, actor, detail = '') {
+  await DB.prepare('INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,?,?,?,?)')
+    .bind(orderId, clientId, kind, actor, String(detail).slice(0, 200), now()).run();
+}
+const EDIT_FIELDS = ['order_ref', 'destination', 'category', 'weight_kg', 'product_cost', 'shipping_fee', 'selling_price', 'notes'];
 async function readBody(request) { return request.json().catch(() => ({})); }
 
 function orderFields(body) {
@@ -230,9 +258,20 @@ export async function handlePortal(request, url, ctx) {
     const t = now();
     const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
       .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t).first();
+    await logEvent(DB, row.id, clientId, 'created', who.admin ? 'admin' : 'client');
     const out = orderOut(row);
     if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; }
     return json({ ok: true, order: out });
+  }
+  // ----- notifications: what the other side did, newest first -----
+  if (path === '/notifications' && method === 'GET' && !who.admin) {
+    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND e.actor = 'admin' ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
+    const u = await DB.prepare('SELECT notif_seen_at FROM users WHERE id = ?').bind(who.clientId).first();
+    return json({ ok: true, items: rows.map(eventOut), seenAt: Number(u?.notif_seen_at || 0), now: now() });
+  }
+  if (path === '/notifications/seen' && method === 'POST' && !who.admin) {
+    await DB.prepare('UPDATE users SET notif_seen_at = ? WHERE id = ?').bind(now(), who.clientId).run();
+    return json({ ok: true, seenAt: now() });
   }
   // ----- follow-up messages on an order (client ↔ us) -----
   const msgMatch = /^\/orders\/(\d+)\/messages$/.exec(path);
@@ -246,12 +285,14 @@ export async function handlePortal(request, url, ctx) {
       if (!msg) return json({ ok: false, error: 'Please write a message' }, 400);
       await DB.prepare('INSERT INTO order_messages (order_id, client_id, author, body, created_at, read_by_admin, read_by_client) VALUES (?,?,?,?,?,?,?)')
         .bind(id, order.client_id, who.admin ? 'admin' : 'client', msg, now(), who.admin, !who.admin).run();
+      await logEvent(DB, id, order.client_id, 'message', who.admin ? 'admin' : 'client', msg);
     } else if (method !== 'GET') return json({ ok: false, error: 'Method not allowed' }, 405);
     // Reading the thread marks the other side's messages as read.
     await DB.prepare(who.admin ? "UPDATE order_messages SET read_by_admin = TRUE WHERE order_id = ? AND author = 'client'"
       : "UPDATE order_messages SET read_by_client = TRUE WHERE order_id = ? AND author = 'admin'").bind(id).run();
     const rows = (await DB.prepare('SELECT * FROM order_messages WHERE order_id = ? ORDER BY created_at, id').bind(id).all()).results || [];
-    return json({ ok: true, messages: rows.map(messageOut) });
+    const events = (await DB.prepare("SELECT * FROM order_events WHERE order_id = ? AND kind <> 'message' ORDER BY created_at, id").bind(id).all()).results || [];
+    return json({ ok: true, messages: rows.map(messageOut), events: events.map(eventOut) });
   }
   const orderMatch = /^\/orders\/(\d+)$/.exec(path);
   if (orderMatch && (method === 'PUT' || method === 'POST')) {
@@ -270,6 +311,10 @@ export async function handlePortal(request, url, ctx) {
     const supplierShare = who.admin && body.supplierShare != null && body.supplierShare !== '' && isMoney(money(body.supplierShare)) ? money(body.supplierShare) : existing.supplier_share;
     const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=? WHERE id = ? RETURNING *')
       .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), id).first();
+    const actor = who.admin ? 'admin' : 'client';
+    if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);
+    if (row.tracking_number !== existing.tracking_number && row.tracking_number) await logEvent(DB, id, existing.client_id, 'tracking', actor, row.tracking_number);
+    if (EDIT_FIELDS.some(k => String(row[k] ?? '') !== String(existing[k] ?? ''))) await logEvent(DB, id, existing.client_id, 'edited', actor);
     const out = orderOut(row);
     if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; }
     return json({ ok: true, order: out });
@@ -288,6 +333,10 @@ export async function handlePortal(request, url, ctx) {
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
     return json({ ok: true, settings, totals, clients, admins });
+  }
+  if (path === '/admin/notifications' && method === 'GET') {
+    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE e.actor = 'client' ORDER BY e.created_at DESC, e.id DESC LIMIT 60").all()).results || [];
+    return json({ ok: true, items: rows.map(eventOut), now: now() });
   }
   if (path === '/admin/orders' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
