@@ -1,138 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Direct Line · Admin</title>
+<title>Direct Line · Clients &amp; orders</title>
 <meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/p/common.css?v=6">
-<script src="/admin/embed.js?v=1"></script>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/p/ui.css?v=1">
+<link rel="stylesheet" href="/admin/admin.css?v=1">
+<script src="/admin/embed.js?v=2"></script>
 </head>
 <body>
-<div class="empty" id="boot">Loading…</div>
-<div id="app" hidden>
-  <header class="topbar">
-    <a class="brand" href="/admin/">direct<b>↗</b>line.<small>ADMIN</small></a>
-    <span class="spacer"></span>
-    <a class="top-link" href="/">Store dashboard</a>
-    <button class="btn btn-ghost btn-small" type="button" data-logout>Log out</button>
-  </header>
-  <main>
-    <h1>Clients &amp; payments</h1>
-    <p class="sub">Every client's orders, what they owe, the supplier's share and what we earn. Click a client to see details and record payments.</p>
-
-    <section class="cards cols-4" data-totals></section>
-
-    <section class="panel" id="all-orders-panel">
-      <div class="panel-head"><h2>All client orders</h2><div class="toolbar"><select data-ao-client aria-label="Filter by client"><option value="">All clients</option></select><input type="search" placeholder="Search orders…" aria-label="Search by order, tracking, client or notes" data-ao-search></div></div>
-      <p class="sub" style="margin:-4px 0 10px">Every order your clients submitted, newest first. Update the status here as you process each one.</p>
-      <div class="chips" data-ao-filters></div>
-      <div class="table-wrap"><table class="stack-table">
-        <thead><tr><th>Date</th><th>Client</th><th>Order</th><th>Tracking</th><th>To</th><th class="num">Product</th><th class="num">Shipping</th><th class="num">Total</th><th>Status</th><th>Notes</th><th></th></tr></thead>
-        <tbody data-ao-body></tbody>
-      </table></div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-head"><h2>Clients</h2><div class="toolbar"><input type="search" placeholder="Search clients…" data-client-search><button class="btn btn-gold btn-small" type="button" data-show-add-user>+ Add client</button></div></div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Client</th><th>Username</th><th class="num">Orders</th><th class="num">Billed</th><th class="num">Paid</th><th class="num">Outstanding</th><th class="num">Supplier's share</th><th class="num">Our earnings</th><th class="num">Fee/order</th><th>Status</th></tr></thead>
-        <tbody data-clients></tbody>
-      </table></div>
-    </section>
-
-    <section class="panel" data-add-user-panel hidden>
-      <div class="panel-head"><h2>Add an account</h2></div>
-      <form class="form" id="user-form" novalidate>
-        <label class="field">Account type<select name="role"><option value="client">Client</option><option value="admin">Admin (full access)</option></select></label>
-        <label class="field">Name<input name="name" maxlength="120" placeholder="Client or store name"></label>
-        <label class="field">Username<input name="username" maxlength="60" autocomplete="off" placeholder="letters, numbers, . _ - @"></label>
-        <label class="field">Password (8+ characters)<input name="password" type="password" autocomplete="new-password"></label>
-        <label class="field" data-cpo-field>Fee per order (USD, leave empty for default)<input name="commissionPerOrder" type="number" min="0" step="0.01"></label>
-        <div class="form-actions"><button class="btn btn-gold" type="submit">Create account</button><button class="btn" type="button" data-hide-add-user>Close</button><p class="msg" data-user-msg></p></div>
-      </form>
-      <p class="note-box">Share the username and password with the client privately. They sign in at <b data-portal-url></b>.</p>
-    </section>
-
-    <section class="panel" data-client-detail hidden>
-      <div class="panel-head"><h2 data-detail-title></h2><button class="btn btn-small" type="button" data-close-detail>Close</button></div>
-      <section class="cards cols-4" data-detail-cards></section>
-      <div class="tabs"><button class="tab active" type="button" data-tab="orders">Orders</button><button class="tab" type="button" data-tab="payments">Payments</button><button class="tab" type="button" data-tab="account">Account</button></div>
-
-      <div data-pane="orders">
-        <div class="panel-head" style="margin-top:4px"><h2 data-admin-order-title style="font-size:15px">Add order for this client</h2><button class="btn btn-small" type="button" data-admin-cancel-edit hidden>Cancel edit</button></div>
-        <form class="form" id="admin-order-form" novalidate style="margin-bottom:16px">
-          <label class="field">Order number / reference<input name="orderRef" maxlength="120" placeholder="e.g. Etsy #3412"></label>
-          <label class="field">Tracking number<input name="trackingNumber" maxlength="120" placeholder="e.g. LX123456789CN"></label>
-          <label class="field">Destination<select name="destination"></select></label>
-        <label class="field" data-other-country hidden>Country name<input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="off"></label>
-          <label class="field">Product type<select name="category"></select></label>
-          <label class="field">Weight (kg)<input name="weightKg" type="number" min="0" step="0.01" inputmode="decimal"></label>
-          <label class="field">Product cost (USD) — includes our $2 fee<input name="productCost" type="number" min="0" step="0.01" inputmode="decimal"></label>
-          <label class="field">Shipping fee (USD)<input name="price" type="number" min="0" step="0.01" inputmode="decimal"></label>
-          <label class="field">Selling price — what their customer paid (USD)<input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal"></label>
-          <div class="field" style="justify-content:flex-end"><span class="profit-preview" data-admin-total>Client pays: —</span><span class="profit-preview" data-admin-profit>Client profit: —</span></div>
-          <label class="field full">Notes<textarea name="notes" maxlength="2000"></textarea></label>
-          <div class="form-actions">
-            <button class="btn btn-gold" type="submit" data-admin-order-submit>Add order</button>
-            <button class="btn" type="button" data-admin-fill-quote>Fill shipping from quote</button>
-            <p class="msg" data-admin-order-msg></p>
-          </div>
-        </form>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Order</th><th>Tracking</th><th>To</th><th class="num">Product</th><th class="num">Shipping</th><th class="num">Total</th><th class="num">Sold for</th><th class="num">Client profit</th><th class="num">Fee (in product)</th><th class="num">Supplier</th><th class="num">Our earnings</th><th>Status</th><th>Notes</th><th></th></tr></thead>
-          <tbody data-detail-orders></tbody>
-        </table></div>
-      </div>
-
-      <div data-pane="payments" hidden>
-        <form class="form" id="payment-form" novalidate style="margin-bottom:14px">
-          <label class="field">Amount received (USD)<input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal"></label>
-          <label class="field">Date<input name="paidAt" type="date"></label>
-          <label class="field">Method<select name="method"><option>PayPal</option><option>Wise</option><option>Bank transfer</option><option>Other</option></select></label>
-          <label class="field">Note<input name="note" maxlength="500"></label>
-          <div class="form-actions"><button class="btn btn-gold" type="submit">Record payment</button><p class="msg" data-pay-msg></p></div>
-        </form>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th class="num">Amount</th><th>Method</th><th>Note</th><th></th></tr></thead>
-          <tbody data-detail-payments></tbody>
-        </table></div>
-      </div>
-
-      <div data-pane="account" hidden>
-        <form class="form" id="account-form" novalidate>
-          <label class="field">Name<input name="name" maxlength="120"></label>
-          <label class="field">Fee per order (USD, empty = default)<input name="commissionPerOrder" type="number" min="0" step="0.01"></label>
-          <label class="field">New password (leave empty to keep)<input name="password" type="password" autocomplete="new-password"></label>
-          <label class="field">Status<select name="active"><option value="true">Active</option><option value="false">Disabled (can't sign in)</option></select></label>
-          <div class="form-actions"><button class="btn btn-gold" type="submit">Save account</button><p class="msg" data-account-msg></p></div>
-        </form>
-        <p class="note-box">Changing the fee only affects new orders. Existing orders keep the fee they were created with (you can see it in the Orders tab).</p>
-      </div>
-    </section>
-
-    <div class="grid-2">
-      <section class="panel" id="calculator"></section>
-      <section class="panel">
-        <div class="panel-head"><h2>Settings</h2></div>
-        <form class="form" id="settings-form" novalidate>
-          <label class="field">Fee per order (USD)<input name="commission_per_order" type="number" min="0" step="0.01"></label>
-          <label class="field">Supplier's share of the fee (USD)<input name="supplier_share_per_order" type="number" min="0" step="0.01"></label>
-          <div class="field" style="justify-content:flex-end"><span class="profit-preview" data-split-preview>Our earnings per order: —</span></div>
-          <label class="field">Size-to-weight divisor (cm³ per kg)<input name="volumetric_divisor" type="number" min="1000" max="10000" step="1"></label>
-          <div class="form-actions"><button class="btn btn-gold" type="submit">Save settings</button><p class="msg" data-settings-msg></p></div>
-        </form>
-        <p class="note-box">Each order has a $2 fee that is already included in the product cost the client pays (clients don’t see it separately): $1 goes to the supplier and $1 is ours. "Billed" = product cost + shipping fee. Changes only apply to new orders. The 6000 divisor is a starting value until the supplier confirms it. Volumetric weight = L × W × H (cm) ÷ divisor; the higher of real and volumetric weight is charged.</p>
-        <h2 style="margin-top:18px">Admin accounts</h2>
-        <div data-admins class="hint"></div>
-      </section>
-    </div>
-  </main>
-</div>
+<div id="boot" class="empty">Loading…</div>
+<div id="app" class="adm" hidden></div>
 <script src="/p/login-extras.js?v=1"></script>
-<script src="/p/common.js?v=5"></script>
-<script src="/admin/admin.js?v=12"></script>
+<script src="/p/common.js?v=6"></script>
+<script src="/p/notify.js?v=1"></script>
+<script src="/p/order-ui.js?v=1"></script>
+<script src="/admin/admin.js?v=13"></script>
 </body>
 </html>

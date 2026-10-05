@@ -1,11 +1,39 @@
+/* Admin "Clients & orders": all client orders, clients, payments, fee settings.
+   Runs inside the store dashboard (iframe). Order and client details open in a side panel. */
 (function () {
-  const { api, money, esc, date, trackingUrl, logout, renderLogin, mountCalculator, quote, destinationPicker, hasRate, categoryOptions, toast, openThread, $, $$ } = window.DL;
+  const { api, money, esc, trackingUrl, renderLogin, quote, destinationPicker, categoryOptions, countryName, toast, RATES, COUNTRIES, $, $$ } = window.DL;
+  const UI = window.DLOrderUI;
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-  const state = { overview: null, selected: null, orders: [], payments: [], search: '', editing: null };
-  const of = $('#admin-order-form');
-  const dest = destinationPicker(of.destination, $('[data-other-country]', of));
-  let calc;
+  const S = { ov: null, orders: [], tab: 'orders', filter: null, q: '', client: '', cq: '', drawer: null };
+  const embedded = window.top !== window.self;
+  const tell = m => { if (embedded) parent.postMessage(m, location.origin); };
+  const P = {
+    chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    chev: '<path d="m9 6 6 6-6 6"/>',
+    back: '<path d="m15 6-6 6 6 6"/>',
+    users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
+    orders: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
+    money: '<circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6.5v11"/>',
+    check: '<path d="M5 12l5 5 9-10"/>',
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/>',
+    copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+    ext: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  };
+  const ic = n => UI.svg(P[n]);
+  const place = d => (d ? countryName(d) : '—');
+  const fullDate = sec => (sec ? new Date(sec * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
+  const orderName = o => o.orderRef || 'Order #' + o.id;
+  const clientOf = id => S.ov?.clients.find(c => c.id === Number(id));
+  const clientName = id => clientOf(id)?.name || 'Client';
+  const initials = n => String(n || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
+  const empty = (title, text, extra = '') => `<div class="empty"><span class="empty-ic">${ic('orders')}</span><h3>${esc(title)}</h3><p>${esc(text)}</p>${extra}</div>`;
+  const divisor = () => Number(S.ov?.settings?.volumetric_divisor) || 6000;
+  const unreadTotal = () => S.orders.reduce((t, x) => t + (x.unreadMessages || 0), 0);
 
+  // ---------- boot ----------
   async function boot() {
     let me;
     try { me = await api('/me'); }
@@ -14,337 +42,448 @@
       $('#boot').textContent = e.message; return;
     }
     if (me.role !== 'admin') { location.href = '/portal/'; return; }
-    $('#boot').hidden = true; $('#app').hidden = false;
-    $('[data-portal-url]').textContent = location.origin + '/portal/';
-    calc = mountCalculator($('#calculator'), { divisor: Number(me.settings.volumetric_divisor) || 6000 });
-    state.divisor = Number(me.settings.volumetric_divisor) || 6000;
-    of.category.innerHTML = categoryOptions('general');
-    await loadOverview();
-    if (window.top !== window.self) {
-      window.addEventListener('message', e => {
-        if (e.origin !== location.origin || e.source !== window.parent) return;
-        if (e.data?.type === 'dl-open-client' && state.overview.clients.some(c => c.id === e.data.id)) openClient(e.data.id);
-        if (e.data?.type === 'dl-add-admin') { $('[data-show-add-user]').click(); const f = $('#user-form'); f.role.value = 'admin'; f.role.dispatchEvent(new Event('change')); f.name.focus(); }
-      });
-      parent.postMessage({ type: 'dl-admin-ready' }, location.origin);
-    }
+    shell();
+    await loadAll();
+    $('#boot').remove(); $('#app').hidden = false;
+    renderTab();
+    addEventListener('message', onParentMessage);
+    window.DLAdminReady = true;
+    tell({ type: 'dl-admin-ready' });
+    setInterval(poll, 20000);
+    document.addEventListener('visibilitychange', poll);
   }
 
-  async function loadOverview() {
-    state.overview = await api('/admin/overview');
-    const { totals, settings, clients, admins } = state.overview;
-    $('[data-totals]').innerHTML = [
-      ['Active clients', clients.filter(c => c.active).length, ''], ['Orders', totals.orders, ''], ['Billed', money(totals.billed), ''],
-      ['Paid', money(totals.paid), ''], ['Outstanding', money(totals.outstanding), totals.outstanding > 0 ? 'bad' : ''],
-      ['Fees collected', money(totals.commission), ''], ["Supplier's share", money(totals.supplierShare), ''],
-      ['Our earnings', money(totals.ourShare), 'accent'],
-    ].map(([k, v, cls]) => `<div class="card stat ${cls}"><small>${k}</small><strong>${v}</strong></div>`).join('');
-    const sf = $('#settings-form');
-    if (!sf.contains(document.activeElement)) { // don't overwrite what the admin is typing
-      sf.commission_per_order.value = settings.commission_per_order;
-      sf.supplier_share_per_order.value = settings.supplier_share_per_order;
-      updateSplitPreview();
-      sf.volumetric_divisor.value = settings.volumetric_divisor;
-    }
-    calc?.setDivisor(settings.volumetric_divisor);
-    $('[data-admins]').innerHTML = admins.length
-      ? admins.map(a => `${esc(a.name)} (${esc(a.username)})${a.active ? '' : ' — disabled'}`).join('<br>') + '<br>Plus the main admin login.'
-      : 'Only the main admin login so far. Use "+ Add client" and choose "Admin" to add one for Erwin.';
-    renderClients();
-    loadAllOrders();
-    if (state.selected) {
-      const fresh = clients.find(c => c.id === state.selected.id);
-      if (fresh) { state.selected = fresh; renderDetailCards(); }
-    }
+  async function loadAll() {
+    const [ov, o] = await Promise.all([api('/admin/overview'), api('/admin/orders')]);
+    S.ov = ov; S.orders = o.orders;
+    if (S.filter === null) S.filter = S.orders.some(x => x.unreadMessages) ? 'followups' : S.orders.some(x => x.status === 'pending') ? 'pending' : 'all';
+    renderKpis();
+    tell({ type: 'dl-followups', unread: unreadTotal() });
   }
-
-  // ----- all client orders in one place -----
-  const ao = { list: [], filter: null, q: '', client: '', sig: null, unread: null };
-  const sigOf = list => list.map(o => o.id + ':' + o.status).join(',');
-  const unreadOf = list => list.reduce((t, o) => t + (o.unreadMessages || 0), 0);
-  async function loadAllOrders() {
-    try { ao.list = (await api('/admin/orders')).orders; } catch (e) { return; }
-    ao.sig = sigOf(ao.list); ao.unread = unreadOf(ao.list);
-    if (window.top !== window.self) parent.postMessage({ type: 'dl-followups', unread: ao.unread }, location.origin);
-    if (ao.filter === null) ao.filter = ao.list.some(o => o.status === 'pending') ? 'pending' : 'all';
-    const sel = $('[data-ao-client]'), cur = sel.value;
-    sel.innerHTML = '<option value="">All clients</option>' + state.overview.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-    sel.value = cur;
-    renderAllOrders();
-  }
-  function renderAllOrders() {
-    const name = id => state.overview.clients.find(c => c.id === id)?.name || '—';
-    const inClient = ao.list.filter(o => !ao.client || String(o.clientId) === ao.client);
-    const match = (o, s) => s === 'all' || (s === 'followups' ? o.unreadMessages > 0 : o.status === s);
-    const count = s => inClient.filter(o => match(o, s)).length;
-    const label = s => s === 'all' ? 'All' : s === 'followups' ? 'New follow-ups' : s[0].toUpperCase() + s.slice(1);
-    $('[data-ao-filters]').innerHTML = ['all', 'followups', ...STATUSES].filter(s => s === 'all' || count(s) || s === ao.filter)
-      .map(s => `<button type="button" class="chip${ao.filter === s ? ' active' : ''}${s === 'followups' ? ' chip-alert' : ''}" data-ao-filter="${s}">${label(s)} <span>${count(s)}</span></button>`).join('');
-    const q = ao.q.toLowerCase();
-    const rows = inClient.filter(o => match(o, ao.filter)
-      && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, name(o.clientId)].join(' ').toLowerCase().includes(q)));
-    $('[data-ao-body]').innerHTML = rows.length ? rows.map(o => `<tr${o.unreadMessages ? ' class="updated"' : ''}>
-      <td data-label="Date">${date(o.createdAt)}</td>
-      <td data-label="Client" class="cell-title"><b>${esc(name(o.clientId))}</b></td>
-      <td data-label="Order">${esc(o.orderRef) || '—'}</td>
-      <td data-label="Tracking">${o.trackingNumber ? `<a href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${esc(o.trackingNumber)}</a>` : '—'}</td>
-      <td data-label="To">${esc(o.destination) || '—'}</td>
-      <td data-label="Product" class="num">${money(o.productCost)}</td>
-      <td data-label="Shipping" class="num">${money(o.shippingFee)}</td>
-      <td data-label="Total" class="num"><b>${money(o.price)}</b></td>
-      <td data-label="Status" class="cell-status"><select class="inline-select" data-ao-status="${o.id}" aria-label="Status">${STATUSES.map(s => `<option${s === o.status ? ' selected' : ''}>${s}</option>`).join('')}</select></td>
-      <td data-label="Notes" class="notes${o.notes ? '' : ' no-notes'}">${esc(o.notes)}</td>
-      <td class="cell-actions"><button class="btn btn-small" type="button" data-ao-msg="${o.id}">${o.unreadMessages ? 'Reply' : 'Messages'}${o.unreadMessages ? `<span class="pill-new">${o.unreadMessages} new</span>` : o.messages ? ` <span class="hint">(${o.messages})</span>` : ''}</button> <button class="btn btn-small" type="button" data-ao-open="${o.clientId}">Open client</button></td></tr>`).join('')
-      : `<tr class="empty-row"><td colspan="11" class="empty">${ao.list.length ? 'No orders match.' : 'No client orders yet. They show up here as soon as a client adds one in their portal.'}</td></tr>`;
-  }
-  $('[data-ao-filters]').addEventListener('click', e => { const f = e.target.closest('[data-ao-filter]')?.dataset.aoFilter; if (f) { ao.filter = f; renderAllOrders(); } });
-  $('[data-ao-search]').addEventListener('input', e => { ao.q = e.target.value; renderAllOrders(); });
-  $('[data-ao-client]').addEventListener('change', e => { ao.client = e.target.value; renderAllOrders(); });
-  $('[data-ao-body]').addEventListener('click', e => {
-    const id = e.target.closest('[data-ao-open]')?.dataset.aoOpen; if (id) openClient(Number(id));
-    const mid = e.target.closest('[data-ao-msg]')?.dataset.aoMsg; if (mid) openOrderThread(Number(mid));
-  });
-  function openOrderThread(id) {
-    const o = ao.list.find(x => x.id === id); if (!o) return;
-    const client = state.overview.clients.find(c => c.id === o.clientId)?.name || 'Client';
-    openThread({ orderId: o.id, role: 'admin', title: `${client} · ${o.orderRef || 'Order #' + o.id}`,
-      subtitle: `Status: ${o.status}${o.trackingNumber ? ' · Tracking ' + o.trackingNumber : ''}`, onChange: () => loadAllOrders() });
-  }
-
-  // Keep the list live: new client orders, status changes and follow-ups show up without reloading.
+  // Refresh lists without wiping what the admin is doing.
   async function poll() {
-    if (document.hidden || !state.overview) return;
-    // Don't redraw under the admin while they're picking a status.
-    if ($('[data-ao-body]').contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
-    let list; try { list = (await api('/admin/orders')).orders; } catch (e) { return; }
-    const unread = unreadOf(list);
-    // Inside the dashboard, the dashboard itself shows these messages (so they're seen on any page).
-    const say = window.top === window.self ? toast : () => {};
-    if (ao.unread !== null && unread > ao.unread) {
-      const o = list.find(x => x.unreadMessages > 0 && !(ao.list.find(y => y.id === x.id)?.unreadMessages >= x.unreadMessages)) || list.find(x => x.unreadMessages > 0);
-      const client = state.overview.clients.find(c => c.id === o?.clientId)?.name;
-      say(`New follow-up${client ? ' from ' + client : ''}${o?.orderRef ? ' on ' + o.orderRef : ''}.`);
-    }
-    const added = list.filter(o => !ao.list.some(x => x.id === o.id)).length;
-    if (added) say(`${added} new client order${added > 1 ? 's' : ''} came in.`);
-    if (sigOf(list) !== ao.sig) await loadOverview(); // totals and balances change too
-    else {
-      ao.list = list; ao.unread = unread; renderAllOrders();
-      if (window.top !== window.self) parent.postMessage({ type: 'dl-followups', unread }, location.origin);
-    }
+    if (document.hidden || !S.ov) return;
+    const a = document.activeElement;
+    const busy = a && a.matches('select, input, textarea') && !a.matches('[data-q],[data-cq]');
+    try { await loadAll(); } catch (e) { return; }
+    if (!busy) { renderList(); refreshDrawer(); }
   }
-  setInterval(poll, 20000);
-  document.addEventListener('visibilitychange', poll);
-  $('[data-ao-body]').addEventListener('change', async e => {
-    const id = e.target.dataset.aoStatus; if (!id) return;
-    e.target.disabled = true;
-    try {
-      await api('/orders/' + id, { method: 'PUT', body: { status: e.target.value } });
-      await loadOverview();
-      if (state.selected) await loadClientOrders();
-    } catch (ex) { alert(ex.message); e.target.disabled = false; }
-  });
 
+  // ---------- layout ----------
+  function shell() {
+    $('#app').innerHTML = `
+      <section class="adm-head"><div><p class="eyebrow">Direct Line clients</p><h1>Clients <span>&amp;</span> orders</h1><p>Every order your clients send in, what they owe, and what we earn.</p></div>
+        <div class="adm-actions"><button type="button" class="btn" data-add-account="client">${ic('users')}Add client</button><button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button></div></section>
+      <section class="kpis" data-kpis></section>
+      <div class="seg" role="tablist">${[['orders', 'Orders'], ['clients', 'Clients'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
+      <section data-tab-body style="display:grid;gap:14px"></section>`;
+    $('#app').addEventListener('click', onClick);
+    $('#app').addEventListener('input', onInput);
+    $('#app').addEventListener('change', onChange);
+  }
+  function renderKpis() {
+    const t = S.ov.totals, cl = S.ov.clients;
+    $('[data-kpis]').innerHTML = [
+      ['Active clients', cl.filter(c => c.active).length, `${cl.length} account${cl.length === 1 ? '' : 's'}`, 'users', 'var(--blue)'],
+      ['Client orders', t.orders, `${S.orders.filter(o => o.status === 'pending').length} waiting to be processed`, 'orders', 'var(--orange)'],
+      ['Outstanding', money(t.outstanding), `Billed ${money(t.billed)} · paid ${money(t.paid)}`, 'money', t.outstanding > 0 ? 'var(--red)' : 'var(--mint)'],
+      ['Our earnings', money(t.ourShare), `Fees ${money(t.commission)} · supplier ${money(t.supplierShare)}`, 'check', 'var(--gold)'],
+    ].map(([k, v, sub, icon, tone], i) => `<div class="stat${i === 3 ? ' hero' : ''}" style="--tone:${tone}"><span class="stat-ic">${ic(icon)}</span><small>${k}</small><strong>${v}</strong><em>${esc(sub)}</em></div>`).join('');
+    const unread = S.orders.filter(o => o.unreadMessages).length;
+    const b = $('[data-tab-badge="orders"]'); if (b) b.innerHTML = unread ? `<span class="badge-new">${unread}</span>` : '';
+  }
+  function renderTab() {
+    $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === S.tab); b.setAttribute('aria-selected', String(b.dataset.tab === S.tab)); });
+    const body = $('[data-tab-body]');
+    if (S.tab === 'orders') {
+      body.innerHTML = `<div class="bar"><div class="chips" data-chips></div><div class="bar-r"><select data-client-filter aria-label="Client"></select><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, tracking, client…" value="${esc(S.q)}" data-q></label></div></div>
+        <section class="card" data-list></section>`;
+    } else if (S.tab === 'clients') {
+      body.innerHTML = `<div class="bar"><label class="search"><span class="sr">Search clients</span>${ic('search')}<input type="search" placeholder="Search clients…" value="${esc(S.cq)}" data-cq></label><button type="button" class="btn btn-primary" data-add-account="client">${ic('plus')}Add client</button></div>
+        <section class="card" data-list></section>`;
+    } else body.innerHTML = settingsHTML();
+    renderList();
+    if (S.tab === 'settings') bindSettings();
+  }
+  function renderList() {
+    if (S.tab === 'orders') renderOrders();
+    else if (S.tab === 'clients') renderClients();
+    else { const a = $('[data-admins]'); if (a) a.innerHTML = adminsHTML(); }
+  }
+
+  // ---------- orders tab ----------
+  const matches = (o, f) => f === 'all' || (f === 'followups' ? o.unreadMessages > 0 : o.status === f);
+  function renderOrders() {
+    const inClient = S.orders.filter(o => !S.client || String(o.clientId) === S.client);
+    const count = f => inClient.filter(o => matches(o, f)).length;
+    const label = f => (f === 'all' ? 'All' : f === 'followups' ? 'New follow-ups' : UI.LABEL[f]);
+    $('[data-chips]').innerHTML = ['all', 'followups', ...STATUSES].filter(f => f === 'all' || count(f) || f === S.filter)
+      .map(f => `<button type="button" class="chip t-${f}${f === 'followups' ? ' alert' : ''}${S.filter === f ? ' on' : ''}" data-filter="${f}">${f !== 'all' && f !== 'followups' ? '<i class="dot"></i>' : ''}${label(f)} <span>${count(f)}</span></button>`).join('');
+    const sel = $('[data-client-filter]');
+    sel.innerHTML = '<option value="">All clients</option>' + S.ov.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    sel.value = S.client;
+    const q = S.q.toLowerCase();
+    const rows = inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId)].join(' ').toLowerCase().includes(q)));
+    $('[data-list]').innerHTML = rows.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th>Order</th><th>Destination</th><th class="num">Total</th><th>Status</th><th>Messages</th><th class="hide-sm"></th></tr></thead><tbody>
+      ${rows.map(o => `<tr class="click${o.unreadMessages ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
+        <td class="wide"><div class="who"><span class="ava">${esc(initials(clientName(o.clientId)))}</span><div><b>${esc(clientName(o.clientId))}</b><small>${esc(fullDate(o.createdAt))}</small></div></div></td>
+        <td data-label="Order"><span class="t-main"><b>${esc(orderName(o))}</b><small class="mono">${esc(o.trackingNumber) || 'No tracking yet'}</small></span></td>
+        <td data-label="Destination">${esc(place(o.destination))}</td>
+        <td data-label="Total" class="num"><b>${money(o.price)}</b></td>
+        <td data-label="Status"><select data-status="${o.id}" aria-label="Status of ${esc(orderName(o))}">${STATUSES.map(s => `<option value="${s}"${s === o.status ? ' selected' : ''}>${UI.LABEL[s]}</option>`).join('')}</select></td>
+        <td data-label="Messages">${o.unreadMessages ? `<span class="unread-pill">${ic('chat')}${o.unreadMessages} new</span>` : o.messages ? `<span class="msgs">${ic('chat')}${o.messages}</span>` : '<span class="dim">—</span>'}</td>
+        <td class="num hide-sm">${UI.svg(P.chev).replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:var(--dim);stroke-width:2"')}</td></tr>`).join('')}
+      </tbody></table></div>`
+      : S.orders.length ? empty('No orders here', S.filter === 'followups' ? 'No unread follow-ups. You’re all caught up.' : 'Try another filter or search.')
+        : empty('No client orders yet', 'They show up here as soon as a client adds one in their portal. You can also add one for a client.', '<button type="button" class="btn btn-primary" data-new-order>New order</button>');
+  }
+
+  // ---------- clients tab ----------
   function renderClients() {
-    const q = state.search.toLowerCase();
-    const list = state.overview.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q));
-    const def = Number(state.overview.settings.commission_per_order);
-    $('[data-clients]').innerHTML = list.length ? list.map(c => `<tr class="clickable${state.selected?.id === c.id ? ' selected' : ''}" data-client="${c.id}">
-      <td><strong>${esc(c.name)}</strong></td><td>${esc(c.username)}</td><td class="num">${c.orders}</td>
-      <td class="num">${money(c.billed)}</td><td class="num">${money(c.paid)}</td>
-      <td class="num ${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</td>
-      <td class="num">${money(c.supplierShare)}</td><td class="num pos"><b>${money(c.ourShare)}</b></td><td class="num">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="hint">default</span>' : ''}</td>
-      <td>${c.active ? '<span class="badge delivered">active</span>' : '<span class="badge off">disabled</span>'}</td></tr>`).join('')
-      : `<tr><td colspan="10" class="empty">${state.overview.clients.length ? 'No clients match.' : 'No clients yet. Click "+ Add client" to create the first account.'}</td></tr>`;
+    const q = S.cq.toLowerCase(), def = Number(S.ov.settings.commission_per_order);
+    const list = S.ov.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q));
+    $('[data-list]').innerHTML = list.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Orders</th><th class="num">Billed</th><th class="num">Paid</th><th class="num">Outstanding</th><th class="num">Our earnings</th><th class="num">Fee / order</th><th>Status</th></tr></thead><tbody>
+      ${list.map(c => `<tr class="click" data-open-client="${c.id}" tabindex="0">
+        <td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small></div></div></td>
+        <td data-label="Orders" class="num">${c.orders}</td><td data-label="Billed" class="num">${money(c.billed)}</td><td data-label="Paid" class="num">${money(c.paid)}</td>
+        <td data-label="Outstanding" class="num ${c.outstanding > 0 ? 'neg' : ''}"><b>${money(c.outstanding)}</b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
+        <td data-label="Fee / order" class="num">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="dim" style="font-size:12px">default</span>' : ''}</td>
+        <td data-label="Status">${c.active ? '<span class="st st-delivered">Active</span>' : '<span class="st st-cancelled">Disabled</span>'}</td></tr>`).join('')}
+      </tbody></table></div>` : empty(S.ov.clients.length ? 'No clients match' : 'No clients yet', S.ov.clients.length ? 'Try another search.' : 'Add a client account, then share the username and password with them.', '<button type="button" class="btn btn-primary" data-add-account="client">Add client</button>');
   }
 
-  async function openClient(id) {
-    state.selected = state.overview.clients.find(c => c.id === id);
-    renderClients();
-    const panel = $('[data-client-detail]'); panel.hidden = false;
-    $('[data-detail-title]').textContent = state.selected.name;
-    renderDetailCards();
-    const af = $('#account-form');
-    af.name.value = state.selected.name; af.commissionPerOrder.value = state.selected.commissionPerOrder ?? '';
-    af.password.value = ''; af.active.value = String(state.selected.active);
-    const d = new Date(); $('#payment-form').paidAt.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-    setOrderEditing(null);
-    setTab('orders');
-    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    await Promise.all([loadClientOrders(), loadPayments()]);
+  // ---------- settings tab ----------
+  function adminsHTML() {
+    return S.ov.admins.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b><small>@${esc(x.username)}${x.active ? '' : ' · disabled'}</small></span></span></div>`).join('')
+      + '<div><span class="ava">DL</span><span class="who"><span><b>Main admin login</b><small>set in Vercel</small></span></span></div>';
   }
-
-  function renderDetailCards() {
-    const c = state.selected;
-    $('[data-detail-cards]').innerHTML = [
-      ['Orders', c.orders, ''], ['Billed', money(c.billed), ''], ['Paid', money(c.paid), ''],
-      ['Outstanding', money(c.outstanding), c.outstanding > 0 ? 'bad' : ''], ["Supplier's share", money(c.supplierShare), ''], ['Our earnings', money(c.ourShare), 'accent'], ['Client profit', money(c.clientProfit), ''],
-    ].map(([k, v, cls]) => `<div class="card stat ${cls}"><small>${k}</small><strong>${v}</strong></div>`).join('');
+  function settingsHTML() {
+    const s = S.ov.settings, rated = COUNTRIES.filter(([c]) => RATES[c]);
+    return `<div class="settings-grid">
+      <section class="card card-pad"><h3 class="form-sec">Fee per order</h3>
+        <form class="form-grid" id="settings-form" novalidate>
+          <label class="field"><span>Fee per order (USD)</span><span class="money"><input name="commission_per_order" type="number" min="0" step="0.01" value="${esc(s.commission_per_order)}"></span></label>
+          <label class="field"><span>Supplier’s share (USD)</span><span class="money"><input name="supplier_share_per_order" type="number" min="0" step="0.01" value="${esc(s.supplier_share_per_order)}"></span></label>
+          <div class="full split" data-split></div>
+          <label class="field"><span>Size-to-weight divisor <small>cm³ per kg</small></span><input name="volumetric_divisor" type="number" min="1000" max="10000" step="1" value="${esc(s.volumetric_divisor)}"></label>
+          <div class="field" style="align-content:end"><button class="btn btn-primary" type="submit">Save settings</button></div>
+          <p class="form-msg full" data-settings-msg></p>
+        </form>
+        <p class="note" style="margin-top:6px">The fee is already inside the product cost the client pays, so clients don’t see it. Changes apply to new orders only. Size-based weight = L × W × H ÷ divisor (6000 until the supplier confirms).</p>
+      </section>
+      <section class="card card-pad"><h3 class="form-sec">Shipping calculator</h3>
+        <form class="form-grid" data-calc onsubmit="return false">
+          <label class="field"><span>Destination</span><select name="country">${rated.map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('')}</select></label>
+          <label class="field"><span>Product type</span><select name="category">${categoryOptions('general')}</select></label>
+          <label class="field"><span>Weight (kg)</span><input name="weight" type="number" min="0" step="0.01" placeholder="e.g. 0.25"></label>
+          <div class="field"><span>Size L × W × H (cm)</span><div class="dims"><input name="l" type="number" min="0" placeholder="L" aria-label="Length"><input name="w" type="number" min="0" placeholder="W" aria-label="Width"><input name="h" type="number" min="0" placeholder="H" aria-label="Height"></div></div>
+        </form>
+        <div class="calc-out" data-calc-out><small>Shipping fee</small><strong>—</strong><div class="bd">Enter a weight.</div></div>
+      </section>
+      <section class="card card-pad"><h3 class="form-sec">Team accounts</h3><div class="acc-list" data-admins>${adminsHTML()}</div>
+        <button type="button" class="btn" style="margin-top:12px" data-add-account="admin">${ic('plus')}Add admin</button></section>
+      <section class="card card-pad"><h3 class="form-sec">Client portal link</h3><p class="muted" style="margin:0 0 10px;font-size:14px">Clients sign in here with the username and password you give them.</p>
+        <div class="copy-line"><span style="flex:1">${esc(location.origin)}/portal/</span><button type="button" class="btn btn-sm" data-copy="${esc(location.origin)}/portal/">${ic('copy')}Copy</button></div></section>
+    </div>`;
   }
-
-  async function loadClientOrders() {
-    state.orders = (await api('/admin/orders?clientId=' + state.selected.id)).orders;
-    $('[data-detail-orders]').innerHTML = state.orders.length ? state.orders.map(o => `<tr>
-      <td>${date(o.createdAt)}</td><td>${esc(o.orderRef) || '—'}</td>
-      <td>${o.trackingNumber ? `<a href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${esc(o.trackingNumber)}</a>` : '—'}</td>
-      <td>${esc(o.destination) || '—'}</td><td class="num">${money(o.productCost)}</td><td class="num">${money(o.shippingFee)}</td><td class="num"><b>${money(o.price)}</b></td><td class="num">${money(o.sellingPrice)}</td>
-      <td class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${money(o.profit)}</td><td class="num">${money(o.commission)}</td><td class="num">${money(o.supplierShare)}</td><td class="num pos">${money(o.ourShare)}</td>
-      <td><select class="inline-select" data-status="${o.id}">${STATUSES.map(s => `<option${s === o.status ? ' selected' : ''}>${s}</option>`).join('')}</select></td>
-      <td class="notes">${esc(o.notes)}</td>
-      <td><button class="btn btn-small" type="button" data-edit-order="${o.id}">Edit</button></td></tr>`).join('')
-      : '<tr><td colspan="14" class="empty">This client has no orders yet. Add one above.</td></tr>';
-  }
-
-  async function loadPayments() {
-    state.payments = (await api('/admin/payments?clientId=' + state.selected.id)).payments;
-    $('[data-detail-payments]').innerHTML = state.payments.length ? state.payments.map(p => `<tr>
-      <td>${date(p.paidAt)}</td><td class="num">${money(p.amount)}</td><td>${esc(p.method)}</td><td class="notes">${esc(p.note)}</td>
-      <td><button class="btn btn-small" type="button" data-del-payment="${p.id}">Remove</button></td></tr>`).join('')
-      : '<tr><td colspan="5" class="empty">No payments recorded yet.</td></tr>';
-  }
-
-  function setTab(name) {
-    $$('[data-tab]').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-    $$('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== name; });
-  }
-  const msg = (sel, text, kind) => { const m = $(sel); m.textContent = text; m.className = 'msg ' + (kind || ''); };
-
-  // ----- events -----
-  $('[data-clients]').addEventListener('click', e => { const row = e.target.closest('[data-client]'); if (row) openClient(Number(row.dataset.client)); });
-  $('[data-client-search]').addEventListener('input', e => { state.search = e.target.value; renderClients(); });
-  $('[data-close-detail]').addEventListener('click', () => { state.selected = null; $('[data-client-detail]').hidden = true; renderClients(); });
-  $$('[data-tab]').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
-  $('[data-show-add-user]').addEventListener('click', () => { const p = $('[data-add-user-panel]'); p.hidden = false; p.scrollIntoView({ behavior: 'smooth' }); $('#user-form').name.focus(); });
-  $('[data-hide-add-user]').addEventListener('click', () => { $('[data-add-user-panel]').hidden = true; });
-  $('#user-form').role.addEventListener('change', e => { $('[data-cpo-field]').hidden = e.target.value === 'admin'; });
-
-  $('#user-form').addEventListener('submit', async e => {
-    e.preventDefault(); const f = e.target;
-    try {
-      await api('/admin/users', { method: 'POST', body: { role: f.role.value, name: f.name.value, username: f.username.value.trim(), password: f.password.value, commissionPerOrder: f.commissionPerOrder.value === '' ? null : f.commissionPerOrder.value } });
-      msg('[data-user-msg]', `Account "${f.username.value.trim()}" created.`, 'okm');
-      if (window.top !== window.self) parent.postMessage({ type: 'dl-clients-changed' }, location.origin);
-      f.reset(); $('[data-cpo-field]').hidden = false;
-      await loadOverview();
-    } catch (ex) { msg('[data-user-msg]', ex.message, 'err'); }
-  });
-
-  $('[data-detail-orders]').addEventListener('change', async e => {
-    const id = e.target.dataset.status; if (!id) return;
-    e.target.disabled = true;
-    try { await api('/orders/' + id, { method: 'PUT', body: { status: e.target.value } }); await loadOverview(); }
-    catch (ex) { alert(ex.message); }
-    finally { e.target.disabled = false; }
-  });
-
-  $('#payment-form').addEventListener('submit', async e => {
-    e.preventDefault(); const f = e.target;
-    try {
-      await api('/admin/payments', { method: 'POST', body: { clientId: state.selected.id, amount: f.amount.value, method: f.method.value, note: f.note.value, paidAt: f.paidAt.value } });
-      msg('[data-pay-msg]', 'Payment recorded.', 'okm'); f.amount.value = ''; f.note.value = '';
-      await Promise.all([loadOverview(), loadPayments()]);
-    } catch (ex) { msg('[data-pay-msg]', ex.message, 'err'); }
-  });
-  $('[data-detail-payments]').addEventListener('click', async e => {
-    const id = e.target.dataset.delPayment; if (!id) return;
-    if (!confirm('Remove this payment?')) return;
-    await api('/admin/payments/' + id + '/delete', { method: 'POST' });
-    await Promise.all([loadOverview(), loadPayments()]);
-  });
-
-  $('#account-form').addEventListener('submit', async e => {
-    e.preventDefault(); const f = e.target;
-    const body = { name: f.name.value, active: f.active.value === 'true', commissionPerOrder: f.commissionPerOrder.value === '' ? null : f.commissionPerOrder.value };
-    if (f.password.value) body.password = f.password.value;
-    try {
-      await api('/admin/users/' + state.selected.id, { method: 'POST', body });
-      msg('[data-account-msg]', 'Saved.', 'okm'); f.password.value = '';
-      if (window.top !== window.self) parent.postMessage({ type: 'dl-clients-changed' }, location.origin);
-      await loadOverview(); $('[data-detail-title]').textContent = state.selected.name;
-    } catch (ex) { msg('[data-account-msg]', ex.message, 'err'); }
-  });
-
-  $('#settings-form').addEventListener('submit', async e => {
-    e.preventDefault(); const f = e.target;
-    try {
-      await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_share_per_order: f.supplier_share_per_order.value, volumetric_divisor: f.volumetric_divisor.value } });
-      msg('[data-settings-msg]', 'Settings saved. New orders use the new fee split.', 'okm');
-      await loadOverview();
-    } catch (ex) { msg('[data-settings-msg]', ex.message, 'err'); }
-  });
-  function updateSplitPreview() {
-    const f = $('#settings-form'), fee = parseFloat(f.commission_per_order.value), sup = parseFloat(f.supplier_share_per_order.value);
-    const el = $('[data-split-preview]');
-    if (!Number.isFinite(fee) || !Number.isFinite(sup)) { el.textContent = 'Our earnings per order: —'; return; }
-    const v = fee - sup;
-    el.innerHTML = `Our earnings per order: <b class="${v >= 0 ? 'pos' : 'neg'}">${money(v)}</b>`;
-  }
-  $('#settings-form').addEventListener('input', updateSplitPreview);
-  // ----- admin adds / edits orders on a client's behalf -----
-  function adminTotal() {
-    const pc = parseFloat(of.productCost.value), sh = parseFloat(of.price.value);
-    if (!Number.isFinite(pc) && !Number.isFinite(sh)) return null;
-    return (Number.isFinite(pc) ? pc : 0) + (Number.isFinite(sh) ? sh : 0);
-  }
-  function updateAdminProfit() {
-    const p = adminTotal(), sp = parseFloat(of.sellingPrice.value), el = $('[data-admin-profit]');
-    $('[data-admin-total]').innerHTML = p === null ? 'Client pays: —' : `Client pays: <b>${money(p)}</b> <span class="hint">(product + shipping)</span>`;
-    if (p === null || !Number.isFinite(sp)) { el.innerHTML = 'Client profit: —'; return; }
-    const v = sp - p; el.innerHTML = `Client profit: <b class="${v >= 0 ? 'pos' : 'neg'}">${money(v)}</b>`;
-  }
-  function setOrderEditing(order) {
-    state.editing = order;
-    $('[data-admin-order-title]').textContent = order ? 'Edit order' : 'Add order for this client';
-    $('[data-admin-order-submit]').textContent = order ? 'Save changes' : 'Add order';
-    $('[data-admin-cancel-edit]').hidden = !order;
-    of.reset();
-    dest.set(order?.destination || '');
-    of.category.value = order?.category || 'general';
-    if (order) {
-      of.orderRef.value = order.orderRef; of.trackingNumber.value = order.trackingNumber;
-      of.weightKg.value = order.weightKg ?? ''; of.productCost.value = order.productCost ?? '';
-      of.price.value = order.shippingFee ?? (order.productCost == null ? order.price ?? '' : '');
-      of.sellingPrice.value = order.sellingPrice ?? ''; of.notes.value = order.notes;
-    }
-    updateAdminProfit(); msg('[data-admin-order-msg]', '');
-  }
-  of.addEventListener('input', updateAdminProfit);
-  $('[data-admin-cancel-edit]').addEventListener('click', () => setOrderEditing(null));
-  $('[data-admin-fill-quote]').addEventListener('click', () => {
-    if (dest.get() && !hasRate(dest.get())) { msg('[data-admin-order-msg]', 'No supplier rate for ' + dest.label() + ' yet — enter the price by hand.', 'err'); return; }
-    const q = quote({ country: dest.get(), category: of.category.value, weightKg: of.weightKg.value, divisor: state.divisor });
-    if (!q) { msg('[data-admin-order-msg]', 'Choose a destination and enter the weight first.', 'err'); return; }
-    of.price.value = q.total.toFixed(2); updateAdminProfit(); msg('[data-admin-order-msg]', 'Shipping fee filled from the quote (' + money(q.total) + ').', 'okm');
-  });
-  $('[data-detail-orders]').addEventListener('click', e => {
-    const id = e.target.closest('[data-edit-order]')?.dataset.editOrder;
-    if (!id) return;
-    setOrderEditing(state.orders.find(o => String(o.id) === id));
-    of.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
-  of.addEventListener('submit', async e => {
-    e.preventDefault();
-    if (dest.isOther() && !dest.get()) { msg('[data-admin-order-msg]', 'Please type the country name.', 'err'); of.otherCountry.focus(); return; }
-    if (of.productCost.value === '' && of.price.value === '') { msg('[data-admin-order-msg]', 'Please enter the product cost and shipping fee.', 'err'); of.productCost.focus(); return; }
-    const body = {
-      clientId: state.selected.id, orderRef: of.orderRef.value, trackingNumber: of.trackingNumber.value,
-      destination: dest.get(), category: of.category.value,
-      weightKg: of.weightKg.value === '' ? null : of.weightKg.value, productCost: of.productCost.value === '' ? null : of.productCost.value, shippingFee: of.price.value === '' ? null : of.price.value,
-      sellingPrice: of.sellingPrice.value === '' ? null : of.sellingPrice.value, notes: of.notes.value,
+  function bindSettings() {
+    const f = $('#settings-form');
+    const split = () => {
+      const fee = parseFloat(f.commission_per_order.value), sup = parseFloat(f.supplier_share_per_order.value), ok = Number.isFinite(fee) && Number.isFinite(sup);
+      $('[data-split]').innerHTML = `<div><small>Client pays (inside product cost)</small><b>${Number.isFinite(fee) ? money(fee) : '—'}</b></div><div><small>Supplier gets</small><b>${Number.isFinite(sup) ? money(sup) : '—'}</b></div><div><small>We earn</small><b class="${ok && fee - sup < 0 ? 'neg' : 'pos'}">${ok ? money(fee - sup) : '—'}</b></div>`;
     };
-    const btn = $('[data-admin-order-submit]'); btn.disabled = true;
-    try {
-      const wasEditing = !!state.editing;
-      if (wasEditing) await api('/orders/' + state.editing.id, { method: 'PUT', body });
-      else await api('/orders', { method: 'POST', body });
-      setOrderEditing(null);
-      msg('[data-admin-order-msg]', wasEditing ? 'Order updated.' : 'Order added.', 'okm');
-      await Promise.all([loadOverview(), loadClientOrders()]);
-    } catch (ex) { msg('[data-admin-order-msg]', ex.message, 'err'); }
-    finally { btn.disabled = false; }
-  });
+    f.addEventListener('input', split); split();
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const m = $('[data-settings-msg]');
+      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_share_per_order: f.supplier_share_per_order.value, volumetric_divisor: f.volumetric_divisor.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg full ok'; await loadAll(); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
+    });
+    const c = $('[data-calc]'), out = $('[data-calc-out]');
+    const upd = () => {
+      const q = quote({ country: c.country.value, category: c.category.value, weightKg: c.weight.value, lengthCm: c.l.value, widthCm: c.w.value, heightCm: c.h.value, divisor: divisor() });
+      out.innerHTML = q ? `<small>Shipping fee to ${esc(countryName(c.country.value))}</small><strong>${money(q.total)}</strong><div class="bd">${q.chargeable} kg${q.usedVolumetric ? ' (size-based)' : ''} × ${money(q.perKg)}/kg = ${money(q.freight)} + ${money(q.registration)} registration${q.euTax ? ` + ${money(q.euTax)} EU tax` : ''}${q.estimated ? '<br>Estimated rate (not confirmed by the supplier yet).' : ''}</div>` : '<small>Shipping fee</small><strong>—</strong><div class="bd">Enter a weight.</div>';
+    };
+    c.addEventListener('input', upd); c.addEventListener('change', upd);
+  }
 
-  $('[data-logout]').addEventListener('click', logout);
+  // ---------- side panel: one order ----------
+  let chatCtl = null, events = [];
+  function closeChat() { chatCtl?.destroy(); chatCtl = null; }
+  function openOrder(id, focus, back) {
+    const o = S.orders.find(x => x.id === Number(id)); if (!o) return;
+    const d = UI.getDrawer();
+    closeChat(); events = [];
+    S.drawer = { kind: 'order', id: o.id, back };
+    d.onClose = () => { closeChat(); S.drawer = null; };
+    d.open('o' + o.id);
+    d.body.innerHTML = '<div data-d-info style="display:grid;gap:16px"></div><section><h3 class="sec-title">Messages with the client</h3><div data-d-chat></div></section>';
+    fillOrder(o);
+    chatCtl = UI.chat($('[data-d-chat]', d.body), { orderId: o.id, role: 'admin', onLoad: data => {
+      events = data.events || [];
+      const cur = S.orders.find(x => x.id === o.id);
+      if (cur?.unreadMessages) { cur.unreadMessages = 0; renderKpis(); renderList(); tell({ type: 'dl-followups', unread: unreadTotal() }); }
+      if (cur && S.drawer?.kind === 'order' && S.drawer.id === cur.id) fillOrder(cur, true);
+    } });
+    if (focus === 'chat') setTimeout(() => { $('[data-d-chat]', d.body)?.scrollIntoView({ block: 'start' }); chatCtl?.focus(); }, 320);
+  }
+  function fillOrder(o, soft) {
+    const d = UI.getDrawer(), back = S.drawer?.back;
+    d.head.innerHTML = `${back ? `<button type="button" class="back" data-back>${ic('back')}${esc(clientName(back))}</button>` : ''}<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}</div><p>${esc(clientName(o.clientId))} · added ${esc(fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p>`;
+    const info = $('[data-d-info]', d.body); if (!info) return;
+    if (soft && info.contains(document.activeElement) && document.activeElement.matches('input')) return;
+    info.innerHTML = `
+      <section class="card card-pad">${UI.tracker(o, events)}</section>
+      <section class="card card-pad"><h3 class="sec-title">Update status</h3>
+        <div class="status-btns">${STATUSES.map(s => `<button type="button" class="t-${s}${s === o.status ? ' on' : ''}" data-set-status="${s}" data-id="${o.id}">${UI.LABEL[s]}</button>`).join('')}</div>
+        <form class="inline-form" data-track-form="${o.id}" style="margin-top:14px"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(o.trackingNumber)}" placeholder="e.g. LX123456789CN"></label><button class="btn" type="submit">Save tracking</button>${o.trackingNumber ? `<a class="btn btn-ghost" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track</a>` : ''}</form>
+      </section>
+      <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
+        <div><dt>Client</dt><dd><button type="button" class="back" style="margin:0" data-open-client="${o.clientId}">${esc(clientName(o.clientId))}</button></dd></div><div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div>
+        <div><dt>Destination</dt><dd>${esc(place(o.destination))}</dd></div><div><dt>Product type</dt><dd>${esc(shortCat(o.category))}</dd></div>
+        <div><dt>Weight</dt><dd>${o.weightKg != null ? esc(o.weightKg) + ' kg' : '—'}</dd></div><div><dt>Last update</dt><dd>${esc(fullDate(o.updatedAt))}</dd></div>
+        ${o.notes ? `<div class="full"><dt>Client’s notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl></section>
+      <section class="card card-pad"><h3 class="sec-title">Money</h3><div class="money-rows">
+        <div><span>Product cost <span class="dim">(fee included)</span></span><span>${money(o.productCost)}</span></div><div><span>Shipping fee</span><span>${money(o.shippingFee)}</span></div>
+        <div class="total"><span>Client pays</span><span>${money(o.price)}</span></div>
+        <div><span>Client sold it for</span><span>${money(o.sellingPrice)}</span></div><div><span>Client’s profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${money(o.profit)}</span></div></div>
+        <div class="split"><div><small>Fee on this order</small><b>${money(o.commission)}</b></div><div><small>Supplier gets</small><b>${money(o.supplierShare)}</b></div><div><small>We earn</small><b class="pos">${money(o.ourShare)}</b></div></div></section>`;
+    d.foot.innerHTML = `<button type="button" class="btn" data-edit-order="${o.id}">${ic('edit')}Edit order</button><button type="button" class="btn btn-ghost" data-open-client="${o.clientId}">Open client</button>`;
+  }
+
+  // ---------- side panel: one client ----------
+  let payments = [];
+  async function openClient(id, tab = 'orders') {
+    const c = clientOf(id); if (!c) return;
+    const d = UI.getDrawer();
+    closeChat(); payments = [];
+    S.drawer = { kind: 'client', id: c.id, tab };
+    d.onClose = () => { S.drawer = null; };
+    d.open('c' + c.id);
+    fillClient(c);
+    await loadPayments(c.id);
+  }
+  async function loadPayments(id) {
+    try { payments = (await api('/admin/payments?clientId=' + id)).payments; } catch (e) { payments = []; }
+    if (S.drawer?.kind === 'client' && S.drawer.id === id) fillClient(clientOf(id), true);
+  }
+  function fillClient(c, soft) {
+    const d = UI.getDrawer(), tab = S.drawer.tab, orders = S.orders.filter(o => o.clientId === c.id);
+    d.head.innerHTML = `<div class="who"><span class="ava" style="width:44px;height:44px;border-radius:14px;font-size:14px">${esc(initials(c.name))}</span><div><h2 style="font-size:20px">${esc(c.name)}</h2><small>@${esc(c.username)} · ${c.active ? 'active' : 'disabled'}</small></div></div>`;
+    if (soft && d.body.contains(document.activeElement) && document.activeElement.matches('input,select,textarea')) return;
+    const t = new Date(), iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+    const pane = tab === 'orders'
+      ? (orders.length ? `<section class="card" style="padding:4px 16px"><div class="mini-orders">${orders.map(o => `<button type="button" data-open-order="${o.id}" data-back="${c.id}"><span><b>${esc(orderName(o))}</b><small>${esc(fullDate(o.createdAt))} · ${esc(place(o.destination))}</small></span><span><b>${money(o.price)}</b></span>${UI.pill(o.status)}</button>`).join('')}</div></section>` : empty('No orders yet', 'Orders this client adds show up here.'))
+      : tab === 'payments'
+        ? `<section class="card card-pad"><h3 class="sec-title">Record a payment</h3><form class="form-grid" data-pay-form="${c.id}" novalidate>
+            <label class="field"><span>Amount received</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal"></span></label>
+            <label class="field"><span>Date</span><input name="paidAt" type="date" value="${iso}"></label>
+            <label class="field"><span>Method</span><select name="method"><option>PayPal</option><option>Wise</option><option>Bank transfer</option><option>Other</option></select></label>
+            <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500"></label>
+            <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Record payment</button><p class="form-msg" data-pay-msg></p></div></form></section>
+          <section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td class="num"><button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Remove</button></td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
+        : `<section class="card card-pad"><form class="form-grid" data-account-form="${c.id}" novalidate>
+            <label class="field full"><span>Name</span><input name="name" maxlength="120" value="${esc(c.name)}"></label>
+            <label class="field"><span>Fee per order <small>empty = default</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01" value="${c.commissionPerOrder ?? ''}"></span></label>
+            <label class="field"><span>Status</span><select name="active"><option value="true"${c.active ? ' selected' : ''}>Active</option><option value="false"${c.active ? '' : ' selected'}>Disabled (can’t sign in)</option></select></label>
+            <label class="field full"><span>New password <small>leave empty to keep it</small></span><input name="password" type="password" autocomplete="new-password"></label>
+            <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Save account</button><p class="form-msg" data-account-msg></p></div></form>
+            <p class="note" style="margin-top:12px">A new fee only applies to new orders. Existing orders keep the fee they were created with.</p></section>`;
+    d.body.innerHTML = `
+      <section class="card card-pad"><dl class="kv" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+        <div><dt>Orders</dt><dd><b>${c.orders}</b></dd></div><div><dt>Billed</dt><dd><b>${money(c.billed)}</b></dd></div><div><dt>Paid</dt><dd><b class="pos">${money(c.paid)}</b></dd></div>
+        <div><dt>Outstanding</dt><dd><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b></dd></div><div><dt>Our earnings</dt><dd><b>${money(c.ourShare)}</b></dd></div><div><dt>Client’s profit</dt><dd><b>${money(c.clientProfit)}</b></dd></div></dl></section>
+      <div class="dtabs">${[['orders', `Orders (${orders.length})`], ['payments', `Payments (${payments.length})`], ['account', 'Account']].map(([k, l]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-ctab="${k}">${l}</button>`).join('')}</div>
+      ${pane}`;
+    window.DLEnhancePasswords?.(d.body);
+    d.foot.innerHTML = `<button type="button" class="btn btn-primary" data-new-order="${c.id}">${ic('plus')}Add order for ${esc(c.name)}</button>`;
+  }
+
+  // ---------- side panel: new / edit order ----------
+  function openOrderForm(order, clientId) {
+    const d = UI.getDrawer();
+    closeChat();
+    S.drawer = { kind: 'form', id: order?.id || null };
+    d.onClose = () => { S.drawer = null; };
+    d.open('f' + (order?.id || 'new'));
+    const v2 = x => (x != null ? Number(x).toFixed(2) : '');
+    const cid = order?.clientId || Number(clientId) || 0;
+    d.head.innerHTML = `<h2>${order ? 'Edit order' : 'New order'}</h2><p>${order ? esc(clientName(order.clientId)) + ' · ' + esc(orderName(order)) : 'Add an order on a client’s behalf'}</p>`;
+    d.body.innerHTML = `<form class="form-grid" id="order-form" novalidate>
+      <label class="field full"><span>Client</span><select name="clientId"${order ? ' disabled' : ''}><option value="">Choose a client…</option>${S.ov.clients.filter(c => c.active || c.id === cid).map(c => `<option value="${c.id}"${c.id === cid ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+      <label class="field"><span>Order number</span><input name="orderRef" maxlength="120" value="${esc(order?.orderRef)}" placeholder="e.g. Etsy #3412"></label>
+      <label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(order?.trackingNumber)}"></label>
+      <label class="field"><span>Destination</span><select name="destination"></select></label>
+      <label class="field" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden"></label>
+      <label class="field"><span>Product type</span><select name="category">${categoryOptions(order?.category || 'general')}</select></label>
+      <label class="field"><span>Weight (kg)</span><input name="weightKg" type="number" min="0" step="0.01" value="${order?.weightKg ?? ''}"></label>
+      <label class="field"><span>Product cost <small>fee included</small></span><span class="money"><input name="productCost" type="number" min="0" step="0.01" value="${v2(order?.productCost)}"></span></label>
+      <label class="field"><span>Shipping fee <small data-quote-hint></small></span><span class="money"><input name="price" type="number" min="0" step="0.01" value="${order ? (order.shippingFee != null ? v2(order.shippingFee) : order.productCost == null ? v2(order.price) : '') : ''}"></span></label>
+      <label class="field"><span>Client’s selling price <small>optional</small></span><span class="money"><input name="sellingPrice" type="number" min="0" step="0.01" value="${v2(order?.sellingPrice)}"></span></label>
+      <label class="field full"><span>Notes</span><textarea name="notes" maxlength="2000">${esc(order?.notes)}</textarea></label>
+      <div class="full money-rows" data-sum></div>
+      <p class="form-msg full" data-form-msg></p></form>`;
+    d.foot.innerHTML = `<button type="submit" form="order-form" class="btn btn-primary">${order ? 'Save changes' : 'Add order'}</button><button type="button" class="btn btn-ghost" data-close-drawer>Cancel</button>`;
+    const f = $('#order-form'), dest = destinationPicker(f.destination, $('[data-other-country]', f));
+    dest.set(order?.destination || '');
+    let auto = null;
+    const upd = () => {
+      const q = quote({ country: dest.get(), category: f.category.value, weightKg: f.weightKg.value, divisor: divisor() });
+      if (q && (f.price.value === '' || f.price.value === auto)) { f.price.value = q.total.toFixed(2); auto = f.price.value; }
+      $('[data-quote-hint]').innerHTML = q ? (f.price.value === q.total.toFixed(2) ? 'from our rates' : `<button type="button" class="back" style="margin:0" data-use-quote="${q.total.toFixed(2)}">use ${money(q.total)}</button>`) : '';
+      const pc = parseFloat(f.productCost.value), sh = parseFloat(f.price.value), sp = parseFloat(f.sellingPrice.value), tot = (pc || 0) + (sh || 0);
+      $('[data-sum]').innerHTML = `<div class="total"><span>Client pays</span><span>${Number.isFinite(pc) || Number.isFinite(sh) ? money(tot) : '—'}</span></div>${Number.isFinite(sp) ? `<div><span>Client’s profit</span><span class="${sp - tot >= 0 ? 'pos' : 'neg'}">${money(sp - tot)}</span></div>` : ''}`;
+    };
+    f.addEventListener('input', e => { if (e.target.name === 'price') auto = null; upd(); });
+    f.addEventListener('change', upd);
+    f.addEventListener('click', e => { const u = e.target.closest('[data-use-quote]'); if (u) { f.price.value = u.dataset.useQuote; auto = f.price.value; upd(); } });
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const m = $('[data-form-msg]'), err = t => { m.textContent = t; m.className = 'form-msg full err'; };
+      if (!order && !f.clientId.value) return err('Please choose the client.');
+      if (dest.isOther() && !dest.get()) return err('Please type the country name.');
+      if (f.productCost.value === '' && f.price.value === '') return err('Please enter the product cost and shipping fee.');
+      const body = { clientId: order ? order.clientId : Number(f.clientId.value), orderRef: f.orderRef.value, trackingNumber: f.trackingNumber.value, destination: dest.get(), category: f.category.value,
+        weightKg: f.weightKg.value === '' ? null : f.weightKg.value, productCost: f.productCost.value === '' ? null : f.productCost.value, shippingFee: f.price.value === '' ? null : f.price.value,
+        sellingPrice: f.sellingPrice.value === '' ? null : f.sellingPrice.value, notes: f.notes.value };
+      try {
+        const r = order ? await api('/orders/' + order.id, { method: 'PUT', body }) : await api('/orders', { method: 'POST', body });
+        await loadAll(); renderList();
+        toast(order ? 'Order updated.' : 'Order added.');
+        openOrder(r.order.id);
+      } catch (ex) { err(ex.message); }
+    });
+    upd();
+  }
+
+  // ---------- side panel: add account ----------
+  function openAddAccount(role = 'client') {
+    const d = UI.getDrawer();
+    closeChat();
+    S.drawer = { kind: 'account' };
+    d.onClose = () => { S.drawer = null; };
+    d.open('a');
+    d.head.innerHTML = `<h2>${role === 'admin' ? 'Add an admin' : 'Add a client'}</h2><p>Share the username and password with them privately.</p>`;
+    d.body.innerHTML = `<form class="form-grid" id="user-form" novalidate>
+      <label class="field full"><span>Account type</span><select name="role"><option value="client"${role === 'client' ? ' selected' : ''}>Client (their own portal)</option><option value="admin"${role === 'admin' ? ' selected' : ''}>Admin (full access)</option></select></label>
+      <label class="field full"><span>Name</span><input name="name" maxlength="120" placeholder="Client or store name"></label>
+      <label class="field"><span>Username</span><input name="username" maxlength="60" autocomplete="off" placeholder="letters, numbers, . _ - @"></label>
+      <label class="field"><span>Password <small>8+ characters</small></span><input name="password" type="password" autocomplete="new-password"></label>
+      <label class="field full" data-cpo><span>Fee per order <small>empty = default (${money(S.ov.settings.commission_per_order)})</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01"></span></label>
+      <p class="form-msg full" data-user-msg></p></form>
+      <p class="note">They sign in at <b>${esc(location.origin)}/portal/</b></p>`;
+    window.DLEnhancePasswords?.(d.body);
+    d.foot.innerHTML = '<button type="submit" form="user-form" class="btn btn-primary">Create account</button><button type="button" class="btn btn-ghost" data-close-drawer>Cancel</button>';
+    const f = $('#user-form');
+    const sync = () => { $('[data-cpo]').hidden = f.role.value === 'admin'; };
+    f.role.addEventListener('change', sync); sync();
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const m = $('[data-user-msg]');
+      try {
+        await api('/admin/users', { method: 'POST', body: { role: f.role.value, name: f.name.value, username: f.username.value.trim(), password: f.password.value, commissionPerOrder: f.commissionPerOrder.value === '' ? null : f.commissionPerOrder.value } });
+        m.textContent = `Account “${f.username.value.trim()}” created.`; m.className = 'form-msg full ok';
+        tell({ type: 'dl-clients-changed' });
+        f.reset(); sync();
+        await loadAll(); renderList();
+      } catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
+    });
+    setTimeout(() => f.name.focus({ preventScroll: true }), 60);
+  }
+
+  function refreshDrawer() {
+    const s = S.drawer; if (!s) return;
+    if (s.kind === 'order') { const o = S.orders.find(x => x.id === s.id); if (o) fillOrder(o, true); }
+    if (s.kind === 'client') { const c = clientOf(s.id); if (c) fillClient(c, true); }
+  }
+
+  // ---------- events ----------
+  async function setStatus(id, status, el) {
+    if (el) el.disabled = true;
+    try { await api('/orders/' + id, { method: 'PUT', body: { status } }); await loadAll(); renderList(); refreshDrawer(); toast(`Status set to ${UI.LABEL[status]}. The client sees it right away.`); }
+    catch (ex) { toast(ex.message); if (el) el.disabled = false; }
+  }
+  function onClick(e) {
+    const t = e.target;
+    const tab = t.closest('[data-tab]'); if (tab) { S.tab = tab.dataset.tab; renderTab(); return; }
+    const f = t.closest('[data-filter]'); if (f) { S.filter = f.dataset.filter; renderOrders(); return; }
+    const acc = t.closest('[data-add-account]'); if (acc) { openAddAccount(acc.dataset.addAccount); return; }
+    const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
+    if (t.closest('select')) return;
+    const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
+    const oo = t.closest('[data-open-order]'); if (oo) openOrder(oo.dataset.openOrder);
+  }
+  function onInput(e) {
+    if (e.target.matches('[data-q]')) { S.q = e.target.value; renderOrders(); }
+    if (e.target.matches('[data-cq]')) { S.cq = e.target.value; renderClients(); }
+  }
+  function onChange(e) {
+    if (e.target.matches('[data-client-filter]')) { S.client = e.target.value; renderOrders(); }
+    if (e.target.matches('[data-status]')) setStatus(e.target.dataset.status, e.target.value, e.target);
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    const row = e.target.closest?.('tr[data-open-order], tr[data-open-client]');
+    if (row) { if (row.dataset.openOrder) openOrder(row.dataset.openOrder); else openClient(row.dataset.openClient); }
+  });
+  // Clicks inside the side panel (it lives outside #app), plus copy buttons anywhere.
+  document.addEventListener('click', async e => {
+    const t = e.target, d = UI.getDrawer();
+    const cp = t.closest('[data-copy]');
+    if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copy); toast('Copied.'); } catch (ex) { /* no clipboard */ } return; }
+    if (!d.el.contains(t)) return;
+    if (t.closest('[data-close-drawer]')) { d.close(); return; }
+    if (t.closest('[data-back]') && S.drawer?.back) { openClient(S.drawer.back); return; }
+    const ss = t.closest('[data-set-status]'); if (ss) { if (!ss.classList.contains('on')) setStatus(ss.dataset.id, ss.dataset.setStatus, ss); return; }
+    const eo = t.closest('[data-edit-order]'); if (eo) { openOrderForm(S.orders.find(o => o.id === Number(eo.dataset.editOrder))); return; }
+    const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
+    const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
+    const oo = t.closest('[data-open-order]'); if (oo) { openOrder(oo.dataset.openOrder, null, oo.dataset.back ? Number(oo.dataset.back) : null); return; }
+    const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; fillClient(clientOf(S.drawer.id)); return; }
+    const dp = t.closest('[data-del-payment]');
+    if (dp) {
+      if (!dp.dataset.armed) { dp.dataset.armed = '1'; dp.textContent = 'Click again to remove'; setTimeout(() => { if (dp.isConnected) { delete dp.dataset.armed; dp.textContent = 'Remove'; } }, 4000); return; }
+      try { await api('/admin/payments/' + dp.dataset.delPayment + '/delete', { method: 'POST' }); await loadAll(); renderList(); await loadPayments(S.drawer.id); toast('Payment removed.'); }
+      catch (ex) { toast(ex.message); }
+    }
+  });
+  document.addEventListener('submit', async e => {
+    const tf = e.target.closest('[data-track-form]');
+    if (tf) {
+      e.preventDefault();
+      try { await api('/orders/' + tf.dataset.trackForm, { method: 'PUT', body: { trackingNumber: tf.trackingNumber.value } }); document.activeElement?.blur(); await loadAll(); renderList(); refreshDrawer(); toast('Tracking number saved. The client can see it now.'); }
+      catch (ex) { toast(ex.message); }
+      return;
+    }
+    const pf = e.target.closest('[data-pay-form]');
+    if (pf) {
+      e.preventDefault();
+      const m = $('[data-pay-msg]');
+      try {
+        await api('/admin/payments', { method: 'POST', body: { clientId: Number(pf.dataset.payForm), amount: pf.amount.value, method: pf.method.value, note: pf.note.value, paidAt: pf.paidAt.value } });
+        document.activeElement?.blur(); await loadAll(); renderList(); await loadPayments(Number(pf.dataset.payForm)); toast('Payment recorded.');
+      } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+      return;
+    }
+    const af = e.target.closest('[data-account-form]');
+    if (af) {
+      e.preventDefault();
+      const m = $('[data-account-msg]'), body = { name: af.name.value, active: af.active.value === 'true', commissionPerOrder: af.commissionPerOrder.value === '' ? null : af.commissionPerOrder.value };
+      if (af.password.value) body.password = af.password.value;
+      try { await api('/admin/users/' + af.dataset.accountForm, { method: 'POST', body }); document.activeElement?.blur(); tell({ type: 'dl-clients-changed' }); await loadAll(); renderList(); fillClient(clientOf(af.dataset.accountForm)); toast('Account saved.'); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+    }
+  });
+  function onParentMessage(e) {
+    if (e.origin !== location.origin || e.source !== window.parent) return;
+    const m = e.data || {};
+    if (m.type === 'dl-open-client' && clientOf(m.id)) openClient(m.id);
+    if (m.type === 'dl-add-admin') openAddAccount('admin');
+    if (m.type === 'dl-open-order') {
+      const go = () => { if (S.orders.some(o => o.id === m.id)) openOrder(m.id, m.focus); };
+      if (S.orders.some(o => o.id === m.id)) go(); else loadAll().then(() => { renderList(); go(); });
+    }
+  }
 
   boot();
 })();
