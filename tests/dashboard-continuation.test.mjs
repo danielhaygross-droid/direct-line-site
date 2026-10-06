@@ -30,7 +30,7 @@ test('live integrations request Shopify line items and Etsy receipts', () => {
   const worker = read('server/worker.mjs');
   const enApp = read('dist/en/app.js');
 
-  assert.match(worker, /lineItems\(first: 50\)/);
+  assert.match(worker, /lineItems\(first: 5\)/);
   assert.match(worker, /\/receipts\?limit=100&offset=/);
   assert.match(worker, /grant_type:'refresh_token'/);
   assert.match(enApp, /Actual Etsy receipt/);
