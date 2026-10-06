@@ -93,6 +93,14 @@
 .sum-profit{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-radius:14px;background:color-mix(in srgb,var(--mint) 10%,transparent);font-weight:600}
 .sum-profit b{font-size:20px}
 .sum-profit.neg{background:color-mix(in srgb,var(--red) 10%,transparent)}
+.order-submit-card{display:grid;gap:14px}
+.client-order-summary{display:grid;gap:9px;padding:15px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.client-order-summary div{display:flex;justify-content:space-between;gap:14px;color:var(--muted)}
+.client-order-summary b{color:var(--text);text-align:end;overflow-wrap:anywhere}
+.client-order-summary .total{padding-top:10px;border-top:1px dashed var(--line-2)}
+.next-steps{padding:15px;border-radius:14px;background:color-mix(in srgb,var(--gold) 10%,var(--surface));color:var(--muted);font-size:13.5px}
+.next-steps b{display:block;margin-bottom:7px;color:var(--text)}
+.next-steps ul{display:grid;gap:5px;margin:0;padding-inline-start:19px}
 
 /* messages */
 .convos{display:grid}

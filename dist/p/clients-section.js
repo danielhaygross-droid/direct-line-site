@@ -7,6 +7,12 @@
   const frame = section.querySelector('iframe');
   const HASH = '#client-orders';
 
+  function sizeFrame() {
+    if (section.hidden) return;
+    const top = Math.max(0, frame.getBoundingClientRect().top);
+    frame.style.height = Math.max(480, window.innerHeight - top) + 'px';
+  }
+
   function open() {
     if (!frame.src) frame.src = frame.dataset.src;
     section.hidden = false;
@@ -16,6 +22,7 @@
     document.querySelector('.mobile-menu')?.setAttribute('aria-expanded', 'false');
     if (location.hash !== HASH) history.replaceState(null, '', HASH);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    requestAnimationFrame(sizeFrame);
   }
   function close() {
     if (section.hidden) return;
@@ -32,9 +39,9 @@
   }, true);
   window.addEventListener('message', e => {
     if (e.origin !== location.origin || e.source !== frame.contentWindow) return;
-    if (e.data?.type === 'dl-admin-height') frame.style.height = Math.max(400, Number(e.data.height) || 0) + 'px';
     if (e.data?.type === 'dl-admin-ready') frame.dataset.ready = 'true';
   });
+  window.addEventListener('resize', sizeFrame);
   window.addEventListener('hashchange', () => (location.hash === HASH ? open() : close()));
   if (location.hash === HASH) open();
 })();
