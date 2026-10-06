@@ -180,4 +180,12 @@ Also completed locally in commit `78d726c`:
 - Native Google Sheet “Direct Line — Client Orders”.
 - Portal-to-Sheet background sync, retry state and admin visibility.
 
-Pending external setup: create a Google service-account credential, share the Sheet with it as Editor, add the credential and spreadsheet ID to Vercel, then deploy and verify live. Creating that persistent access requires the user's action-time confirmation.
+Completed in production on 2026-10-06:
+
+- Created the restricted `Direct Line Orders Sync` Google service account and enabled the Google Sheets API.
+- Shared only the “Direct Line — Client Orders” spreadsheet with the sync account as Editor.
+- Stored the spreadsheet ID and service-account JSON as protected Vercel production secrets.
+- Merged the two implementation commits into `main` and redeployed `direct-line-control`.
+- Verified the live English dashboard, Clients & orders view, notification dropdown, client portal, Vercel deployment, and an existing order showing `Google Sheet: Synced`.
+- Verified the synced order and tracking number are present in the Orders sheet.
+- Erased the downloaded credential and temporary `.env` contents after Vercel accepted the secrets.
