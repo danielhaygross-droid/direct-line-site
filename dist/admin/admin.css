@@ -60,3 +60,8 @@ html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 .archived{border-top:1px solid var(--line)}
 .archived summary{padding:14px 16px;color:var(--muted);font-size:14px;font-weight:600;cursor:pointer}
 .archived summary:hover{color:var(--text)}
+.ord-cell{display:flex;align-items:center;gap:10px;min-width:0}
+.ord-cell .t-main{min-width:0}
+.ord-cell .t-main small{display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ord-thumb.none{display:grid;place-items:center;color:var(--dim);font-size:12px}
+.pm-add.busy{opacity:.55;pointer-events:none}

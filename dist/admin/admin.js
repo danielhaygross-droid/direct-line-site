@@ -1,7 +1,7 @@
 /* Admin "Clients & orders": all client orders, clients, payments, fee settings.
    Runs inside the store dashboard (iframe). Order and client details open in a side panel. */
 (function () {
-  const { api, money, esc, trackingUrl, renderLogin, quote, destinationPicker, categoryOptions, countryName, toast, RATES, COUNTRIES, $, $$ } = window.DL;
+  const { api, money, esc, trackingUrl, renderLogin, quote, destinationPicker, categoryOptions, countryName, toast, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, $, $$ } = window.DL;
   const UI = window.DLOrderUI;
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
   const S = { ov: null, orders: [], tab: 'orders', filter: null, q: '', client: '', cq: '', drawer: null };
@@ -123,11 +123,11 @@
     sel.innerHTML = '<option value="">All clients</option>' + S.ov.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
     sel.value = S.client;
     const q = S.q.toLowerCase();
-    const rows = inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId)].join(' ').toLowerCase().includes(q)));
+    const rows = inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId), o.itemTitle, o.sku, o.buyerName].join(' ').toLowerCase().includes(q)));
     $('[data-list]').innerHTML = rows.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th>Order</th><th>Destination</th><th class="num">Total</th><th>Status</th><th>Messages</th><th class="hide-sm"></th></tr></thead><tbody>
       ${rows.map(o => `<tr class="click${o.unreadMessages ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
         <td class="wide"><div class="who"><span class="ava">${esc(initials(clientName(o.clientId)))}</span><div><b>${esc(clientName(o.clientId))}</b><small>${esc(fullDate(o.createdAt))}</small></div></div></td>
-        <td data-label="Order"><span class="t-main"><b>${esc(orderName(o))}</b><small class="mono">${esc(o.trackingNumber) || 'No tracking yet'}</small></span></td>
+        <td data-label="Order"><div class="ord-cell">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : '<span class="ord-thumb none" title="No photo">—</span>'}<span class="t-main"><b>${esc(orderName(o))}</b>${o.itemTitle ? `<small>${esc(o.itemTitle)}</small>` : ''}<small class="mono">${esc(o.trackingNumber) || 'No tracking yet'}</small></span></div></td>
         <td data-label="Destination">${esc(place(o.destination))}</td>
         <td data-label="Total" class="num"><b>${money(o.price)}</b></td>
         <td data-label="Status"><select data-status="${o.id}" aria-label="Status of ${esc(orderName(o))}">${STATUSES.map(s => `<option value="${s}"${s === o.status ? ' selected' : ''}>${UI.LABEL[s]}</option>`).join('')}</select></td>
@@ -239,6 +239,7 @@
     if (soft && info.contains(document.activeElement) && document.activeElement.matches('input')) return;
     info.innerHTML = `
       <section class="card card-pad">${UI.tracker(o, events)}</section>
+      <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o, { removable: true, canAdd: (o.photos || []).length < 8 })}</section>
       <section class="card card-pad"><h3 class="sec-title">Update status</h3>
         <div class="status-btns">${STATUSES.map(s => `<button type="button" class="t-${s}${s === o.status ? ' on' : ''}" data-set-status="${s}" data-id="${o.id}">${UI.LABEL[s]}</button>`).join('')}</div>
         <form class="inline-form" data-track-form="${o.id}" style="margin-top:14px"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(o.trackingNumber)}" placeholder="e.g. LX123456789CN"></label><button class="btn" type="submit">Save tracking</button>${o.trackingNumber ? `<a class="btn btn-ghost" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track</a>` : ''}</form>
@@ -250,7 +251,6 @@
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
         <div><dt>Recipient</dt><dd>${esc(o.buyerName) || '—'}</dd></div><div><dt>Phone</dt><dd>${esc(o.buyerPhone) || '—'}</dd></div>
         <div class="full"><dt>Delivery address</dt><dd>${[o.address1, o.address2, o.city, o.region, o.postalCode, place(o.destination)].filter(Boolean).map(esc).join(', ') || '—'}</dd></div>
-        ${o.etsyUrl ? `<div class="full"><dt>Etsy listing</dt><dd><a href="${esc(o.etsyUrl)}" target="_blank" rel="noopener">Open listing</a></dd></div>` : ''}
         <div><dt>Product type</dt><dd>${esc(shortCat(o.category))}</dd></div><div><dt>Weight</dt><dd>${o.weightKg != null ? esc(o.weightKg) + ' kg' : 'Not entered yet'}</dd></div><div><dt>Last update</dt><dd>${esc(fullDate(o.updatedAt))}</dd></div>
         <div><dt>Google Sheet</dt><dd>${o.sheetSyncStatus === 'synced' ? 'Synced' : o.sheetSyncStatus === 'error' ? 'Needs retry' : 'Waiting to sync'}</dd></div>
         ${o.sheetSyncError ? `<div class="full"><dt>Sheet sync note</dt><dd>${esc(o.sheetSyncError)}</dd></div>` : ''}
@@ -451,6 +451,20 @@
     const row = e.target.closest?.('tr[data-open-order], tr[data-open-client]');
     if (row) { if (row.dataset.openOrder) openOrder(row.dataset.openOrder); else openClient(row.dataset.openClient); }
   });
+  // Admins can add product photos to an order (e.g. when a client sends them on WhatsApp).
+  document.addEventListener('change', async e => {
+    const inp = e.target.closest?.('[data-photo-add]'); if (!inp) return;
+    const id = Number(inp.dataset.photoAdd), files = [...inp.files]; inp.value = '';
+    if (!files.length) return;
+    const box = inp.closest('.pm-add'); box?.classList.add('busy');
+    let added = 0, err = '';
+    for (const f of files) {
+      try { await api(`/orders/${id}/photos`, { method: 'POST', body: await shrinkImage(f) }); added++; }
+      catch (ex) { err = ex.message; }
+    }
+    await loadAll(); renderList(); refreshDrawer();
+    toast(added ? `${added} photo${added > 1 ? 's' : ''} added.` + (err ? ' ' + err : '') : err || 'No photo added.');
+  });
   // Clicks inside the side panel (it lives outside #app), plus copy buttons anywhere.
   document.addEventListener('click', async e => {
     const t = e.target, d = UI.getDrawer();
@@ -459,6 +473,14 @@
     if (!d.el.contains(t)) return;
     if (t.closest('[data-close-drawer]')) { d.close(); return; }
     if (t.closest('[data-back]') && S.drawer?.back) { openClient(S.drawer.back); return; }
+    const pr = t.closest('[data-photo-remove]');
+    if (pr) {
+      if (!pr.dataset.armed) { pr.dataset.armed = '1'; pr.classList.add('confirm'); pr.textContent = 'Remove?'; setTimeout(() => { if (pr.isConnected) { delete pr.dataset.armed; pr.classList.remove('confirm'); pr.textContent = '×'; } }, 4000); return; }
+      pr.disabled = true;
+      try { await api(`/orders/${pr.dataset.order}/photos/${pr.dataset.photoRemove}/delete`, { method: 'POST' }); await loadAll(); renderList(); refreshDrawer(); toast('Photo removed.'); }
+      catch (ex) { pr.disabled = false; toast(ex.message); }
+      return;
+    }
     const ss = t.closest('[data-set-status]'); if (ss) { if (!ss.classList.contains('on')) setStatus(ss.dataset.id, ss.dataset.setStatus, ss); return; }
     const eo = t.closest('[data-edit-order]'); if (eo) { openOrderForm(S.orders.find(o => o.id === Number(eo.dataset.editOrder))); return; }
     const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
