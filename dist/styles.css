@@ -370,3 +370,23 @@ body.real-data-mode [data-risk-count]{display:none}
 .order-date{display:grid;gap:2px;color:var(--text);font-weight:600}.order-date small{color:var(--dim);font-weight:400}
 @media(max-width:560px){.nav-group-title{margin-inline:13px}.nav-client-group{margin-top:12px;padding-top:12px}}
 .product-catalog-table .price-source{display:block;margin-top:4px;color:var(--dim);font:500 11px/1.3 "IBM Plex Mono",monospace;white-space:normal}
+/* Profitability: order list, sale prices, Etsy CSV import */
+.ls-link{padding:0;border:0;background:none;color:var(--gold);font:inherit;font-size:12.5px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.ls-link.strong{font-size:13px;font-weight:600}
+.ls-pos{color:var(--mint)}
+.ls-orders td{white-space:nowrap}
+.ls-orders td.ls-prod{white-space:normal;min-width:200px;max-width:320px}
+.ls-orders td.ls-prod a{color:var(--text);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.ls-pager{display:flex;align-items:center;gap:6px}
+.ls-pager button{width:30px;height:28px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--muted);cursor:pointer}
+.ls-pager button:disabled{opacity:.4;cursor:default}
+.ls-pager b{font-weight:500;color:var(--text);padding:0 4px}
+.ls-mini{grid-template-columns:repeat(3,minmax(0,1fr));margin:14px 0}
+.ls-mini article{padding:12px 14px;box-shadow:none}
+.ls-mini strong{font-size:20px}
+.ls-import{display:grid;gap:10px}
+.ls-field{display:grid;gap:5px;color:var(--muted);font-size:13px}
+.ls-field select{min-height:40px;padding:0 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);color:var(--text)}
+.ls-price-form .ls-actions{margin-top:6px}
+.ls-price-form p{margin:0 0 4px;color:var(--muted);font-size:13px}
+@media (max-width:600px){.ls-mini{grid-template-columns:1fr 1fr 1fr}.ls-mini strong{font-size:17px}.ls-mini span{font-size:12px}}
