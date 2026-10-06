@@ -245,5 +245,45 @@
     load();
   }
 
-  window.DL = { visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  // ---------- product photos (client orders) ----------
+  // Shrinks a picked/pasted image in the browser so uploads stay small: a full view (max 1600px) and a thumbnail.
+  function loadImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('This picture format can’t be read here. Please use a screenshot, JPG or PNG.')); };
+      img.src = url;
+    });
+  }
+  function drawScaled(img, max, quality) {
+    const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+    const k = Math.min(1, max / Math.max(w0, h0)), w = Math.max(1, Math.round(w0 * k)), h = Math.max(1, Math.round(h0 * k));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+    return { data: c.toDataURL('image/jpeg', quality), width: w, height: h };
+  }
+  const dataBytes = d => Math.floor((d.length - d.indexOf(',') - 1) * 3 / 4);
+  async function shrinkImage(file) {
+    if (!file || !/^image\//.test(file.type || '')) throw new Error('Please choose a photo or screenshot (JPG, PNG or WebP).');
+    if (file.size > 30e6) throw new Error('That picture is over 30 MB. Please use a smaller one.');
+    const img = await loadImage(file);
+    let full = null;
+    for (const [max, q] of [[1600, 0.85], [1600, 0.72], [1280, 0.7], [1024, 0.65]]) { full = drawScaled(img, max, q); if (dataBytes(full.data) <= 1_100_000) break; }
+    if (dataBytes(full.data) > 1_400_000) throw new Error('That picture is too large. Please use a smaller screenshot.');
+    const thumb = drawScaled(img, 360, 0.78);
+    return { data: full.data, thumb: thumb.data, width: full.width, height: full.height };
+  }
+  const photoUrl = (orderId, photoId, thumb) => `/api/portal/orders/${orderId}/photos/${photoId}${thumb ? '?size=thumb' : ''}`;
+  // Thumbnails + product link, shown in order drawers (client and admin).
+  function productMedia(o, { removable = false, canAdd = false } = {}) {
+    const photos = o.photos || [];
+    const link = o.etsyUrl ? `<a class="btn btn-sm" href="${esc(o.etsyUrl)}" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>Open product link</a><span class="pm-link" title="${esc(o.etsyUrl)}">${esc(o.etsyUrl.replace(/^https?:\/\/(www\.)?/, ''))}</span>`
+      : '<span class="muted">No product link added.</span>';
+    return `<div class="pm-photos">${photos.map(p => `<figure class="pm-photo"><a href="${photoUrl(o.id, p.id)}" target="_blank" rel="noopener" title="Open full size"><img src="${photoUrl(o.id, p.id, true)}" alt="Product photo" loading="lazy"></a>${removable ? `<button type="button" class="pm-remove" data-photo-remove="${p.id}" data-order="${o.id}" aria-label="Remove photo">×</button>` : ''}</figure>`).join('')}
+      ${canAdd ? `<label class="pm-add" title="Add a photo"><input type="file" accept="image/*" multiple hidden data-photo-add="${o.id}"><span>+</span><small>Add photo</small></label>` : ''}
+      ${!photos.length && !canAdd ? '<span class="muted">No photos added.</span>' : ''}</div>
+      <div class="pm-linkrow">${link}</div>`;
+  }
+
+  window.DL = { shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();
