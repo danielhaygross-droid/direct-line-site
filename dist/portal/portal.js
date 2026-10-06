@@ -1,6 +1,7 @@
 /* Direct Line client portal: Home, Orders (with order details + chat), New order, Messages, Payments, Shipping rates. */
 (function () {
-  const { api, money, esc, trackingUrl, logout, renderLogin, quote, destinationPicker, hasRate, categoryOptions, countryName, RATES, COUNTRIES, $, $$ } = window.DL;
+  const { api, money, esc, trackingUrl, logout, renderLogin, quote, destinationPicker, hasRate, categoryOptions, countryName, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, $, $$ } = window.DL;
+  const MAX_PHOTOS = 8;
   const UI = window.DLOrderUI, N = window.DLNotify;
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
   const S = { me: null, orders: [], payments: [], notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
@@ -127,6 +128,7 @@
     } else if (e.kind === 'tracking') it = { ...base, icon: 'status', tone: 'mint', title: 'Tracking number added', text: `${ref} · ${e.detail}` };
     else if (e.kind === 'message') it = { ...base, icon: 'message', tone: 'blue', focus: 'chat', action: 'Reply', title: 'Direct Line replied', text: `${ref}: ${e.detail}` };
     else if (e.kind === 'created') it = { ...base, icon: 'order', tone: 'gold', title: 'We added an order for you', text: ref };
+    else if (e.kind === 'photo') it = { ...base, icon: 'edit', tone: 'orange', title: e.detail === 'removed' ? 'We removed a product photo' : 'We added a product photo', text: ref };
     else it = { ...base, icon: 'edit', tone: 'orange', title: 'We updated your order', text: ref };
     it.unread = it.time > S.seenAt * 1000 && !reads().has(it.id);
     return it;
@@ -278,7 +280,7 @@
     const fresh = unreadOrderIds();
     return `<table class="tbl stack"><thead><tr><th>Order</th><th>Destination</th>${compact ? '' : '<th>Tracking</th>'}<th class="num">Customer paid</th>${compact ? '' : '<th class="num">Profit</th>'}<th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
       ${list.map(o => `<tr class="click${fresh.has(o.id) ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
-        <td class="wide"><div class="ord-ref"><span class="ord-ic t-${o.status}">${ic('orders')}</span><span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small></span></div></td>
+        <td class="wide"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small></span></div></td>
         <td data-label="Destination">${esc(place(o.destination))}</td>
         ${compact ? '' : `<td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>` : '<span class="dim">Not yet</span>'}</td>`}
         <td data-label="Customer paid" class="num"><b>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</b></td>
@@ -335,6 +337,7 @@
       <section class="card card-pad"><h3 class="sec-title">Tracking</h3>${o.trackingNumber
         ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="tracking" style="font-size:16px;font-weight:600">${esc(o.trackingNumber)}</span><span style="flex:1"></span><button type="button" class="btn btn-sm" data-copy="${esc(o.trackingNumber)}">${ic('copy')}Copy</button><a class="btn btn-sm" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track parcel</a></div>`
         : '<p class="muted" style="margin:0">No tracking number yet. Direct Line will add it after the parcel ships.</p>'}</section>
+      <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o)}</section>
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
         <div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div><div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div>
         <div class="full"><dt>Product</dt><dd>${esc(o.itemTitle) || '—'}</dd></div><div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
@@ -371,11 +374,14 @@
           <label class="field"><span>Currency</span><select name="currency">${currencies.map(c => `<option${c === (ed?.currency || 'USD') ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>2</i>Item sold</h3><div class="form-grid">
+          <div class="field full photo-field"><span>Product photos / screenshots <small data-pick-count></small></span>
+            <div class="pm-photos pick-zone" data-picks></div>
+            <p class="pick-hint">Add a screenshot of the Etsy order or listing, or a photo of the product (at least 1, up to ${MAX_PHOTOS}). On a computer you can also drag pictures here or paste a screenshot with Ctrl+V.</p></div>
+          <label class="field full"><span>Product link</span><input name="etsyUrl" type="url" required maxlength="500" inputmode="url" placeholder="https://www.etsy.com/listing/..." value="${esc(ed?.etsyUrl)}"></label>
           <label class="field full"><span>Product title</span><input name="itemTitle" required maxlength="300" placeholder="Copy the item title from Etsy" value="${esc(ed?.itemTitle)}"></label>
           <label class="field"><span>SKU or listing ID <small>optional</small></span><input name="sku" maxlength="120" placeholder="e.g. LIGHTER-01" value="${esc(ed?.sku)}"></label>
           <label class="field"><span>Quantity</span><input name="quantity" required type="number" min="1" max="999" step="1" inputmode="numeric" value="${ed?.quantity || 1}"></label>
           <label class="field full"><span>Variation / personalization <small>optional</small></span><input name="variant" maxlength="500" placeholder="Color, size, engraving or personalization" value="${esc(ed?.variant)}"></label>
-          <label class="field full"><span>Etsy listing link <small>optional</small></span><input name="etsyUrl" type="url" maxlength="500" placeholder="https://www.etsy.com/listing/..." value="${esc(ed?.etsyUrl)}"></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
           <label class="field"><span>Customer / recipient name</span><input name="buyerName" required maxlength="160" autocomplete="name" value="${esc(ed?.buyerName)}"></label>
@@ -407,6 +413,44 @@
     const dest = destinationPicker(form.destination, $('[data-other-country]', form));
     dest.set(ed?.destination || '');
     const setMsg = (t, k) => { const m = $('[data-form-msg]'); m.textContent = t; m.className = 'form-msg ' + (k || ''); };
+    // ----- product photos: existing ones (edit) + new picks, uploaded after the order is saved -----
+    const locked = ed && ['shipped', 'delivered'].includes(ed.status);
+    let picks = (ed?.photos || []).map(p => ({ key: 'p' + p.id, id: p.id }));
+    const removed = [];
+    let pickSeq = 0;
+    const zone = $('[data-picks]', form);
+    function renderPicks() {
+      zone.innerHTML = picks.map(p => `<figure class="pm-photo"><img src="${p.id ? photoUrl(ed.id, p.id, true) : p.thumb}" alt="Product photo">${p.id && locked ? '' : `<button type="button" class="pm-remove" data-pick-remove="${p.key}" aria-label="Remove photo">×</button>`}</figure>`).join('')
+        + (picks.length < MAX_PHOTOS ? `<label class="pm-add${picks.length ? '' : ' big'}"><input type="file" accept="image/*" multiple hidden data-pick-input><span>+</span><small>${picks.length ? 'Add more' : 'Add photo or screenshot'}</small></label>` : '');
+      $('[data-pick-count]', form).textContent = picks.length ? `${picks.length} of ${MAX_PHOTOS}` : 'required';
+    }
+    async function addFiles(files) {
+      const list = [...files].filter(f => /^image\//.test(f.type || ''));
+      if (!list.length) { setMsg('Please choose a photo or screenshot (JPG, PNG or WebP).', 'err'); return; }
+      const room = MAX_PHOTOS - picks.length;
+      if (room <= 0) { setMsg(`You can add up to ${MAX_PHOTOS} photos.`, 'err'); return; }
+      zone.classList.add('busy');
+      let failed = '';
+      for (const file of list.slice(0, room)) {
+        try { picks.push({ key: 'n' + (++pickSeq), ...(await shrinkImage(file)) }); renderPicks(); }
+        catch (ex) { failed = ex.message; }
+      }
+      zone.classList.remove('busy');
+      if (list.length > room) setMsg(`Only ${MAX_PHOTOS} photos fit on one order, so ${list.length - room} weren’t added.`, 'err');
+      else setMsg(failed, failed ? 'err' : '');
+    }
+    form._addFiles = addFiles;
+    zone.addEventListener('change', e => { if (e.target.matches('[data-pick-input]')) { addFiles(e.target.files); e.target.value = ''; } });
+    zone.addEventListener('click', e => {
+      const b = e.target.closest('[data-pick-remove]'); if (!b) return;
+      const p = picks.find(x => x.key === b.dataset.pickRemove); if (!p) return;
+      if (p.id) removed.push(p.id);
+      picks = picks.filter(x => x !== p); renderPicks();
+    });
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+    zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag'); if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); });
+    renderPicks();
     const need = (field, message) => {
       if (String(field.value || '').trim()) return true;
       setMsg(message, 'err'); field.focus(); return false;
@@ -422,6 +466,9 @@
       if (!need(form.orderRef, 'Please enter the Etsy order number.')) return;
       if (!need(form.orderDate, 'Please choose the order date.')) return;
       if (!need(form.sellingPrice, 'Please enter what the customer paid.')) return;
+      if (!picks.length) { setMsg('Please add at least one photo or screenshot of the product.', 'err'); zone.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
+      if (!need(form.etsyUrl, 'Please add the product link (the Etsy listing).')) return;
+      if (!/^https?:\/\/[^\s]+\.[^\s]+/i.test(form.etsyUrl.value.trim())) { setMsg('Please paste the full product link, starting with https://', 'err'); form.etsyUrl.focus(); return; }
       if (!need(form.itemTitle, 'Please enter the product title.')) return;
       if (!need(form.buyerName, 'Please enter the customer or recipient name.')) return;
       if (!need(form.address1, 'Please enter the delivery address.')) return;
@@ -435,13 +482,26 @@
         city: form.city.value, region: form.region.value, postalCode: form.postalCode.value, destination: dest.get(), notes: form.notes.value,
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');
+      const fresh = picks.filter(p => !p.id), photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
+      let r;
       try {
-        const r = ed ? await api('/orders/' + ed.id, { method: 'PUT', body }) : await api('/orders', { method: 'POST', body });
-        await refresh(true);
-        S.filter = 'all'; go('orders');
-        N.popup({ icon: 'check', tone: 'mint', title: ed ? 'Order updated' : 'Order sent', text: ed ? orderName(r.order) + ' was saved.' : `${orderName(r.order)} is pending. Direct Line will add the fulfilment details next.` }, { duration: 6000 });
-        setTimeout(() => openOrder(r.order.id), 200);
-      } catch (ex) { setMsg(ex.message, 'err'); btn.disabled = false; }
+        r = ed ? await api('/orders/' + ed.id, { method: 'PUT', body })
+          : await api('/orders', { method: 'POST', body: { ...body, photos: fresh.slice(0, 1).map(photoBody) } });
+      } catch (ex) { setMsg(ex.message, 'err'); btn.disabled = false; return; }
+      // The order is saved. Upload the remaining photos one by one (keeps each request small), then remove the ones taken out.
+      const orderId = r.order.id, queue = ed ? fresh : fresh.slice(1);
+      let failed = 0;
+      for (let i = 0; i < queue.length; i++) {
+        setMsg(`Uploading photos… ${i + 1} of ${queue.length}`);
+        try { await api(`/orders/${orderId}/photos`, { method: 'POST', body: photoBody(queue[i]) }); } catch (ex) { failed++; }
+      }
+      for (const id of removed) { try { await api(`/orders/${orderId}/photos/${id}/delete`, { method: 'POST' }); } catch (ex) { failed++; } }
+      setMsg('');
+      await refresh(true);
+      S.filter = 'all'; go('orders');
+      if (failed) N.popup({ icon: 'alert', tone: 'red', title: 'Some photos didn’t save', text: `${orderName(r.order)} was saved, but ${failed} photo change${failed > 1 ? 's' : ''} didn’t go through. Open the order and edit it to try again.` }, { duration: 12000 });
+      else N.popup({ icon: 'check', tone: 'mint', title: ed ? 'Order updated' : 'Order sent', text: ed ? orderName(r.order) + ' was saved.' : `${orderName(r.order)} is pending. Direct Line will add the fulfilment details next.` }, { duration: 6000 });
+      setTimeout(() => openOrder(orderId), 200);
     });
     updateSum();
     if (!ed) form.orderRef.focus({ preventScroll: true });
@@ -533,6 +593,16 @@
   }
   function onInput(e) { if (e.target.matches('[data-q]')) { S.q = e.target.value; renderOrdersList(); } }
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches?.('tr[data-open-order]')) openOrder(e.target.dataset.openOrder); });
+  // Paste a screenshot (Ctrl+V) anywhere on the order form to attach it. Normal text pasting into fields is left alone.
+  document.addEventListener('paste', e => {
+    const form = $('#order-form'); if (!form?._addFiles) return;
+    const items = [...(e.clipboardData?.items || [])];
+    const files = items.filter(i => i.kind === 'file' && /^image\//.test(i.type)).map(i => i.getAsFile()).filter(Boolean);
+    if (!files.length) return;
+    const typing = e.target.matches?.('input, textarea') && items.some(i => i.type === 'text/plain');
+    if (typing) return;
+    e.preventDefault(); form._addFiles(files);
+  });
   // Drawer actions (the drawer lives outside #app).
   document.addEventListener('click', async e => {
     const t = e.target;
