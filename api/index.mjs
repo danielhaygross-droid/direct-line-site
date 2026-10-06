@@ -33,7 +33,7 @@ export async function route(request, { db = DB, env: baseEnv = process.env } = {
 
   try {
     if (path.startsWith('/api/portal/') || path === '/api/portal') {
-      return await handlePortal(request, url, { DB: db, env });
+      return await handlePortal(request, url, { DB: db, env, waitUntil });
     }
 
     if (path === '/api/auth/login' && request.method === 'POST') {

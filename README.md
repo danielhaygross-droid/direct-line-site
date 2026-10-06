@@ -14,15 +14,18 @@ Moved off ChatGPT hosting (Cloudflare Worker + D1) to **Vercel + Neon Postgres**
 | `server/d1-postgres.mjs` | Lets the Worker's `env.DB` (D1 API) run on Postgres; creates tables on first use |
 | `api/index.mjs` | Vercel function; every `/api/*` request is rewritten here (see `vercel.json`). Routes portal calls, unified login, and blocks clients from store endpoints |
 | `server/portal.mjs` | Client portal + admin API: accounts (PBKDF2 passwords), client orders, payments, commission, settings |
+| `server/google-sheets.mjs` | Reliable Google Sheets mirror for client portal orders, including retry and sync status |
 | `dist/portal/` | Client portal (`/portal/`): add orders, profit, shipping quote calculator |
 | `dist/admin/` | Admin view (`/admin/`): clients, outstanding balances, payments, commission, accounts, settings |
 | `dist/p/` | Shared portal CSS/JS, including the supplier shipping-rate table |
 
 ## Environment variables (Vercel → Project → Settings → Environment Variables)
 
-`ADMIN_USERNAME`, `ADMIN_PASSWORD`, `APP_SESSION_SECRET` (optional; derived from `DATABASE_URL` if unset), `SHOPIFY_SHOP`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, `ETSY_KEYSTRING`, `ETSY_SHARED_SECRET`, `ETSY_REDIRECT_URI` (`https://<vercel-domain>/api/etsy/callback`, also registered in the Etsy app), and `DATABASE_URL` (added automatically when a Neon database is connected under Storage).
+`ADMIN_USERNAME`, `ADMIN_PASSWORD`, `APP_SESSION_SECRET` (optional; derived from `DATABASE_URL` if unset), `SHOPIFY_SHOP`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, `ETSY_KEYSTRING`, `ETSY_SHARED_SECRET`, `ETSY_REDIRECT_URI` (`https://<vercel-domain>/api/etsy/callback`, also registered in the Etsy app), `DATABASE_URL` (added automatically when a Neon database is connected under Storage), `GOOGLE_SHEETS_SPREADSHEET_ID`, and either `GOOGLE_SERVICE_ACCOUNT_JSON` or both `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`.
 
 Never commit values.
+
+The client-order workbook is `Direct Line — Client Orders`. Share it as Editor with the service account email, then add the Google variables in Vercel. A client order is saved to Postgres first, creates the existing admin notification, and is mirrored to the `Orders` tab in the background. Failed Sheet writes remain marked for retry and are retried when an admin opens the overview or calls `POST /api/portal/admin/google-sheets/retry`.
 
 ## Accounts & roles
 

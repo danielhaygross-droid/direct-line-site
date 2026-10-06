@@ -160,3 +160,24 @@ The endpoint requires a valid dashboard session. It redirects to `https://www.et
 4. Finish date filtering in all views, including products/costs.
 5. Add clear “last updated”, data-source, and cache-age labels so users can trust the numbers.
 
+# 2026-10-06 continuation
+
+The current production target is Vercel at `https://direct-line-control.vercel.app/`.
+The Cloudflare notes later in this file describe an older deployment path.
+
+Completed locally on `codex/continue-project`:
+
+- Daniel's own stores and Direct Line client accounts are separated in the sidebar and top filters.
+- English and Hebrew order tables show an explicit order number and date.
+- Product tables show the last order date and respect the selected date range.
+- Shopify sync now requests real line-item titles, variants, SKUs and quantities.
+- Etsy sync now renews expired OAuth tokens and matches supplier rows to paid Etsy receipts for actual titles, dates, totals, refunds and tracking. Public listing price remains a clearly labelled fallback when a receipt is unavailable.
+- Desktop and 390px mobile previews passed, including the mobile notification bell.
+- `npm run build`, syntax checks and all six Node tests pass.
+
+Also completed locally in commit `78d726c`:
+
+- Native Google Sheet “Direct Line — Client Orders”.
+- Portal-to-Sheet background sync, retry state and admin visibility.
+
+Pending external setup: create a Google service-account credential, share the Sheet with it as Editor, add the credential and spreadsheet ID to Vercel, then deploy and verify live. Creating that persistent access requires the user's action-time confirmation.

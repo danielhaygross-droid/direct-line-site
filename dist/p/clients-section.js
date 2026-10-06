@@ -25,60 +25,6 @@
     if (location.hash === HASH) history.replaceState(null, '', location.pathname + location.search);
   }
 
-  // ----- real client accounts in the top "Client" dropdown -----
-  const he = document.documentElement.lang === 'he';
-  const select = document.getElementById('client-select');
-  let pendingClient = null, frameReady = false, loaded = false;
-
-  function showClient(id) {
-    open();
-    pendingClient = id;
-    if (frameReady) { frame.contentWindow.postMessage({ type: 'dl-open-client', id }, location.origin); pendingClient = null; }
-  }
-
-  async function loadClients(force) {
-    if ((loaded && !force) || !select) return;
-    try {
-      const res = await fetch('/api/portal/admin/overview', { credentials: 'same-origin' });
-      if (!res.ok) return;
-      const data = await res.json();
-      loaded = true;
-      select.querySelector('optgroup[data-dl-clients]')?.remove();
-      const group = document.createElement('optgroup');
-      group.label = he ? 'לקוחות Direct Line' : 'Direct Line clients';
-      group.dataset.dlClients = '';
-      (data.clients || []).forEach(c => {
-        const o = document.createElement('option');
-        o.value = 'dl:' + c.id;
-        o.textContent = c.name + (c.active ? '' : (he ? ' (מושבת)' : ' (disabled)'));
-        group.appendChild(o);
-      });
-      if (!group.children.length) {
-        const o = document.createElement('option'); o.disabled = true; o.value = 'dl:none';
-        o.textContent = he ? 'אין לקוחות עדיין' : 'No clients yet'; group.appendChild(o);
-      }
-      select.appendChild(group);
-    } catch (e) { /* not signed in yet */ }
-  }
-
-  if (select) {
-    let previous = select.value;
-    select.addEventListener('focus', () => { previous = select.value; loadClients(true); });
-    select.addEventListener('pointerdown', () => { previous = select.value; });
-    // Runs before the dashboard's own handler; Direct Line clients never reach it.
-    document.addEventListener('change', e => {
-      if (e.target !== select || !select.value.startsWith('dl:')) return;
-      e.stopImmediatePropagation();
-      const id = Number(select.value.slice(3));
-      select.value = previous;
-      if (id) showClient(id);
-    }, true);
-    select.addEventListener('change', () => { if (!select.value.startsWith('dl:')) previous = select.value; });
-    new MutationObserver(() => { if (document.body.classList.contains('authenticated')) loadClients(); })
-      .observe(document.body, { attributes: true, attributeFilter: ['class'] });
-    loadClients();
-  }
-
   btn.addEventListener('click', open);
   // Any other dashboard section closes this one (the dashboard handles its own nav after us).
   document.addEventListener('click', e => {
@@ -87,11 +33,7 @@
   window.addEventListener('message', e => {
     if (e.origin !== location.origin || e.source !== frame.contentWindow) return;
     if (e.data?.type === 'dl-admin-height') frame.style.height = Math.max(400, Number(e.data.height) || 0) + 'px';
-    if (e.data?.type === 'dl-admin-ready') {
-      frameReady = true;
-      if (pendingClient) { frame.contentWindow.postMessage({ type: 'dl-open-client', id: pendingClient }, location.origin); pendingClient = null; }
-    }
-    if (e.data?.type === 'dl-clients-changed') { loaded = false; loadClients(); }
+    if (e.data?.type === 'dl-admin-ready') frame.dataset.ready = 'true';
   });
   window.addEventListener('hashchange', () => (location.hash === HASH ? open() : close()));
   if (location.hash === HASH) open();

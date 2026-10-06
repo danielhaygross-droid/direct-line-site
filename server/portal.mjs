@@ -5,6 +5,7 @@
 //   role "client-<id>"    -> a client account from the users table
 
 import { timingSafeEqual } from 'node:crypto';
+import { googleSheetsConfigured, retryPendingGoogleSheetOrders, syncClientToGoogleSheet, syncPortalOrderToGoogleSheet } from './google-sheets.mjs';
 
 const utf8 = new TextEncoder();
 const SESSION_SECONDS = 43200; // 12h, same as the Worker
@@ -65,6 +66,11 @@ export const SCHEMA = [
   // What the client sees on each order: product cost (our $2 fee is already inside it) + shipping fee = price.
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS product_cost DOUBLE PRECISION',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS shipping_fee DOUBLE PRECISION',
+  // Google Sheets is an operations mirror. The database remains authoritative if the external sync is unavailable.
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_sync_status TEXT NOT NULL DEFAULT 'waiting'",
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_synced_at INTEGER',
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_sync_error TEXT NOT NULL DEFAULT ''",
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_sync_attempts INTEGER NOT NULL DEFAULT 0',
   // Activity log: what happened to each order and when (powers notifications and the order timeline).
   `CREATE TABLE IF NOT EXISTS order_events (
      id SERIAL PRIMARY KEY,
@@ -151,6 +157,9 @@ function orderOut(r) {
     commission: Number(r.commission || 0), supplierShare: round2(r.supplier_share),
     ourShare: round2(Math.max(0, Number(r.commission || 0) - Number(r.supplier_share || 0))),
     notes: r.notes, status: r.status,
+    sheetSyncStatus: r.sheet_sync_status || 'waiting',
+    sheetSyncedAt: r.sheet_synced_at == null ? null : Number(r.sheet_synced_at),
+    sheetSyncError: r.sheet_sync_error || '',
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   };
 }
@@ -209,7 +218,7 @@ async function clientSummary(DB, clientId, settings) {
 // ---------- request handler ----------
 // Returns a Response for /api/portal/* routes, or null if the path isn't ours.
 export async function handlePortal(request, url, ctx) {
-  const { DB, env } = ctx;
+  const { DB, env, waitUntil } = ctx;
   const path = url.pathname.replace(/^\/api\/portal/, '') || '/';
   const method = request.method;
   if (!DB) return json({ ok: false, error: 'Database is not configured' }, 503);
@@ -271,8 +280,10 @@ export async function handlePortal(request, url, ctx) {
     const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
       .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t).first();
     await logEvent(DB, row.id, clientId, 'created', who.admin ? 'admin' : 'client');
+    const sheetSync = syncPortalOrderToGoogleSheet(DB, env, row.id).catch(error => console.error('Google Sheets order sync failed', error));
+    if (waitUntil) waitUntil(sheetSync); else await sheetSync;
     const out = orderOut(row);
-    if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; }
+    if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; delete out.sheetSyncStatus; delete out.sheetSyncedAt; delete out.sheetSyncError; }
     return json({ ok: true, order: out });
   }
   // ----- notifications: what the other side did, newest first -----
@@ -327,8 +338,10 @@ export async function handlePortal(request, url, ctx) {
     if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);
     if (row.tracking_number !== existing.tracking_number && row.tracking_number) await logEvent(DB, id, existing.client_id, 'tracking', actor, row.tracking_number);
     if (EDIT_FIELDS.some(k => String(row[k] ?? '') !== String(existing[k] ?? ''))) await logEvent(DB, id, existing.client_id, 'edited', actor);
+    const sheetSync = syncPortalOrderToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets order update failed', error));
+    if (waitUntil) waitUntil(sheetSync); else await sheetSync;
     const out = orderOut(row);
-    if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; }
+    if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; delete out.sheetSyncStatus; delete out.sheetSyncedAt; delete out.sheetSyncError; }
     return json({ ok: true, order: out });
   }
 
@@ -336,6 +349,8 @@ export async function handlePortal(request, url, ctx) {
   if (!who.admin) return json({ ok: false, error: 'Forbidden' }, 403);
 
   if (path === '/admin/overview' && method === 'GET') {
+    const pendingSync = retryPendingGoogleSheetOrders(DB, env).catch(error => console.error('Google Sheets pending-order retry failed', error));
+    if (waitUntil) waitUntil(pendingSync);
     const settings = await getSettings(DB);
     const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, active, archived, created_at FROM users ORDER BY role, display_name').all()).results || [];
     const clients = [];
@@ -346,7 +361,10 @@ export async function handlePortal(request, url, ctx) {
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
-    return json({ ok: true, settings, totals, clients, admins, archived });
+    return json({ ok: true, settings, totals, clients, admins, archived, googleSheets: { configured: googleSheetsConfigured(env) } });
+  }
+  if (path === '/admin/google-sheets/retry' && method === 'POST') {
+    return json({ ok: true, ...(await retryPendingGoogleSheetOrders(DB, env)) });
   }
   if (path === '/admin/notifications' && method === 'GET') {
     const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE e.actor = 'client' AND NOT u.archived ORDER BY e.created_at DESC, e.id DESC LIMIT 60").all()).results || [];
@@ -391,6 +409,10 @@ export async function handlePortal(request, url, ctx) {
     if (!isMoney(cpo)) return json({ ok: false, error: 'Invalid commission' }, 400);
     const row = await DB.prepare('INSERT INTO users (username, password_hash, role, display_name, commission_per_order, active, created_at) VALUES (?,?,?,?,?,TRUE,?) RETURNING id')
       .bind(username, await hashPassword(password), userRole, text(body.name, 120) || username, userRole === 'client' ? cpo : null, now()).first();
+    if (userRole === 'client') {
+      const sheetSync = syncClientToGoogleSheet(DB, env, row.id).catch(error => console.error('Google Sheets client sync failed', error));
+      if (waitUntil) waitUntil(sheetSync); else await sheetSync;
+    }
     return json({ ok: true, id: row.id });
   }
   const userUpd = /^\/admin\/users\/(\d+)$/.exec(path);
@@ -407,6 +429,10 @@ export async function handlePortal(request, url, ctx) {
     if (body.password) { if (String(body.password).length < 8) return json({ ok: false, error: 'Password must be at least 8 characters' }, 400); hash = await hashPassword(String(body.password)); }
     const archived = body.archived !== undefined && u.role === 'client' ? Boolean(body.archived) : u.archived;
     await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=?, archived=? WHERE id = ?').bind(name, active, cpo, hash, archived, id).run();
+    if (u.role === 'client') {
+      const sheetSync = syncClientToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets client update failed', error));
+      if (waitUntil) waitUntil(sheetSync); else await sheetSync;
+    }
     return json({ ok: true });
   }
   if (path === '/admin/settings' && method === 'POST') {
