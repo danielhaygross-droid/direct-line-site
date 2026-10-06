@@ -103,6 +103,22 @@ export const SCHEMA = [
   // Archived clients (e.g. test accounts) are hidden from lists, totals and notifications and can't sign in.
   // Nothing is deleted: an admin can restore them.
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE',
+  // Screenshots / photos of the product that was ordered. The client attaches them with the order;
+  // admins can add more. Stored as base64 (the browser shrinks them first), with a small thumbnail.
+  `CREATE TABLE IF NOT EXISTS order_photos (
+     id SERIAL PRIMARY KEY,
+     order_id INTEGER NOT NULL REFERENCES client_orders(id),
+     client_id INTEGER NOT NULL REFERENCES users(id),
+     mime TEXT NOT NULL,
+     data TEXT NOT NULL,
+     thumb_mime TEXT NOT NULL DEFAULT '',
+     thumb TEXT NOT NULL DEFAULT '',
+     width INTEGER,
+     height INTEGER,
+     bytes INTEGER NOT NULL DEFAULT 0,
+     added_by TEXT NOT NULL CHECK (added_by IN ('client','admin')),
+     created_at INTEGER NOT NULL)`,
+  'CREATE INDEX IF NOT EXISTS order_photos_order_idx ON order_photos (order_id, id)',
 ];
 
 export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000' };
@@ -210,6 +226,53 @@ async function logEvent(DB, orderId, clientId, kind, actor, detail = '') {
 const EDIT_FIELDS = ['order_ref', 'destination', 'category', 'weight_kg', 'product_cost', 'shipping_fee', 'selling_price', 'notes', 'order_date', 'currency', 'buyer_name', 'buyer_phone', 'address_line_1', 'address_line_2', 'city', 'region', 'postal_code', 'item_title', 'sku', 'variant', 'quantity', 'etsy_url'];
 async function readBody(request) { return request.json().catch(() => ({})); }
 
+// ---------- product photos ----------
+export const MAX_PHOTOS_PER_ORDER = 8;
+const PHOTO_MAX_BYTES = 1_500_000, THUMB_MAX_BYTES = 200_000;
+function sniffImage(buf) {
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length > 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buf.length > 12 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
+  return null;
+}
+function decodeImage(dataUrl, maxBytes) {
+  const m = /^data:image\/(?:jpeg|jpg|png|webp);base64,([A-Za-z0-9+/]+=*)$/.exec(String(dataUrl || ''));
+  if (!m) throw new Error('Photos must be JPG, PNG or WebP images');
+  const buf = Buffer.from(m[1], 'base64');
+  if (!buf.length) throw new Error('That photo is empty');
+  if (buf.length > maxBytes) throw new Error('That photo is too large. Please use a smaller screenshot.');
+  const mime = sniffImage(buf);
+  if (!mime) throw new Error('That file isn’t a valid image');
+  return { mime, b64: buf.toString('base64'), bytes: buf.length };
+}
+// Accepts { data, thumb?, width?, height? } (data URLs) and returns a row ready to insert.
+function photoInput(p) {
+  const full = decodeImage(p?.data, PHOTO_MAX_BYTES);
+  const thumb = p?.thumb ? decodeImage(p.thumb, THUMB_MAX_BYTES) : full;
+  const dim = v => (Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) < 20000 ? Number(v) : null);
+  return { ...full, thumbMime: thumb.mime, thumbB64: thumb.b64, width: dim(p?.width), height: dim(p?.height) };
+}
+async function insertPhoto(DB, orderId, clientId, photo, by) {
+  const row = await DB.prepare('INSERT INTO order_photos (order_id, client_id, mime, data, thumb_mime, thumb, width, height, bytes, added_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id, order_id, width, height, added_by, created_at')
+    .bind(orderId, clientId, photo.mime, photo.b64, photo.thumbMime, photo.thumbB64, photo.width, photo.height, photo.bytes, by, now()).first();
+  return photoOut(row);
+}
+const photoOut = r => ({ id: Number(r.id), orderId: Number(r.order_id), width: r.width == null ? null : Number(r.width), height: r.height == null ? null : Number(r.height), addedBy: r.added_by, createdAt: Number(r.created_at) });
+async function withPhotos(DB, orders) {
+  if (!orders.length) return orders;
+  const ids = orders.map(o => o.id);
+  const rows = (await DB.prepare(`SELECT id, order_id, width, height, added_by, created_at FROM order_photos WHERE order_id IN (${ids.map(() => '?').join(',')}) ORDER BY order_id, id`).bind(...ids).all()).results || [];
+  const by = new Map();
+  for (const r of rows) { const k = Number(r.order_id); if (!by.has(k)) by.set(k, []); by.get(k).push(photoOut(r)); }
+  return orders.map(o => ({ ...o, photos: by.get(o.id) || [] }));
+}
+// The product link must be a real web address (usually the Etsy listing).
+function validLink(value) {
+  const v = String(value || '').trim();
+  if (!/^https?:\/\//i.test(v)) return false;
+  try { const u = new URL(v); return /\./.test(u.hostname); } catch (e) { return false; }
+}
+
 function orderFields(body) {
   const f = {
     order_ref: text(body.orderRef, 120), tracking_number: text(body.trackingNumber, 120),
@@ -286,7 +349,7 @@ export async function handlePortal(request, url, ctx) {
   // ----- client routes -----
   if (path === '/orders' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? ORDER BY created_at DESC, id DESC').bind(who.clientId).all()).results || [];
-    return json({ ok: true, orders: await withMessages(DB, rows.map(orderOut).map(({ commission, supplierShare, ourShare, ...o }) => o), false) });
+    return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, rows.map(orderOut).map(({ commission, supplierShare, ourShare, ...o }) => o), false)) });
   }
   if (path === '/payments' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
@@ -302,16 +365,25 @@ export async function handlePortal(request, url, ctx) {
       f.tracking_number = ''; f.category = ''; f.weight_kg = null;
       f.product_cost = null; f.shipping_fee = null; f.price = 0;
     }
+    // Clients must show us what was ordered: the product link plus at least one photo / screenshot.
+    if (f.etsy_url && !validLink(f.etsy_url)) return json({ ok: false, error: 'Please paste the full product link, starting with https://' }, 400);
+    if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link (the Etsy listing).' }, 400);
+    const photoBodies = Array.isArray(body.photos) ? body.photos : [];
+    if (photoBodies.length > MAX_PHOTOS_PER_ORDER) return json({ ok: false, error: `Up to ${MAX_PHOTOS_PER_ORDER} photos per order` }, 400);
+    let photos; try { photos = photoBodies.map(photoInput); } catch (e) { return json({ ok: false, error: e.message }, 400); }
+    if (!who.admin && !photos.length) return json({ ok: false, error: 'Please add at least one photo or screenshot of the product.' }, 400);
     const settings = await getSettings(DB);
     const commission = client.commission_per_order ?? Number(settings.commission_per_order);
     const supplierShare = Math.min(commission, Number(settings.supplier_share_per_order) || 0);
     const t = now();
     const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at, order_date, currency, buyer_name, buyer_phone, address_line_1, address_line_2, city, region, postal_code, item_title, sku, variant, quantity, etsy_url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
       .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t, f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url).first();
+    const saved = [];
+    for (const p of photos) saved.push(await insertPhoto(DB, row.id, clientId, p, who.admin ? 'admin' : 'client'));
     await logEvent(DB, row.id, clientId, 'created', who.admin ? 'admin' : 'client');
     const sheetSync = syncPortalOrderToGoogleSheet(DB, env, row.id).catch(error => console.error('Google Sheets order sync failed', error));
     if (waitUntil) waitUntil(sheetSync); else await sheetSync;
-    const out = orderOut(row);
+    const out = { ...orderOut(row), photos: saved };
     if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; delete out.sheetSyncStatus; delete out.sheetSyncedAt; delete out.sheetSyncError; }
     return json({ ok: true, order: out });
   }
@@ -365,6 +437,10 @@ export async function handlePortal(request, url, ctx) {
       f.tracking_number = existing.tracking_number; f.category = existing.category; f.weight_kg = existing.weight_kg;
       f.product_cost = existing.product_cost; f.shipping_fee = existing.shipping_fee; f.price = existing.price;
     }
+    if (body.etsyUrl !== undefined) {
+      if (f.etsy_url && !validLink(f.etsy_url)) return json({ ok: false, error: 'Please paste the full product link, starting with https://' }, 400);
+      if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link (the Etsy listing).' }, 400);
+    }
     const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=? WHERE id = ? RETURNING *')
       .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, id).first();
     const actor = who.admin ? 'admin' : 'client';
@@ -373,9 +449,54 @@ export async function handlePortal(request, url, ctx) {
     if (EDIT_FIELDS.some(k => String(row[k] ?? '') !== String(existing[k] ?? ''))) await logEvent(DB, id, existing.client_id, 'edited', actor);
     const sheetSync = syncPortalOrderToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets order update failed', error));
     if (waitUntil) waitUntil(sheetSync); else await sheetSync;
-    const out = orderOut(row);
+    const [out] = await withPhotos(DB, [orderOut(row)]);
     if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; delete out.sheetSyncStatus; delete out.sheetSyncedAt; delete out.sheetSyncError; }
     return json({ ok: true, order: out });
+  }
+
+  // ----- product photos on an order -----
+  const photoAdd = /^\/orders\/(\d+)\/photos$/.exec(path);
+  const photoOne = /^\/orders\/(\d+)\/photos\/(\d+)(\/delete)?$/.exec(path);
+  if (photoAdd || photoOne) {
+    const id = Number((photoAdd || photoOne)[1]);
+    const order = await DB.prepare('SELECT id, client_id, status, created_at FROM client_orders WHERE id = ?').bind(id).first();
+    if (!order || (!who.admin && order.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
+    const actor = who.admin ? 'admin' : 'client';
+    // Photos added right after the order was created belong to the "new order" notification.
+    const quiet = now() - Number(order.created_at) < 900;
+    if (photoAdd && method === 'POST') {
+      if (!who.admin && order.status === 'cancelled') return json({ ok: false, error: 'This order was cancelled.' }, 409);
+      const count = Number((await DB.prepare('SELECT COUNT(*) AS n FROM order_photos WHERE order_id = ?').bind(id).first()).n);
+      if (count >= MAX_PHOTOS_PER_ORDER) return json({ ok: false, error: `Up to ${MAX_PHOTOS_PER_ORDER} photos per order` }, 400);
+      let photo; try { photo = photoInput(await readBody(request)); } catch (e) { return json({ ok: false, error: e.message }, 400); }
+      const out = await insertPhoto(DB, id, order.client_id, photo, actor);
+      if (!quiet || who.admin) await logEvent(DB, id, order.client_id, 'photo', actor, 'added');
+      return json({ ok: true, photo: out });
+    }
+    if (photoOne && photoOne[3] && method === 'POST') {
+      const pid = Number(photoOne[2]);
+      const photo = await DB.prepare('SELECT id FROM order_photos WHERE id = ? AND order_id = ?').bind(pid, id).first();
+      if (!photo) return json({ ok: false, error: 'Not found' }, 404);
+      if (!who.admin) {
+        if (['shipped', 'delivered', 'cancelled'].includes(order.status)) return json({ ok: false, error: 'This order is already being handled. Message us if a photo needs to change.' }, 409);
+        const count = Number((await DB.prepare('SELECT COUNT(*) AS n FROM order_photos WHERE order_id = ?').bind(id).first()).n);
+        if (count <= 1) return json({ ok: false, error: 'An order needs at least one photo. Add the new one first, then remove this one.' }, 409);
+      }
+      await DB.prepare('DELETE FROM order_photos WHERE id = ? AND order_id = ?').bind(pid, id).run();
+      if (!quiet || who.admin) await logEvent(DB, id, order.client_id, 'photo', actor, 'removed');
+      return json({ ok: true });
+    }
+    if (photoOne && !photoOne[3] && method === 'GET') {
+      const thumb = url.searchParams.get('size') === 'thumb';
+      const row = await DB.prepare(thumb ? "SELECT CASE WHEN thumb <> '' THEN thumb_mime ELSE mime END AS mime, CASE WHEN thumb <> '' THEN thumb ELSE data END AS data FROM order_photos WHERE id = ? AND order_id = ?"
+        : 'SELECT mime, data FROM order_photos WHERE id = ? AND order_id = ?').bind(Number(photoOne[2]), id).first();
+      if (!row) return new Response('Not found', { status: 404 });
+      return new Response(Buffer.from(row.data, 'base64'), { headers: {
+        'content-type': row.mime, 'cache-control': 'private, max-age=31536000, immutable', 'x-content-type-options': 'nosniff',
+        'content-security-policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'", 'content-disposition': 'inline',
+      } });
+    }
+    return json({ ok: false, error: 'Method not allowed' }, 405);
   }
 
   // ----- admin-only routes -----
@@ -408,7 +529,7 @@ export async function handlePortal(request, url, ctx) {
     const rows = clientId
       ? (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? ORDER BY created_at DESC, id DESC').bind(clientId).all()).results
       : (await DB.prepare('SELECT * FROM client_orders WHERE client_id NOT IN (SELECT id FROM users WHERE archived) ORDER BY created_at DESC, id DESC LIMIT 500').all()).results;
-    return json({ ok: true, orders: await withMessages(DB, (rows || []).map(orderOut), true) });
+    return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)) });
   }
   if (path === '/admin/payments' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
