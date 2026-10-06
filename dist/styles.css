@@ -291,8 +291,10 @@ html[dir=ltr] .whatsapp-dock{left:auto;right:20px}
 .table-footer b{width:auto;min-width:26px;padding-inline:8px;white-space:nowrap}
 /* Clients & orders (admin view) shown inside the dashboard */
 body.client-orders-open #main > :not(#client-orders){display:none!important}
-.client-orders-section{width:100%;max-width:1240px;margin:0 auto;grid-column:1/-1;flex:1 1 100%;min-width:0}
-.client-orders-section iframe{display:block;width:100%;min-height:600px;border:0;background:transparent;color-scheme:light}
+body.client-orders-open{overflow:hidden}
+body.client-orders-open #main{width:100%;max-width:none;margin:0;padding:0}
+.client-orders-section{width:100%;max-width:none;margin:0;grid-column:1/-1;flex:1 1 100%;min-width:0}
+.client-orders-section iframe{display:block;width:100%;height:calc(100dvh - 72px);min-height:480px;border:0;background:transparent;color-scheme:light}
 /* Live-data section views (dist/p/live-sections.js) */
 body.real-data-mode [data-risk-count]{display:none}
 .live-section{display:grid;gap:16px}

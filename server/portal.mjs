@@ -66,6 +66,21 @@ export const SCHEMA = [
   // What the client sees on each order: product cost (our $2 fee is already inside it) + shipping fee = price.
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS product_cost DOUBLE PRECISION',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS shipping_fee DOUBLE PRECISION',
+  // Client-provided Etsy sale details. Fulfilment values above are completed by the Direct Line team.
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS order_date TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'USD'",
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS buyer_name TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS buyer_phone TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS address_line_1 TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS address_line_2 TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS postal_code TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS item_title TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sku TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS variant TEXT NOT NULL DEFAULT ''",
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1',
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS etsy_url TEXT NOT NULL DEFAULT ''",
   // Google Sheets is an operations mirror. The database remains authoritative if the external sync is unavailable.
   "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_sync_status TEXT NOT NULL DEFAULT 'waiting'",
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_synced_at INTEGER',
@@ -154,6 +169,9 @@ function orderOut(r) {
     productCost: r.product_cost === null || r.product_cost === undefined ? null : Number(r.product_cost),
     shippingFee: r.shipping_fee === null || r.shipping_fee === undefined ? null : Number(r.shipping_fee),
     price, sellingPrice: sell, profit: sell === null ? null : round2(sell - price),
+    orderDate: r.order_date || '', currency: r.currency || 'USD', buyerName: r.buyer_name || '', buyerPhone: r.buyer_phone || '',
+    address1: r.address_line_1 || '', address2: r.address_line_2 || '', city: r.city || '', region: r.region || '', postalCode: r.postal_code || '',
+    itemTitle: r.item_title || '', sku: r.sku || '', variant: r.variant || '', quantity: Number(r.quantity || 1), etsyUrl: r.etsy_url || '',
     commission: Number(r.commission || 0), supplierShare: round2(r.supplier_share),
     ourShare: round2(Math.max(0, Number(r.commission || 0) - Number(r.supplier_share || 0))),
     notes: r.notes, status: r.status,
@@ -189,7 +207,7 @@ async function logEvent(DB, orderId, clientId, kind, actor, detail = '') {
   await DB.prepare('INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,?,?,?,?)')
     .bind(orderId, clientId, kind, actor, String(detail).slice(0, 200), now()).run();
 }
-const EDIT_FIELDS = ['order_ref', 'destination', 'category', 'weight_kg', 'product_cost', 'shipping_fee', 'selling_price', 'notes'];
+const EDIT_FIELDS = ['order_ref', 'destination', 'category', 'weight_kg', 'product_cost', 'shipping_fee', 'selling_price', 'notes', 'order_date', 'currency', 'buyer_name', 'buyer_phone', 'address_line_1', 'address_line_2', 'city', 'region', 'postal_code', 'item_title', 'sku', 'variant', 'quantity', 'etsy_url'];
 async function readBody(request) { return request.json().catch(() => ({})); }
 
 function orderFields(body) {
@@ -198,9 +216,16 @@ function orderFields(body) {
     destination: (d => (/^[a-z]{2}$/i.test(d) ? d.toUpperCase() : d))(text(body.destination, 60)), category: text(body.category, 20),
     weight_kg: money(body.weightKg), price: money(body.price), selling_price: money(body.sellingPrice),
     product_cost: money(body.productCost), shipping_fee: money(body.shippingFee),
+    order_date: text(body.orderDate, 10), currency: text(body.currency || 'USD', 3).toUpperCase(),
+    buyer_name: text(body.buyerName, 160), buyer_phone: text(body.buyerPhone, 80),
+    address_line_1: text(body.address1, 200), address_line_2: text(body.address2, 200), city: text(body.city, 100), region: text(body.region, 100), postal_code: text(body.postalCode, 40),
+    item_title: text(body.itemTitle, 300), sku: text(body.sku, 120), variant: text(body.variant, 500), quantity: Number(body.quantity ?? 1), etsy_url: text(body.etsyUrl, 500),
     notes: text(body.notes, 2000),
   };
   if (![f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee].every(isMoney)) throw new Error('Numbers must be zero or more');
+  if (f.order_date && !/^\d{4}-\d{2}-\d{2}$/.test(f.order_date)) throw new Error('Order date must be a valid date');
+  if (!/^[A-Z]{3}$/.test(f.currency)) throw new Error('Currency must use a three-letter code');
+  if (!Number.isInteger(f.quantity) || f.quantity < 1 || f.quantity > 999) throw new Error('Quantity must be between 1 and 999');
   // When the parts are given, the price is their sum.
   if (f.product_cost !== null || f.shipping_fee !== null) f.price = round2((f.product_cost || 0) + (f.shipping_fee || 0));
   if (f.price === null) f.price = 0;
@@ -273,12 +298,16 @@ export async function handlePortal(request, url, ctx) {
     const client = await DB.prepare("SELECT id, commission_per_order, active FROM users WHERE id = ? AND role = 'client'").bind(clientId).first();
     if (!client || !client.active) return json({ ok: false, error: 'Unknown client' }, 400);
     let f; try { f = orderFields(body); } catch (e) { return json({ ok: false, error: e.message }, 400); }
+    if (!who.admin) {
+      f.tracking_number = ''; f.category = ''; f.weight_kg = null;
+      f.product_cost = null; f.shipping_fee = null; f.price = 0;
+    }
     const settings = await getSettings(DB);
     const commission = client.commission_per_order ?? Number(settings.commission_per_order);
     const supplierShare = Math.min(commission, Number(settings.supplier_share_per_order) || 0);
     const t = now();
-    const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
-      .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t).first();
+    const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at, order_date, currency, buyer_name, buyer_phone, address_line_1, address_line_2, city, region, postal_code, item_title, sku, variant, quantity, etsy_url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
+      .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t, f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url).first();
     await logEvent(DB, row.id, clientId, 'created', who.admin ? 'admin' : 'client');
     const sheetSync = syncPortalOrderToGoogleSheet(DB, env, row.id).catch(error => console.error('Google Sheets order sync failed', error));
     if (waitUntil) waitUntil(sheetSync); else await sheetSync;
@@ -332,8 +361,12 @@ export async function handlePortal(request, url, ctx) {
       : (body.status === 'cancelled' ? 'cancelled' : existing.status);
     const commission = who.admin && body.commission != null && body.commission !== '' && isMoney(money(body.commission)) ? money(body.commission) : existing.commission;
     const supplierShare = who.admin && body.supplierShare != null && body.supplierShare !== '' && isMoney(money(body.supplierShare)) ? money(body.supplierShare) : existing.supplier_share;
-    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=? WHERE id = ? RETURNING *')
-      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), id).first();
+    if (!who.admin) {
+      f.tracking_number = existing.tracking_number; f.category = existing.category; f.weight_kg = existing.weight_kg;
+      f.product_cost = existing.product_cost; f.shipping_fee = existing.shipping_fee; f.price = existing.price;
+    }
+    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=? WHERE id = ? RETURNING *')
+      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, id).first();
     const actor = who.admin ? 'admin' : 'client';
     if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);
     if (row.tracking_number !== existing.tracking_number && row.tracking_number) await logEvent(DB, id, existing.client_id, 'tracking', actor, row.tracking_number);

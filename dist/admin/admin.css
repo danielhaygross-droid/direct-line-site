@@ -1,7 +1,7 @@
 /* Admin "Clients & orders" view (on top of /p/ui.css). Shown inside the store dashboard. */
 html.embed body{background:transparent}
 .adm{width:min(1480px,100%);margin:0 auto;padding:28px 32px 40px;display:grid;gap:18px}
-html.embed .adm{padding:4px 0 24px}
+html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 .adm-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .adm-head h1{margin-top:8px;font-size:clamp(25px,3vw,36px);font-weight:500;letter-spacing:-.02em}
 .adm-head h1 span{color:var(--gold)}
@@ -55,7 +55,7 @@ html.embed .adm{padding:4px 0 24px}
 .back{display:inline-flex;align-items:center;gap:6px;margin-bottom:6px;border:0;background:none;color:var(--gold-2);font-size:13px;font-weight:600;cursor:pointer;padding:0}
 [data-theme=dark] .back{color:var(--gold)}
 @media(max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.settings-grid{grid-template-columns:1fr}}
-@media(max-width:760px){.adm{padding:16px}.bar .search,.bar select{width:100%}.bar-r{width:100%}.seg{width:100%}.seg button{flex:1;padding:0 8px}.split{grid-template-columns:1fr}}
+@media(max-width:760px){.adm,html.embed .adm{padding:16px}.bar .search,.bar select{width:100%}.bar-r{width:100%}.seg{width:100%}.seg button{flex:1;padding:0 8px}.split{grid-template-columns:1fr}}
 @media(max-width:480px){.kpis .stat strong{font-size:20px}.kpis .stat .stat-ic{display:none}}
 .archived{border-top:1px solid var(--line)}
 .archived summary{padding:14px 16px;color:var(--muted);font-size:14px;font-weight:600;cursor:pointer}

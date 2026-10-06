@@ -104,7 +104,7 @@ async function findClientRow(env, clientId, fetchImpl) {
 function orderValues(order, syncedAt) {
   return [
     String(order.id), String(order.client_id), order.client_name || '', '', '', '', order.order_ref || '',
-    timestamp(order.created_at), '', 'USD', '', '', '', '', '', '', order.category || '',
+    order.order_date || timestamp(order.created_at), '', order.currency || 'USD', order.selling_price == null ? '' : Number(order.selling_price), '', '', '', '', order.selling_price == null ? '' : Number(order.selling_price), order.category || '',
     order.weight_kg == null ? '' : Number(order.weight_kg),
     order.product_cost == null ? '' : Number(order.product_cost),
     order.shipping_fee == null ? '' : Number(order.shipping_fee),
@@ -115,6 +115,9 @@ function orderValues(order, syncedAt) {
     order.status === 'shipped' ? 'Shipped' : order.status === 'delivered' ? 'Delivered' : order.status === 'cancelled' ? 'Cancelled' : 'Unfulfilled',
     order.destination || '', order.tracking_number || '', '', 'Portal', 'Synced',
     timestamp(order.created_at), timestamp(syncedAt), timestamp(order.updated_at), order.notes || '',
+    order.buyer_name || '', order.buyer_phone || '', order.address_line_1 || '', order.address_line_2 || '',
+    order.city || '', order.region || '', order.postal_code || '', order.item_title || '', order.sku || '',
+    order.variant || '', Number(order.quantity || 1), order.etsy_url || '',
   ];
 }
 
@@ -142,11 +145,11 @@ export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl =
     const syncedAt = Math.floor(Date.now() / 1000);
     const values = [orderValues(order, syncedAt)];
     if (rowNumber) {
-      await sheetsRequest(env, '/values/' + encodeURIComponent(`Orders!A${rowNumber}:AI${rowNumber}`) + '?valueInputOption=USER_ENTERED', {
+      await sheetsRequest(env, '/values/' + encodeURIComponent(`Orders!A${rowNumber}:AU${rowNumber}`) + '?valueInputOption=USER_ENTERED', {
         method: 'PUT', body: JSON.stringify({ majorDimension: 'ROWS', values }),
       }, fetchImpl);
     } else {
-      await sheetsRequest(env, '/values/' + encodeURIComponent('Orders!A:AI') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+      await sheetsRequest(env, '/values/' + encodeURIComponent('Orders!A:AU') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
         method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values }),
       }, fetchImpl);
     }

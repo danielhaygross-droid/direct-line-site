@@ -251,7 +251,7 @@
             : empty('bell', 'No updates yet', 'When we change an order’s status or reply to you, it shows up here.')}
         </section>
         <section class="card span2"><div class="card-head"><h3>Recent orders</h3><a class="link" href="#/orders">See all ${o.length ? '(' + o.length + ')' : ''}</a></div>
-          ${o.length ? `<div class="table-wrap">${ordersTable(o.slice(0, 5), true)}</div>` : empty('orders', 'No orders yet', 'Add an order with its tracking number, product cost and selling price. We work out the shipping fee for you.', '<a class="btn btn-primary" href="#/new">New order</a>')}
+          ${o.length ? `<div class="table-wrap">${ordersTable(o.slice(0, 5), true)}</div>` : empty('orders', 'No orders yet', 'Send the Etsy order number, sale details and customer delivery address. Direct Line handles fulfilment from there.', '<a class="btn btn-primary" href="#/new">New order</a>')}
         </section>
         <section class="card span2"><div class="card-head"><h3>Profit by month</h3><span class="tag">Last 6 months</span></div>${profitChart()}</section>
       </div>`;
@@ -276,18 +276,18 @@
   const unreadOrderIds = () => new Set(noteItems().filter(x => x.unread).map(x => x.orderId));
   function ordersTable(list, compact) {
     const fresh = unreadOrderIds();
-    return `<table class="tbl stack"><thead><tr><th>Order</th><th>Destination</th>${compact ? '' : '<th>Tracking</th>'}<th class="num">Total</th>${compact ? '' : '<th class="num">Profit</th>'}<th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
+    return `<table class="tbl stack"><thead><tr><th>Order</th><th>Destination</th>${compact ? '' : '<th>Tracking</th>'}<th class="num">Customer paid</th>${compact ? '' : '<th class="num">Profit</th>'}<th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
       ${list.map(o => `<tr class="click${fresh.has(o.id) ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
         <td class="wide"><div class="ord-ref"><span class="ord-ic t-${o.status}">${ic('orders')}</span><span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small></span></div></td>
         <td data-label="Destination">${esc(place(o.destination))}</td>
         ${compact ? '' : `<td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>` : '<span class="dim">Not yet</span>'}</td>`}
-        <td data-label="Total" class="num"><b>${money(o.price)}</b></td>
-        ${compact ? '' : `<td data-label="Profit" class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${money(o.profit)}</td>`}
+        <td data-label="Customer paid" class="num"><b>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</b></td>
+        ${compact ? '' : `<td data-label="Profit" class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${o.productCost == null && o.shippingFee == null ? '<span class="dim">Pending</span>' : money(o.profit)}</td>`}
         <td data-label="Status">${UI.pill(o.status)}</td>
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
   }
-  const viewOrders = () => `<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, tracking, country…" value="${esc(S.q)}" data-q></label></div>
+  const viewOrders = () => `<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label></div>
       <section class="card" data-orders-list></section>`;
   function renderChips() {
     const c = st => S.orders.filter(o => st === 'all' || o.status === st).length;
@@ -297,7 +297,7 @@
   function renderOrdersList() {
     const q = S.q.toLowerCase();
     const list = S.orders.filter(o => (S.filter === 'all' || o.status === S.filter)
-      && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination)].join(' ').toLowerCase().includes(q)));
+      && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination)].join(' ').toLowerCase().includes(q)));
     $('[data-orders-list]').innerHTML = list.length ? `<div class="table-wrap">${ordersTable(list)}</div>`
       : S.orders.length ? empty('search', 'No orders match', 'Try another search or status.') : empty('orders', 'No orders yet', 'Add your first order and we’ll take it from there.', '<a class="btn btn-primary" href="#/new">New order</a>');
   }
@@ -334,16 +334,19 @@
       <section class="card card-pad">${UI.tracker(o, drawerEvents)}</section>
       <section class="card card-pad"><h3 class="sec-title">Tracking</h3>${o.trackingNumber
         ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="tracking" style="font-size:16px;font-weight:600">${esc(o.trackingNumber)}</span><span style="flex:1"></span><button type="button" class="btn btn-sm" data-copy="${esc(o.trackingNumber)}">${ic('copy')}Copy</button><a class="btn btn-sm" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track parcel</a></div>`
-        : '<p class="muted" style="margin:0">No tracking number yet. Add it with “Edit order”, or we’ll add it when the parcel ships.</p>'}</section>
+        : '<p class="muted" style="margin:0">No tracking number yet. Direct Line will add it after the parcel ships.</p>'}</section>
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
-        <div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div><div><dt>Destination</dt><dd>${esc(place(o.destination))}</dd></div>
-        <div><dt>Product type</dt><dd>${esc(shortCat(o.category))}</dd></div><div><dt>Weight</dt><dd>${o.weightKg != null ? esc(o.weightKg) + ' kg' : '—'}</dd></div>
+        <div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div><div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div>
+        <div class="full"><dt>Product</dt><dd>${esc(o.itemTitle) || '—'}</dd></div><div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
+        ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
+        <div><dt>Customer</dt><dd>${esc(o.buyerName) || '—'}</dd></div><div><dt>Destination</dt><dd>${esc(place(o.destination))}</dd></div>
+        <div class="full"><dt>Delivery address</dt><dd>${[o.address1, o.address2, o.city, o.region, o.postalCode, place(o.destination)].filter(Boolean).map(esc).join(', ') || '—'}</dd></div>
         ${o.notes ? `<div class="full"><dt>Notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl></section>
-      <section class="card card-pad"><h3 class="sec-title">Money</h3><div class="money-rows">
-        <div><span>Product cost</span><span>${money(o.productCost)}</span></div><div><span>Shipping fee</span><span>${money(o.shippingFee)}</span></div>
-        <div class="total"><span>Total you pay</span><span>${money(o.price)}</span></div>
-        <div><span>Sold for</span><span>${money(o.sellingPrice)}</span></div>
-        <div><span>Your profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}"><b>${money(o.profit)}</b></span></div></div></section>`;
+      <section class="card card-pad"><h3 class="sec-title">Sale &amp; fulfilment</h3><div class="money-rows">
+        <div class="total"><span>Customer paid</span><span>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</span></div>
+        <div><span>Product cost</span><span>${o.productCost == null ? 'Pending Direct Line' : money(o.productCost)}</span></div><div><span>Shipping fee</span><span>${o.shippingFee == null ? 'Pending Direct Line' : money(o.shippingFee)}</span></div>
+        <div><span>Total you pay</span><span>${o.productCost == null && o.shippingFee == null ? 'Pending Direct Line' : money(o.price)}</span></div>
+        ${o.productCost == null && o.shippingFee == null ? '' : `<div><span>Your estimated profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}"><b>${money(o.profit)}</b></span></div>`}</div></section>`;
     if (keepFoot && d.foot.dataset.confirm) return;
     d.foot.innerHTML = `${o.status !== 'cancelled' ? `<a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a>` : ''}<span class="spacer"></span>${o.status === 'pending' ? `<button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Cancel order</button>` : o.status === 'cancelled' ? '<span class="muted" style="font-size:13px">This order was cancelled.</span>' : '<span class="muted" style="font-size:13px">Need a change? Send us a message.</span>'}`;
   }
@@ -357,33 +360,42 @@
   // ---------- new / edit order ----------
   function viewForm() {
     const ed = S.route === 'edit' ? S.orders.find(o => o.id === S.id) : null;
-    const v2 = x => (x != null ? Number(x).toFixed(2) : '');
-    const fee = ed ? (ed.shippingFee != null ? v2(ed.shippingFee) : ed.productCost == null ? v2(ed.price) : '') : '';
+    const today = new Date().toISOString().slice(0, 10);
+    const currencies = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD'];
     return `<form class="form-layout" id="order-form" novalidate>
       <div class="form-main">
-        <section class="card card-pad"><h3 class="form-sec"><i>1</i>Order details</h3><div class="form-grid">
-          <label class="field"><span>Order number / reference <small>optional</small></span><input name="orderRef" maxlength="120" placeholder="e.g. Etsy #3412" value="${esc(ed?.orderRef)}"></label>
-          <label class="field"><span>Tracking number <small>optional</small></span><input name="trackingNumber" maxlength="120" placeholder="e.g. LX123456789CN" value="${esc(ed?.trackingNumber)}"></label>
+        <section class="card card-pad"><h3 class="form-sec"><i>1</i>Etsy order</h3><div class="form-grid">
+          <label class="field"><span>Order number / receipt ID</span><input name="orderRef" required maxlength="120" placeholder="e.g. Etsy #3412" value="${esc(ed?.orderRef)}"></label>
+          <label class="field"><span>Order date</span><input name="orderDate" required type="date" value="${esc(ed?.orderDate || today)}"></label>
+          <label class="field"><span>Amount paid by customer</span><span class="money"><input name="sellingPrice" required type="number" min="0" step="0.01" inputmode="decimal" value="${ed?.sellingPrice == null ? '' : Number(ed.sellingPrice).toFixed(2)}"></span></label>
+          <label class="field"><span>Currency</span><select name="currency">${currencies.map(c => `<option${c === (ed?.currency || 'USD') ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
         </div></section>
-        <section class="card card-pad"><h3 class="form-sec"><i>2</i>Package &amp; destination</h3><div class="form-grid">
-          <label class="field"><span>Destination</span><select name="destination"></select></label>
-          <label class="field" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="off"></label>
-          <label class="field"><span>Product type</span><select name="category">${categoryOptions(ed?.category || 'general')}</select></label>
-          <label class="field"><span>Weight (kg)</span><input name="weightKg" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 0.25" value="${ed?.weightKg ?? ''}"></label>
-          <div class="field"><span>Size L × W × H (cm) <small>optional</small></span><div class="dims"><input name="lengthCm" type="number" min="0" step="0.1" inputmode="decimal" placeholder="L" aria-label="Length (cm)"><input name="widthCm" type="number" min="0" step="0.1" inputmode="decimal" placeholder="W" aria-label="Width (cm)"><input name="heightCm" type="number" min="0" step="0.1" inputmode="decimal" placeholder="H" aria-label="Height (cm)"></div></div>
+        <section class="card card-pad"><h3 class="form-sec"><i>2</i>Item sold</h3><div class="form-grid">
+          <label class="field full"><span>Product title</span><input name="itemTitle" required maxlength="300" placeholder="Copy the item title from Etsy" value="${esc(ed?.itemTitle)}"></label>
+          <label class="field"><span>SKU or listing ID <small>optional</small></span><input name="sku" maxlength="120" placeholder="e.g. LIGHTER-01" value="${esc(ed?.sku)}"></label>
+          <label class="field"><span>Quantity</span><input name="quantity" required type="number" min="1" max="999" step="1" inputmode="numeric" value="${ed?.quantity || 1}"></label>
+          <label class="field full"><span>Variation / personalization <small>optional</small></span><input name="variant" maxlength="500" placeholder="Color, size, engraving or personalization" value="${esc(ed?.variant)}"></label>
+          <label class="field full"><span>Etsy listing link <small>optional</small></span><input name="etsyUrl" type="url" maxlength="500" placeholder="https://www.etsy.com/listing/..." value="${esc(ed?.etsyUrl)}"></label>
         </div></section>
-        <section class="card card-pad"><h3 class="form-sec"><i>3</i>Prices</h3><div class="form-grid">
-          <label class="field"><span>Product cost (USD)</span><span class="money"><input name="productCost" type="number" min="0" step="0.01" inputmode="decimal" value="${v2(ed?.productCost)}"></span></label>
-          <label class="field"><span>Shipping fee (USD) <small data-fee-hint></small></span><span class="money"><input name="price" type="number" min="0" step="0.01" inputmode="decimal" value="${fee}"></span></label>
-          <label class="field full"><span>Selling price, what your customer paid (USD) <small>for your profit</small></span><span class="money"><input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal" value="${v2(ed?.sellingPrice)}"></span></label>
-          <label class="field full"><span>Notes <small>optional</small></span><textarea name="notes" maxlength="2000" placeholder="Anything we should know about this order">${esc(ed?.notes)}</textarea></label>
+        <section class="card card-pad"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
+          <label class="field"><span>Customer / recipient name</span><input name="buyerName" required maxlength="160" autocomplete="name" value="${esc(ed?.buyerName)}"></label>
+          <label class="field"><span>Phone <small>optional</small></span><input name="buyerPhone" maxlength="80" autocomplete="tel" value="${esc(ed?.buyerPhone)}"></label>
+          <label class="field full"><span>Address line 1</span><input name="address1" required maxlength="200" autocomplete="address-line1" value="${esc(ed?.address1)}"></label>
+          <label class="field full"><span>Address line 2 <small>optional</small></span><input name="address2" maxlength="200" autocomplete="address-line2" value="${esc(ed?.address2)}"></label>
+          <label class="field"><span>City</span><input name="city" required maxlength="100" autocomplete="address-level2" value="${esc(ed?.city)}"></label>
+          <label class="field"><span>State / province <small>if applicable</small></span><input name="region" maxlength="100" autocomplete="address-level1" value="${esc(ed?.region)}"></label>
+          <label class="field"><span>Postal code</span><input name="postalCode" required maxlength="40" autocomplete="postal-code" value="${esc(ed?.postalCode)}"></label>
+          <label class="field"><span>Country</span><select name="destination" autocomplete="country"></select></label>
+          <label class="field full" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="country-name"></label>
         </div></section>
+        <section class="card card-pad"><h3 class="form-sec"><i>4</i>Notes</h3>
+          <label class="field"><span>Anything Direct Line should know <small>optional</small></span><textarea name="notes" maxlength="2000" placeholder="Supplier link, deadline, special packaging or other instructions">${esc(ed?.notes)}</textarea></label>
+        </section>
       </div>
       <aside class="form-side">
-        <section class="card card-pad" style="display:grid;gap:14px"><h3 style="font-size:16px">Order summary</h3>
-          <div class="quote-box" data-quote>Pick a destination and enter the weight to see the shipping fee.</div>
-          <div class="money-rows" data-sum></div>
-          <div class="sum-profit" data-profit hidden></div>
+        <section class="card card-pad order-submit-card"><h3>Order summary</h3>
+          <div class="client-order-summary" data-sum></div>
+          <div class="next-steps"><b>Direct Line will add</b><ul><li>Product and shipping cost</li><li>Package weight and dimensions</li><li>Tracking number after shipment</li></ul></div>
           <button class="btn btn-primary btn-block" type="submit" data-submit>${ed ? 'Save changes' : 'Send order'}</button>
           <a class="btn btn-ghost btn-block" href="${ed ? '#/orders' : '#/home'}">Cancel</a>
           <p class="form-msg" data-form-msg></p>
@@ -394,62 +406,44 @@
     const form = $('#order-form'), ed = S.route === 'edit' ? S.orders.find(o => o.id === S.id) : null;
     const dest = destinationPicker(form.destination, $('[data-other-country]', form));
     dest.set(ed?.destination || '');
-    let autoPrice = null;
-    const cur = () => quote({ country: dest.get(), category: form.category.value, weightKg: form.weightKg.value, lengthCm: form.lengthCm.value, widthCm: form.widthCm.value, heightCm: form.heightCm.value, divisor: divisor() });
     const setMsg = (t, k) => { const m = $('[data-form-msg]'); m.textContent = t; m.className = 'form-msg ' + (k || ''); };
-    function updateQuote() {
-      const q = cur(), box = $('[data-quote]'), hint = $('[data-fee-hint]');
-      if (!q) {
-        const name = dest.label();
-        box.innerHTML = name && !hasRate(dest.get()) ? `We don’t have a set rate for <b>${esc(name)}</b> yet. Enter the shipping fee yourself and we’ll confirm it.`
-          : dest.isOther() ? 'Type the country name, then enter the shipping fee. We’ll confirm it with you.' : 'Pick a destination and enter the weight to see the shipping fee.';
-        hint.textContent = '';
-        if (autoPrice !== null && form.price.value === autoPrice) form.price.value = '';
-        autoPrice = null; return;
-      }
-      if (form.price.value === '' || form.price.value === autoPrice) { form.price.value = q.total.toFixed(2); autoPrice = form.price.value; }
-      const kg = q.usedVolumetric ? `${q.chargeable} kg (size-based)` : `${q.chargeable} kg`;
-      box.innerHTML = `<span>Shipping fee from our rates</span><strong>${money(q.total)}</strong><div class="bd">${kg} × ${money(q.perKg)}/kg = ${money(q.freight)} + ${money(q.registration)} registration${q.euTax ? ` + ${money(q.euTax)} EU tax` : ''}${q.estimated ? '<br>Estimated: we’ll confirm the final fee for this country.' : ''}</div>${form.price.value !== q.total.toFixed(2) ? '<button class="btn btn-sm" type="button" data-use-quote>Use this fee</button>' : ''}`;
-      hint.textContent = form.price.value === q.total.toFixed(2) ? 'filled in from our rates' : '';
-    }
+    const need = (field, message) => {
+      if (String(field.value || '').trim()) return true;
+      setMsg(message, 'err'); field.focus(); return false;
+    };
     function updateSum() {
-      const pc = parseFloat(form.productCost.value), sh = parseFloat(form.price.value), sell = parseFloat(form.sellingPrice.value);
-      const has = Number.isFinite(pc) || Number.isFinite(sh), total = (Number.isFinite(pc) ? pc : 0) + (Number.isFinite(sh) ? sh : 0);
-      $('[data-sum]').innerHTML = `<div><span>Product cost</span><span>${Number.isFinite(pc) ? money(pc) : '—'}</span></div><div><span>Shipping fee</span><span>${Number.isFinite(sh) ? money(sh) : '—'}</span></div>
-        <div class="total"><span>Total you pay</span><span data-total>${has ? money(total) : '—'}</span></div>${Number.isFinite(sell) ? `<div><span>Sold for</span><span>${money(sell)}</span></div>` : ''}`;
-      const pr = $('[data-profit]');
-      if (has && Number.isFinite(sell)) { const v = sell - total; pr.hidden = false; pr.className = 'sum-profit' + (v < 0 ? ' neg' : ''); pr.innerHTML = `<span>Your profit</span><b class="${v >= 0 ? 'pos' : 'neg'}">${money(v)}</b>`; }
-      else pr.hidden = true;
+      const paid = parseFloat(form.sellingPrice.value), qty = parseInt(form.quantity.value, 10) || 1;
+      $('[data-sum]').innerHTML = `<div><span>Order</span><b>${esc(form.orderRef.value.trim() || 'Not entered')}</b></div><div><span>Items</span><b>${qty}</b></div><div class="total"><span>Customer paid</span><b>${Number.isFinite(paid) ? esc(form.currency.value) + ' ' + paid.toFixed(2) : '—'}</b></div>`;
     }
-    form.addEventListener('input', e => {
-      if (e.target.name === 'price') autoPrice = null;
-      if (['destination', 'otherCountry', 'category', 'weightKg', 'lengthCm', 'widthCm', 'heightCm', 'price'].includes(e.target.name)) updateQuote();
-      updateSum();
-    });
-    form.addEventListener('change', e => { if (['destination', 'category'].includes(e.target.name)) { updateQuote(); updateSum(); } });
-    form.addEventListener('click', e => {
-      if (!e.target.closest('[data-use-quote]')) return;
-      const q = cur(); if (!q) return;
-      form.price.value = q.total.toFixed(2); autoPrice = form.price.value; updateQuote(); updateSum();
-    });
+    form.addEventListener('input', updateSum);
+    form.addEventListener('change', updateSum);
     form.addEventListener('submit', async e => {
       e.preventDefault();
-      if (dest.isOther() && !dest.get()) { setMsg('Please type the country name.', 'err'); form.otherCountry.focus(); return; }
-      if (form.productCost.value === '') { setMsg('Please enter the product cost.', 'err'); form.productCost.focus(); return; }
-      if (form.price.value === '') { setMsg('Please enter the shipping fee, or pick a destination and weight to fill it in.', 'err'); form.price.focus(); return; }
-      const body = { orderRef: form.orderRef.value, trackingNumber: form.trackingNumber.value, destination: dest.get(), category: form.category.value,
-        weightKg: form.weightKg.value === '' ? null : form.weightKg.value, productCost: form.productCost.value, shippingFee: form.price.value,
-        sellingPrice: form.sellingPrice.value === '' ? null : form.sellingPrice.value, notes: form.notes.value };
+      if (!need(form.orderRef, 'Please enter the Etsy order number.')) return;
+      if (!need(form.orderDate, 'Please choose the order date.')) return;
+      if (!need(form.sellingPrice, 'Please enter what the customer paid.')) return;
+      if (!need(form.itemTitle, 'Please enter the product title.')) return;
+      if (!need(form.buyerName, 'Please enter the customer or recipient name.')) return;
+      if (!need(form.address1, 'Please enter the delivery address.')) return;
+      if (!need(form.city, 'Please enter the city.')) return;
+      if (!need(form.postalCode, 'Please enter the postal code.')) return;
+      if (!dest.get()) { setMsg(dest.isOther() ? 'Please type the country name.' : 'Please choose the destination country.', 'err'); (dest.isOther() ? form.otherCountry : form.destination).focus(); return; }
+      const body = {
+        orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value,
+        itemTitle: form.itemTitle.value, sku: form.sku.value, quantity: form.quantity.value, variant: form.variant.value, etsyUrl: form.etsyUrl.value,
+        buyerName: form.buyerName.value, buyerPhone: form.buyerPhone.value, address1: form.address1.value, address2: form.address2.value,
+        city: form.city.value, region: form.region.value, postalCode: form.postalCode.value, destination: dest.get(), notes: form.notes.value,
+      };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');
       try {
         const r = ed ? await api('/orders/' + ed.id, { method: 'PUT', body }) : await api('/orders', { method: 'POST', body });
         await refresh(true);
         S.filter = 'all'; go('orders');
-        N.popup({ icon: 'check', tone: 'mint', title: ed ? 'Order updated' : 'Order sent', text: ed ? orderName(r.order) + ' was saved.' : `${orderName(r.order)} is now pending. We’ll update you as it moves.` }, { duration: 6000 });
+        N.popup({ icon: 'check', tone: 'mint', title: ed ? 'Order updated' : 'Order sent', text: ed ? orderName(r.order) + ' was saved.' : `${orderName(r.order)} is pending. Direct Line will add the fulfilment details next.` }, { duration: 6000 });
         setTimeout(() => openOrder(r.order.id), 200);
       } catch (ex) { setMsg(ex.message, 'err'); btn.disabled = false; }
     });
-    updateQuote(); updateSum();
+    updateSum();
     if (!ed) form.orderRef.focus({ preventScroll: true });
   }
 

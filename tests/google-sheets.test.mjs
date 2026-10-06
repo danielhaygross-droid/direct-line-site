@@ -12,7 +12,9 @@ function fakeDatabase() {
     id: 42, client_id: 7, client_name: 'Test Client', order_ref: 'E-100', tracking_number: '', destination: 'US',
     category: 'decor', weight_kg: 1.25, price: 15, selling_price: 24, product_cost: 10, shipping_fee: 5,
     commission: 2, supplier_share: 1, notes: 'Handle carefully', status: 'pending', created_at: 1791244800,
-    updated_at: 1791244800, sheet_sync_attempts: 0,
+    updated_at: 1791244800, sheet_sync_attempts: 0, order_date: '2026-10-05', currency: 'USD', buyer_name: 'Jamie Buyer',
+    buyer_phone: '+1 555 0100', address_line_1: '1 Main St', address_line_2: 'Apt 2', city: 'Austin', region: 'TX', postal_code: '78701',
+    item_title: 'Engraved lighter', sku: 'LIGHTER-01', variant: 'Black / J.B.', quantity: 2, etsy_url: 'https://www.etsy.com/listing/123',
   };
   return {
     state,
@@ -46,7 +48,7 @@ test('portal order sync appends one idempotent order row and records success', a
     calls.push({ url: String(url), options });
     if (String(url).includes('oauth2.googleapis.com/token')) return Response.json({ access_token: 'token', expires_in: 3600 });
     if (String(url).includes('/values/Orders!A6%3AA5000')) return Response.json({ values: [] });
-    if (String(url).includes('/values/Orders!A%3AAI:append')) return Response.json({ updates: { updatedRows: 1 } });
+    if (String(url).includes('/values/Orders!A%3AAU:append')) return Response.json({ updates: { updatedRows: 1 } });
     if (String(url).includes('/values/Sync%20Log!A%3AH:append')) return Response.json({ updates: { updatedRows: 1 } });
     return new Response('unexpected request', { status: 500 });
   };
@@ -59,14 +61,18 @@ test('portal order sync appends one idempotent order row and records success', a
   assert.deepEqual({ configured: result.configured, synced: result.synced }, { configured: true, synced: true });
   assert.equal(DB.state.status, 'synced');
   assert.equal(DB.state.attempts, 1);
-  const append = calls.find(call => call.url.includes('/values/Orders!A%3AAI:append'));
+  const append = calls.find(call => call.url.includes('/values/Orders!A%3AAU:append'));
   assert.ok(append);
   const row = JSON.parse(append.options.body).values[0];
-  assert.equal(row.length, 35);
+  assert.equal(row.length, 47);
   assert.equal(row[0], '42');
   assert.equal(row[2], 'Test Client');
   assert.equal(row[6], 'E-100');
   assert.equal(row[30], 'Synced');
+  assert.equal(row[7], '2026-10-05');
+  assert.equal(row[35], 'Jamie Buyer');
+  assert.equal(row[42], 'Engraved lighter');
+  assert.equal(row[45], 2);
 });
 
 test('new client accounts are mirrored to the Clients tab', async () => {
