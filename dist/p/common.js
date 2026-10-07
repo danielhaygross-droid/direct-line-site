@@ -247,13 +247,13 @@
 
   // ---------- product photos (client orders) ----------
   // Shrinks a picked/pasted image in the browser so uploads stay small: a full view (max 1600px) and a thumbnail.
-  function loadImage(file) {
-    return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file), img = new Image();
-      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('This picture format can’t be read here. Please use a screenshot, JPG or PNG.')); };
-      img.src = url;
-    });
+  // No blob: URLs here: the site's security policy (img-src 'self' data: https:) blocks them,
+  // so decode with createImageBitmap, falling back to a data: URL.
+  async function loadImage(file) {
+    const fail = () => new Error('This picture format can’t be read here. Please use a screenshot, JPG or PNG.');
+    if (typeof createImageBitmap === 'function') { try { return await createImageBitmap(file); } catch (e) { /* try the data URL route */ } }
+    const url = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = () => reject(fail()); r.readAsDataURL(file); });
+    return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(fail()); img.src = url; });
   }
   function drawScaled(img, max, quality) {
     const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;

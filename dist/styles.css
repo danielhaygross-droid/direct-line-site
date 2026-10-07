@@ -390,3 +390,5 @@ body.real-data-mode [data-risk-count]{display:none}
 .ls-price-form .ls-actions{margin-top:6px}
 .ls-price-form p{margin:0 0 4px;color:var(--muted);font-size:13px}
 @media (max-width:600px){.ls-mini{grid-template-columns:1fr 1fr 1fr}.ls-mini strong{font-size:17px}.ls-mini span{font-size:12px}}
+/* Clients first: the stores filters only apply to Daniel's stores pages */
+body.client-orders-open .topbar .context-controls{visibility:hidden}

@@ -119,6 +119,17 @@ export const SCHEMA = [
      added_by TEXT NOT NULL CHECK (added_by IN ('client','admin')),
      created_at INTEGER NOT NULL)`,
   'CREATE INDEX IF NOT EXISTS order_photos_order_idx ON order_photos (order_id, id)',
+  // Daniel's own stores shown in the dashboard: stores added by an admin, and removed (hidden) ones.
+  // Built-in stores (zroyal, cursed, select, nerd) only get a row here when they are hidden/renamed.
+  `CREATE TABLE IF NOT EXISTS dashboard_stores (
+     key TEXT PRIMARY KEY,
+     name TEXT NOT NULL DEFAULT '',
+     platform TEXT NOT NULL DEFAULT '',
+     url TEXT NOT NULL DEFAULT '',
+     builtin BOOLEAN NOT NULL DEFAULT FALSE,
+     hidden BOOLEAN NOT NULL DEFAULT FALSE,
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL)`,
 ];
 
 export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000' };
@@ -265,6 +276,17 @@ async function withPhotos(DB, orders) {
   const by = new Map();
   for (const r of rows) { const k = Number(r.order_id); if (!by.has(k)) by.set(k, []); by.get(k).push(photoOut(r)); }
   return orders.map(o => ({ ...o, photos: by.get(o.id) || [] }));
+}
+// ---------- Daniel's dashboard stores ----------
+const BUILTIN_STORES = ['zroyal', 'cursed', 'select', 'nerd'];
+const STORE_PLATFORMS = ['Etsy', 'Shopify', 'Amazon', 'eBay', 'TikTok Shop', 'Website', 'Other'];
+const storeOut = r => ({ key: r.key, name: r.name, platform: r.platform, url: r.url, builtin: !!r.builtin, hidden: !!r.hidden, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) });
+function storeFields(body, needName) {
+  const f = { name: text(body.name, 80), platform: text(body.platform, 30), url: text(body.url, 300) };
+  if (needName && !f.name) throw new Error('Please enter the store name');
+  if (f.platform && !STORE_PLATFORMS.includes(f.platform)) throw new Error('Unknown platform');
+  if (f.url && !validLink(f.url)) throw new Error('Store link must start with https://');
+  return f;
 }
 // The product link must be a real web address (usually the Etsy listing).
 function validLink(value) {
@@ -516,6 +538,29 @@ export async function handlePortal(request, url, ctx) {
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
     return json({ ok: true, settings, totals, clients, admins, archived, googleSheets: { configured: googleSheetsConfigured(env) } });
+  }
+  // ----- Daniel's stores (dashboard store list) -----
+  if (path === '/admin/stores' && method === 'GET') {
+    const rows = (await DB.prepare('SELECT * FROM dashboard_stores ORDER BY created_at, key').all()).results || [];
+    return json({ ok: true, stores: rows.map(storeOut) });
+  }
+  if (path === '/admin/stores' && method === 'POST') {
+    let f; try { f = storeFields(await readBody(request), true); } catch (e) { return json({ ok: false, error: e.message }, 400); }
+    const key = 's' + now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const row = await DB.prepare('INSERT INTO dashboard_stores (key, name, platform, url, builtin, hidden, created_at, updated_at) VALUES (?,?,?,?,FALSE,FALSE,?,?) RETURNING *')
+      .bind(key, f.name, f.platform, f.url, now(), now()).first();
+    return json({ ok: true, store: storeOut(row) });
+  }
+  const storeUpd = /^\/admin\/stores\/([a-z0-9]{2,24})$/.exec(path);
+  if (storeUpd && method === 'POST') {
+    const key = storeUpd[1], body = await readBody(request), builtin = BUILTIN_STORES.includes(key);
+    const existing = await DB.prepare('SELECT * FROM dashboard_stores WHERE key = ?').bind(key).first();
+    if (!existing && !builtin) return json({ ok: false, error: 'Not found' }, 404);
+    let f; try { f = storeFields({ ...(existing ? storeOut(existing) : {}), ...body }, !builtin); } catch (e) { return json({ ok: false, error: e.message }, 400); }
+    const hidden = body.hidden !== undefined ? Boolean(body.hidden) : Boolean(existing?.hidden);
+    const row = await DB.prepare('INSERT INTO dashboard_stores (key, name, platform, url, builtin, hidden, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET name=excluded.name, platform=excluded.platform, url=excluded.url, hidden=excluded.hidden, updated_at=excluded.updated_at RETURNING *')
+      .bind(key, f.name, f.platform, f.url, builtin, hidden, now(), now()).first();
+    return json({ ok: true, store: storeOut(row) });
   }
   if (path === '/admin/google-sheets/retry' && method === 'POST') {
     return json({ ok: true, ...(await retryPendingGoogleSheetOrders(DB, env)) });
