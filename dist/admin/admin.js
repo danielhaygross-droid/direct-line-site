@@ -289,8 +289,9 @@
         <div class="status-btns">${STATUSES.map(s => `<button type="button" class="t-${s}${s === o.status ? ' on' : ''}" data-set-status="${s}" data-id="${o.id}">${UI.LABEL[s]}</button>`).join('')}</div>
         <form class="inline-form" data-track-form="${o.id}" style="margin-top:14px"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(o.trackingNumber)}" placeholder="e.g. LX123456789CN"></label><button class="btn" type="submit">Save tracking</button>${o.trackingNumber ? `<a class="btn btn-ghost" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track</a>` : ''}</form>
       </section>
+      ${billHTML(o)}
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
-        <div><dt>Client</dt><dd><button type="button" class="back" style="margin:0" data-open-client="${o.clientId}">${esc(clientName(o.clientId))}</button></dd></div><div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div>
+        <div><dt>Client</dt><dd><button type="button" class="back" style="margin:0" data-open-client="${o.clientId}">${esc(clientName(o.clientId))}</button></dd></div><div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}${o.source === 'etsy-csv' ? ' <span class="st" style="--tone:var(--blue);text-transform:none">From Etsy file</span>' : ''}</dd></div>
         <div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div><div><dt>Customer paid</dt><dd>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</dd></div>
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
@@ -305,6 +306,7 @@
         <div class="total"><span>Client pays</span><span>${money(o.price)}</span></div>
         <div><span>Customer paid client</span><span>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</span></div><div><span>Client’s profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${o.productCost == null && o.shippingFee == null ? 'Pending costs' : money(o.profit)}</span></div></div>
         <div class="split"><div><small>Fee on this order</small><b>${money(o.commission)}</b></div><div><small>Supplier gets</small><b>${money(o.supplierShare)}</b></div><div><small>We earn</small><b class="pos">${money(o.ourShare)}</b></div></div></section>`;
+    bindBill(o);
     d.foot.innerHTML = `<button type="button" class="btn" data-edit-order="${o.id}">${ic('edit')}Edit order</button><button type="button" class="btn btn-ghost" data-open-client="${o.clientId}">Open client</button>`;
   }
 
@@ -325,6 +327,53 @@
     el.form.trialEnd.value = addMonthIso(el.value);
   });
   const addMonthIso = iso => { const [y, m, d] = iso.split('-').map(Number); const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return new Date(Date.UTC(y, m, Math.min(d, last))).toISOString().slice(0, 10); };
+
+  // Bill an order right from its panel: product type + weight (and size) → shipping fee from our rates,
+  // plus product cost (our hidden fee included) = what the client pays. Saves onto the order.
+  function billHTML(o) {
+    const v2 = x => (x != null ? Number(x).toFixed(2) : '');
+    const rated = !!RATES[o.destination];
+    return `<section class="card card-pad"><h3 class="sec-title">Bill this order</h3>
+      <form class="form-grid bill-form" data-bill-form="${o.id}" novalidate>
+        <label class="field"><span>Product type</span><select name="category">${categoryOptions(o.category || 'general')}</select></label>
+        <label class="field"><span>Weight (kg)</span><input name="weightKg" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 0.25" value="${o.weightKg ?? ''}"></label>
+        <div class="field full"><span>Size L × W × H (cm) <small>optional · big, light boxes are charged by size</small></span><div class="dims"><input name="l" type="number" min="0" placeholder="L" aria-label="Length"><input name="w" type="number" min="0" placeholder="W" aria-label="Width"><input name="h" type="number" min="0" placeholder="H" aria-label="Height"></div></div>
+        <label class="field"><span>Product cost <small>fee included</small></span><span class="money"><input name="productCost" type="number" min="0" step="0.01" inputmode="decimal" value="${v2(o.productCost)}"></span></label>
+        <label class="field"><span>Shipping fee <small data-bill-hint></small></span><span class="money"><input name="shippingFee" type="number" min="0" step="0.01" inputmode="decimal" value="${v2(o.shippingFee)}"></span></label>
+        <div class="full calc-out bill-out" data-bill-out></div>
+        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save bill</button><p class="form-msg" data-bill-msg style="margin:0"></p></div>
+        ${rated ? '' : `<p class="note full" style="margin:0">No shipping rate saved for ${esc(place(o.destination))} yet — type the shipping fee.</p>`}
+      </form></section>`;
+  }
+  function bindBill(o) {
+    const f = $(`[data-bill-form="${o.id}"]`); if (!f) return;
+    let auto = null;
+    const upd = () => {
+      const q = quote({ country: o.destination, category: f.category.value, weightKg: f.weightKg.value, lengthCm: f.l.value, widthCm: f.w.value, heightCm: f.h.value, divisor: divisor() });
+      const qs = q ? q.total.toFixed(2) : null;
+      if (q && (f.shippingFee.value === '' || f.shippingFee.value === auto)) { f.shippingFee.value = qs; auto = qs; }
+      $('[data-bill-hint]', f).innerHTML = !q ? '' : f.shippingFee.value === qs ? 'from our rates' : `<button type="button" class="back" style="margin:0" data-bill-use="${qs}">use ${money(q.total)}</button>`;
+      const pc = parseFloat(f.productCost.value), sh = parseFloat(f.shippingFee.value), have = Number.isFinite(pc) || Number.isFinite(sh);
+      $('[data-bill-out]', f).innerHTML = `<small>Client pays</small><strong>${have ? money((pc || 0) + (sh || 0)) : '—'}</strong><div class="bd">${q ? `Shipping: ${q.chargeable} kg${q.usedVolumetric ? ' (by size)' : ''} × ${money(q.perKg)}/kg + ${money(q.registration)} registration${q.euTax ? ` + ${money(q.euTax)} EU tax` : ''}${q.estimated ? ' · estimated rate' : ''}` : 'Enter the weight to work out shipping from our rates.'}${Number.isFinite(pc) ? ` · Product ${money(pc)}` : ''}</div>`;
+    };
+    f.addEventListener('input', e => { if (e.target.name === 'shippingFee') auto = null; upd(); });
+    f.addEventListener('change', upd);
+    f.addEventListener('click', e => { const u = e.target.closest('[data-bill-use]'); if (u) { f.shippingFee.value = u.dataset.billUse; auto = f.shippingFee.value; upd(); } });
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const m = $('[data-bill-msg]', f);
+      if (f.productCost.value === '' && f.shippingFee.value === '') { m.textContent = 'Enter the product cost and shipping fee.'; m.className = 'form-msg err'; return; }
+      const body = { category: f.category.value, weightKg: f.weightKg.value === '' ? null : f.weightKg.value,
+        productCost: f.productCost.value === '' ? null : f.productCost.value, shippingFee: f.shippingFee.value === '' ? null : f.shippingFee.value };
+      try {
+        await api('/orders/' + o.id, { method: 'PUT', body });
+        document.activeElement?.blur(); await loadAll(); renderList(); renderKpis();
+        const cur = S.orders.find(x => x.id === o.id); if (cur) fillOrder(cur);
+        toast('Bill saved. ' + money(cur?.price) + ' added to what ' + (clientName(o.clientId) || 'the client') + ' owes.');
+      } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+    });
+    upd();
+  }
 
   // ---------- side panel: one client ----------
   let payments = [];
