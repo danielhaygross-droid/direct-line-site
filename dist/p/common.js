@@ -277,7 +277,9 @@
   // Thumbnails + product link, shown in order drawers (client and admin).
   function productMedia(o, { removable = false, canAdd = false } = {}) {
     const photos = o.photos || [];
-    const link = o.etsyUrl ? `<a class="btn btn-sm" href="${esc(o.etsyUrl)}" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>Open product link</a><span class="pm-link" title="${esc(o.etsyUrl)}">${esc(o.etsyUrl.replace(/^https?:\/\/(www\.)?/, ''))}</span>`
+    const links = (o.productLinks || String(o.etsyUrl || '').split(/\s+/)).filter(Boolean);
+    const ext = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
+    const link = links.length ? links.map((u, i) => `<div class="pm-linkline"><a class="btn btn-sm" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${ext}${links.length > 1 ? 'Open product ' + (i + 1) : 'Open product link'}</a><span class="pm-link" title="${esc(u)}">${esc(u.replace(/^https?:\/\/(www\.)?/, ''))}</span></div>`).join('')
       : '<span class="muted">No product link added.</span>';
     return `<div class="pm-photos">${photos.map(p => `<figure class="pm-photo"><a href="${photoUrl(o.id, p.id)}" target="_blank" rel="noopener" title="Open full size"><img src="${photoUrl(o.id, p.id, true)}" alt="Product photo" loading="lazy"></a>${removable ? `<button type="button" class="pm-remove" data-photo-remove="${p.id}" data-order="${o.id}" aria-label="Remove photo">×</button>` : ''}</figure>`).join('')}
       ${canAdd ? `<label class="pm-add" title="Add a photo"><input type="file" accept="image/*" multiple hidden data-photo-add="${o.id}"><span>+</span><small>Add photo</small></label>` : ''}
