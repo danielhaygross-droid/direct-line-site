@@ -184,3 +184,31 @@
 .sub-banner.due .sub-tag{background:var(--red,#c0544a)}
 .sub-banner.ok{border-color:color-mix(in srgb,var(--mint,#2e9c84) 40%,transparent);background:color-mix(in srgb,var(--mint,#2e9c84) 8%,var(--surface,#fff))}
 .sub-banner.ok .sub-tag{background:var(--mint,#2e9c84)}
+
+/* Import from Etsy */
+.imp{display:grid;gap:16px;max-width:1100px}
+.imp-steps{margin:0 0 4px;padding-inline-start:20px;display:grid;gap:6px;font-size:14.5px;line-height:1.5}
+.imp-drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:130px;padding:20px;border:2px dashed var(--line-2);border-radius:16px;background:var(--surface-2);cursor:pointer;text-align:center;transition:border-color .15s,background .15s}
+.imp-drop:hover,.imp-drop.over{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 8%,var(--surface))}
+.imp-drop svg{width:28px;height:28px;fill:none;stroke:var(--gold);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.imp-drop small{color:var(--dim)}
+.imp-all{display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer}
+.imp-tbl td small{display:block;margin-top:2px;font-size:12.5px}
+.imp-tbl td .tag{margin-top:4px}
+.imp-tbl tr.off td{opacity:.55}
+.imp-tbl input[type=checkbox],.imp-all input{width:18px;height:18px;accent-color:var(--gold)}
+.imp-prod{max-width:340px}
+.imp-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-top:1px solid var(--line)}
+.imp-foot p{margin:0;font-size:13.5px;flex:1;min-width:220px}
+.imp-done h3,.imp-warn h3{display:flex;align-items:center;gap:8px;margin:0 0 8px}
+.imp-done h3 svg{width:22px;height:22px;fill:none;stroke:var(--mint);stroke-width:2.4}
+.imp-done p,.imp-warn p{margin:0 0 8px}
+.imp-warn{border-color:color-mix(in srgb,var(--orange) 45%,transparent)}
+.imp-fail{margin:0 0 10px;padding-inline-start:20px;font-size:14px}
+.imp-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.err-text{color:var(--red)}
+.tag-bad{background:color-mix(in srgb,var(--red) 14%,transparent);color:var(--red)}
+.imp-hint{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:12px 16px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--text);text-decoration:none;font-size:14.5px}
+.imp-hint:hover{border-color:var(--gold)}
+.imp-hint span{flex:1}
+.imp-hint svg{width:20px;height:20px;fill:none;stroke:var(--gold);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}

@@ -29,6 +29,7 @@
     ext: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
     edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/>',
     check: '<path d="M5 12l5 5 9-10"/>',
+    upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
   };
   const ic = n => UI.svg(P[n]);
   const ROUTES = {
@@ -39,8 +40,9 @@
     messages: { title: 'Messages', sub: 'Your conversations with Direct Line' },
     payments: { title: 'Payments', sub: 'What you’ve been billed and paid' },
     rates: { title: 'Shipping rates', sub: 'Work out a shipping fee before you order' },
+    import: { title: 'Import from Etsy', sub: 'Add many orders at once from your Etsy orders file' },
   };
-  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['rates', 'Shipping rates', 'calc']];
+  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['import', 'Import from Etsy', 'upload'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['rates', 'Shipping rates', 'calc']];
   const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
   const place = d => (d ? countryName(d) : '—');
   const ago = sec => N.timeAgo(sec * 1000);
@@ -217,9 +219,9 @@
   function renderView(soft) {
     const view = $('#view');
     if (soft && S.route === 'orders' && $('[data-orders-list]')) { renderChips(); renderOrdersList(); return; }
-    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, rates: viewRates }[S.route]();
+    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, rates: viewRates, import: viewImport }[S.route]();
     if (soft) view.querySelectorAll(':scope > *').forEach(el => { el.style.animation = 'none'; });
-    ({ orders: bindOrders, new: bindForm, edit: bindForm, rates: bindRates })[S.route]?.();
+    ({ orders: bindOrders, new: bindForm, edit: bindForm, rates: bindRates, import: bindImport })[S.route]?.();
   }
   const empty = (icon, title, text, extra = '') => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><h3>${esc(title)}</h3><p>${esc(text)}</p>${extra}</div>`;
 
@@ -250,7 +252,7 @@
     const items = noteItems().slice(0, 6);
     return `
       <section class="hello"><div><p class="eyebrow">Client portal</p><h2>${hello}, <span>${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p>${o.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Add your first order to get started.'}</p></div>
-        <div class="hello-actions"><a class="btn" href="#/rates">${ic('calc')}Shipping rates</a><a class="btn btn-primary" href="#/new">${ic('plus')}New order</a></div></section>
+        <div class="hello-actions"><a class="btn" href="#/import">${ic('upload')}Import from Etsy</a><a class="btn" href="#/rates">${ic('calc')}Shipping rates</a><a class="btn btn-primary" href="#/new">${ic('plus')}New order</a></div></section>
       ${subBanner(me.subscription)}
       <section class="stats">
         <div class="stat hero"><span class="stat-ic">${ic('wallet')}</span><small>${credit ? 'Credit on your account' : 'Balance due'}</small><strong>${money(Math.abs(s.outstanding))}</strong><em>${credit ? 'You’ve paid more than you were billed' : s.outstanding > 0 ? 'Billed ' + money(s.billed) + ' · paid ' + money(s.paid) : 'You’re all paid up'}</em></div>
@@ -382,7 +384,7 @@
     const ed = S.route === 'edit' ? S.orders.find(o => o.id === S.id) : null;
     const today = new Date().toISOString().slice(0, 10);
     const currencies = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD'];
-    return `<form class="form-layout" id="order-form" novalidate>
+    return `${ed ? '' : `<a class="imp-hint" href="#/import">${ic('upload')}<span><b>Many orders?</b> Import them all at once from your Etsy orders file</span>${ic('chev')}</a>`}<form class="form-layout" id="order-form" novalidate>
       <div class="form-main">
         <section class="card card-pad"><h3 class="form-sec"><i>1</i>Etsy order</h3><div class="form-grid">
           <label class="field"><span>Order number / receipt ID</span><input name="orderRef" required maxlength="120" placeholder="e.g. Etsy #3412" value="${esc(ed?.orderRef)}"></label>
@@ -489,7 +491,7 @@
       if (!need(form.orderRef, 'Please enter the Etsy order number.')) return;
       if (!need(form.orderDate, 'Please choose the order date.')) return;
       if (!need(form.sellingPrice, 'Please enter what the customer paid.')) return;
-      if (!picks.length) { setMsg('Please add at least one photo or screenshot of the product.', 'err'); zone.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
+      if (!picks.length && ed?.source !== 'etsy-csv') { setMsg('Please add at least one photo or screenshot of the product.', 'err'); zone.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
       const linkInputs = $$('[data-link]', form), links = linkInputs.map(i => i.value.trim()).filter(Boolean);
       if (!links.length) { setMsg('Please add the product link (the Etsy listing).', 'err'); linkInputs[0]?.focus(); return; }
       const badLink = linkInputs.find(i => i.value.trim() && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(i.value.trim()));
@@ -544,6 +546,100 @@
   }
 
   // ---------- payments ----------
+  // ---------- import from an Etsy orders file ----------
+  let imp = null; // { orders, chosen:Set, problem, unknown, withTotals, result }
+  const paidText = o => `${esc(o.currency)} ${Number(o.sellingPrice || 0).toFixed(2)}`;
+  function viewImport() {
+    return `<div class="imp">
+      <section class="card card-pad">
+        <h3 class="form-sec"><i>1</i>Download your orders from Etsy</h3>
+        <ol class="imp-steps">
+          <li>In Etsy open <b>Shop Manager → Settings → Options → Download Data</b>.</li>
+          <li>Under <b>Orders</b>, set <b>CSV Type</b> to <b>Order Items</b>, choose the month and year, and click <b>Download CSV</b>.</li>
+          <li><span class="dim">Optional:</span> download the same month again with CSV Type <b>Orders</b>. With both files we also fill in what each customer paid exactly.</li>
+        </ol>
+        <h3 class="form-sec" style="margin-top:18px"><i>2</i>Upload the file here</h3>
+        <label class="imp-drop" data-imp-drop><input type="file" accept=".csv,text/csv" multiple hidden data-imp-file>${ic('upload')}<b>Choose the Etsy file(s)</b><small>or drag them here · .csv</small></label>
+        <p class="form-msg" data-imp-msg></p>
+      </section>
+      <div data-imp-preview>${impPreview()}</div>
+    </div>`;
+  }
+  function impPreview() {
+    if (!imp) return '';
+    if (imp.result) {
+      const r = imp.result;
+      return `<section class="card card-pad imp-done"><h3>${r.created ? `${ic('check')}${r.created} order${r.created === 1 ? '' : 's'} imported` : 'Nothing new was imported'}</h3>
+        ${r.created ? '<p>They’re in your Orders list as <b>Pending</b>. We’ll take it from here.</p>' : ''}
+        ${r.skipped.length ? `<p class="dim">${r.skipped.length} skipped (already in your orders).</p>` : ''}
+        ${r.failed.length ? `<p class="err-text">${r.failed.length} couldn’t be imported:</p><ul class="imp-fail">${r.failed.map(f => `<li><b>${esc(f.orderRef)}</b> — ${esc(f.reason)}</li>`).join('')}</ul>` : ''}
+        <div class="imp-actions"><a class="btn btn-primary" href="#/orders">View orders</a><button type="button" class="btn" data-imp-reset>Import another file</button></div></section>`;
+    }
+    if (imp.problem === 'orders-only') return `<section class="card card-pad imp-warn"><h3>This is the “Orders” file</h3><p>That file has no product links. Please download the CSV Type <b>Order Items</b> as well (step 1) and upload both together.</p></section>`;
+    if (imp.problem === 'not-etsy') return `<section class="card card-pad imp-warn"><h3>That doesn’t look like an Etsy orders file</h3><p>Please use the file from Etsy’s <b>Download Data</b> page with CSV Type <b>Order Items</b> (its name starts with <i>EtsySoldOrderItems</i>).</p></section>`;
+    if (!imp.orders.length) return `<section class="card card-pad imp-warn"><h3>No orders in this file</h3><p>Pick another month in Etsy and download again.</p></section>`;
+    const ready = imp.orders.filter(o => !o.alreadyImported && !o.missing.length);
+    const n = imp.chosen.size;
+    return `<section class="card">
+      <div class="card-head"><h3>${imp.orders.length} order${imp.orders.length === 1 ? '' : 's'} found</h3><label class="imp-all"><input type="checkbox" data-imp-all ${n && n === ready.length ? 'checked' : ''}> Select all</label></div>
+      <p class="note" style="margin:0 20px 10px">${imp.withTotals ? '' : 'Customer paid = item prices + shipping from the file. '}Orders already marked shipped on Etsy aren’t selected — tick them if we should still send them.</p>
+      <div class="table-wrap"><table class="tbl stack imp-tbl"><thead><tr><th></th><th>Order</th><th>Recipient</th><th>Products</th><th class="num">Customer paid</th></tr></thead><tbody>
+      ${imp.orders.map((o, i) => {
+        const blocked = o.alreadyImported || o.missing.length;
+        const tag = o.alreadyImported ? '<span class="tag">Already imported</span>' : o.missing.length ? `<span class="tag tag-bad">Missing ${esc(o.missing.join(', '))}</span>` : o.shippedOnEtsy ? '<span class="tag">Shipped on Etsy</span>' : '';
+        return `<tr class="${blocked ? 'off' : ''}"><td><input type="checkbox" data-imp-pick="${i}" ${imp.chosen.has(i) ? 'checked' : ''} ${blocked ? 'disabled' : ''} aria-label="Import order ${esc(o.orderRef)}"></td>
+          <td data-label="Order"><b>${esc(o.orderRef)}</b><small class="dim">${o.orderDate ? esc(fmtDay(o.orderDate)) : ''}</small>${tag}</td>
+          <td data-label="Recipient"><b>${esc(o.buyerName)}</b><small class="dim">${esc(o.countryName || o.destination)}</small></td>
+          <td data-label="Products" class="imp-prod">${esc(o.itemTitle || '—')}<small class="dim">${o.quantity} item${o.quantity === 1 ? '' : 's'} · ${o.etsyUrl ? o.etsyUrl.split('\n').length : 0} link${o.etsyUrl.split('\n').filter(Boolean).length === 1 ? '' : 's'}</small></td>
+          <td data-label="Customer paid" class="num">${paidText(o)}</td></tr>`;
+      }).join('')}
+      </tbody></table></div>
+      <div class="imp-foot"><p class="dim">Etsy’s file has no phone numbers or photos. You can add them to any order later with <b>Edit</b>.</p>
+        <button type="button" class="btn btn-primary" data-imp-go ${n ? '' : 'disabled'}>${ic('upload')}Import ${n} order${n === 1 ? '' : 's'}</button></div>
+      <p class="form-msg" data-imp-go-msg style="margin:0 20px 16px"></p>
+    </section>`;
+  }
+  function bindImport() {
+    const input = $('[data-imp-file]'), drop = $('[data-imp-drop]'), msg = $('[data-imp-msg]');
+    const paint = () => { $('[data-imp-preview]').innerHTML = impPreview(); };
+    async function load(fileList) {
+      const files = [...fileList].filter(f => /\.csv$/i.test(f.name) || f.type === 'text/csv');
+      msg.textContent = ''; msg.className = 'form-msg';
+      if (!files.length) { msg.textContent = 'Please choose the .csv file you downloaded from Etsy.'; msg.className = 'form-msg err'; return; }
+      if (files.some(f => f.size > 5 * 1024 * 1024)) { msg.textContent = 'That file is too big (over 5 MB). Download one month at a time.'; msg.className = 'form-msg err'; return; }
+      const texts = await Promise.all(files.map(async f => ({ name: f.name, text: await f.text() })));
+      const r = window.DLEtsyImport.build(texts, { countries: COUNTRIES, existingRefs: S.orders.map(o => o.orderRef) });
+      imp = { ...r, chosen: new Set(r.orders.map((o, i) => (!o.alreadyImported && !o.missing.length && !o.shippedOnEtsy ? i : -1)).filter(i => i >= 0)), result: null };
+      msg.textContent = files.length > 1 ? `Read ${files.length} files.` : `Read ${files[0].name}.`; msg.className = 'form-msg ok';
+      paint();
+    }
+    input.addEventListener('change', () => { if (input.files.length) load(input.files); input.value = ''; });
+    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files.length) load(e.dataTransfer.files); });
+    $('[data-imp-preview]').addEventListener('change', e => {
+      if (!imp) return;
+      if (e.target.matches('[data-imp-all]')) { imp.chosen = new Set(e.target.checked ? imp.orders.map((o, i) => (!o.alreadyImported && !o.missing.length ? i : -1)).filter(i => i >= 0) : []); paint(); }
+      if (e.target.matches('[data-imp-pick]')) { const i = Number(e.target.dataset.impPick); if (e.target.checked) imp.chosen.add(i); else imp.chosen.delete(i); paint(); }
+    });
+    $('[data-imp-preview]').addEventListener('click', async e => {
+      if (e.target.closest('[data-imp-reset]')) { imp = null; paint(); msg.textContent = ''; return; }
+      const go = e.target.closest('[data-imp-go]'); if (!go || !imp) return;
+      const chosen = [...imp.chosen].sort((a, b) => a - b).map(i => imp.orders[i]);
+      const m = $('[data-imp-go-msg]');
+      go.disabled = true; m.textContent = `Importing ${chosen.length} order${chosen.length === 1 ? '' : 's'}…`; m.className = 'form-msg';
+      const total = { created: 0, skipped: [], failed: [] };
+      try {
+        for (let i = 0; i < chosen.length; i += 100) {
+          const part = chosen.slice(i, i + 100).map(({ shippedOnEtsy, alreadyImported, missing, countryName, ...o }) => o);
+          const r = await api('/orders/import', { method: 'POST', body: { orders: part } });
+          total.created += r.created; total.skipped.push(...r.skipped); total.failed.push(...r.failed);
+        }
+        imp.result = total; await refresh(); paint(); window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (ex) { go.disabled = false; m.textContent = ex.message; m.className = 'form-msg err'; if (total.created) { imp.result = total; await refresh().catch(() => {}); paint(); } }
+    });
+  }
+
   function viewPayments() {
     const s = S.me.summary, credit = s.outstanding < 0;
     return `<section class="stats">
