@@ -242,3 +242,10 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .photo-field>span small{font-weight:600}
 .ord-thumb{width:38px;height:38px;flex:none;border-radius:11px;object-fit:cover;border:1px solid var(--line);background:var(--surface-3)}
 @media(max-width:560px){.pm-photo,.pm-add{width:84px;height:84px}}
+.link-list{display:grid;gap:8px}
+.link-row{display:flex;gap:8px;align-items:center}
+.link-row input{flex:1}
+.link-row .btn{min-width:40px;font-size:18px}
+.link-add{justify-self:start;margin-top:2px}
+.pm-linkrow{display:grid;gap:8px}
+.pm-linkline{display:flex;align-items:center;gap:10px;min-width:0}

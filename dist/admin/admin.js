@@ -272,10 +272,10 @@
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
         <div><dt>Client</dt><dd><button type="button" class="back" style="margin:0" data-open-client="${o.clientId}">${esc(clientName(o.clientId))}</button></dd></div><div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div>
         <div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div><div><dt>Customer paid</dt><dd>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</dd></div>
-        <div class="full"><dt>Product</dt><dd>${esc(o.itemTitle) || '—'}</dd></div><div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
+        ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
-        <div><dt>Recipient</dt><dd>${esc(o.buyerName) || '—'}</dd></div><div><dt>Phone</dt><dd>${esc(o.buyerPhone) || '—'}</dd></div>
-        <div class="full"><dt>Delivery address</dt><dd>${[o.address1, o.address2, o.city, o.region, o.postalCode, place(o.destination)].filter(Boolean).map(esc).join(', ') || '—'}</dd></div>
+        <div class="full"><dt>Recipient</dt><dd>${esc(o.buyerName) || '—'}</dd></div>
+        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.address1, o.address2, o.city, o.region, o.postalCode, o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
         <div><dt>Product type</dt><dd>${esc(shortCat(o.category))}</dd></div><div><dt>Weight</dt><dd>${o.weightKg != null ? esc(o.weightKg) + ' kg' : 'Not entered yet'}</dd></div><div><dt>Last update</dt><dd>${esc(fullDate(o.updatedAt))}</dd></div>
         <div><dt>Google Sheet</dt><dd>${o.sheetSyncStatus === 'synced' ? 'Synced' : o.sheetSyncStatus === 'error' ? 'Needs retry' : 'Waiting to sync'}</dd></div>
         ${o.sheetSyncError ? `<div class="full"><dt>Sheet sync note</dt><dd>${esc(o.sheetSyncError)}</dd></div>` : ''}

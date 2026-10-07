@@ -9,7 +9,9 @@ test('client order form requires product photos and the product link', () => {
   const form = portal.slice(portal.indexOf('function viewForm()'), portal.indexOf('// ---------- messages'));
   assert.match(form, /Product photos \/ screenshots/);
   assert.match(form, /data-pick-input/);
-  assert.match(form, /name="etsyUrl" type="url" required/);
+  assert.match(form, /data-link-add/);
+  assert.match(form, /Full address &amp; phone/);
+  assert.doesNotMatch(form, /name="itemTitle"/);
   assert.match(form, /Please add at least one photo or screenshot of the product/);
   assert.match(form, /Please add the product link/);
   assert.match(portal, /document\.addEventListener\('paste'/);

@@ -198,7 +198,7 @@ function orderOut(r) {
     price, sellingPrice: sell, profit: sell === null ? null : round2(sell - price),
     orderDate: r.order_date || '', currency: r.currency || 'USD', buyerName: r.buyer_name || '', buyerPhone: r.buyer_phone || '',
     address1: r.address_line_1 || '', address2: r.address_line_2 || '', city: r.city || '', region: r.region || '', postalCode: r.postal_code || '',
-    itemTitle: r.item_title || '', sku: r.sku || '', variant: r.variant || '', quantity: Number(r.quantity || 1), etsyUrl: r.etsy_url || '',
+    itemTitle: r.item_title || '', sku: r.sku || '', variant: r.variant || '', quantity: Number(r.quantity || 1), etsyUrl: r.etsy_url || '', productLinks: String(r.etsy_url || '').split(/\s+/).filter(Boolean),
     commission: Number(r.commission || 0), supplierShare: round2(r.supplier_share),
     ourShare: round2(Math.max(0, Number(r.commission || 0) - Number(r.supplier_share || 0))),
     notes: r.notes, status: r.status,
@@ -303,8 +303,8 @@ function orderFields(body) {
     product_cost: money(body.productCost), shipping_fee: money(body.shippingFee),
     order_date: text(body.orderDate, 10), currency: text(body.currency || 'USD', 3).toUpperCase(),
     buyer_name: text(body.buyerName, 160), buyer_phone: text(body.buyerPhone, 80),
-    address_line_1: text(body.address1, 200), address_line_2: text(body.address2, 200), city: text(body.city, 100), region: text(body.region, 100), postal_code: text(body.postalCode, 40),
-    item_title: text(body.itemTitle, 300), sku: text(body.sku, 120), variant: text(body.variant, 500), quantity: Number(body.quantity ?? 1), etsy_url: text(body.etsyUrl, 500),
+    address_line_1: text(body.address1, 1000), address_line_2: text(body.address2, 200), city: text(body.city, 100), region: text(body.region, 100), postal_code: text(body.postalCode, 40),
+    item_title: text(body.itemTitle, 300), sku: text(body.sku, 120), variant: text(body.variant, 500), quantity: Number(body.quantity ?? 1), etsy_url: String(body.etsyUrl ?? '').split(/\s+/).map(v => v.trim()).filter(Boolean).slice(0, 10).join('\n').slice(0, 3000),
     notes: text(body.notes, 2000),
   };
   if (![f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee].every(isMoney)) throw new Error('Numbers must be zero or more');
@@ -388,7 +388,7 @@ export async function handlePortal(request, url, ctx) {
       f.product_cost = null; f.shipping_fee = null; f.price = 0;
     }
     // Clients must show us what was ordered: the product link plus at least one photo / screenshot.
-    if (f.etsy_url && !validLink(f.etsy_url)) return json({ ok: false, error: 'Please paste the full product link, starting with https://' }, 400);
+    if (f.etsy_url && !f.etsy_url.split('\n').every(validLink)) return json({ ok: false, error: 'Please paste each product link in full, starting with https://' }, 400);
     if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link (the Etsy listing).' }, 400);
     const photoBodies = Array.isArray(body.photos) ? body.photos : [];
     if (photoBodies.length > MAX_PHOTOS_PER_ORDER) return json({ ok: false, error: `Up to ${MAX_PHOTOS_PER_ORDER} photos per order` }, 400);
@@ -460,7 +460,7 @@ export async function handlePortal(request, url, ctx) {
       f.product_cost = existing.product_cost; f.shipping_fee = existing.shipping_fee; f.price = existing.price;
     }
     if (body.etsyUrl !== undefined) {
-      if (f.etsy_url && !validLink(f.etsy_url)) return json({ ok: false, error: 'Please paste the full product link, starting with https://' }, 400);
+      if (f.etsy_url && !f.etsy_url.split('\n').every(validLink)) return json({ ok: false, error: 'Please paste each product link in full, starting with https://' }, 400);
       if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link (the Etsy listing).' }, 400);
     }
     const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=? WHERE id = ? RETURNING *')
