@@ -175,3 +175,12 @@
 .preview-bar a{color:#fff;font-weight:700;text-decoration:underline;white-space:nowrap}
 .is-preview .side{top:0}
 @media(max-width:560px){.pick-row{grid-template-columns:40px 1fr}.pick-row em{grid-column:2}.pick-card{padding:20px}}
+
+/* Subscription banner (first month free, then monthly) */
+.sub-banner{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0 0 18px;padding:14px 18px;border:1px solid color-mix(in srgb,var(--gold,#b98a3e) 45%,transparent);border-radius:16px;background:color-mix(in srgb,var(--gold,#b98a3e) 10%,var(--surface,#fff))}
+.sub-banner p{margin:0;flex:1;min-width:220px;font-size:14.5px;line-height:1.5}
+.sub-banner .sub-tag{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;background:var(--gold,#b98a3e);color:var(--surface,#fff);font-size:12.5px;font-weight:700;white-space:nowrap}
+.sub-banner.due{border-color:color-mix(in srgb,var(--red,#c0544a) 45%,transparent);background:color-mix(in srgb,var(--red,#c0544a) 8%,var(--surface,#fff))}
+.sub-banner.due .sub-tag{background:var(--red,#c0544a)}
+.sub-banner.ok{border-color:color-mix(in srgb,var(--mint,#2e9c84) 40%,transparent);background:color-mix(in srgb,var(--mint,#2e9c84) 8%,var(--surface,#fff))}
+.sub-banner.ok .sub-tag{background:var(--mint,#2e9c84)}

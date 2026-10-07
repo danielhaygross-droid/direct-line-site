@@ -223,6 +223,22 @@
   }
   const empty = (icon, title, text, extra = '') => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><h3>${esc(title)}</h3><p>${esc(text)}</p>${extra}</div>`;
 
+  // ---------- subscription banner (first month free, then monthly) ----------
+  const fmtDay = iso => { const d = new Date(iso + 'T12:00:00Z'); return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }); };
+  const shekels = n => (Number(n) % 1 ? Number(n).toFixed(2) : String(Number(n))) + ' ₪';
+  function subBanner(sub) {
+    if (!sub || !sub.status || sub.status === 'cancelled') return '';
+    const price = `<b>${shekels(sub.price)} / month</b>`;
+    if (sub.status === 'trial' && sub.trialEnd && !sub.trialEnded) {
+      const left = sub.trialDaysLeft, days = left === 0 ? 'last day today' : `${left} day${left === 1 ? '' : 's'} left`;
+      return `<section class="sub-banner"><span class="sub-tag">First month free</span><p>Your free month runs until <b>${fmtDay(sub.trialEnd)}</b> (${days}). After that the subscription is ${price}.</p></section>`;
+    }
+    if (sub.status === 'trial' && sub.trialEnded) return `<section class="sub-banner due"><span class="sub-tag">Free month ended</span><p>Your free month ended on <b>${fmtDay(sub.trialEnd)}</b>. The subscription is ${price}.</p></section>`;
+    if (sub.status === 'overdue') return `<section class="sub-banner due"><span class="sub-tag">Payment due</span><p>Your subscription payment (${price}) is due. Questions? <a href="#/messages">Message us</a>.</p></section>`;
+    if (sub.status === 'active') return `<section class="sub-banner ok"><span class="sub-tag">Subscription active</span><p>${price}${sub.lastPayment ? ` · last payment ${fmtDay(sub.lastPayment)}` : ''}</p></section>`;
+    return '';
+  }
+
   // ---------- home ----------
   function viewHome() {
     const me = S.me, s = me.summary, o = S.orders;
@@ -235,6 +251,7 @@
     return `
       <section class="hello"><div><p class="eyebrow">Client portal</p><h2>${hello}, <span>${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p>${o.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Add your first order to get started.'}</p></div>
         <div class="hello-actions"><a class="btn" href="#/rates">${ic('calc')}Shipping rates</a><a class="btn btn-primary" href="#/new">${ic('plus')}New order</a></div></section>
+      ${subBanner(me.subscription)}
       <section class="stats">
         <div class="stat hero"><span class="stat-ic">${ic('wallet')}</span><small>${credit ? 'Credit on your account' : 'Balance due'}</small><strong>${money(Math.abs(s.outstanding))}</strong><em>${credit ? 'You’ve paid more than you were billed' : s.outstanding > 0 ? 'Billed ' + money(s.billed) + ' · paid ' + money(s.paid) : 'You’re all paid up'}</em></div>
         <div class="stat" style="--tone:var(--blue)"><span class="stat-ic">${ic('orders')}</span><small>Orders</small><strong>${s.orders}</strong><em>${active} in progress</em></div>
