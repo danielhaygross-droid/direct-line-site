@@ -14,6 +14,8 @@
   const num = n => Number(n || 0).toLocaleString(HE ? 'he-IL' : 'en-US');
   const pct = n => (Number.isFinite(n) ? Math.round(n) + '%' : '—');
   const REAL_STORES = ['zroyal', 'cursed', 'select', 'nerd'];
+  // Daniel's stores currently shown (stores can be added or removed on Stores & Team).
+  const storeIds = () => ((accounts.all && accounts.all.stores) || REAL_STORES).filter(id => stores[id]);
   const ETSY_SHOP = { cursed: 'CursedCarvingsDesign', select: 'SelectSpark', nerd: 'NerdSparkArt' };
   const VIEWS = ['profit', 'marketing', 'inventory', 'shipments', 'data', 'value', 'management', 'clients'];
 
@@ -140,7 +142,7 @@
     const known = list.filter(o => Number(o.total) > 0 && o.costComplete);
     const profit = known.reduce((t, o) => t + o.total - o.refund - o.product - o.shipping - o.fees, 0);
     const unpaid = list.filter(o => (raw.get(o.id)?.paymentStatus || '') === 'Unpaid').reduce((t, o) => t + Number(o.product || 0), 0);
-    const byStore = REAL_STORES.map(id => { const name = stores[id]?.name, os = list.filter(o => o.client === name), ks = os.filter(o => Number(o.total) > 0 && o.costComplete); return { name, n: os.length, sales: os.reduce((t, o) => t + Number(o.total || 0) - Number(o.refund || 0), 0), cost: os.reduce((t, o) => t + Number(o.product || 0), 0), sold: salesKnown(os), known: ks.length, profit: ks.reduce((t, o) => t + o.total - o.refund - o.product - o.shipping - o.fees, 0) }; }).filter(s => s.n);
+    const byStore = storeIds().map(id => { const name = stores[id]?.name, os = list.filter(o => o.client === name), ks = os.filter(o => Number(o.total) > 0 && o.costComplete); return { name, n: os.length, sales: os.reduce((t, o) => t + Number(o.total || 0) - Number(o.refund || 0), 0), cost: os.reduce((t, o) => t + Number(o.product || 0), 0), sold: salesKnown(os), known: ks.length, profit: ks.reduce((t, o) => t + o.total - o.refund - o.product - o.shipping - o.fees, 0) }; }).filter(s => s.n);
     const byItem = new Map();
     list.forEach(o => { const k = o.client + '|' + (o.listingId || o.item); const c = byItem.get(k) || { item: itemName(o.item), store: o.client, n: 0, units: 0, cost: 0, last: null }; c.n++; c.units += Number(o.quantity || 1); c.cost += Number(o.product || 0); const d = dateOf(o.createdAt); if (d && (!c.last || d > c.last)) c.last = d; byItem.set(k, c); });
     const items = [...byItem.values()].sort((a, b) => b.n - a.n).slice(0, 10);
@@ -165,7 +167,7 @@
 
   function marketingView() {
     const list = rangeOrders().filter(o => statusKey(o.status) !== 'cancelled');
-    const byStore = REAL_STORES.map(id => ({ label: stores[id]?.name, value: list.filter(o => o.client === stores[id]?.name).length })).filter(x => x.value);
+    const byStore = storeIds().map(id => ({ label: stores[id]?.name, value: list.filter(o => o.client === stores[id]?.name).length })).filter(x => x.value);
     const custs = new Map(); rangeStoreOrders().forEach(o => { const k = (o.store + '|' + (o.customerName || '')).toLowerCase(); if (o.customerName) custs.set(k, (custs.get(k) || 0) + 1); });
     const repeat = [...custs.values()].filter(n => n > 1).length;
     const platforms = [['Meta Ads', 'Facebook + Instagram'], ['TikTok Ads', L('Spend, creatives, conversions', 'הוצאה, קריאייטיב, המרות')], ['Google Ads & GA4', L('Search, Shopping, traffic', 'חיפוש, שופינג, תנועה')]];
@@ -297,10 +299,14 @@
     const status = id => id === 'zroyal' ? (shopify ? badge(L('Connected', 'מחובר'), 'good') : badge(L('Waiting for API keys', 'ממתין למפתחות API'), 'warn'))
       : ((et?.shops || []).find(s => s.shop === ETSY_SHOP[id])?.connected ? badge(L('Connected', 'מחובר'), 'good') : badge(L('Supplier orders only', 'רק הזמנות ספק'), 'info'));
     const admins = portal?.admins || [];
-    return head(L('Stores & team', 'חנויות וצוות'), L('Your stores and who has access', 'החנויות שלכם ומי מקבל גישה'), '', btn(L('Connect a store', 'חבר חנות'), 'connect', '', 'primary-button'))
+    const all = window.DLStores ? DLStores.list() : storeIds().map(k => ({ key: k, name: stores[k].name, platform: stores[k].platformName, url: '', builtin: REAL_STORES.includes(k), hidden: false }));
+    const shown = all.filter(x => !x.hidden), removed = all.filter(x => x.hidden);
+    const conn = x => (REAL_STORES.includes(x.key) ? status(x.key) : badge(L('Added by you', 'נוספה ידנית'), 'info'));
+    return head(L('Stores & team', 'חנויות וצוות'), L('Daniel’s stores and who has access', 'החנויות של דניאל ומי מקבל גישה'), L('Add a store to track it here, or remove one you don’t want in the dashboard. Removing only hides it — you can bring it back below.', 'הוסיפו חנות כדי לעקוב אחריה כאן, או הסירו חנות שאתם לא רוצים בדשבורד. הסרה רק מסתירה אותה — אפשר להחזיר אותה למטה.'), btn(L('+ Add store', '+ הוספת חנות'), 'store-add', '', 'primary-button'))
       + table([{ label: L('Store', 'חנות') }, { label: L('Platform', 'פלטפורמה') }, { label: L('Connection', 'חיבור') }, { label: L('Orders', 'הזמנות'), num: 1 }, { label: L('Supplier cost', 'עלות ספק'), num: 1 }, { label: '' }],
-        REAL_STORES.filter(id => stores[id]).map(id => { const os = list.filter(o => o.client === stores[id].name); return `<tr><td><b>${esc(stores[id].name)}</b></td><td>${esc(stores[id].platformName)}</td><td>${status(id)}</td><td class="num">${num(os.length)}</td><td class="num">${money(os.reduce((t, o) => t + Number(o.product || 0), 0))}</td><td class="ls-row-actions">${btn(L('View', 'הצג'), 'store', `data-store="${id}"`)}${btn(id === 'zroyal' ? L('Setup', 'הגדרה') : L('Connect', 'חיבור'), id === 'zroyal' ? 'shopify' : 'etsy', id === 'zroyal' ? '' : `data-shop="${ETSY_SHOP[id]}"`)}</td></tr>`; }),
-        '', L(`Orders and cost, ${rangeLabel()}`, `הזמנות ועלויות, ${rangeLabel()}`))
+        shown.map(x => { const os = list.filter(o => o.client === x.name); return `<tr><td><b>${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.name)}</a>` : esc(x.name)}</b></td><td>${esc(x.platform)}</td><td>${conn(x)}</td><td class="num">${num(os.length)}</td><td class="num">${money(os.reduce((t, o) => t + Number(o.product || 0), 0))}</td><td class="ls-row-actions">${btn(L('View', 'הצג'), 'store', `data-store="${x.key}"`)}${x.key === 'zroyal' ? btn(L('Setup', 'הגדרה'), 'shopify') : ETSY_SHOP[x.key] ? btn(L('Connect', 'חיבור'), 'etsy', `data-shop="${ETSY_SHOP[x.key]}"`) : ''}${window.DLStores ? btn(L('Remove', 'הסרה'), 'store-remove', `data-key="${x.key}"`) : ''}</td></tr>`; }),
+        L('No stores yet. Add one to start tracking it.', 'אין עדיין חנויות. הוסיפו אחת כדי להתחיל.'), L(`Orders and cost, ${rangeLabel()}`, `הזמנות ועלויות, ${rangeLabel()}`))
+      + (removed.length ? `<div class="panel ls-removed"><h3>${L('Removed stores', 'חנויות שהוסרו')}</h3><div class="ls-list">${removed.map(x => `<div><i>${esc(x.name.slice(0, 2).toUpperCase())}</i><span><b>${esc(x.name)}</b><small>${esc(x.platform)} · ${L('hidden from the dashboard', 'מוסתרת מהדשבורד')}</small></span>${btn(L('Restore', 'החזרה'), 'store-restore', `data-key="${x.key}"`)}</div>`).join('')}</div></div>` : '')
       + `<div class="ls-grid"><div class="panel"><h3>${L('Team (admin access)', 'צוות (גישת מנהל)')}</h3><div class="ls-list">`
       + `<div><i>★</i><span><b>${L('Main admin login', 'כניסת המנהל הראשית')}</b><small>${L('Full access', 'גישה מלאה')}</small></span>${badge(L('Admin', 'מנהל'), 'good')}</div>`
       + admins.map(a => `<div><i>${esc((a.name || a.username).slice(0, 2).toUpperCase())}</i><span><b>${esc(a.name)}</b><small>${esc(a.username)}</small></span>${badge(a.active ? L('Admin', 'מנהל') : L('Disabled', 'מושבת'), a.active ? 'good' : '')}</div>`).join('')
@@ -390,12 +396,17 @@
     const b = e.target.closest('[data-ls]'); if (!b) return;
     const a = b.dataset.ls;
     if (a === 'goto') $(`.nav-item[data-section="${b.dataset.view}"]`)?.click();
-    else if (a === 'clients') document.getElementById('nav-client-orders')?.click();
-    else if (a === 'add-admin') { document.getElementById('nav-client-orders')?.click(); setTimeout(() => $('#client-orders iframe')?.contentWindow?.postMessage({ type: 'dl-add-admin' }, location.origin), 900); }
+    else if (a === 'clients') document.querySelector('.nav-item[data-client-tab="clients"]')?.click();
+    else if (a === 'add-admin') { if (window.DLClients) { DLClients.open('settings'); DLClients.send({ type: 'dl-add-admin' }); } }
     else if (a === 'campaign') clickHidden(`[data-campaign-platform="${CSS.escape(b.dataset.platform)}"]`);
     else if (a === 'etsy') clickHidden(`.real-store-list [data-etsy-shop="${CSS.escape(b.dataset.shop)}"]`) || clickHidden(`[data-etsy-shop="${CSS.escape(b.dataset.shop)}"]`);
     else if (a === 'shopify') clickHidden('[data-shopify-store]');
-    else if (a === 'connect') clickHidden('#connect-store');
+    else if (a === 'connect' || a === 'store-add') { if (window.DLStores) DLStores.openAdd(); else clickHidden('#connect-store'); }
+    else if (a === 'store-remove') {
+      if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = L('Click again to remove', 'לחצו שוב להסרה'); setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = L('Remove', 'הסרה'); } }, 4000); return; }
+      b.disabled = true; try { await DLStores.remove(b.dataset.key); } catch (err) { b.disabled = false; if (typeof toast === 'function') toast(err.message); }
+    }
+    else if (a === 'store-restore') { b.disabled = true; try { await DLStores.restore(b.dataset.key); } catch (err) { b.disabled = false; if (typeof toast === 'function') toast(err.message); } }
     else if (a === 'store') { const s = $('#store-select'); if (s) { s.value = b.dataset.store; s.dispatchEvent(new Event('change', { bubbles: true })); } }
     else if (a === 'shipfilter') { filter.ship = b.dataset.f; draw(); }
     else if (a === 'olf') { ol.f = b.dataset.f; ol.page = 0; draw(); }
