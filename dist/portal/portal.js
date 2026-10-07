@@ -1,4 +1,4 @@
-/* Direct Line client portal: Home, Orders (with order details + chat), New order, Messages, Payments, Shipping rates. */
+/* Direct Line client portal: Home, Orders (with order details + chat), New order, Messages, Payments, Import from Etsy. */
 (function () {
   const { api, money, esc, trackingUrl, logout, renderLogin, quote, destinationPicker, hasRate, categoryOptions, countryName, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, $, $$ } = window.DL;
   const MAX_PHOTOS = 8;
@@ -39,10 +39,9 @@
     edit: { title: 'Edit order', sub: 'Change the details of an order' },
     messages: { title: 'Messages', sub: 'Your conversations with Direct Line' },
     payments: { title: 'Payments', sub: 'What you’ve been billed and paid' },
-    rates: { title: 'Shipping rates', sub: 'Work out a shipping fee before you order' },
     import: { title: 'Import from Etsy', sub: 'Add many orders at once from your Etsy orders file' },
   };
-  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['import', 'Import from Etsy', 'upload'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['rates', 'Shipping rates', 'calc']];
+  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['import', 'Import from Etsy', 'upload'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet']];
   const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
   const place = d => (d ? countryName(d) : '—');
   const ago = sec => N.timeAgo(sec * 1000);
@@ -158,6 +157,7 @@
           <div class="title"><h1 data-title>Home</h1><p data-sub></p></div>
           <span class="spacer"></span>
           <div class="top-actions">
+            <button type="button" class="icon-btn lang-btn" data-lang-toggle aria-label="Language">${window.DLi18n?.lang === 'he' ? 'EN' : 'עב'}</button>
             <button type="button" class="icon-btn theme-btn" data-theme-toggle aria-label="Switch light/dark">${ic(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon')}</button>
             <button type="button" class="icon-btn" data-bell aria-label="Notifications">${ic('bell')}<span class="count" data-bell-count hidden></span></button>
             <a class="btn btn-primary new-btn" href="#/new">${ic('plus')}New order</a>
@@ -219,9 +219,9 @@
   function renderView(soft) {
     const view = $('#view');
     if (soft && S.route === 'orders' && $('[data-orders-list]')) { renderChips(); renderOrdersList(); return; }
-    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, rates: viewRates, import: viewImport }[S.route]();
+    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, import: viewImport }[S.route]();
     if (soft) view.querySelectorAll(':scope > *').forEach(el => { el.style.animation = 'none'; });
-    ({ orders: bindOrders, new: bindForm, edit: bindForm, rates: bindRates, import: bindImport })[S.route]?.();
+    ({ orders: bindOrders, new: bindForm, edit: bindForm, import: bindImport })[S.route]?.();
   }
   const empty = (icon, title, text, extra = '') => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><h3>${esc(title)}</h3><p>${esc(text)}</p>${extra}</div>`;
 
@@ -252,7 +252,7 @@
     const items = noteItems().slice(0, 6);
     return `
       <section class="hello"><div><p class="eyebrow">Client portal</p><h2>${hello}, <span>${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p>${o.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Add your first order to get started.'}</p></div>
-        <div class="hello-actions"><a class="btn" href="#/import">${ic('upload')}Import from Etsy</a><a class="btn" href="#/rates">${ic('calc')}Shipping rates</a><a class="btn btn-primary" href="#/new">${ic('plus')}New order</a></div></section>
+        <div class="hello-actions"><a class="btn" href="#/import">${ic('upload')}Import from Etsy</a><a class="btn btn-primary" href="#/new">${ic('plus')}New order</a></div></section>
       ${subBanner(me.subscription)}
       <section class="stats">
         <div class="stat hero"><span class="stat-ic">${ic('wallet')}</span><small>${credit ? 'Credit on your account' : 'Balance due'}</small><strong>${money(Math.abs(s.outstanding))}</strong><em>${credit ? 'You’ve paid more than you were billed' : s.outstanding > 0 ? 'Billed ' + money(s.billed) + ' · paid ' + money(s.paid) : 'You’re all paid up'}</em></div>
@@ -655,35 +655,7 @@
       <p class="note">Your bill is the product cost plus the shipping fee of each order. Payments are added by the Direct Line team once they arrive.</p>`;
   }
 
-  // ---------- shipping rates ----------
-  function viewRates() {
-    const rated = COUNTRIES.filter(([c]) => RATES[c]);
-    const rows = rated.map(([c, name]) => { const r = RATES[c]; return `<tr><td class="wide"><b>${esc(name)}</b>${r.est ? ' <span class="tag">Estimated</span>' : ''}${r.eu ? ' <span class="tag tag-gold">+$4 EU tax</span>' : ''}</td><td data-label="General" class="num">$${r.general}</td><td data-label="Battery" class="num">$${r.battery}</td><td data-label="Cosmetics" class="num">$${r.cosmetic}</td></tr>`; }).join('');
-    return `<div class="rates-grid">
-      <section class="card card-pad"><h3 class="form-sec"><i>$</i>Shipping calculator</h3>
-        <form class="form-grid" data-calc onsubmit="return false">
-          <label class="field full"><span>Destination</span><select name="country">${rated.map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('')}</select></label>
-          <label class="field full"><span>Product type</span><select name="category">${categoryOptions('general')}</select></label>
-          <label class="field"><span>Weight (kg)</span><input name="weight" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 0.25"></label>
-          <div class="field"><span>Size L × W × H (cm)</span><div class="dims"><input name="l" type="number" min="0" placeholder="L" aria-label="Length"><input name="w" type="number" min="0" placeholder="W" aria-label="Width"><input name="h" type="number" min="0" placeholder="H" aria-label="Height"></div></div>
-        </form>
-        <div class="calc-out" data-calc-out><small>Shipping fee</small><strong>—</strong><div class="bd">Enter a weight to see the fee.</div></div>
-        <a class="btn btn-primary btn-block" href="#/new" style="margin-top:12px">${ic('plus')}Start a new order</a>
-      </section>
-      <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Rates per kg</h3><span class="tag">USD</span></div>
-        <div class="table-wrap"><table class="tbl stack"><thead><tr><th>Country</th><th class="num">General</th><th class="num">Battery</th><th class="num">Cosmetics</th></tr></thead><tbody>${rows}</tbody></table></div>
-        <p class="note" style="margin:12px 16px 16px">Fee = rate per kg × weight + $4 registration (+ $4 EU tax where shown). Big, light boxes are charged by size (L × W × H ÷ ${divisor()}). For other countries, enter your own fee on the order and we’ll confirm it.</p>
-      </section></div>`;
-  }
-  function bindRates() {
-    const f = $('[data-calc]'), out = $('[data-calc-out]');
-    const upd = () => {
-      const q = quote({ country: f.country.value, category: f.category.value, weightKg: f.weight.value, lengthCm: f.l.value, widthCm: f.w.value, heightCm: f.h.value, divisor: divisor() });
-      out.innerHTML = q ? `<small>Shipping fee to ${esc(countryName(f.country.value))}</small><strong>${money(q.total)}</strong><div class="bd">${q.chargeable} kg${q.usedVolumetric ? ' (size-based)' : ''} × ${money(q.perKg)}/kg = ${money(q.freight)} + ${money(q.registration)} registration${q.euTax ? ` + ${money(q.euTax)} EU tax` : ''}${q.estimated ? '<br>Estimated rate, we’ll confirm it.' : ''}</div>`
-        : '<small>Shipping fee</small><strong>—</strong><div class="bd">Enter a weight to see the fee.</div>';
-    };
-    f.addEventListener('input', upd); f.addEventListener('change', upd);
-  }
+
 
   // ---------- events ----------
   function onClick(e) {
@@ -691,6 +663,7 @@
     if (t.closest('[data-menu]')) { document.body.classList.toggle('menu-open'); return; }
     if (t.closest('[data-close-menu]')) { document.body.classList.remove('menu-open'); return; }
     if (t.closest('[data-logout]')) { logout(); return; }
+    if (t.closest('[data-lang-toggle]')) { window.DLi18n?.setLang(window.DLi18n.lang === 'he' ? 'en' : 'he'); return; }
     if (t.closest('[data-theme-toggle]')) {
       const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
       document.documentElement.dataset.theme = next;

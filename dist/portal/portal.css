@@ -212,3 +212,8 @@
 .imp-hint:hover{border-color:var(--gold)}
 .imp-hint span{flex:1}
 .imp-hint svg{width:20px;height:20px;fill:none;stroke:var(--gold);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* Language switch */
+.lang-btn{font-weight:700;font-size:13px;letter-spacing:.02em}
+.login-card{position:relative}
+.lang-switch{position:absolute;top:16px;inset-inline-end:16px}
