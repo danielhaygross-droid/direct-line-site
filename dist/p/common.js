@@ -1,32 +1,9 @@
 /* Shared helpers for the client portal and admin view. */
 (function () {
-  // Supplier shipping rates (USD per kg) — from the supplier's rate sheet.
-  // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
-  const RATES = {
-    US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
-    UK: { name: 'United Kingdom', general: 10, battery: 12, cosmetic: 15 },
-    CA: { name: 'Canada', general: 15, battery: 17, cosmetic: 20 },
-    AU: { name: 'Australia', general: 15, battery: 17, cosmetic: 20 },
-    DE: { name: 'Germany', general: 10, battery: 12, cosmetic: 15, eu: true },
-    IT: { name: 'Italy', general: 10, battery: 12, cosmetic: 15, eu: true },
-    FR: { name: 'France', general: 13, battery: 15, cosmetic: 17, eu: true },
-    ES: { name: 'Spain', general: 15, battery: 17, cosmetic: 20, eu: true },
-    NL: { name: 'Netherlands', general: 15, battery: 17, cosmetic: 20, eu: true },
-    IL: { name: 'Israel', general: 18, battery: 20, cosmetic: 22 },
-    // Not on the supplier's sheet yet. Estimated from the supplier's own rates:
-    // EU countries use the highest EU level (+ EU tax); non-EU Europe uses the UK level.
-    AT: { name: 'Austria', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
-    BE: { name: 'Belgium', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
-    BG: { name: 'Bulgaria', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
-    CZ: { name: 'Czechia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
-    DK: { name: 'Denmark', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
-    LV: { name: 'Latvia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
-    PL: { name: 'Poland', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
-    PT: { name: 'Portugal', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
-    SK: { name: 'Slovakia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
-    CH: { name: 'Switzerland', general: 10, battery: 12, cosmetic: 15, est: true },
-    NO: { name: 'Norway', general: 10, battery: 12, cosmetic: 15, est: true },
-  };
+  // Supplier shipping rates (USD per kg) are only sent to admins (from /api/portal/admin/overview),
+  // so clients never see how shipping is priced. Admin pages fill this in with setRates().
+  const RATES = {};
+  const setRates = r => { for (const k of Object.keys(RATES)) delete RATES[k]; Object.assign(RATES, r || {}); };
   // Countries clients can pick, in order of how often we ship there. Ones without a
   // supplier rate yet still work: the client enters the price and we confirm shipping.
   const COUNTRIES = [
@@ -123,9 +100,9 @@
     const tag = portal ? 'CLIENT PORTAL' : 'CONTROL';
     wrap.innerHTML = `<section class="login-art"><span class="brand"><span>direct<b>↗</b>line.</span><small>${tag}</small></span>
       <div><h2>Your orders, <em>shipped and tracked</em> in one place.</h2>
-      <ul class="login-points"><li>Add an order and see the shipping fee right away</li><li>Follow every order from pending to delivered</li><li>Message our team about any order</li></ul></div>
+      <ul class="login-points"><li>Send us your orders in a minute</li><li>Follow every order from pending to delivered</li><li>Message our team about any order</li></ul></div>
       <p>Direct Line · fulfilment and shipping</p></section>
-      <div class="login-card"><span class="brand login-brand"><span>direct<b>↗</b>line.</span><small>${tag}</small></span>
+      <div class="login-card">${portal && window.DLi18n ? `<button type="button" class="btn btn-sm lang-switch" data-lang-switch>${window.DLi18n.lang === 'he' ? 'English' : 'עברית'}</button>` : ''}<span class="brand login-brand"><span>direct<b>↗</b>line.</span><small>${tag}</small></span>
       <div><h1>${esc(title)}</h1><p class="sub">${esc(subtitle)}</p></div>
       <form novalidate>
         <label class="field">Username<input name="username" autocomplete="username" required></label>
@@ -147,6 +124,7 @@
       } finally { btn.disabled = false; }
     });
     window.DLEnhancePasswords?.(wrap);
+    $('[data-lang-switch]', wrap)?.addEventListener('click', () => window.DLi18n.setLang(window.DLi18n.lang === 'he' ? 'en' : 'he'));
     form.username.focus();
   }
 
@@ -287,5 +265,5 @@
       <div class="pm-linkrow">${link}</div>`;
   }
 
-  window.DL = { shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  window.DL = { setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();
