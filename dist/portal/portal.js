@@ -93,7 +93,7 @@
   function previewBanner() {
     const bar = document.createElement('div');
     bar.className = 'preview-bar';
-    bar.innerHTML = `<span><b>Preview:</b> you’re seeing ${esc(S.me.name)}’s portal as admin. View only, nothing you click here changes their account.</span><a href="/portal/">Pick another client</a><a href="/en/#client-orders">Back to admin dashboard</a>`;
+    bar.innerHTML = `<span><b>Preview:</b> you’re seeing ${esc(S.me.name)}’s portal as admin. View only, nothing you click here changes their account.</span><a href="/portal/">Pick another client</a><a href="${window.DLi18n?.lang === 'he' ? '/' : '/en/'}#client-orders">Back to admin dashboard</a>`;
     document.body.prepend(bar);
     document.body.classList.add('is-preview');
   }
@@ -555,8 +555,8 @@
         <h3 class="form-sec"><i>1</i>Download your orders from Etsy</h3>
         <ol class="imp-steps">
           <li>In Etsy open <b>Shop Manager → Settings → Options → Download Data</b>.</li>
-          <li>Under <b>Orders</b>, set <b>CSV Type</b> to <b>Order Items</b>, choose the month and year, and click <b>Download CSV</b>.</li>
-          <li><span class="dim">Optional:</span> download the same month again with CSV Type <b>Orders</b>. With both files we also fill in what each customer paid exactly.</li>
+          <li>Under <b data-no-i18n>Orders</b>, set <b>CSV Type</b> to <b>Order Items</b>, choose the month and year, and click <b>Download CSV</b>.</li>
+          <li><span class="dim">Optional:</span> download the same month again with CSV Type <b data-no-i18n>Orders</b>. With both files we also fill in what each customer paid exactly.</li>
         </ol>
         <h3 class="form-sec" style="margin-top:18px"><i>2</i>Upload the file here</h3>
         <label class="imp-drop" data-imp-drop><input type="file" accept=".csv,text/csv" multiple hidden data-imp-file>${ic('upload')}<b>Choose the Etsy file(s)</b><small>or drag them here · .csv</small></label>
