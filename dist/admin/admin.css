@@ -75,3 +75,5 @@ html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 .todo svg{width:16px;height:16px;fill:none;stroke:var(--dim);stroke-width:2}
 .neg{color:var(--red)}
 @media(max-width:1000px){.ovw-grid{grid-template-columns:1fr}}
+.sub-cell .sub-when{display:block;margin-top:3px;font-size:12px}
+.sub-cell .st{text-transform:none}
