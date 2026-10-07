@@ -340,10 +340,10 @@
       <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o)}</section>
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
         <div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div><div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div>
-        <div class="full"><dt>Product</dt><dd>${esc(o.itemTitle) || '—'}</dd></div><div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
+        ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
-        <div><dt>Customer</dt><dd>${esc(o.buyerName) || '—'}</dd></div><div><dt>Destination</dt><dd>${esc(place(o.destination))}</dd></div>
-        <div class="full"><dt>Delivery address</dt><dd>${[o.address1, o.address2, o.city, o.region, o.postalCode, place(o.destination)].filter(Boolean).map(esc).join(', ') || '—'}</dd></div>
+        <div><dt>Customer</dt><dd>${esc(o.buyerName) || '—'}</dd></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
+        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.address1, o.address2, o.city, o.region, o.postalCode, o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd></div>
         ${o.notes ? `<div class="full"><dt>Notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl></section>
       <section class="card card-pad"><h3 class="sec-title">Sale &amp; fulfilment</h3><div class="money-rows">
         <div class="total"><span>Customer paid</span><span>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</span></div>
@@ -377,21 +377,16 @@
           <div class="field full photo-field"><span>Product photos / screenshots <small data-pick-count></small></span>
             <div class="pm-photos pick-zone" data-picks></div>
             <p class="pick-hint">Add a screenshot of the Etsy order or listing, or a photo of the product (at least 1, up to ${MAX_PHOTOS}). On a computer you can also drag pictures here or paste a screenshot with Ctrl+V.</p></div>
-          <label class="field full"><span>Product link</span><input name="etsyUrl" type="url" required maxlength="500" inputmode="url" placeholder="https://www.etsy.com/listing/..." value="${esc(ed?.etsyUrl)}"></label>
-          <label class="field full"><span>Product title</span><input name="itemTitle" required maxlength="300" placeholder="Copy the item title from Etsy" value="${esc(ed?.itemTitle)}"></label>
+          <div class="field full"><span>Product links <small>one per product</small></span><div class="link-list" data-links></div>
+            <button type="button" class="btn btn-sm link-add" data-link-add>+ Add another product link</button></div>
           <label class="field"><span>SKU or listing ID <small>optional</small></span><input name="sku" maxlength="120" placeholder="e.g. LIGHTER-01" value="${esc(ed?.sku)}"></label>
           <label class="field"><span>Quantity</span><input name="quantity" required type="number" min="1" max="999" step="1" inputmode="numeric" value="${ed?.quantity || 1}"></label>
           <label class="field full"><span>Variation / personalization <small>optional</small></span><input name="variant" maxlength="500" placeholder="Color, size, engraving or personalization" value="${esc(ed?.variant)}"></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
-          <label class="field"><span>Customer / recipient name</span><input name="buyerName" required maxlength="160" autocomplete="name" value="${esc(ed?.buyerName)}"></label>
-          <label class="field"><span>Phone <small>optional</small></span><input name="buyerPhone" maxlength="80" autocomplete="tel" value="${esc(ed?.buyerPhone)}"></label>
-          <label class="field full"><span>Address line 1</span><input name="address1" required maxlength="200" autocomplete="address-line1" value="${esc(ed?.address1)}"></label>
-          <label class="field full"><span>Address line 2 <small>optional</small></span><input name="address2" maxlength="200" autocomplete="address-line2" value="${esc(ed?.address2)}"></label>
-          <label class="field"><span>City</span><input name="city" required maxlength="100" autocomplete="address-level2" value="${esc(ed?.city)}"></label>
-          <label class="field"><span>State / province <small>if applicable</small></span><input name="region" maxlength="100" autocomplete="address-level1" value="${esc(ed?.region)}"></label>
-          <label class="field"><span>Postal code</span><input name="postalCode" required maxlength="40" autocomplete="postal-code" value="${esc(ed?.postalCode)}"></label>
-          <label class="field"><span>Country</span><select name="destination" autocomplete="country"></select></label>
+          <label class="field full"><span>Customer / recipient name</span><input name="buyerName" required maxlength="160" autocomplete="name" value="${esc(ed?.buyerName)}"></label>
+          <label class="field full"><span>Full address &amp; phone <small>street, city, state, postal code, phone</small></span><textarea name="address1" required maxlength="1000" rows="4" placeholder="Paste the whole address from Etsy, plus the phone number if there is one">${esc(ed ? [ed.address1, ed.address2, ed.city, ed.region, ed.postalCode, ed.buyerPhone].filter(Boolean).join('\n') : '')}</textarea></label>
+          <label class="field full"><span>Country</span><select name="destination" autocomplete="country"></select></label>
           <label class="field full" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="country-name"></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>4</i>Notes</h3>
@@ -451,6 +446,17 @@
     zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
     zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag'); if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); });
     renderPicks();
+    // ----- product links: one box per product, add/remove -----
+    const linkBox = $('[data-links]', form);
+    const linkRow = (v = '') => `<div class="link-row"><input data-link type="url" inputmode="url" maxlength="300" placeholder="https://www.etsy.com/listing/..." value="${esc(v)}"><button type="button" class="btn btn-sm btn-ghost" data-link-remove aria-label="Remove link">×</button></div>`;
+    const startLinks = (ed?.productLinks?.length ? ed.productLinks : String(ed?.etsyUrl || '').split(/\s+/).filter(Boolean));
+    linkBox.innerHTML = (startLinks.length ? startLinks : ['']).map(linkRow).join('');
+    const syncLinks = () => { const rows = $$('.link-row', linkBox); rows.forEach(r => { r.querySelector('[data-link-remove]').hidden = rows.length < 2; }); $('[data-link-add]', form).hidden = rows.length >= 10; };
+    syncLinks();
+    form.addEventListener('click', e => {
+      if (e.target.closest('[data-link-add]')) { linkBox.insertAdjacentHTML('beforeend', linkRow()); syncLinks(); $$('[data-link]', linkBox).pop().focus(); }
+      const rm = e.target.closest('[data-link-remove]'); if (rm) { rm.closest('.link-row').remove(); syncLinks(); }
+    });
     const need = (field, message) => {
       if (String(field.value || '').trim()) return true;
       setMsg(message, 'err'); field.focus(); return false;
@@ -467,19 +473,18 @@
       if (!need(form.orderDate, 'Please choose the order date.')) return;
       if (!need(form.sellingPrice, 'Please enter what the customer paid.')) return;
       if (!picks.length) { setMsg('Please add at least one photo or screenshot of the product.', 'err'); zone.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
-      if (!need(form.etsyUrl, 'Please add the product link (the Etsy listing).')) return;
-      if (!/^https?:\/\/[^\s]+\.[^\s]+/i.test(form.etsyUrl.value.trim())) { setMsg('Please paste the full product link, starting with https://', 'err'); form.etsyUrl.focus(); return; }
-      if (!need(form.itemTitle, 'Please enter the product title.')) return;
+      const linkInputs = $$('[data-link]', form), links = linkInputs.map(i => i.value.trim()).filter(Boolean);
+      if (!links.length) { setMsg('Please add the product link (the Etsy listing).', 'err'); linkInputs[0]?.focus(); return; }
+      const badLink = linkInputs.find(i => i.value.trim() && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(i.value.trim()));
+      if (badLink) { setMsg('Please paste each product link in full, starting with https://', 'err'); badLink.focus(); return; }
       if (!need(form.buyerName, 'Please enter the customer or recipient name.')) return;
       if (!need(form.address1, 'Please enter the delivery address.')) return;
-      if (!need(form.city, 'Please enter the city.')) return;
-      if (!need(form.postalCode, 'Please enter the postal code.')) return;
       if (!dest.get()) { setMsg(dest.isOther() ? 'Please type the country name.' : 'Please choose the destination country.', 'err'); (dest.isOther() ? form.otherCountry : form.destination).focus(); return; }
       const body = {
         orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value,
-        itemTitle: form.itemTitle.value, sku: form.sku.value, quantity: form.quantity.value, variant: form.variant.value, etsyUrl: form.etsyUrl.value,
-        buyerName: form.buyerName.value, buyerPhone: form.buyerPhone.value, address1: form.address1.value, address2: form.address2.value,
-        city: form.city.value, region: form.region.value, postalCode: form.postalCode.value, destination: dest.get(), notes: form.notes.value,
+        sku: form.sku.value, quantity: form.quantity.value, variant: form.variant.value, etsyUrl: links.join('\n'),
+        buyerName: form.buyerName.value, buyerPhone: '', address1: form.address1.value, address2: '',
+        city: '', region: '', postalCode: '', destination: dest.get(), notes: form.notes.value,
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');
       const fresh = picks.filter(p => !p.id), photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
