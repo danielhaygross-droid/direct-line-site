@@ -103,6 +103,12 @@ export const SCHEMA = [
   // Archived clients (e.g. test accounts) are hidden from lists, totals and notifications and can't sign in.
   // Nothing is deleted: an admin can restore them.
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE',
+  // Client subscription (first month free, then a monthly price). Dates are YYYY-MM-DD.
+  // Tracked by hand for now: nothing is charged or blocked automatically.
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_start TEXT',
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_end TEXT',
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS sub_status TEXT',
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS sub_last_payment TEXT',
   // Screenshots / photos of the product that was ordered. The client attaches them with the order;
   // admins can add more. Stored as base64 (the browser shrinks them first), with a small thumbnail.
   `CREATE TABLE IF NOT EXISTS order_photos (
@@ -132,7 +138,26 @@ export const SCHEMA = [
      updated_at INTEGER NOT NULL)`,
 ];
 
-export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000' };
+export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000', subscription_price: '29' };
+// ---------- subscription (first month free, then monthly) ----------
+export const SUB_STATUSES = ['trial', 'active', 'overdue', 'cancelled'];
+export const isoDate = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v ? v : null);
+// Today in Israel (the business runs on Israeli dates).
+export const todayIso = (d = new Date()) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+// Same day next month (Jan 31 -> Feb 28/29).
+export function addMonth(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m, Math.min(d, last))).toISOString().slice(0, 10);
+}
+export function subscriptionOut(u, settings, today = todayIso()) {
+  const price = Number(settings.subscription_price ?? DEFAULT_SETTINGS.subscription_price);
+  if (!u.trial_start && !u.sub_status) return { status: null, trialStart: null, trialEnd: null, lastPayment: u.sub_last_payment || null, price, currency: 'ILS' };
+  const trialEnd = u.trial_end || null;
+  const daysLeft = trialEnd ? Math.round((Date.parse(trialEnd + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000) : null;
+  return { status: u.sub_status || 'trial', trialStart: u.trial_start || null, trialEnd, lastPayment: u.sub_last_payment || null, price, currency: 'ILS',
+    trialDaysLeft: daysLeft, trialEnded: daysLeft !== null && daysLeft < 0 };
+}
 const ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -363,9 +388,9 @@ export async function handlePortal(request, url, ctx) {
   if (path === '/me' && method === 'GET') {
     const settings = await getSettings(DB);
     if (who.admin) return json({ ok: true, role: 'admin', name: 'Admin', settings });
-    const u = await DB.prepare('SELECT id, username, display_name, active FROM users WHERE id = ?').bind(who.clientId).first();
+    const u = await DB.prepare('SELECT id, username, display_name, active, trial_start, trial_end, sub_status, sub_last_payment FROM users WHERE id = ?').bind(who.clientId).first();
     if (!u || !u.active) return json({ ok: false, error: 'Account disabled' }, 403);
-    return json({ ok: true, role: 'client', preview: !!who.preview, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor }, summary: (({ commission, supplierShare, ourShare, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
+    return json({ ok: true, role: 'client', preview: !!who.preview, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor }, subscription: subscriptionOut(u, settings), summary: (({ commission, supplierShare, ourShare, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
   }
 
   // ----- client routes -----
@@ -528,11 +553,11 @@ export async function handlePortal(request, url, ctx) {
     const pendingSync = retryPendingGoogleSheetOrders(DB, env).catch(error => console.error('Google Sheets pending-order retry failed', error));
     if (waitUntil) waitUntil(pendingSync);
     const settings = await getSettings(DB);
-    const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, active, archived, created_at FROM users ORDER BY role, display_name').all()).results || [];
+    const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, active, archived, created_at, trial_start, trial_end, sub_status, sub_last_payment FROM users ORDER BY role, display_name').all()).results || [];
     const clients = [];
     const archived = [];
     for (const u of users.filter(u => u.role === 'client' && u.archived)) archived.push({ id: u.id, username: u.username, name: u.display_name, orders: Number((await DB.prepare('SELECT COUNT(*) AS n FROM client_orders WHERE client_id = ?').bind(u.id).first()).n) });
-    for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, commissionPerOrder: u.commission_per_order, ...(await clientSummary(DB, u.id, settings)) });
+    for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, commissionPerOrder: u.commission_per_order, subscription: subscriptionOut(u, settings), ...(await clientSummary(DB, u.id, settings)) });
     const keys = ['billed', 'paid', 'outstanding', 'commission', 'supplierShare', 'ourShare'];
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
@@ -606,8 +631,15 @@ export async function handlePortal(request, url, ctx) {
     if (exists) return json({ ok: false, error: 'Username already taken' }, 409);
     const cpo = money(body.commissionPerOrder);
     if (!isMoney(cpo)) return json({ ok: false, error: 'Invalid commission' }, 400);
-    const row = await DB.prepare('INSERT INTO users (username, password_hash, role, display_name, commission_per_order, active, created_at) VALUES (?,?,?,?,?,TRUE,?) RETURNING id')
-      .bind(username, await hashPassword(password), userRole, text(body.name, 120) || username, userRole === 'client' ? cpo : null, now()).first();
+    // New clients start their free month today (an admin can change the dates later).
+    let trialStart = null, trialEnd = null, subStatus = null;
+    if (userRole === 'client') {
+      trialStart = body.trialStart ? isoDate(body.trialStart) : todayIso();
+      if (!trialStart) return json({ ok: false, error: 'Trial start: use a valid date' }, 400);
+      trialEnd = addMonth(trialStart); subStatus = 'trial';
+    }
+    const row = await DB.prepare('INSERT INTO users (username, password_hash, role, display_name, commission_per_order, active, created_at, trial_start, trial_end, sub_status) VALUES (?,?,?,?,?,TRUE,?,?,?,?) RETURNING id')
+      .bind(username, await hashPassword(password), userRole, text(body.name, 120) || username, userRole === 'client' ? cpo : null, now(), trialStart, trialEnd, subStatus).first();
     if (userRole === 'client') {
       const sheetSync = syncClientToGoogleSheet(DB, env, row.id).catch(error => console.error('Google Sheets client sync failed', error));
       if (waitUntil) waitUntil(sheetSync); else await sheetSync;
@@ -627,7 +659,21 @@ export async function handlePortal(request, url, ctx) {
     let hash = u.password_hash;
     if (body.password) { if (String(body.password).length < 8) return json({ ok: false, error: 'Password must be at least 8 characters' }, 400); hash = await hashPassword(String(body.password)); }
     const archived = body.archived !== undefined && u.role === 'client' ? Boolean(body.archived) : u.archived;
-    await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=?, archived=? WHERE id = ?').bind(name, active, cpo, hash, archived, id).run();
+    // Subscription fields (clients only). '' clears a date.
+    let trialStart = u.trial_start, trialEnd = u.trial_end, subStatus = u.sub_status, lastPay = u.sub_last_payment;
+    if (u.role === 'client') {
+      const dateIn = (v, label) => { if (v === '' || v === null) return null; const d = isoDate(String(v)); if (!d) throw new Error(label + ': use a valid date'); return d; };
+      try {
+        if (body.trialStart !== undefined) trialStart = dateIn(body.trialStart, 'Trial start');
+        if (body.trialEnd !== undefined) trialEnd = dateIn(body.trialEnd, 'Trial end');
+        else if (body.trialStart !== undefined && trialStart && !trialEnd) trialEnd = addMonth(trialStart);
+        if (body.subLastPayment !== undefined) lastPay = dateIn(body.subLastPayment, 'Last payment');
+      } catch (e) { return json({ ok: false, error: e.message }, 400); }
+      if (body.subStatus !== undefined) { if (!SUB_STATUSES.includes(body.subStatus)) return json({ ok: false, error: 'Unknown subscription status' }, 400); subStatus = body.subStatus; }
+      if (trialStart && trialEnd && trialEnd < trialStart) return json({ ok: false, error: 'Trial end must be after the trial start' }, 400);
+      if (!subStatus && trialStart) subStatus = 'trial';
+    }
+    await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=?, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=? WHERE id = ?').bind(name, active, cpo, hash, archived, trialStart, trialEnd, subStatus, lastPay, id).run();
     if (u.role === 'client') {
       const sheetSync = syncClientToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets client update failed', error));
       if (waitUntil) waitUntil(sheetSync); else await sheetSync;
@@ -643,6 +689,7 @@ export async function handlePortal(request, url, ctx) {
     const sup = Number(updates.supplier_share_per_order ?? (await getSettings(DB)).supplier_share_per_order);
     if (sup > fee) return json({ ok: false, error: "The supplier's share can't be more than the fee per order" }, 400);
     if (body.monthly_order_goal !== undefined) { const v = Number(body.monthly_order_goal); if (!(Number.isInteger(v) && v >= 0 && v <= 1e6)) return json({ ok: false, error: 'Goal must be a whole number' }, 400); updates.monthly_order_goal = String(v); }
+    if (body.subscription_price !== undefined) { const v = money(body.subscription_price); if (v === null || !isMoney(v) || v > 100000) return json({ ok: false, error: 'Invalid subscription price' }, 400); updates.subscription_price = String(v); }
     if (body.volumetric_divisor !== undefined) { const v = Number(body.volumetric_divisor); if (!(v >= 1000 && v <= 10000)) return json({ ok: false, error: 'Divisor must be 1000-10000' }, 400); updates.volumetric_divisor = String(v); }
     for (const [k, v] of Object.entries(updates)) await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k, v).run();
     return json({ ok: true, settings: await getSettings(DB) });
