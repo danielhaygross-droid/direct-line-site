@@ -120,11 +120,15 @@
     const pending = os.filter(o => o.status === 'pending'), follow = os.filter(o => o.unreadMessages > 0);
     const noTrack = os.filter(o => o.status === 'processing' && !o.trackingNumber), noCost = os.filter(o => !['cancelled'].includes(o.status) && o.productCost == null && o.shippingFee == null);
     const owing = cl.filter(c => c.outstanding > 0);
+    const trialSoon = cl.filter(c => c.subscription?.status === 'trial' && c.subscription.trialDaysLeft !== null && c.subscription.trialDaysLeft >= 0 && c.subscription.trialDaysLeft <= 7);
+    const subDue = cl.filter(c => (c.subscription?.status === 'trial' && c.subscription.trialEnded) || c.subscription?.status === 'overdue');
     const todo = [
       [pending.length, `order${pending.length === 1 ? '' : 's'} waiting to be processed`, 'data-go-filter="pending"', 'var(--orange)'],
       [follow.length, `order${follow.length === 1 ? '' : 's'} with unread client messages`, 'data-go-filter="followups"', 'var(--red)'],
       [noCost.length, `order${noCost.length === 1 ? '' : 's'} still need product + shipping cost`, 'data-go-filter="all"', 'var(--gold)'],
       [noTrack.length, `order${noTrack.length === 1 ? '' : 's'} in processing without tracking`, 'data-go-filter="processing"', 'var(--blue)'],
+      [trialSoon.length, `client${trialSoon.length === 1 ? '' : 's'} with the free month ending in the next 7 days`, 'data-go-tab="clients"', 'var(--gold)'],
+      [subDue.length, `client${subDue.length === 1 ? '' : 's'} with the free month over or the subscription overdue`, 'data-go-tab="clients"', 'var(--red)'],
       [owing.length, `client${owing.length === 1 ? '' : 's'} with a balance to collect (${money(owing.reduce((t, c) => t + c.outstanding, 0))})`, 'data-go-tab="clients"', 'var(--red)'],
     ].filter(x => x[0] > 0);
     const monthStart = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).getTime() / 1000; })();
@@ -163,6 +167,20 @@
         : empty('No client orders yet', 'They show up here as soon as a client adds one in their portal. You can also add one for a client.', '<button type="button" class="btn btn-primary" data-new-order>New order</button>');
   }
 
+  // ---------- subscription (first month free, then monthly) ----------
+  const fmtDay = iso => (iso ? new Date(iso + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—');
+  const shekels = n => (Number(n) % 1 ? Number(n).toFixed(2) : String(Number(n))) + ' ₪';
+  function subPill(sub) {
+    if (!sub || !sub.status) return '<span class="dim" style="font-size:13px">Not set</span>';
+    if (sub.status === 'trial') {
+      if (sub.trialEnded) return `<span class="st st-cancelled">Trial ended</span><small class="dim sub-when">${esc(fmtDay(sub.trialEnd))}</small>`;
+      return `<span class="st st-pending">Free month</span><small class="dim sub-when">until ${esc(fmtDay(sub.trialEnd))}</small>`;
+    }
+    if (sub.status === 'active') return `<span class="st st-delivered">Paying</span>${sub.lastPayment ? `<small class="dim sub-when">paid ${esc(fmtDay(sub.lastPayment))}</small>` : ''}`;
+    if (sub.status === 'overdue') return '<span class="st st-cancelled">Overdue</span>';
+    return '<span class="st" style="--tone:var(--dim)">Cancelled</span>';
+  }
+
   // ---------- clients tab ----------
   function archivedHTML() {
     const a = S.ov.archived || [];
@@ -172,12 +190,13 @@
   function renderClients() {
     const q = S.cq.toLowerCase(), def = Number(S.ov.settings.commission_per_order);
     const list = S.ov.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q));
-    $('[data-list]').innerHTML = list.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Orders</th><th class="num">Billed</th><th class="num">Paid</th><th class="num">Outstanding</th><th class="num">Our earnings</th><th class="num">Fee / order</th><th>Status</th></tr></thead><tbody>
+    $('[data-list]').innerHTML = list.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Orders</th><th class="num">Billed</th><th class="num">Paid</th><th class="num">Outstanding</th><th class="num">Our earnings</th><th class="num">Fee / order</th><th>Subscription</th><th>Status</th></tr></thead><tbody>
       ${list.map(c => `<tr class="click" data-open-client="${c.id}" tabindex="0">
         <td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small></div></div></td>
         <td data-label="Orders" class="num">${c.orders}</td><td data-label="Billed" class="num">${money(c.billed)}</td><td data-label="Paid" class="num">${money(c.paid)}</td>
         <td data-label="Outstanding" class="num ${c.outstanding > 0 ? 'neg' : ''}"><b>${money(c.outstanding)}</b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
         <td data-label="Fee / order" class="num">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="dim" style="font-size:12px">default</span>' : ''}</td>
+        <td data-label="Subscription" class="sub-cell">${subPill(c.subscription)}</td>
         <td data-label="Status">${c.active ? '<span class="st st-delivered">Active</span>' : '<span class="st st-cancelled">Disabled</span>'}</td></tr>`).join('')}
       </tbody></table></div>${archivedHTML()}` : empty(S.ov.clients.length ? 'No clients match' : 'No clients yet', S.ov.clients.length ? 'Try another search.' : 'Add a client account, then share the username and password with them.', '<button type="button" class="btn btn-primary" data-add-account="client">Add client</button>') + (list.length ? '' : archivedHTML());
   }
@@ -195,6 +214,7 @@
           <label class="field"><span>Fee per order (USD)</span><span class="money"><input name="commission_per_order" type="number" min="0" step="0.01" value="${esc(s.commission_per_order)}"></span></label>
           <label class="field"><span>Supplier’s share (USD)</span><span class="money"><input name="supplier_share_per_order" type="number" min="0" step="0.01" value="${esc(s.supplier_share_per_order)}"></span></label>
           <div class="full split" data-split></div>
+          <label class="field"><span>Client subscription <small>₪ / month, after the free month</small></span><input name="subscription_price" type="number" min="0" step="0.01" value="${esc(s.subscription_price ?? 29)}"></label>
           <label class="field"><span>Size-to-weight divisor <small>cm³ per kg</small></span><input name="volumetric_divisor" type="number" min="1000" max="10000" step="1" value="${esc(s.volumetric_divisor)}"></label>
           <div class="field" style="align-content:end"><button class="btn btn-primary" type="submit">Save settings</button></div>
           <p class="form-msg full" data-settings-msg></p>
@@ -226,7 +246,7 @@
     f.addEventListener('submit', async e => {
       e.preventDefault();
       const m = $('[data-settings-msg]');
-      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_share_per_order: f.supplier_share_per_order.value, volumetric_divisor: f.volumetric_divisor.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg full ok'; await loadAll(); }
+      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_share_per_order: f.supplier_share_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg full ok'; await loadAll(); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
     });
     const c = $('[data-calc]'), out = $('[data-calc-out]');
@@ -288,6 +308,24 @@
     d.foot.innerHTML = `<button type="button" class="btn" data-edit-order="${o.id}">${ic('edit')}Edit order</button><button type="button" class="btn btn-ghost" data-open-client="${o.clientId}">Open client</button>`;
   }
 
+  function subscriptionHTML(c) {
+    const sub = c.subscription || {}, price = sub.price ?? Number(S.ov.settings.subscription_price ?? 29);
+    const opt = (v, l) => `<option value="${v}"${(sub.status || 'trial') === v ? ' selected' : ''}>${l}</option>`;
+    return `<section class="card card-pad"><h3 class="sec-title">Subscription</h3>
+      <p class="muted" style="margin:0 0 12px;font-size:14px">First month free, then ${esc(shekels(price))} / month. The client sees this in their portal. Nothing is charged or blocked automatically.</p>
+      <form class="form-grid" data-sub-form="${c.id}" novalidate>
+        <label class="field"><span>Status</span><select name="subStatus">${opt('trial', 'Free month (trial)')}${opt('active', 'Active (paying)')}${opt('overdue', 'Overdue')}${opt('cancelled', 'Cancelled')}</select></label>
+        <label class="field"><span>Last payment <small>optional</small></span><input name="subLastPayment" type="date" value="${esc(sub.lastPayment || '')}"></label>
+        <label class="field"><span>Trial start</span><input name="trialStart" type="date" value="${esc(sub.trialStart || '')}"></label>
+        <label class="field"><span>Trial end <small>1 month after start</small></span><input name="trialEnd" type="date" value="${esc(sub.trialEnd || '')}"></label>
+        <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Save subscription</button><p class="form-msg" data-sub-msg></p></div></form></section>`;
+  }
+  document.addEventListener('change', e => {
+    const el = e.target; if (!el.matches?.('[data-sub-form] [name=trialStart]') || !el.value) return;
+    el.form.trialEnd.value = addMonthIso(el.value);
+  });
+  const addMonthIso = iso => { const [y, m, d] = iso.split('-').map(Number); const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return new Date(Date.UTC(y, m, Math.min(d, last))).toISOString().slice(0, 10); };
+
   // ---------- side panel: one client ----------
   let payments = [];
   async function openClient(id, tab = 'orders') {
@@ -326,6 +364,7 @@
             <label class="field full"><span>New password <small>leave empty to keep it</small></span><input name="password" type="password" autocomplete="new-password"></label>
             <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Save account</button><p class="form-msg" data-account-msg></p></div></form>
             <p class="note" style="margin-top:12px">A new fee only applies to new orders. Existing orders keep the fee they were created with.</p></section>
+          ${subscriptionHTML(c)}
           <section class="card card-pad"><h3 class="sec-title">Archive</h3><p class="muted" style="margin:0 0 12px;font-size:14px">For test accounts or clients you no longer work with. It hides this client, their orders and payments from every list and total, and stops them signing in. Nothing is deleted, and you can restore them any time from the Clients tab.</p><button type="button" class="btn btn-danger" data-archive="${c.id}">Archive client</button></section>`;
     d.body.innerHTML = `
       <section class="card card-pad"><dl class="kv" style="grid-template-columns:repeat(3,minmax(0,1fr))">
@@ -401,19 +440,28 @@
     S.drawer = { kind: 'account' };
     d.onClose = () => { S.drawer = null; };
     d.open('a');
-    d.head.innerHTML = `<h2>${role === 'admin' ? 'Add an admin' : 'Add a client'}</h2><p>Share the username and password with them privately.</p>`;
+    d.head.innerHTML = `<h2 data-acc-title>${role === 'admin' ? 'Add an admin' : 'Add a client'}</h2><p>Share the username and password with them privately.</p>`;
     d.body.innerHTML = `<form class="form-grid" id="user-form" novalidate>
       <label class="field full"><span>Account type</span><select name="role"><option value="client"${role === 'client' ? ' selected' : ''}>Client (their own portal)</option><option value="admin"${role === 'admin' ? ' selected' : ''}>Admin (full access)</option></select></label>
-      <label class="field full"><span>Name</span><input name="name" maxlength="120" placeholder="Client or store name"></label>
+      <label class="field full"><span>Name</span><input name="name" maxlength="120"></label>
       <label class="field"><span>Username</span><input name="username" maxlength="60" autocomplete="off" placeholder="letters, numbers, . _ - @"></label>
       <label class="field"><span>Password <small>8+ characters</small></span><input name="password" type="password" autocomplete="new-password"></label>
       <label class="field full" data-cpo><span>Fee per order <small>empty = default (${money(S.ov.settings.commission_per_order)})</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01"></span></label>
       <p class="form-msg full" data-user-msg></p></form>
-      <p class="note">They sign in at <b>${esc(location.origin)}/portal/</b></p>`;
+      <p class="note" data-signin-note></p>`;
     window.DLEnhancePasswords?.(d.body);
     d.foot.innerHTML = '<button type="submit" form="user-form" class="btn btn-primary">Create account</button><button type="button" class="btn btn-ghost" data-close-drawer>Cancel</button>';
     const f = $('#user-form');
-    const sync = () => { $('[data-cpo]').hidden = f.role.value === 'admin'; };
+    const sync = () => {
+      const admin = f.role.value === 'admin';
+      $('[data-cpo]').hidden = admin;
+      $('[data-acc-title]').textContent = admin ? 'Add an admin' : 'Add a client';
+      f.name.placeholder = admin ? 'Team member’s name' : 'Client or store name';
+      // Admins sign in on the main dashboard; clients on their portal. (The admin app runs inside the dashboard.)
+      $('[data-signin-note]').innerHTML = admin
+        ? `They sign in at <b>${esc(location.origin)}/</b> and get full access to the dashboard.`
+        : `They sign in at <b>${esc(location.origin)}/portal/</b>. Their free month starts today (${esc(fmtDay(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' })))}).`;
+    };
     f.role.addEventListener('change', sync); sync();
     f.addEventListener('submit', async e => {
       e.preventDefault();
@@ -542,6 +590,15 @@
         await api('/admin/payments', { method: 'POST', body: { clientId: Number(pf.dataset.payForm), amount: pf.amount.value, method: pf.method.value, note: pf.note.value, paidAt: pf.paidAt.value } });
         document.activeElement?.blur(); await loadAll(); renderList(); await loadPayments(Number(pf.dataset.payForm)); toast('Payment recorded.');
       } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+      return;
+    }
+    const sf = e.target.closest('[data-sub-form]');
+    if (sf) {
+      e.preventDefault();
+      const m = $('[data-sub-msg]');
+      const body = { subStatus: sf.subStatus.value, trialStart: sf.trialStart.value, trialEnd: sf.trialEnd.value, subLastPayment: sf.subLastPayment.value };
+      try { await api('/admin/users/' + sf.dataset.subForm, { method: 'POST', body }); document.activeElement?.blur(); await loadAll(); renderList(); fillClient(clientOf(sf.dataset.subForm)); toast('Subscription saved.'); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
       return;
     }
     const af = e.target.closest('[data-account-form]');
