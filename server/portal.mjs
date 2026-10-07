@@ -140,6 +140,34 @@ export const SCHEMA = [
      updated_at INTEGER NOT NULL)`,
 ];
 
+// Supplier shipping rates (USD per kg) — from the supplier's rate sheet. Admin-only: sent with
+// /admin/overview so the admin pages can work out shipping. Clients never receive them.
+// Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
+export const SHIPPING_RATES = {
+    US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
+    UK: { name: 'United Kingdom', general: 10, battery: 12, cosmetic: 15 },
+    CA: { name: 'Canada', general: 15, battery: 17, cosmetic: 20 },
+    AU: { name: 'Australia', general: 15, battery: 17, cosmetic: 20 },
+    DE: { name: 'Germany', general: 10, battery: 12, cosmetic: 15, eu: true },
+    IT: { name: 'Italy', general: 10, battery: 12, cosmetic: 15, eu: true },
+    FR: { name: 'France', general: 13, battery: 15, cosmetic: 17, eu: true },
+    ES: { name: 'Spain', general: 15, battery: 17, cosmetic: 20, eu: true },
+    NL: { name: 'Netherlands', general: 15, battery: 17, cosmetic: 20, eu: true },
+    IL: { name: 'Israel', general: 18, battery: 20, cosmetic: 22 },
+    // Not on the supplier's sheet yet. Estimated from the supplier's own rates:
+    // EU countries use the highest EU level (+ EU tax); non-EU Europe uses the UK level.
+    AT: { name: 'Austria', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    BE: { name: 'Belgium', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    BG: { name: 'Bulgaria', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    CZ: { name: 'Czechia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    DK: { name: 'Denmark', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    LV: { name: 'Latvia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    PL: { name: 'Poland', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    PT: { name: 'Portugal', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    SK: { name: 'Slovakia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    CH: { name: 'Switzerland', general: 10, battery: 12, cosmetic: 15, est: true },
+    NO: { name: 'Norway', general: 10, battery: 12, cosmetic: 15, est: true },
+  };
 export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000', subscription_price: '29' };
 // ---------- subscription (first month free, then monthly) ----------
 export const SUB_STATUSES = ['trial', 'active', 'overdue', 'cancelled'];
@@ -603,7 +631,7 @@ export async function handlePortal(request, url, ctx) {
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
-    return json({ ok: true, settings, totals, clients, admins, archived, googleSheets: { configured: googleSheetsConfigured(env) } });
+    return json({ ok: true, settings, totals, clients, admins, archived, rates: SHIPPING_RATES, googleSheets: { configured: googleSheetsConfigured(env) } });
   }
   // ----- Daniel's stores (dashboard store list) -----
   if (path === '/admin/stores' && method === 'GET') {
