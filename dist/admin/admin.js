@@ -55,7 +55,7 @@
 
   async function loadAll() {
     const [ov, o] = await Promise.all([api('/admin/overview'), api('/admin/orders')]);
-    S.ov = ov; S.orders = o.orders;
+    S.ov = ov; S.orders = o.orders; window.DL.setRates(ov.rates);
     if (S.filter === null) S.filter = S.orders.some(x => x.unreadMessages) ? 'followups' : S.orders.some(x => x.status === 'pending') ? 'pending' : 'all';
     renderKpis();
     tell({ type: 'dl-followups', unread: unreadTotal() });
