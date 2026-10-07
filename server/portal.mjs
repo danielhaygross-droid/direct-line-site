@@ -105,6 +105,8 @@ export const SCHEMA = [
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE',
   // Client subscription (first month free, then a monthly price). Dates are YYYY-MM-DD.
   // Tracked by hand for now: nothing is charged or blocked automatically.
+  // Where an order came from: '' = typed in the portal, 'etsy-csv' = imported from an Etsy orders file.
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT ''",
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_start TEXT',
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_end TEXT',
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS sub_status TEXT',
@@ -138,6 +140,34 @@ export const SCHEMA = [
      updated_at INTEGER NOT NULL)`,
 ];
 
+// Supplier shipping rates (USD per kg) — from the supplier's rate sheet. Admin-only: sent with
+// /admin/overview so the admin pages can work out shipping. Clients never receive them.
+// Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
+export const SHIPPING_RATES = {
+    US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
+    UK: { name: 'United Kingdom', general: 10, battery: 12, cosmetic: 15 },
+    CA: { name: 'Canada', general: 15, battery: 17, cosmetic: 20 },
+    AU: { name: 'Australia', general: 15, battery: 17, cosmetic: 20 },
+    DE: { name: 'Germany', general: 10, battery: 12, cosmetic: 15, eu: true },
+    IT: { name: 'Italy', general: 10, battery: 12, cosmetic: 15, eu: true },
+    FR: { name: 'France', general: 13, battery: 15, cosmetic: 17, eu: true },
+    ES: { name: 'Spain', general: 15, battery: 17, cosmetic: 20, eu: true },
+    NL: { name: 'Netherlands', general: 15, battery: 17, cosmetic: 20, eu: true },
+    IL: { name: 'Israel', general: 18, battery: 20, cosmetic: 22 },
+    // Not on the supplier's sheet yet. Estimated from the supplier's own rates:
+    // EU countries use the highest EU level (+ EU tax); non-EU Europe uses the UK level.
+    AT: { name: 'Austria', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    BE: { name: 'Belgium', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    BG: { name: 'Bulgaria', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    CZ: { name: 'Czechia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    DK: { name: 'Denmark', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    LV: { name: 'Latvia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    PL: { name: 'Poland', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    PT: { name: 'Portugal', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    SK: { name: 'Slovakia', general: 15, battery: 17, cosmetic: 20, eu: true, est: true },
+    CH: { name: 'Switzerland', general: 10, battery: 12, cosmetic: 15, est: true },
+    NO: { name: 'Norway', general: 10, battery: 12, cosmetic: 15, est: true },
+  };
 export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000', subscription_price: '29' };
 // ---------- subscription (first month free, then monthly) ----------
 export const SUB_STATUSES = ['trial', 'active', 'overdue', 'cancelled'];
@@ -226,7 +256,7 @@ function orderOut(r) {
     itemTitle: r.item_title || '', sku: r.sku || '', variant: r.variant || '', quantity: Number(r.quantity || 1), etsyUrl: r.etsy_url || '', productLinks: String(r.etsy_url || '').split(/\s+/).filter(Boolean),
     commission: Number(r.commission || 0), supplierShare: round2(r.supplier_share),
     ourShare: round2(Math.max(0, Number(r.commission || 0) - Number(r.supplier_share || 0))),
-    notes: r.notes, status: r.status,
+    notes: r.notes, status: r.status, source: r.source || '',
     sheetSyncStatus: r.sheet_sync_status || 'waiting',
     sheetSyncedAt: r.sheet_synced_at == null ? null : Number(r.sheet_synced_at),
     sheetSyncError: r.sheet_sync_error || '',
@@ -342,6 +372,23 @@ function orderFields(body) {
   return f;
 }
 
+// Saves one new order (+ photos), logs it and syncs it to the Google Sheet.
+async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source, settings) {
+  const clientId = client.id;
+  const commission = client.commission_per_order ?? Number(settings.commission_per_order);
+  const supplierShare = Math.min(commission, Number(settings.supplier_share_per_order) || 0);
+  const t = now();
+  const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at, order_date, currency, buyer_name, buyer_phone, address_line_1, address_line_2, city, region, postal_code, item_title, sku, variant, quantity, etsy_url, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
+    .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t, f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, source).first();
+  const saved = [];
+  for (const p of photos) saved.push(await insertPhoto(DB, row.id, clientId, p, actor));
+  await logEvent(DB, row.id, clientId, 'created', actor);
+  const sheetSync = syncPortalOrderToGoogleSheet(DB, env, row.id).catch(error => console.error('Google Sheets order sync failed', error));
+  if (waitUntil) waitUntil(sheetSync); else await sheetSync;
+  return { row, saved };
+}
+export const MAX_IMPORT_ORDERS = 100;
+
 async function clientSummary(DB, clientId, settings) {
   const o = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS billed, COALESCE(SUM(commission),0) AS commission, COALESCE(SUM(LEAST(supplier_share, commission)),0) AS supplier, COALESCE(SUM(selling_price - price) FILTER (WHERE selling_price IS NOT NULL),0) AS profit FROM client_orders WHERE client_id = ? AND status <> 'cancelled'").bind(clientId).first();
   const p = await DB.prepare('SELECT COALESCE(SUM(amount),0) AS paid FROM client_payments WHERE client_id = ?').bind(clientId).first();
@@ -420,19 +467,41 @@ export async function handlePortal(request, url, ctx) {
     let photos; try { photos = photoBodies.map(photoInput); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     if (!who.admin && !photos.length) return json({ ok: false, error: 'Please add at least one photo or screenshot of the product.' }, 400);
     const settings = await getSettings(DB);
-    const commission = client.commission_per_order ?? Number(settings.commission_per_order);
-    const supplierShare = Math.min(commission, Number(settings.supplier_share_per_order) || 0);
-    const t = now();
-    const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at, order_date, currency, buyer_name, buyer_phone, address_line_1, address_line_2, city, region, postal_code, item_title, sku, variant, quantity, etsy_url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
-      .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t, f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url).first();
-    const saved = [];
-    for (const p of photos) saved.push(await insertPhoto(DB, row.id, clientId, p, who.admin ? 'admin' : 'client'));
-    await logEvent(DB, row.id, clientId, 'created', who.admin ? 'admin' : 'client');
-    const sheetSync = syncPortalOrderToGoogleSheet(DB, env, row.id).catch(error => console.error('Google Sheets order sync failed', error));
-    if (waitUntil) waitUntil(sheetSync); else await sheetSync;
+    const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, who.admin ? 'admin' : 'client', '', settings);
     const out = { ...orderOut(row), photos: saved };
     if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; delete out.sheetSyncStatus; delete out.sheetSyncedAt; delete out.sheetSyncError; }
     return json({ ok: true, order: out });
+  }
+  // ----- bulk import from an Etsy orders file (parsed in the browser) -----
+  // Each order still needs the product link(s) (built from the Etsy listing IDs); photos are optional
+  // here because the link already shows the item. Orders whose Etsy order number is already in the
+  // portal for this client are skipped, so uploading the same file twice is safe.
+  if (path === '/orders/import' && method === 'POST') {
+    const body = await readBody(request);
+    const clientId = who.admin ? Number(body.clientId) : who.clientId;
+    const client = await DB.prepare("SELECT id, commission_per_order, active FROM users WHERE id = ? AND role = 'client' AND NOT archived").bind(clientId).first();
+    if (!client || !client.active) return json({ ok: false, error: 'Unknown client' }, 400);
+    const list = Array.isArray(body.orders) ? body.orders : [];
+    if (!list.length) return json({ ok: false, error: 'No orders to import' }, 400);
+    if (list.length > MAX_IMPORT_ORDERS) return json({ ok: false, error: `Up to ${MAX_IMPORT_ORDERS} orders per upload. Split the file by month.` }, 400);
+    const existing = new Set(((await DB.prepare("SELECT order_ref FROM client_orders WHERE client_id = ? AND order_ref <> ''").bind(clientId).all()).results || []).map(r => r.order_ref.replace(/^#/, '')));
+    const settings = await getSettings(DB);
+    const created = [], skipped = [], failed = [];
+    for (const [i, o] of list.entries()) {
+      const ref = text(o?.orderRef, 120);
+      const label = ref || `Row ${i + 1}`;
+      if (ref && existing.has(ref.replace(/^#/, ''))) { skipped.push({ orderRef: label, reason: 'Already in your orders' }); continue; }
+      let f; try { f = orderFields({ ...o, trackingNumber: '', category: '', weightKg: null, productCost: null, shippingFee: null, price: null, notes: text(o?.notes, 2000) }); }
+      catch (e) { failed.push({ orderRef: label, reason: e.message }); continue; }
+      if (!who.admin) { f.tracking_number = ''; f.category = ''; f.weight_kg = null; f.product_cost = null; f.shipping_fee = null; f.price = 0; }
+      if (!f.etsy_url) { failed.push({ orderRef: label, reason: 'No product link (Listing ID missing)' }); continue; }
+      if (!f.etsy_url.split('\n').every(validLink)) { failed.push({ orderRef: label, reason: 'Product link is not a full https:// link' }); continue; }
+      if (!f.buyer_name || !f.address_line_1) { failed.push({ orderRef: label, reason: 'Recipient name or address missing' }); continue; }
+      const { row } = await insertOrder(DB, env, waitUntil, client, f, [], who.admin ? 'admin' : 'client', 'etsy-csv', settings);
+      if (ref) existing.add(ref.replace(/^#/, ''));
+      created.push(row.id);
+    }
+    return json({ ok: true, created: created.length, ids: created, skipped, failed });
   }
   // ----- notifications: what the other side did, newest first -----
   if (path === '/notifications' && method === 'GET' && !who.admin) {
@@ -562,7 +631,7 @@ export async function handlePortal(request, url, ctx) {
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
-    return json({ ok: true, settings, totals, clients, admins, archived, googleSheets: { configured: googleSheetsConfigured(env) } });
+    return json({ ok: true, settings, totals, clients, admins, archived, rates: SHIPPING_RATES, googleSheets: { configured: googleSheetsConfigured(env) } });
   }
   // ----- Daniel's stores (dashboard store list) -----
   if (path === '/admin/stores' && method === 'GET') {

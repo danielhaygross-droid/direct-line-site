@@ -249,3 +249,9 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .link-add{justify-self:start;margin-top:2px}
 .pm-linkrow{display:grid;gap:8px}
 .pm-linkline{display:flex;align-items:center;gap:10px;min-width:0}
+
+/* Right-to-left (Hebrew) */
+[dir=rtl] .brand,[dir=rtl] .brand span{direction:ltr;unicode-bidi:isolate}
+[dir=rtl] svg:has(path[d="m9 6 6 6-6 6"]),[dir=rtl] svg:has(path[d="m15 6-6 6 6 6"]){transform:scaleX(-1)}
+[dir=rtl] input[type=url],[dir=rtl] input[data-link],[dir=rtl] input[name=trackingNumber],[dir=rtl] input[name=username],[dir=rtl] input[type=password]{direction:ltr;text-align:right}
+[dir=rtl] .who b,[dir=rtl] .me b,[dir=rtl] .pm-linkline span,[dir=rtl] .mono{unicode-bidi:plaintext}
