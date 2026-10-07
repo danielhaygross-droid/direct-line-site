@@ -175,7 +175,7 @@
     'Bulgaria': 'בולגריה', 'Czechia': 'צ׳כיה', 'Latvia': 'לטביה', 'Portugal': 'פורטוגל', 'Slovakia': 'סלובקיה', 'Israel': 'ישראל', 'Singapore': 'סינגפור', 'Sweden': 'שוודיה',
     'Ireland': 'אירלנד', 'New Zealand': 'ניו זילנד', 'Japan': 'יפן', 'Finland': 'פינלנד', 'Greece': 'יוון', 'Mexico': 'מקסיקו', 'Brazil': 'ברזיל',
     'Client Portal': 'פורטל לקוחות', 'Clients & orders': 'לקוחות והזמנות', 'Language': 'שפה', 'Loading…': 'טוען…',
-    'active': 'פעיל', 'You': 'אני',
+    'active': 'פעיל', 'You': 'אני', 'Preview:': 'תצוגה מקדימה:',
     'UK': 'בריטניה', 'GB': 'בריטניה', 'US': 'ארה״ב',
   };
   for (const k of ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr']) D[k] = mon(k);
@@ -260,6 +260,7 @@
     [/^estimated rate$/, () => 'תעריף משוער'],
     // shipping formulas: "0.5 kg × $18.00/kg = $9.00 + $4.00 registration (+ $4.00 EU tax)"
     [/^(\d[\d.]*) kg\b.*(?:registration|\/kg).*$/, m => m.replace(/(\d[\d.]*) kg/g, '$1 ק״ג').replace(/\/kg/g, '/ק״ג').replace(/\(by size\)|\(size-based\)/g, '(לפי נפח)').replace(/registration/g, 'רישום').replace(/EU tax/g, 'מס EU')],
+    [/^you’re seeing (.+)’s portal as admin\. View only, nothing you click here changes their account\.$/, (m, c) => `את/ה רואה את הפורטל של ${c} כמנהל. צפייה בלבד, שום לחיצה כאן לא משנה את החשבון שלהם.`],
     [/^Preview: you’re seeing (.+)’s portal as admin\. View only, nothing you click here changes their account\.$/, (m, c) => `תצוגה מקדימה: את/ה רואה את הפורטל של ${c} כמנהל. צפייה בלבד, שום לחיצה כאן לא משנה את החשבון שלהם.`],
   ];
 
