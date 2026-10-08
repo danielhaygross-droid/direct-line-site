@@ -255,3 +255,6 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 [dir=rtl] svg:has(path[d="m9 6 6 6-6 6"]),[dir=rtl] svg:has(path[d="m15 6-6 6 6 6"]){transform:scaleX(-1)}
 [dir=rtl] input[type=url],[dir=rtl] input[data-link],[dir=rtl] input[name=trackingNumber],[dir=rtl] input[name=username],[dir=rtl] input[type=password]{direction:ltr;text-align:right}
 [dir=rtl] .who b,[dir=rtl] .me b,[dir=rtl] .pm-linkline span,[dir=rtl] .mono{unicode-bidi:plaintext}
+
+/* Customer data typed into forms (names, addresses, notes) can be English or Hebrew: lay out each line by its own text direction. */
+.field :is(input,textarea):is([name=buyerName],[name=address1],[name=variant],[name=notes],[name=sku],[name=orderRef],[name=otherCountry]){unicode-bidi:plaintext}
