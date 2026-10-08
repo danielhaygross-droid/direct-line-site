@@ -206,6 +206,8 @@
     const [r, id] = location.hash.replace(/^#\/?/, '').split('/');
     S.route = ROUTES[r] ? r : 'home'; S.id = id ? Number(id) : null;
     if (S.route === 'edit' && !S.orders.some(o => o.id === S.id && o.status !== 'cancelled')) { location.hash = '#/orders'; return; }
+    // Admin preview is view only: no forms for adding, importing or editing orders.
+    if (S.me?.preview && ['new', 'edit', 'import'].includes(S.route)) { location.hash = '#/home'; return; }
     document.body.classList.remove('menu-open');
     $$('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === S.route || (S.route === 'edit' && a.dataset.nav === 'orders')));
     $$('[data-tab]').forEach(a => a.classList.toggle('on', a.dataset.tab === S.route));
