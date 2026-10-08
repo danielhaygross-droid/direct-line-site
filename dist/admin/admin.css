@@ -78,3 +78,9 @@ html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 .sub-cell .sub-when{display:block;margin-top:3px;font-size:12px}
 .sub-cell .st{text-transform:none}
 .bill-out{margin-top:2px}
+
+/* admin New / Edit order form */
+.af{display:grid}.af-sec{padding:4px 0 18px}.af-sec+.af-sec{padding-top:18px;border-top:1px solid var(--line)}
+.af .form-sec{flex-wrap:wrap;margin-bottom:12px;font-size:15px}.af-opt{flex-basis:100%;margin-top:-4px;color:var(--dim);font-size:12px;font-weight:500}
+.af .note{margin:0;color:var(--muted);font-size:13px}
+@media(max-width:560px){.af .form-grid{grid-template-columns:1fr}}

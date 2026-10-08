@@ -91,7 +91,12 @@
     'Free month (trial)': 'חודש חינם (ניסיון)', 'Active (paying)': 'פעיל (משלם)', 'Last payment': 'תשלום אחרון', 'Trial start': 'תחילת הניסיון', 'Trial end': 'סוף הניסיון',
     '1 month after start': 'חודש אחרי ההתחלה', 'Save subscription': 'שמירת המנוי', 'Archive': 'ארכיון', 'Archive client': 'העברה לארכיון', 'Click again to archive': 'לחצו שוב כדי להעביר לארכיון',
     'For test accounts or clients you no longer work with. It hides this client, their orders and payments from every list and total, and stops them signing in. Nothing is deleted, and you can restore them any time from the Clients tab.': 'לחשבונות בדיקה או ללקוחות שכבר לא עובדים איתם. הלקוח, ההזמנות והתשלומים שלו יוסתרו מכל הרשימות והסיכומים, והוא לא יוכל להיכנס. שום דבר לא נמחק, ואפשר לשחזר אותו בכל זמן מלשונית הלקוחות.',
-    'No orders yet': 'עדיין אין הזמנות', 'Orders this client adds show up here.': 'הזמנות שהלקוח יוסיף יופיעו כאן.', 'No payments yet': 'עדיין אין תשלומים',
+    'No orders yet': 'עדיין אין הזמנות', 'No product link added.': 'לא נוסף קישור למוצר.', 'by the client': 'על ידי הלקוח', 'by Direct Line': 'על ידי Direct Line', 'Paste the whole address, plus the phone number if there is one': 'הדביקו את כל הכתובת, ואת מספר הטלפון אם יש',
+    'We added an order for you': 'הוספנו עבורך הזמנה', 'We added a product photo': 'הוספנו תמונת מוצר', 'We removed a product photo': 'הסרנו תמונת מוצר', 'Add an order on a client’s behalf (e.g. one they sent on WhatsApp)': 'הוספת הזמנה בשם לקוח (למשל הזמנה ששלח בוואטסאפ)', 'on Etsy, optional': 'ב-Etsy, לא חובה',
+    'Photos: add or remove them in the order panel.': 'תמונות: מוסיפים או מסירים אותן בחלון ההזמנה.', 'Shipping & bill': 'משלוח וחיוב', 'can be added later with “Bill this order”': 'אפשר להוסיף אחר כך עם “חיוב ההזמנה”',
+    'the client sees these': 'הלקוח רואה אותן', 'not billed yet': 'עדיין לא חויב', 'Quantity must be between 1 and 999.': 'הכמות צריכה להיות בין 1 ל-999.',
+    'Optional. Add the screenshot the client sent, or a photo of the product (up to 8). You can also drag pictures here or paste with Ctrl+V.': 'לא חובה. הוסיפו את צילום המסך שהלקוח שלח, או תמונה של המוצר (עד 8). אפשר גם לגרור תמונות לכאן או להדביק עם Ctrl+V.',
+    'Amount': 'סכום', 'No conversations yet': 'עדיין אין שיחות', 'Have a question about an order? Pick it below and send us a message.': 'יש שאלה על הזמנה? בחרו אותה למטה ושלחו לנו הודעה.', 'Orders this client adds show up here.': 'הזמנות שהלקוח יוסיף יופיעו כאן.', 'No payments yet': 'עדיין אין תשלומים',
     'Payments you record show up here.': 'תשלומים שתרשמו יופיעו כאן.', 'Payment recorded.': 'התשלום נרשם.', 'Payment removed.': 'התשלום הוסר.', 'Account saved.': 'החשבון נשמר.', 'Subscription saved.': 'המנוי נשמר.',
     'Show password': 'הצגת הסיסמה', 'Hide password': 'הסתרת הסיסמה', 'Add a client': 'הוספת לקוח', 'Add an admin': 'הוספת מנהל', 'Share the username and password with them privately.': 'שלחו להם את שם המשתמש והסיסמה בפרטי.',
     'Account type': 'סוג חשבון', 'Client (their own portal)': 'לקוח (פורטל משלו)', 'Admin (full access)': 'מנהל (גישה מלאה)', 'Username': 'שם משתמש', 'Password': 'סיסמה', '8+ characters': '8 תווים לפחות',
@@ -235,6 +240,7 @@
     [/^\((\d+) days? left\)\. After that the subscription is$/, (m, n) => `(עוד ${n} ${plural(n, 'יום', 'ימים')}). אחרי זה המנוי עולה`],
     [/^\(last day today\)\. After that the subscription is$/, () => '(היום היום האחרון). אחרי זה המנוי עולה'],
     [/^(\d+(?:\.\d+)?) ₪ \/ month$/, (m, n) => `${n} ₪ לחודש`],
+    [/^· last payment (.+)$/, (m, d) => `· תשלום אחרון ${tc(d)}`],
     [/^last payment (.+)$/, (m, d) => `תשלום אחרון ${tc(d)}`],
     [/^First month free, then (.+) \/ month\. The client sees this in their portal\. Nothing is charged or blocked automatically\.$/, (m, p) => `חודש ראשון חינם, אחר כך ${p} לחודש. הלקוח רואה את זה בפורטל שלו. שום דבר לא מחויב או נחסם אוטומטית.`],
     [/^\. Their free month starts today \((.+)\)\.$/, (m, d) => `. החודש החינמי שלהם מתחיל היום (${tc(d)}).`],
@@ -246,6 +252,7 @@
     [/^use (\S+)$/, (m, a) => `להשתמש ב-${a}`],
     [/^(\d+) of (\d+)$/, (m, a, b) => `${a} מתוך ${b}`],
     [/^You can add up to (\d+) photos\.$/, (m, n) => `אפשר להוסיף עד ${n} תמונות.`],
+    [/^Order saved, but (\d+) photos? didn’t upload\. Add them in the order panel\.$/, (m, n) => `ההזמנה נשמרה, אבל ${n} תמונות לא הועלו. אפשר להוסיף אותן בחלון ההזמנה.`],
     [/^Uploading photos… (\d+) of (\d+)$/, (m, a, b) => `מעלים תמונות… ${a} מתוך ${b}`],
     [/^Only (\d+) photos fit on one order, so (\d+) weren’t added\.$/, (m, a, b) => `בהזמנה אחת יש מקום ל-${a} תמונות, ולכן ${b} לא נוספו.`],
     [/^Up to (\d+) photos per order$/, (m, n) => `עד ${n} תמונות להזמנה`],
@@ -278,7 +285,7 @@
     return v === null ? str : str.replace(k, v);
   }
 
-  const ATTRS = ['placeholder', 'title', 'aria-label'];
+  const ATTRS = ['placeholder', 'title', 'aria-label', 'data-label'];
   const SKIP = 'script,style,textarea,[data-no-i18n],.bubble span,.dl-bubble span,[contenteditable]';
   const done = new WeakMap(); // text node -> last value we wrote (so edits by the app are re-translated)
   function doText(n) {

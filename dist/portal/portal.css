@@ -217,3 +217,7 @@
 .lang-btn{font-weight:700;font-size:13px;letter-spacing:.02em}
 .login-card{position:relative}
 .lang-switch{position:absolute;top:16px;inset-inline-end:16px}
+@media(max-width:860px){.lang-switch{position:static;justify-self:end;margin-bottom:-6px}.login-card .login-brand{justify-self:start}}
+
+/* Admin preview of a client's portal: view only, so hide everything that adds or changes something. */
+.is-preview :is(.new-btn,.fab,[data-nav=new],[data-nav=import],[data-tab=new],[data-tab=import],.imp-hint,.hello-actions,a[href="#/new"],a[href="#/import"],a[href^="#/edit/"],[data-cancel-order],.composer,.quick,.ask,[data-ask-go],.pm-add,.pm-remove,[data-photo-add],[data-photo-remove]){display:none!important}
