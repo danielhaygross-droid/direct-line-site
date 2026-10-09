@@ -27,7 +27,7 @@ test('store API: product names from listing links, saved sale prices never overr
   assert.match(worker, /title:transaction\?\.title\|\|publicPrice\?\.title\|\|listing\?\.title\|\|'Etsy product'/);
   assert.match(worker, /\/api\/sale-prices/);
   assert.match(worker, /row\.priceSource==='receipt'\)return/);
-  assert.match(worker, /SUPPLIER_CACHE_KEY='supplier-summary-v3'/);
+  assert.match(worker, /SUPPLIER_CACHE_KEY='supplier-summary-v4'/);
 });
 
 test('Shopify order queries stay under the 1000-point query cost limit', () => {
