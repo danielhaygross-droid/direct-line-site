@@ -7,13 +7,15 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 test('client order form requires product photos and the product link', () => {
   const portal = read('dist/portal/portal.js');
   const form = portal.slice(portal.indexOf('function viewForm()'), portal.indexOf('// ---------- messages'));
-  assert.match(form, /Product photos \/ screenshots/);
+  assert.match(form, /Photo or screenshot of the product/);
   assert.match(form, /data-pick-input/);
   assert.match(form, /data-link-add/);
-  assert.match(form, /Full address &amp; phone/);
+  assert.match(form, /Full address and phone/);
   assert.doesNotMatch(form, /name="itemTitle"/);
-  assert.match(form, /Please add at least one photo or screenshot of the product/);
-  assert.match(form, /Please add the product link/);
+  // Everything missing is listed at once ("Please fill in: …"); photo and link are both checked.
+  assert.match(form, /check\('photos', picks\.length \|\| ed\?\.source === 'etsy-csv'/);
+  assert.match(form, /check\('links', links\.length && !badLink/);
+  assert.match(form, /Please fill in: /);
   assert.match(portal, /document\.addEventListener\('paste'/);
 });
 
