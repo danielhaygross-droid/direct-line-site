@@ -35,13 +35,13 @@
   const ROUTES = {
     home: { title: 'Home', sub: 'Your orders at a glance' },
     orders: { title: 'Orders', sub: 'Every order you’ve sent us' },
-    new: { title: 'New order', sub: 'Send us an order to process' },
+    new: { title: 'Send a new order', sub: 'Fill in 3 short steps and press Send' },
     edit: { title: 'Edit order', sub: 'Change the details of an order' },
     messages: { title: 'Messages', sub: 'Your conversations with Direct Line' },
     payments: { title: 'Payments', sub: 'What you’ve been billed and paid' },
-    import: { title: 'Import from Etsy', sub: 'Add many orders at once from your Etsy orders file' },
+    import: { title: 'Upload Etsy file', sub: 'Add many orders at once from your Etsy orders file' },
   };
-  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['import', 'Import from Etsy', 'upload'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet']];
+  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['import', 'Upload Etsy file', 'upload'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet']];
   const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
   const place = d => (d ? countryName(d) : '—');
   const ago = sec => N.timeAgo(sec * 1000);
@@ -168,7 +168,7 @@
       <nav class="tabs" aria-label="Quick">
         <a href="#/home" data-tab="home">${ic('home')}Home</a>
         <a href="#/orders" data-tab="orders">${ic('orders')}Orders</a>
-        <a href="#/new" data-tab="new" class="fab" aria-label="New order"><span>${ic('plus')}</span></a>
+        <a href="#/new" data-tab="new" class="fab" aria-label="New order"><span>${ic('plus')}</span>New order</a>
         <a href="#/messages" data-tab="messages">${ic('chat')}Messages<em data-tab-badge></em></a>
         <a href="#/payments" data-tab="payments">${ic('wallet')}Payments</a>
       </nav>`;
@@ -213,7 +213,7 @@
     $$('[data-tab]').forEach(a => a.classList.toggle('on', a.dataset.tab === S.route));
     $('[data-title]').textContent = ROUTES[S.route].title;
     $('[data-sub]').textContent = ROUTES[S.route].sub;
-    $('.new-btn').hidden = S.route === 'new' || S.route === 'edit';
+    $('.new-btn').hidden = S.route === 'new' || S.route === 'edit' || S.route === 'home';
     renderView();
     scrollTo({ top: 0 });
   }
@@ -247,36 +247,35 @@
   function viewHome() {
     const me = S.me, s = me.summary, o = S.orders;
     const h = new Date().getHours(), hello = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-    const count = st => o.filter(x => x.status === st).length;
     const active = o.filter(x => !['delivered', 'cancelled'].includes(x.status)).length;
     const credit = s.outstanding < 0;
-    const live = o.filter(x => x.status !== 'cancelled'), total = live.length || 1;
     const items = noteItems().slice(0, 6);
+    const newbie = s.orders < 3;
     return `
-      <section class="hello"><div><p class="eyebrow">Client portal</p><h2>${hello}, <span>${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p>${o.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Add your first order to get started.'}</p></div>
-        <div class="hello-actions"><a class="btn" href="#/import">${ic('upload')}Import from Etsy</a><a class="btn btn-primary" href="#/new">${ic('plus')}New order</a></div></section>
+      <section class="hello"><div><h2>${hello}, <span>${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p>${o.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Send us your first order to get started.'}</p></div>
+        <div class="hello-actions"><a class="btn" href="#/import">${ic('upload')}Upload Etsy file</a><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a></div></section>
       ${subBanner(me.subscription)}
-      <section class="stats">
-        <div class="stat hero"><span class="stat-ic">${ic('wallet')}</span><small>${credit ? 'Credit on your account' : 'Balance due'}</small><strong>${money(Math.abs(s.outstanding))}</strong><em>${credit ? 'You’ve paid more than you were billed' : s.outstanding > 0 ? 'Billed ' + money(s.billed) + ' · paid ' + money(s.paid) : 'You’re all paid up'}</em></div>
-        <div class="stat" style="--tone:var(--blue)"><span class="stat-ic">${ic('orders')}</span><small>Orders</small><strong>${s.orders}</strong><em>${active} in progress</em></div>
-        <div class="stat" style="--tone:var(--orange)"><span class="stat-ic">${ic('money')}</span><small>Total billed</small><strong>${money(s.billed)}</strong><em>Product + shipping</em></div>
-        <div class="stat" style="--tone:var(--mint)"><span class="stat-ic">${ic('check')}</span><small>Paid</small><strong>${money(s.paid)}</strong><em>${S.payments.length} payment${S.payments.length === 1 ? '' : 's'}</em></div>
-        <div class="stat" style="--tone:var(--gold)"><span class="stat-ic">${ic('chart')}</span><small>Your profit</small><strong class="${s.clientProfit < 0 ? 'neg' : ''}">${money(s.clientProfit)}</strong><em>Selling price − total</em></div>
+      ${newbie ? `<section class="card card-pad how"><h3>How it works</h3>
+        <ol class="how-steps">
+          <li><b>1</b><div><strong>Send us the order</strong><span>Got an Etsy sale? Tap “Send a new order” and fill in what the customer bought and where it goes.</span></div></li>
+          <li><b>2</b><div><strong>We pack and ship it</strong><span>We buy the product, ship it to your customer and add the tracking number here.</span></div></li>
+          <li><b>3</b><div><strong>Pay your balance</strong><span>We add the product and shipping cost to your balance. Pay it by bank transfer.</span></div></li>
+        </ol>
+        <div class="how-actions"><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a><a class="btn" href="#/import">${ic('upload')}Many orders? Upload your Etsy file</a></div></section>` : ''}
+      <section class="stats stats-3">
+        <div class="stat hero"><span class="stat-ic">${ic('wallet')}</span><small>${credit ? 'Credit on your account' : 'You owe Direct Line'}</small><strong>${money(Math.abs(s.outstanding))}</strong><em>${credit ? 'You’ve paid more than you were billed' : s.outstanding > 0 ? 'Billed ' + money(s.billed) + ' · paid ' + money(s.paid) : 'You’re all paid up'}</em></div>
+        <div class="stat" style="--tone:var(--blue)"><span class="stat-ic">${ic('orders')}</span><small>Orders in progress</small><strong>${active}</strong><em>${s.orders} order${s.orders === 1 ? '' : 's'} in total</em></div>
+        <div class="stat" style="--tone:var(--gold)"><span class="stat-ic">${ic('chart')}</span><small>Your profit</small><strong class="${s.clientProfit < 0 ? 'neg' : ''}">${money(s.clientProfit)}</strong><em>What your customers paid, minus our bill</em></div>
       </section>
       <div class="home-grid">
-        <section class="card"><div class="card-head"><h3>Order status</h3><a class="link" href="#/orders">View orders</a></div>
-          <div class="pipe">${UI.STEPS.map(st => `<button type="button" class="t-${st}" data-go-filter="${st}"><small>${UI.LABEL[st]}</small><strong>${count(st)}</strong></button>`).join('')}</div>
-          <div class="pipe-bar" aria-hidden="true">${live.length ? UI.STEPS.map(st => `<i class="t-${st}" style="width:${(count(st) / total) * 100}%"></i>`).join('') : ''}</div>
-          ${count('cancelled') ? `<p class="pipe-note">${count('cancelled')} cancelled order${count('cancelled') > 1 ? 's' : ''} not shown.</p>` : ''}
+        <section class="card span2"><div class="card-head"><h3>Your latest orders</h3><a class="link" href="#/orders">See all ${o.length ? '(' + o.length + ')' : ''}</a></div>
+          ${o.length ? `<div class="table-wrap">${ordersTable(o.slice(0, 5), true)}</div>` : empty('orders', 'No orders yet', 'When you get an Etsy sale, send it to us here. We take care of the rest.', '<a class="btn btn-primary" href="#/new">Send a new order</a>')}
         </section>
         <section class="card"><div class="card-head"><h3>Latest updates</h3><button type="button" class="link" data-open-bell>See all</button></div>
           ${items.length ? `<div class="feed">${items.map(x => `<button type="button" class="${x.unread ? 'unread' : ''}" data-open-order="${x.orderId}" data-focus="${x.focus || ''}" data-note="${x.id}"><span class="dln-ic t-${x.tone}">${N.icon(x.icon)}</span><span style="display:grid;min-width:0"><b>${esc(x.title)}</b><span>${esc(x.text)}</span><time>${esc(N.timeAgo(x.time))}</time></span></button>`).join('')}</div>`
             : empty('bell', 'No updates yet', 'When we change an order’s status or reply to you, it shows up here.')}
         </section>
-        <section class="card span2"><div class="card-head"><h3>Recent orders</h3><a class="link" href="#/orders">See all ${o.length ? '(' + o.length + ')' : ''}</a></div>
-          ${o.length ? `<div class="table-wrap">${ordersTable(o.slice(0, 5), true)}</div>` : empty('orders', 'No orders yet', 'Send the Etsy order number, sale details and customer delivery address. Direct Line handles fulfilment from there.', '<a class="btn btn-primary" href="#/new">New order</a>')}
-        </section>
-        <section class="card span2"><div class="card-head"><h3>Profit by month</h3><span class="tag">Last 6 months</span></div>${profitChart()}</section>
+        <section class="card"><div class="card-head"><h3>Profit by month</h3><span class="tag">Last 6 months</span></div>${profitChart()}</section>
       </div>`;
   }
 
@@ -386,39 +385,41 @@
     const ed = S.route === 'edit' ? S.orders.find(o => o.id === S.id) : null;
     const today = new Date().toISOString().slice(0, 10);
     const currencies = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD'];
-    return `${ed ? '' : `<a class="imp-hint" href="#/import">${ic('upload')}<span><b>Many orders?</b> Import them all at once from your Etsy orders file</span>${ic('chev')}</a>`}<form class="form-layout" id="order-form" novalidate>
+    const extra = !!(ed && (ed.sellingPrice != null || ed.sku || ed.notes || (ed.currency && ed.currency !== 'USD')));
+    return `${ed ? '' : `<a class="imp-hint" href="#/import">${ic('upload')}<span><b>Many orders?</b> Upload your Etsy orders file and add them all at once</span>${ic('chev')}</a>`}<form class="form-layout" id="order-form" novalidate>
       <div class="form-main">
-        <section class="card card-pad"><h3 class="form-sec"><i>1</i>Etsy order</h3><div class="form-grid">
-          <label class="field"><span>Order number / receipt ID</span><input name="orderRef" required maxlength="120" placeholder="e.g. Etsy #3412" value="${esc(ed?.orderRef)}"></label>
-          <label class="field"><span>Order date</span><input name="orderDate" required type="date" value="${esc(ed?.orderDate || today)}"></label>
-          <label class="field"><span>Amount paid by customer</span><span class="money"><input name="sellingPrice" required type="number" min="0" step="0.01" inputmode="decimal" value="${ed?.sellingPrice == null ? '' : Number(ed.sellingPrice).toFixed(2)}"></span></label>
-          <label class="field"><span>Currency</span><select name="currency">${currencies.map(c => `<option${c === (ed?.currency || 'USD') ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
+        <section class="card card-pad"><h3 class="form-sec"><i>1</i>Etsy order number</h3><div class="form-grid">
+          <label class="field" data-f="orderRef"><span>Order number</span><input name="orderRef" required maxlength="120" inputmode="text" placeholder="e.g. 3412345678" value="${esc(ed?.orderRef)}">
+            <em class="help">On Etsy: Orders &amp; Shipping → open the order → the number after “Order #”.</em></label>
+          <label class="field" data-f="orderDate"><span>Order date</span><input name="orderDate" required type="date" value="${esc(ed?.orderDate || today)}"></label>
         </div></section>
-        <section class="card card-pad"><h3 class="form-sec"><i>2</i>Item sold</h3><div class="form-grid">
-          <div class="field full photo-field"><span>Product photos / screenshots <small data-pick-count></small></span>
+        <section class="card card-pad"><h3 class="form-sec"><i>2</i>What did the customer buy?</h3><div class="form-grid">
+          <div class="field full" data-f="links"><span>Product link <small>copy it from the Etsy listing</small></span><div class="link-list" data-links></div>
+            <button type="button" class="btn btn-sm link-add" data-link-add>+ Add another product</button></div>
+          <div class="field full photo-field" data-f="photos"><span>Photo or screenshot of the product <small data-pick-count></small></span>
             <div class="pm-photos pick-zone" data-picks></div>
-            <p class="pick-hint">Add a screenshot of the Etsy order or listing, or a photo of the product (at least 1, up to ${MAX_PHOTOS}). On a computer you can also drag pictures here or paste a screenshot with Ctrl+V.</p></div>
-          <div class="field full"><span>Product links <small>one per product</small></span><div class="link-list" data-links></div>
-            <button type="button" class="btn btn-sm link-add" data-link-add>+ Add another product link</button></div>
-          <label class="field"><span>SKU or listing ID <small>optional</small></span><input name="sku" maxlength="120" placeholder="e.g. LIGHTER-01" value="${esc(ed?.sku)}"></label>
-          <label class="field"><span>Quantity</span><input name="quantity" required type="number" min="1" max="999" step="1" inputmode="numeric" value="${ed?.quantity || 1}"></label>
-          <label class="field full"><span>Variation / personalization <small>optional</small></span><input name="variant" maxlength="500" placeholder="Color, size, engraving or personalization" value="${esc(ed?.variant)}"></label>
+            <p class="pick-hint">A screenshot of the Etsy order is perfect. You can add up to ${MAX_PHOTOS}.</p></div>
+          <label class="field" data-f="quantity"><span>How many?</span><input name="quantity" required type="number" min="1" max="999" step="1" inputmode="numeric" value="${ed?.quantity || 1}"></label>
+          <label class="field"><span>Color, size or engraving <small>if any</small></span><input name="variant" maxlength="500" placeholder="e.g. Gold, engraved “M + K”" value="${esc(ed?.variant)}"></label>
         </div></section>
-        <section class="card card-pad"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
-          <label class="field full"><span>Customer / recipient name</span><input name="buyerName" required maxlength="160" autocomplete="name" value="${esc(ed?.buyerName)}"></label>
-          <label class="field full"><span>Full address &amp; phone <small>street, city, state, postal code, phone</small></span><textarea name="address1" required maxlength="1000" rows="4" placeholder="Paste the whole address from Etsy, plus the phone number if there is one">${esc(ed ? [ed.address1, ed.address2, ed.city, ed.region, ed.postalCode, ed.buyerPhone].filter(Boolean).join('\n') : '')}</textarea></label>
-          <label class="field full"><span>Country</span><select name="destination" autocomplete="country"></select></label>
-          <label class="field full" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="country-name"></label>
+        <section class="card card-pad"><h3 class="form-sec"><i>3</i>Where do we send it?</h3><div class="form-grid">
+          <label class="field full" data-f="buyerName"><span>Customer name</span><input name="buyerName" required maxlength="160" autocomplete="off" value="${esc(ed?.buyerName)}"></label>
+          <label class="field full" data-f="address1"><span>Full address and phone <small>copy it from the Etsy order</small></span><textarea name="address1" required maxlength="1000" rows="4" placeholder="Street and number&#10;City, State, Postal code&#10;Country&#10;Phone (if there is one)">${esc(ed ? [ed.address1, ed.address2, ed.city, ed.region, ed.postalCode, ed.buyerPhone].filter(Boolean).join('\n') : '')}</textarea></label>
+          <label class="field full" data-f="destination"><span>Country <small data-country-auto></small></span><select name="destination" autocomplete="off"></select></label>
+          <label class="field full" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="off"></label>
         </div></section>
-        <section class="card card-pad"><h3 class="form-sec"><i>4</i>Notes</h3>
-          <label class="field"><span>Anything Direct Line should know <small>optional</small></span><textarea name="notes" maxlength="2000" placeholder="Supplier link, deadline, special packaging or other instructions">${esc(ed?.notes)}</textarea></label>
-        </section>
+        <details class="card card-pad more"${extra ? ' open' : ''}><summary><span class="form-sec"><i>+</i>More details <small>optional</small></span></summary><div class="form-grid">
+          <label class="field"><span>Customer paid <small>for your profit numbers</small></span><span class="money"><input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal" value="${ed?.sellingPrice == null ? '' : Number(ed.sellingPrice).toFixed(2)}"></span></label>
+          <label class="field"><span>Currency</span><select name="currency">${currencies.map(c => `<option${c === (ed?.currency || 'USD') ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
+          <label class="field full"><span>SKU or listing ID</span><input name="sku" maxlength="120" placeholder="e.g. LIGHTER-01" value="${esc(ed?.sku)}"></label>
+          <label class="field full"><span>Note for Direct Line</span><textarea name="notes" maxlength="2000" placeholder="Deadline, gift wrap, special packaging…">${esc(ed?.notes)}</textarea></label>
+        </div></details>
       </div>
       <aside class="form-side">
-        <section class="card card-pad order-submit-card"><h3>Order summary</h3>
+        <section class="card card-pad order-submit-card"><h3>Check and send</h3>
           <div class="client-order-summary" data-sum></div>
-          <div class="next-steps"><b>Direct Line will add</b><ul><li>Product and shipping cost</li><li>Package weight and dimensions</li><li>Tracking number after shipment</li></ul></div>
-          <button class="btn btn-primary btn-block" type="submit" data-submit>${ed ? 'Save changes' : 'Send order'}</button>
+          <div class="next-steps"><b>Then Direct Line will</b><ul><li>Buy and pack the product</li><li>Ship it to your customer</li><li>Add the tracking number here</li></ul></div>
+          <button class="btn btn-primary btn-block btn-big" type="submit" data-submit>${ed ? 'Save changes' : 'Send order'}</button>
           <a class="btn btn-ghost btn-block" href="${ed ? '#/orders' : '#/home'}">Cancel</a>
           <p class="form-msg" data-form-msg></p>
         </section>
@@ -438,7 +439,9 @@
     function renderPicks() {
       zone.innerHTML = picks.map(p => `<figure class="pm-photo"><img src="${p.id ? photoUrl(ed.id, p.id, true) : p.thumb}" alt="Product photo">${p.id && locked ? '' : `<button type="button" class="pm-remove" data-pick-remove="${p.key}" aria-label="Remove photo">×</button>`}</figure>`).join('')
         + (picks.length < MAX_PHOTOS ? `<label class="pm-add${picks.length ? '' : ' big'}"><input type="file" accept="image/*" multiple hidden data-pick-input><span>+</span><small>${picks.length ? 'Add more' : 'Add photo or screenshot'}</small></label>` : '');
-      $('[data-pick-count]', form).textContent = picks.length ? `${picks.length} of ${MAX_PHOTOS}` : 'required';
+      $('[data-pick-count]', form).textContent = picks.length ? `${picks.length} of ${MAX_PHOTOS}` : (ed?.source === 'etsy-csv' ? 'optional' : 'required');
+      if (picks.length) form.querySelector('[data-f="photos"]')?.classList.remove('bad');
+      updateSum();
     }
     async function addFiles(files) {
       const list = [...files].filter(f => /^image\//.test(f.type || ''));
@@ -478,29 +481,59 @@
       if (e.target.closest('[data-link-add]')) { linkBox.insertAdjacentHTML('beforeend', linkRow()); syncLinks(); $$('[data-link]', linkBox).pop().focus(); }
       const rm = e.target.closest('[data-link-remove]'); if (rm) { rm.closest('.link-row').remove(); syncLinks(); }
     });
-    const need = (field, message) => {
-      if (String(field.value || '').trim()) return true;
-      setMsg(message, 'err'); field.focus(); return false;
+    // ----- country: picked automatically from the last lines of the pasted address -----
+    const ALIAS = { usa: 'US', 'u.s.a.': 'US', 'united states of america': 'US', america: 'US', uk: 'UK', 'great britain': 'UK', england: 'UK', scotland: 'UK', wales: 'UK', 'northern ireland': 'UK', deutschland: 'DE', 'the netherlands': 'NL', holland: 'NL', schweiz: 'CH', suisse: 'CH', italia: 'IT', norge: 'NO', 'österreich': 'AT', danmark: 'DK', 'españa': 'ES', polska: 'PL', 'belgië': 'BE', belgique: 'BE', 'czech republic': 'CZ', 'česko': 'CZ', 'slovensko': 'SK' };
+    const countryFrom = text => {
+      const lines = String(text || '').split(/\n|,/).map(x => x.trim().toLowerCase().replace(/[.]$/, '')).filter(Boolean).reverse().slice(0, 3);
+      for (const l of lines) {
+        if (ALIAS[l]) return ALIAS[l];
+        const hit = COUNTRIES.find(([c, n]) => n.toLowerCase() === l || c.toLowerCase() === l);
+        if (hit) return hit[0];
+      }
+      return '';
     };
+    let autoPicked = false;
+    const autoCountry = () => {
+      if (dest.get() && !autoPicked) return;
+      const c = countryFrom(form.address1.value);
+      if (c && c !== dest.get()) { dest.set(c); autoPicked = true; $('[data-country-auto]', form).textContent = 'picked from the address, change it if wrong'; }
+    };
+    form.address1.addEventListener('input', autoCountry);
+    form.destination.addEventListener('change', () => { autoPicked = false; $('[data-country-auto]', form).textContent = ''; });
+    // ----- check everything at once, mark what's missing -----
+    const mark = (key, bad) => { const f = form.querySelector(`[data-f="${key}"]`); if (f) f.classList.toggle('bad', !!bad); };
+    form.addEventListener('input', e => { const f = e.target.closest('[data-f]'); if (f) f.classList.remove('bad'); });
     function updateSum() {
-      const paid = parseFloat(form.sellingPrice.value), qty = parseInt(form.quantity.value, 10) || 1;
-      $('[data-sum]').innerHTML = `<div><span>Order</span><b>${esc(form.orderRef.value.trim() || 'Not entered')}</b></div><div><span>Items</span><b>${qty}</b></div><div class="total"><span>Customer paid</span><b>${Number.isFinite(paid) ? esc(form.currency.value) + ' ' + paid.toFixed(2) : '—'}</b></div>`;
+      const qty = parseInt(form.quantity.value, 10) || 1, links = $$('[data-link]', form).filter(i => i.value.trim()).length;
+      const where = [form.buyerName.value.trim(), dest.label()].filter(Boolean).join(' · ');
+      const row = (label, value) => `<div><span>${label}</span><b>${value ? esc(value) : '<em class="miss">not filled in yet</em>'}</b></div>`;
+      $('[data-sum]').innerHTML = row('Order number', form.orderRef.value.trim()) + row('Product', links ? `${links} link${links > 1 ? 's' : ''} · ${qty} item${qty > 1 ? 's' : ''}` : '')
+        + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
     }
     form.addEventListener('input', updateSum);
     form.addEventListener('change', updateSum);
     form.addEventListener('submit', async e => {
       e.preventDefault();
-      if (!need(form.orderRef, 'Please enter the Etsy order number.')) return;
-      if (!need(form.orderDate, 'Please choose the order date.')) return;
-      if (!need(form.sellingPrice, 'Please enter what the customer paid.')) return;
-      if (!picks.length && ed?.source !== 'etsy-csv') { setMsg('Please add at least one photo or screenshot of the product.', 'err'); zone.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
       const linkInputs = $$('[data-link]', form), links = linkInputs.map(i => i.value.trim()).filter(Boolean);
-      if (!links.length) { setMsg('Please add the product link (the Etsy listing).', 'err'); linkInputs[0]?.focus(); return; }
       const badLink = linkInputs.find(i => i.value.trim() && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(i.value.trim()));
-      if (badLink) { setMsg('Please paste each product link in full, starting with https://', 'err'); badLink.focus(); return; }
-      if (!need(form.buyerName, 'Please enter the customer or recipient name.')) return;
-      if (!need(form.address1, 'Please enter the delivery address.')) return;
-      if (!dest.get()) { setMsg(dest.isOther() ? 'Please type the country name.' : 'Please choose the destination country.', 'err'); (dest.isOther() ? form.otherCountry : form.destination).focus(); return; }
+      const missing = [];
+      const check = (key, ok, label) => { mark(key, !ok); if (!ok) missing.push([key, label]); };
+      check('orderRef', form.orderRef.value.trim(), 'order number');
+      check('orderDate', form.orderDate.value, 'order date');
+      check('links', links.length && !badLink, badLink ? 'a full product link (starting with https://)' : 'product link');
+      check('photos', picks.length || ed?.source === 'etsy-csv', 'photo or screenshot');
+      const q = parseInt(form.quantity.value, 10); check('quantity', q >= 1 && q <= 999, 'how many');
+      check('buyerName', form.buyerName.value.trim(), 'customer name');
+      check('address1', form.address1.value.trim(), 'address');
+      check('destination', dest.get(), 'country');
+      form.classList.toggle('tried', missing.length > 0);
+      if (missing.length) {
+        setMsg('Please fill in: ' + missing.map(m => m[1]).join(', ') + '.', 'err');
+        const first = form.querySelector(`[data-f="${missing[0][0]}"]`);
+        first?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setTimeout(() => first?.querySelector('input:not([type=file]),textarea,select')?.focus({ preventScroll: true }), 350);
+        return;
+      }
       const body = {
         orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value,
         sku: form.sku.value, quantity: form.quantity.value, variant: form.variant.value, etsyUrl: links.join('\n'),

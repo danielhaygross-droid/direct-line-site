@@ -221,3 +221,29 @@
 
 /* Admin preview of a client's portal: view only, so hide everything that adds or changes something. */
 .is-preview :is(.new-btn,.fab,[data-nav=new],[data-nav=import],[data-tab=new],[data-tab=import],.imp-hint,.hello-actions,a[href="#/new"],a[href="#/import"],a[href^="#/edit/"],[data-cancel-order],.composer,.quick,.ask,[data-ask-go],.pm-add,.pm-remove,[data-photo-add],[data-photo-remove]){display:none!important}
+
+/* ---- simpler portal (for non-technical clients) ---- */
+.btn-big{min-height:48px;padding:0 22px;font-size:15.5px}
+.how h3{margin:0 0 14px;font-size:17px}
+.how-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:0;padding:0;list-style:none}
+.how-steps li{display:flex;gap:12px;align-items:flex-start;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.how-steps b{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--gold);color:#fff;font-size:14px}
+.how-steps strong{display:block;margin-bottom:3px;font-size:14.5px}
+.how-steps span{color:var(--muted);font-size:13.5px;line-height:1.45}
+.how-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.stats-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.field .help{display:block;margin:2px 0 0;padding:0;border:0;background:none!important;color:var(--dim);font-size:12.5px;font-style:normal;font-weight:400;line-height:1.4}
+#order-form .form-grid{align-items:start}
+.field.bad>span:first-child,.field.bad>span:first-child small{color:var(--red)}
+.field.bad :is(input,textarea,select),.field.bad .pick-zone .pm-add{border-color:var(--red)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--red) 14%,transparent)}
+.client-order-summary .miss{color:var(--dim);font-style:normal;font-weight:500}
+#order-form.tried .client-order-summary .miss{color:var(--red);font-weight:600}
+details.more>summary{list-style:none;cursor:pointer}
+details.more>summary::-webkit-details-marker{display:none}
+details.more>summary .form-sec{margin:0}
+details.more>summary small{margin-inline-start:6px;color:var(--dim);font-size:12.5px;font-weight:500}
+details.more[open]>summary{margin-bottom:16px}
+details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{content:"−";font-size:15px}
+@media(max-width:900px){.how-steps{grid-template-columns:1fr}.how-actions .btn{flex:1 1 100%;justify-content:center}}
+@media(max-width:560px){.stats-3{grid-template-columns:1fr 1fr}.stats-3 .stat.hero{grid-column:1/-1}}
+.tabs .fab{font-size:10.5px}
