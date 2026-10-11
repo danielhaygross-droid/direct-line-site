@@ -466,14 +466,9 @@
           <label class="field" data-f="quantity"><span>How many?</span><input name="quantity" required type="number" min="1" max="999" step="1" inputmode="numeric" value="${ed?.quantity || 1}"></label>
           <label class="field"><span>Color, size or engraving <small>if any</small></span><input name="variant" maxlength="500" placeholder="e.g. Gold, engraved “M + K”" value="${esc(ed?.variant)}"></label>
         </div></section>
-        <section class="card card-pad"><h3 class="form-sec"><i>3</i>Where do we send it?</h3><div class="form-grid">
+        <section class="card card-pad"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
           <label class="field full" data-f="buyerName"><span>Customer name</span><input name="buyerName" required maxlength="160" autocomplete="off" value="${esc(ed?.buyerName)}"></label>
-          <label class="field full" data-f="address1"><span>Street address line 1</span><textarea name="address1" required maxlength="1000" rows="2" autocomplete="off">${esc(ed?.address1)}</textarea></label>
-          <label class="field full" data-f="address2"><span>Street address line 2 <small>optional</small></span><input name="address2" maxlength="200" autocomplete="off" value="${esc(ed?.address2)}"></label>
-          <label class="field" data-f="city"><span>City</span><input name="city" required maxlength="100" autocomplete="off" value="${esc(ed?.city)}"></label>
-          <label class="field" data-f="region"><span>State / Province / Region <small>optional</small></span><input name="region" maxlength="100" autocomplete="off" value="${esc(ed?.region)}"></label>
-          <label class="field" data-f="postalCode"><span>ZIP / Postal code</span><input name="postalCode" required maxlength="40" autocomplete="off" value="${esc(ed?.postalCode)}"></label>
-          <label class="field" data-f="buyerPhone"><span>Phone <small>Recommended, couriers often need it</small></span><input name="buyerPhone" maxlength="80" autocomplete="off" value="${esc(ed?.buyerPhone)}"></label>
+          <label class="field full" data-f="address1"><span>Full address and phone <small>street, city, state, postal code, phone</small></span><textarea name="address1" required maxlength="2000" rows="3" placeholder="Paste the full delivery address and phone number here" autocomplete="off">${esc(UI.addressText(ed))}</textarea></label>
           <label class="field full" data-f="destination"><span>Country <small data-country-auto></small></span><select name="destination" required aria-describedby="country-error" autocomplete="off"></select><small id="country-error" class="err-text" role="alert" hidden>Please choose a country.</small></label>
           <label class="field full" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="off"></label>
         </div></section>
@@ -584,9 +579,7 @@
       check('photos', picks.length || ed?.source === 'etsy-csv', 'photo or screenshot');
       const q = parseInt(form.quantity.value, 10); check('quantity', q >= 1 && q <= 999, 'how many');
       check('buyerName', form.buyerName.value.trim(), 'customer name');
-      check('address1', form.address1.value.trim(), 'street address');
-      check('city', form.city.value.trim(), 'city');
-      check('postalCode', form.postalCode.value.trim(), 'ZIP / postal code');
+      check('address1', form.address1.value.trim(), 'full address');
       check('destination', dest.get(), 'country');
       $('#country-error').hidden = !!dest.get();
       form.classList.toggle('tried', missing.length > 0);
@@ -600,8 +593,7 @@
       const body = {
         storeId:Number(form.storeId.value),orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value,
         sku: form.sku.value, quantity: form.quantity.value, variant: form.variant.value, etsyUrl: links.join('\n'),
-        buyerName: form.buyerName.value, buyerPhone: form.buyerPhone.value, address1: form.address1.value, address2: form.address2.value,
-        city: form.city.value, region: form.region.value, postalCode: form.postalCode.value, destination: dest.get(), notes: form.notes.value,
+        buyerName: form.buyerName.value, ...UI.addressFields(form.address1.value,ed), destination: dest.get(), notes: form.notes.value,
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');
       if(selectedProduct){body.productId=selectedProduct.id;body.quotedUnitPrice=selectedProduct.unitPrice;}

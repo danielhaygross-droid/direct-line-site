@@ -125,5 +125,12 @@
     return { reload: load, focus: () => ta.focus(), destroy() { alive = false; clearInterval(timer); } };
   }
 
-  window.DLOrderUI = { STEPS, LABEL, pill, tracker, getDrawer, chat, svg, when, day };
+  // Keep existing structured data when the combined text is unchanged.
+  const addressKeys = ['address1','address2','city','region','postalCode','buyerPhone'];
+  const addressText = order => addressKeys.map(k=>String(order?.[k]||'')).filter(Boolean).join('\n');
+  function addressFields(value,order){
+    if(order && value===addressText(order))return Object.fromEntries(addressKeys.map(k=>[k,order[k]||'']));
+    return {address1:value,address2:'',city:'',region:'',postalCode:'',buyerPhone:''};
+  }
+  window.DLOrderUI = { addressText, addressFields, STEPS, LABEL, pill, tracker, getDrawer, chat, svg, when, day };
 })();

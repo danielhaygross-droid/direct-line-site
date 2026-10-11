@@ -193,7 +193,7 @@ export const SHIPPING_RATES = {
 // Bank details clients see on Payments → "How to pay" (item #5). Editable in admin Fees & settings.
 export function addressError(body) {
   if (!String(body.destination || '').trim() || body.destination === '__other') return 'Please choose a country.';
-  if (['buyerName','address1','city','postalCode'].some(k => !String(body[k] || '').trim())) return 'Please fill in the name, street address, city and ZIP / postal code.';
+  if (['buyerName','address1'].some(k => !String(body[k] || '').trim())) return 'Please fill in the customer name and full address.';
   return null;
 }
 export const BANK_FIELDS = ['bank_currency', 'bank_holder', 'bank_account', 'bank_ach', 'bank_wire', 'bank_swift', 'bank_name', 'bank_address', 'bank_reference'];
@@ -408,7 +408,7 @@ function orderFields(body) {
     product_cost: money(body.productCost), shipping_fee: money(body.shippingFee),
     order_date: text(body.orderDate, 10), currency: text(body.currency || 'USD', 3).toUpperCase(),
     buyer_name: text(body.buyerName, 160), buyer_phone: text(body.buyerPhone, 80),
-    address_line_1: text(body.address1, 1000), address_line_2: text(body.address2, 200), city: text(body.city, 100), region: text(body.region, 100), postal_code: text(body.postalCode, 40),
+    address_line_1: text(body.address1, 2000), address_line_2: text(body.address2, 200), city: text(body.city, 100), region: text(body.region, 100), postal_code: text(body.postalCode, 40),
     item_title: text(body.itemTitle, 300), sku: text(body.sku, 120), variant: text(body.variant, 500), quantity: Number(body.quantity ?? 1), etsy_url: String(body.etsyUrl ?? '').split(/\s+/).map(v => v.trim()).filter(Boolean).slice(0, 10).join('\n').slice(0, 3000),
     notes: text(body.notes, 2000),
   };
