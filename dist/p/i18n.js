@@ -35,6 +35,38 @@
   const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 
   const D = {
+    'Fill in the amount, date and confirmation file.': 'מלאו את הסכום, תאריך ההעברה וקובץ האישור.',
+    'This confirmation is already on file.': 'אישור זה כבר שמור במערכת.',
+
+    "Upload transfer confirmation": "העלאת אישור העברה",
+    "Your balance changes only after the team records receipt.": "היתרה מתעדכנת רק לאחר שהצוות מאשר את קבלת התשלום.",
+    "Amount (USD)": "סכום (דולר ארה״ב)",
+    "Transfer date": "תאריך ההעברה",
+    "Confirmation file": "קובץ אישור",
+    "PDF, JPG, PNG or WebP. Maximum 2 MB.": "PDF, JPG, PNG או WebP. עד 2 MB.",
+    "Send confirmation": "שליחת האישור",
+    "Your transfer confirmations": "אישורי ההעברה שלך",
+    "Open confirmation": "פתיחת האישור",
+    "Recorded": "נרשם",
+    "Payment archived": "התשלום הועבר לארכיון",
+    "Pending review": "ממתין לבדיקה",
+    "The file is too large. Maximum 2 MB.": "הקובץ גדול מדי. עד 2 MB.",
+    "Could not read the file.": "לא ניתן לקרוא את הקובץ.",
+    "Confirmation sent for review.": "האישור נשלח לבדיקה.",
+    "Transfer confirmations": "אישורי העברה",
+    "Check the confirmation and receipt of funds before recording the payment.": "בדקו את האישור ואת קבלת הכסף לפני רישום התשלום.",
+    "Transfer confirmation": "אישור העברה",
+    "Record this payment": "רישום תשלום זה",
+    "Restore payment": "שחזור תשלום",
+    "Archive payment": "העברת תשלום לארכיון",
+    "Payment recorded.": "התשלום נרשם.",
+    "Payment restored.": "התשלום שוחזר.",
+    "Payment archived.": "התשלום הועבר לארכיון.",
+    "Choose a PDF, JPG, PNG or WebP file.": "בחרו קובץ PDF, JPG, PNG או WebP.",
+    "The file is empty, invalid or too large.": "הקובץ ריק, לא תקין או גדול מדי.",
+    "Enter a positive amount with up to two decimal places.": "הזינו סכום חיובי עם עד שתי ספרות אחרי הנקודה.",
+    "Choose a valid transfer date.": "בחרו תאריך העברה תקין.",
+
     "Terms of Service": "תנאי שירות",
     "Service, fulfillment and after-sales policy": "מדיניות שירות, אספקה ושירות לאחר מכירה",
     "Direct Line – Service, Fulfillment & After-Sales Policy": "Direct Line – מדיניות שירות, אספקה ושירות לאחר מכירה",
@@ -262,6 +294,7 @@
 
   const tc = s => tr(s); // translate a captured piece (e.g. a country or date)
   const R = [
+    [/^(\d+) transfer confirmations? waiting$/, (_, n) => `${n} אישורי העברה ממתינים`],
     [/^You can edit for (\d+) more hours\.$/, (_, n) => `אפשר לערוך במשך ${n} שעות נוספות.`],
     [/^(\d+) accounts?$/, (m, n) => `${n} ${plural(n, 'חשבון', 'חשבונות')}`],
     [/^(\d+) waiting to be processed$/, (m, n) => `${n} ממתינות לטיפול`],
