@@ -401,7 +401,6 @@ async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source,
   if (waitUntil) waitUntil(sheetSync); else await sheetSync;
   return { row, saved };
 }
-export const MAX_IMPORT_ORDERS = 100;
 
 async function clientSummary(DB, clientId, settings) {
   const o = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS billed, COALESCE(SUM(commission),0) AS commission, COALESCE(SUM(LEAST(supplier_share, commission)),0) AS supplier, COALESCE(SUM(selling_price - price) FILTER (WHERE selling_price IS NOT NULL),0) AS profit FROM client_orders WHERE client_id = ? AND status <> 'cancelled'").bind(clientId).first();
@@ -484,37 +483,6 @@ export async function handlePortal(request, url, ctx) {
     const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, who.admin ? 'admin' : 'client', '', settings);
     const out = { ...orderOut(row), photos: saved };
     return json({ ok: true, order: who.admin ? out : clientOrder(out) });
-  }
-  // ----- bulk import from an Etsy orders file (parsed in the browser) -----
-  // Each order still needs the product link(s) (built from the Etsy listing IDs); photos are optional
-  // here because the link already shows the item. Orders whose Etsy order number is already in the
-  // portal for this client are skipped, so uploading the same file twice is safe.
-  if (path === '/orders/import' && method === 'POST') {
-    const body = await readBody(request);
-    const clientId = who.admin ? Number(body.clientId) : who.clientId;
-    const client = await DB.prepare("SELECT id, commission_per_order, active FROM users WHERE id = ? AND role = 'client' AND NOT archived").bind(clientId).first();
-    if (!client || !client.active) return json({ ok: false, error: 'Unknown client' }, 400);
-    const list = Array.isArray(body.orders) ? body.orders : [];
-    if (!list.length) return json({ ok: false, error: 'No orders to import' }, 400);
-    if (list.length > MAX_IMPORT_ORDERS) return json({ ok: false, error: `Up to ${MAX_IMPORT_ORDERS} orders per upload. Split the file by month.` }, 400);
-    const existing = new Set(((await DB.prepare("SELECT order_ref FROM client_orders WHERE client_id = ? AND order_ref <> ''").bind(clientId).all()).results || []).map(r => r.order_ref.replace(/^#/, '')));
-    const settings = await getSettings(DB);
-    const created = [], skipped = [], failed = [];
-    for (const [i, o] of list.entries()) {
-      const ref = text(o?.orderRef, 120);
-      const label = ref || `Row ${i + 1}`;
-      if (ref && existing.has(ref.replace(/^#/, ''))) { skipped.push({ orderRef: label, reason: 'Already in your orders' }); continue; }
-      let f; try { f = orderFields({ ...o, trackingNumber: '', category: '', weightKg: null, productCost: null, shippingFee: null, price: null, notes: text(o?.notes, 2000) }); }
-      catch (e) { failed.push({ orderRef: label, reason: e.message }); continue; }
-      if (!who.admin) { f.tracking_number = ''; f.category = ''; f.weight_kg = null; f.product_cost = null; f.shipping_fee = null; f.price = 0; }
-      if (!f.etsy_url) { failed.push({ orderRef: label, reason: 'No product link (Listing ID missing)' }); continue; }
-      if (!f.etsy_url.split('\n').every(validLink)) { failed.push({ orderRef: label, reason: 'Product link is not a full https:// link' }); continue; }
-      if (!f.buyer_name || !f.address_line_1) { failed.push({ orderRef: label, reason: 'Recipient name or address missing' }); continue; }
-      const { row } = await insertOrder(DB, env, waitUntil, client, f, [], who.admin ? 'admin' : 'client', 'etsy-csv', settings);
-      if (ref) existing.add(ref.replace(/^#/, ''));
-      created.push(row.id);
-    }
-    return json({ ok: true, created: created.length, ids: created, skipped, failed });
   }
   // ----- notifications: what the other side did, newest first -----
   if (path === '/notifications' && method === 'GET' && !who.admin) {

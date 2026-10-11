@@ -14,9 +14,9 @@ test('portal and admin pages have no inline scripts (the security policy blocks 
 
 test('admin preview of a client portal hides every add / edit / message control', () => {
   const css = read('portal/portal.css');
-  for (const sel of ['.new-btn', '.fab', '[data-nav=new]', '[data-nav=import]', 'a[href^="#/edit/"]', '[data-cancel-order]', '.composer', '.pm-add', '.pm-remove'])
+  for (const sel of ['.new-btn', '.fab', '[data-nav=new]', 'a[href^="#/edit/"]', '[data-cancel-order]', '.composer', '.pm-add', '.pm-remove'])
     assert.ok(css.includes(sel), 'preview hides ' + sel);
-  assert.match(read('portal/portal.js'), /S\.me\?\.preview && \['new', 'edit', 'import'\]\.includes\(S\.route\)/);
+  assert.match(read('portal/portal.js'), /S\.me\?\.preview && \['new', 'edit'\]\.includes\(S\.route\)/);
 });
 
 test('admin order form has the same order fields as the client form', () => {
