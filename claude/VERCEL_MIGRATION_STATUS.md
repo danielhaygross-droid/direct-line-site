@@ -31,7 +31,9 @@ Full history: root CONTINUE_HERE.md at C:/Users/erwin/Downloads/Direct Line/dire
 
 Completion report: `../output/pdf/Direct-Line-Completion-Report-2026-10-12.pdf` (2 pages, demo screenshots).
 
-## Next change prepared: #1 Terms acceptance
+## PR #19 ready: #1 Terms acceptance
+
+https://github.com/danielhaygross-droid/direct-line-site/pull/19
 
 Branch `codex/client-terms`, based on merged PR #18 (`37dba0d`). Not live until the next PR is merged.
 

@@ -480,7 +480,7 @@ export async function handlePortal(request, url, ctx) {
     return json({ ok: true, policy, accepted });
   }
   if (path === '/terms/accept' && method === 'POST' && !who.admin && !who.preview) {
-    const policy = await currentTerms(DB), body = await readBody(request);
+    const policy = await currentTerms(DB), body = (await readBody(request)) || {};
     if (body.accepted !== true) return json({ ok: false, error: 'Please tick the agreement checkbox.' }, 400);
     if (body.version !== policy.version) return json({ ok: false, error: 'The terms have changed. Please reload and read the current version.' }, 409);
     return json({ ok: true, accepted: await acceptTerms(DB,who.clientId,policy.version,request) });
