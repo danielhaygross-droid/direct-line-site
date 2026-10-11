@@ -232,6 +232,11 @@
         </form>
         <p class="note" style="margin-top:6px">Clients see these on their Payments page under “How to pay”, each with a Copy button. Leave a field empty to hide it.</p>
       </section>
+      <section class="card card-pad"><h3 class="form-sec">Terms of Service</h3><p class="note">Publishing a new version requires every client to accept again. Previous versions and acceptance records are preserved.</p>
+        <form id="terms-publish" class="form-grid"><label class="field full"><span>New version number</span><input name="version" type="number" min="${S.ov.termsPolicy.version + 1}" value="${S.ov.termsPolicy.version + 1}" required></label>
+          <label class="field full"><span>English policy text</span><textarea name="english" rows="10" maxlength="18000" required>${esc(S.ov.termsPolicy.english)}</textarea></label>
+          <label class="field full"><span>Hebrew policy text</span><textarea name="hebrew" rows="10" maxlength="18000" dir="rtl" required>${esc(S.ov.termsPolicy.hebrew)}</textarea></label>
+          <div class="field full"><button type="submit" class="btn btn-primary">Publish new terms version</button></div><p class="form-msg full" data-terms-msg role="status"></p></form></section>
       <section class="card card-pad"><h3 class="form-sec">Shipping calculator</h3>
         <form class="form-grid" data-calc onsubmit="return false">
           <label class="field"><span>Destination</span><select name="country">${rated.map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('')}</select></label>
@@ -248,6 +253,12 @@
     </div>`;
   }
   function bindSettings() {
+    const tf = $('#terms-publish');
+    if (tf) tf.addEventListener('submit', async e => {
+      e.preventDefault(); const b = $('[type=submit]', tf), m = $('[data-terms-msg]'); b.disabled = true;
+      try { await api('/admin/terms', { method: 'POST', body: { version: Number(tf.version.value), english: tf.english.value, hebrew: tf.hebrew.value } }); m.textContent = 'Published. Clients must accept the new version.'; m.className = 'form-msg full ok'; await loadAll(); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; b.disabled = false; }
+    });
     const bf = $('#bank-form');
     if (bf) bf.addEventListener('submit', async e => {
       e.preventDefault();
@@ -429,7 +440,7 @@
             <label class="field full"><span>Name</span><input name="name" maxlength="120" value="${esc(c.name)}"></label>
             <label class="field"><span>Fee per order <small>empty = default</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01" value="${c.commissionPerOrder ?? ''}"></span></label>
             <label class="field"><span>Status</span><select name="active"><option value="true"${c.active ? ' selected' : ''}>Active</option><option value="false"${c.active ? '' : ' selected'}>Disabled (can’t sign in)</option></select></label>
-            <div class="field full"><span>Username</span><div class="copy-line"><b data-no-i18n>${esc(c.username)}</b><button type="button" class="btn btn-sm" data-copy="${esc(c.username)}">Copy</button></div><p><span>Last login:</span> ${c.lastLogin ? esc(new Date(c.lastLogin * 1000).toLocaleString()) : 'Never'}</p><button type="button" class="btn" data-reset-password="${c.id}">Reset password</button><div data-reset-result role="status"></div></div>
+            <div class="field full"><span>Username</span><div class="copy-line"><b data-no-i18n>${esc(c.username)}</b><button type="button" class="btn btn-sm" data-copy="${esc(c.username)}">Copy</button></div><p><span>Last login:</span> ${c.lastLogin ? esc(new Date(c.lastLogin * 1000).toLocaleString()) : 'Never'}</p><p>${c.termsAccepted ? `<span>Terms accepted:</span> <time data-no-i18n>${esc(new Date(c.termsAccepted.acceptedAt * 1000).toISOString().replace('T', ' ').replace('.000Z', ' UTC'))} · v${c.termsAccepted.version}</time>` : 'Not accepted yet'}</p>${c.termsAccepted && c.termsRequired ? '<p class="note">Current terms not accepted yet.</p>' : ''}<button type="button" class="btn" data-reset-password="${c.id}">Reset password</button><div data-reset-result role="status"></div></div>
             <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Save account</button><p class="form-msg" data-account-msg></p></div></form>
             <p class="note" style="margin-top:12px">A new fee only applies to new orders. Existing orders keep the fee they were created with.</p></section>
           ${subscriptionHTML(c)}

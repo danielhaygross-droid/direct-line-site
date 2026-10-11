@@ -7,6 +7,8 @@
 import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { googleSheetsConfigured, retryPendingGoogleSheetOrders, syncClientToGoogleSheet, syncPortalOrderToGoogleSheet } from './google-sheets.mjs';
 
+import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms } from './terms.mjs';
+
 const utf8 = new TextEncoder();
 const SESSION_SECONDS = 43200; // 12h, same as the Worker
 const b64url = bytes => Buffer.from(bytes).toString('base64url');
@@ -149,6 +151,8 @@ export const SCHEMA = [
 // Supplier shipping rates (USD per kg) — from the supplier's rate sheet. Admin-only: sent with
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
+SCHEMA.push(...TERMS_SCHEMA);
+
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
     UK: { name: 'United Kingdom', general: 10, battery: 12, cosmetic: 15 },
@@ -463,6 +467,23 @@ export async function handlePortal(request, url, ctx) {
       if (path === '/me' && method === 'GET') return json({ ok: true, role: 'client', passwordResetRequired: true });
       if (path !== '/password') return json({ ok: false, error: 'Choose a new password to continue.' }, 423);
     }
+    if (!who.preview) {
+      const policy = await currentTerms(DB), accepted = await termsAcceptance(DB,who.clientId,policy.version);
+      if (!accepted) {
+        if (path === '/me' && method === 'GET') return json({ ok: true, role: 'client', termsRequired: true });
+        if (!['/terms', '/terms/accept', '/password'].includes(path)) return json({ ok: false, error: 'Please accept the Terms of Service to continue.' }, 423);
+      }
+    }
+  }
+  if (path === '/terms' && method === 'GET') {
+    const policy = await currentTerms(DB), accepted = who.admin ? null : await termsAcceptance(DB,who.clientId,policy.version);
+    return json({ ok: true, policy, accepted });
+  }
+  if (path === '/terms/accept' && method === 'POST' && !who.admin && !who.preview) {
+    const policy = await currentTerms(DB), body = (await readBody(request)) || {};
+    if (body.accepted !== true) return json({ ok: false, error: 'Please tick the agreement checkbox.' }, 400);
+    if (body.version !== policy.version) return json({ ok: false, error: 'The terms have changed. Please reload and read the current version.' }, 409);
+    return json({ ok: true, accepted: await acceptTerms(DB,who.clientId,policy.version,request) });
   }
   if (path === '/password' && method === 'POST' && !who.admin && !who.preview) {
     const u = await DB.prepare('SELECT password_hash, password_reset_required, session_version FROM users WHERE id = ?').bind(who.clientId).first();
@@ -634,20 +655,27 @@ export async function handlePortal(request, url, ctx) {
   // ----- admin-only routes -----
   if (!who.admin) return json({ ok: false, error: 'Forbidden' }, 403);
 
+  if (path === '/admin/terms' && method === 'POST') {
+    try { return json({ ok: true, policy: await publishTerms(DB,await readBody(request)) }); }
+    catch (e) { return json({ ok: false, error: e.message }, 400); }
+  }
   if (path === '/admin/overview' && method === 'GET') {
     const pendingSync = retryPendingGoogleSheetOrders(DB, env).catch(error => console.error('Google Sheets pending-order retry failed', error));
     if (waitUntil) waitUntil(pendingSync);
     const settings = await getSettings(DB);
+    const termsPolicy = await currentTerms(DB);
+    const termsRows = (await DB.prepare('SELECT DISTINCT ON (client_id) client_id,version,accepted_at FROM client_terms_acceptances ORDER BY client_id,version DESC').all()).results || [];
+    const acceptedTerms = new Map(termsRows.map(r => [r.client_id, { version: Number(r.version), acceptedAt: Number(r.accepted_at) }]));
     const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, active, archived, created_at, trial_start, trial_end, sub_status, sub_last_payment, last_login, password_reset_required FROM users ORDER BY role, display_name').all()).results || [];
     const clients = [];
     const archived = [];
     for (const u of users.filter(u => u.role === 'client' && u.archived)) archived.push({ id: u.id, username: u.username, name: u.display_name, orders: Number((await DB.prepare('SELECT COUNT(*) AS n FROM client_orders WHERE client_id = ?').bind(u.id).first()).n) });
-    for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, lastLogin: u.last_login == null ? null : Number(u.last_login), passwordResetRequired: !!u.password_reset_required, commissionPerOrder: u.commission_per_order, subscription: subscriptionOut(u, settings), ...(await clientSummary(DB, u.id, settings)) });
+    for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, termsAccepted: acceptedTerms.get(u.id) || null, termsRequired: acceptedTerms.get(u.id)?.version !== termsPolicy.version, lastLogin: u.last_login == null ? null : Number(u.last_login), passwordResetRequired: !!u.password_reset_required, commissionPerOrder: u.commission_per_order, subscription: subscriptionOut(u, settings), ...(await clientSummary(DB, u.id, settings)) });
     const keys = ['billed', 'paid', 'outstanding', 'commission', 'supplierShare', 'ourShare'];
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
-    return json({ ok: true, settings, totals, clients, admins, archived, rates: SHIPPING_RATES, googleSheets: { configured: googleSheetsConfigured(env) } });
+    return json({ ok: true, settings, termsPolicy, totals, clients, admins, archived, rates: SHIPPING_RATES, googleSheets: { configured: googleSheetsConfigured(env) } });
   }
   // ----- Daniel's stores (dashboard store list) -----
   if (path === '/admin/stores' && method === 'GET') {

@@ -35,6 +35,30 @@
   const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 
   const D = {
+    "Terms of Service": "תנאי שירות",
+    "Service, fulfillment and after-sales policy": "מדיניות שירות, אספקה ושירות לאחר מכירה",
+    "Direct Line – Service, Fulfillment & After-Sales Policy": "Direct Line – מדיניות שירות, אספקה ושירות לאחר מכירה",
+    "Please read and accept before using the portal.": "נא לקרוא ולהסכים לפני השימוש בפורטל.",
+    "I have read and agree to the Terms of Service": "קראתי ואני מסכים לתנאי השירות",
+    "Accept & continue": "אישור והמשך",
+    "Version": "גרסה",
+    "Terms accepted:": "תנאי השירות אושרו:",
+    "Not accepted yet": "טרם אושרו",
+    "Current terms not accepted yet.": "תנאי השירות הנוכחיים טרם אושרו.",
+    "Publishing a new version requires every client to accept again. Previous versions and acceptance records are preserved.": "פרסום גרסה חדשה מחייב את כל הלקוחות לאשר שוב. גרסאות קודמות ורישומי אישור נשמרים.",
+    "New version number": "מספר גרסה חדשה",
+    "English policy text": "נוסח המדיניות באנגלית",
+    "Hebrew policy text": "נוסח המדיניות בעברית",
+    "Publish new terms version": "פרסום גרסה חדשה של תנאי השירות",
+    "Published. Clients must accept the new version.": "פורסם. הלקוחות חייבים לאשר את הגרסה החדשה.",
+    "Please accept the Terms of Service to continue.": "נא לאשר את תנאי השירות כדי להמשיך.",
+    "Please tick the agreement checkbox.": "נא לסמן את תיבת ההסכמה.",
+    "The terms have changed. Please reload and read the current version.": "תנאי השירות השתנו. נא לרענן ולקרוא את הגרסה הנוכחית.",
+    "Choose a higher terms version number.": "בחרו מספר גרסה גבוה יותר לתנאי השירות.",
+    "Both policy texts are required (up to 18000 characters each).": "יש להזין את שני נוסחי המדיניות (עד 18000 תווים לכל נוסח).",
+    "Use the Direct Line service name in the policy.": "השתמשו בשם השירות Direct Line בנוסח המדיניות.",
+    "This terms version already exists. Reload and choose a higher version.": "גרסת תנאי השירות הזו כבר קיימת. רעננו ובחרו גרסה גבוהה יותר.",
+
     // Portal changes #3, #8, #9, #11 and #14.
     "Store order number": "מספר ההזמנה בחנות",
     "The order number from your store’s order page.": "מספר ההזמנה מעמוד ההזמנות בחנות שלך.",
