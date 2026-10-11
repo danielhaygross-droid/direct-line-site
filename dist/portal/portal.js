@@ -684,7 +684,33 @@
   function storeSwitcher(){return `<div data-store-switcher>${S.stores.length>1?`<div class="chips store-switcher"><button class="chip${!S.storeId?' on':''}" type="button" data-select-store="0">All stores</button>${S.stores.map(s=>`<button class="chip${s.id===S.storeId?' on':''}" type="button" data-select-store="${s.id}">${window.DLClientStoreUI.label(s)}</button>`).join('')}<a class="chip" href="#/stores">+ Add store</a></div>`:''}</div>`;}
   function selectStore(id){S.storeId=Number(id)||0;store.set('dl-client-store-'+S.me.id,S.storeId);location.hash='#/'+S.route+(S.id?'/'+S.id:'')+'?store='+S.storeId;}
   function viewStores(){return `${S.me.preview?'':`<section class="card card-pad">${window.DLClientStoreUI.form(null,S.me.id)}</section>`}${S.stores.map(s=>`<section class="card card-pad">${window.DLClientStoreUI.label(s)}${S.me.preview?'':window.DLClientStoreUI.form(s,S.me.id)}</section>`).join('')}`;}
-  function bindStores(){for(const f of $$('[data-client-store-form]')){f.addEventListener('input',e=>{f.dataset.dirty='1';if(e.target.name==='color')f.dataset.colourEdited='1';});f.addEventListener('submit',async e=>{e.preventDefault();const b=$('[type=submit]',f),m=$('[data-store-msg]',f);b.disabled=true;try{await api('/client-stores'+(f.dataset.clientStoreForm?'/'+f.dataset.clientStoreForm:''),{method:'POST',body:{name:f.storeName.value,platform:f.platform.value,link:f.link.value,color:f.dataset.clientStoreForm||f.dataset.colourEdited?f.color.value:undefined,archived:!!f.archived?.checked}});for(const form of $$('[data-client-store-form]'))form.dataset.dirty='';await refresh();N.popup({icon:'check',title:'Store saved.'});}catch(ex){m.textContent=ex.message;b.disabled=false;}});}}
+  function bindStores(){
+    for(const f of $$('[data-client-store-form]')){
+      f.addEventListener('input',e=>{f.dataset.dirty='1';if(e.target.name==='color')f.dataset.colourEdited='1';});
+      f.addEventListener('submit',async e=>{
+        e.preventDefault();const b=$('[type=submit]',f),m=$('[data-store-msg]',f);
+        if(b.disabled)return;
+        b.disabled=true;f.dataset.dirty='1';m.textContent='Saving store...';
+        try{
+          const result=await api('/client-stores'+(f.dataset.clientStoreForm?'/'+f.dataset.clientStoreForm:''),{method:'POST',body:{name:f.storeName.value,platform:f.platform.value,link:f.link.value,color:f.dataset.clientStoreForm||f.dataset.colourEdited?f.color.value:undefined,archived:!!f.archived?.checked}});
+          // Save succeeds independently of unrelated background requests. Keep other drafts.
+          const drafts=$$('[data-client-store-form]').filter(other=>other!==f&&other.dataset.dirty).map(other=>({id:other.dataset.clientStoreForm,colourEdited:other.dataset.colourEdited,values:[...other.elements].filter(el=>el.name).map(el=>[el.name,el.type==='checkbox'?el.checked:el.value])}));
+          S.stores=S.stores.filter(s=>s.id!==result.store.id).concat(result.store).sort((a,b)=>a.id-b.id);
+          if(S.route==='stores'){
+            renderView();
+            for(const draft of drafts){
+              const other=$$('[data-client-store-form]').find(el=>el.dataset.clientStoreForm===draft.id);if(!other)continue;
+              for(const [name,value] of draft.values){const el=other.elements.namedItem(name);if(el.type==='checkbox')el.checked=value;else el.value=value;}
+              other.dataset.dirty='1';if(draft.colourEdited)other.dataset.colourEdited='1';
+            }
+            const saved=$$('[data-client-store-form]').find(el=>el.dataset.clientStoreForm===String(result.store.id));
+            if(saved)$('[data-store-msg]',saved).textContent='Store saved.';
+          }
+          N.popup({icon:'check',title:'Store saved.'});
+        }catch(ex){m.textContent=ex.message;b.disabled=false;}
+      });
+    }
+  }
   const claimStatus=s=>({open:'Open',approved:'Approved',rejected:'Rejected',resolved:'Resolved'}[s]||s);
   function claimCard(c){return c?`<section class="card card-pad"><h3 class="sec-title">Claim</h3><p><span>${claimStatus(c.status)}</span> · <span>${c.resolution==='refund'?'Refund':'Reshipment'}</span></p><p data-no-i18n>${esc(c.description)}</p>${c.reply?`<p><span>Admin reply</span>: <span data-no-i18n>${esc(c.reply)}</span></p>`:''}${c.reshipmentOrderId?`<button class="btn btn-sm" type="button" data-open-order="${c.reshipmentOrderId}">Open reshipment</button>`:''}${c.fileIds.map(id=>`<p><a href="/api/portal/files/${id}" target="_blank" rel="noopener">Open evidence</a></p>`).join('')}</section>`:'';}
   function showClaimForm(o){

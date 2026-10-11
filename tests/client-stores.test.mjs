@@ -14,3 +14,12 @@ test('periods use calendar ranges including leap years and reject impossible cus
 test('store names, platform, colour and links are validated',()=>{
  assert.equal(storeInput({name:' Demo ',platform:'Etsy'}).name,'Demo');for(const body of [{name:'',platform:'Etsy'},{name:'Demo',platform:'invalid'},{name:'Demo',platform:'Etsy',color:'red;display:none'},{name:'Demo',platform:'Etsy',link:'javascript:alert(1)'}])assert.throws(()=>storeInput(body));
 });
+
+test('store links accept pasted domains while rejecting unsafe schemes and credentials',()=>{
+ const input=link=>storeInput({name:'Demo',platform:'Shopify',link}).link;
+ assert.equal(input(' www.example.com/shop '),'https://www.example.com/shop');
+ assert.equal(input('example.com'),'https://example.com');
+ assert.equal(input('https://example.com/path?q=1'),'https://example.com/path?q=1');
+ assert.equal(input(''),'');
+ for(const link of ['not a link','javascript:alert(1)','https://user:secret@example.com','ftp://example.com'])assert.throws(()=>input(link));
+});
