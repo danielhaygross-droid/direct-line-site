@@ -259,7 +259,7 @@
         <ol class="how-steps">
           <li><b>1</b><div><strong>Send us the order</strong><span>Got an Etsy sale? Tap “Send a new order” and fill in what the customer bought and where it goes.</span></div></li>
           <li><b>2</b><div><strong>We pack and ship it</strong><span>We buy the product, ship it to your customer and add the tracking number here.</span></div></li>
-          <li><b>3</b><div><strong>Pay your balance</strong><span>We add the product and shipping cost to your balance. Pay it by bank transfer.</span></div></li>
+          <li><b>3</b><div><strong>Pay your balance</strong><span>We add the order total to your balance. Payment by bank transfer.</span></div></li>
         </ol>
         <div class="how-actions"><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a><a class="btn" href="#/import">${ic('upload')}Many orders? Upload your Etsy file</a></div></section>` : ''}
       <section class="stats stats-3">
@@ -304,7 +304,7 @@
         <td data-label="Destination">${esc(place(o.destination))}</td>
         ${compact ? '' : `<td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>` : '<span class="dim">Not yet</span>'}</td>`}
         <td data-label="Customer paid" class="num"><b>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</b></td>
-        ${compact ? '' : `<td data-label="Profit" class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${o.productCost == null && o.shippingFee == null ? '<span class="dim">Pending</span>' : money(o.profit)}</td>`}
+        ${compact ? '' : `<td data-label="Profit" class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${!o.priced ? '<span class="dim">Pending</span>' : money(o.profit)}</td>`}
         <td data-label="Status">${UI.pill(o.status)}</td>
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
@@ -365,11 +365,10 @@
         <div><dt>Customer</dt><dd>${esc(o.buyerName) || '—'}</dd></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
         <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.address1, o.address2, o.city, o.region, o.postalCode, o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd></div>
         ${o.notes ? `<div class="full"><dt>Notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl></section>
-      <section class="card card-pad"><h3 class="sec-title">Sale &amp; fulfilment</h3><div class="money-rows">
+      <section class="card card-pad"><h3 class="sec-title">Sale &amp; cost</h3><div class="money-rows">
         <div class="total"><span>Customer paid</span><span>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</span></div>
-        <div><span>Product cost</span><span>${o.productCost == null ? 'Pending Direct Line' : money(o.productCost)}</span></div><div><span>Shipping fee</span><span>${o.shippingFee == null ? 'Pending Direct Line' : money(o.shippingFee)}</span></div>
-        <div><span>Total you pay</span><span>${o.productCost == null && o.shippingFee == null ? 'Pending Direct Line' : money(o.price)}</span></div>
-        ${o.productCost == null && o.shippingFee == null ? '' : `<div><span>Your estimated profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}"><b>${money(o.profit)}</b></span></div>`}</div></section>`;
+        <div><span>Total you pay</span><span>${!o.priced ? 'Pending Direct Line' : money(o.price)}</span></div>
+        ${!o.priced ? '' : `<div><span>Your estimated profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}"><b>${money(o.profit)}</b></span></div>`}</div></section>`;
     if (keepFoot && d.foot.dataset.confirm) return;
     d.foot.innerHTML = `${o.status !== 'cancelled' ? `<a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a>` : ''}<span class="spacer"></span>${o.status === 'pending' ? `<button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Cancel order</button>` : o.status === 'cancelled' ? '<span class="muted" style="font-size:13px">This order was cancelled.</span>' : '<span class="muted" style="font-size:13px">Need a change? Send us a message.</span>'}`;
   }
@@ -687,7 +686,7 @@
           ${S.payments.map(p => `<tr><td data-label="Date">${esc(fullDate(p.paidAt))}</td><td data-label="Method">${esc(p.method) || '—'}</td><td data-label="Note" class="wide">${esc(p.note) || '<span class="dim">—</span>'}</td><td data-label="Amount" class="num"><b class="pos">${money(p.amount)}</b></td></tr>`).join('')}
         </tbody></table></div>` : empty('wallet', 'No payments yet', 'When we receive a payment from you, we record it here.')}
       </section>
-      <p class="note">Your bill is the product cost plus the shipping fee of each order. Payments are added by the Direct Line team once they arrive.</p>`;
+      <p class="note">Your bill is the total of each order. The Direct Line team records payments when they arrive.</p>`;
   }
 
 
