@@ -168,7 +168,14 @@ export const SHIPPING_RATES = {
     CH: { name: 'Switzerland', general: 10, battery: 12, cosmetic: 15, est: true },
     NO: { name: 'Norway', general: 10, battery: 12, cosmetic: 15, est: true },
   };
-export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000', subscription_price: '29' };
+// Bank details clients see on Payments → "How to pay" (item #5). Editable in admin Fees & settings.
+export const BANK_FIELDS = ['bank_currency', 'bank_holder', 'bank_account', 'bank_ach', 'bank_wire', 'bank_swift', 'bank_name', 'bank_address', 'bank_reference'];
+const BANK_DEFAULTS = {
+  bank_currency: 'USD', bank_holder: 'Guangzhou Huadu Beyond E-Commerce Firm', bank_account: '20000013048280',
+  bank_ach: '028000024', bank_wire: '021000021', bank_swift: 'CHASUS33', bank_name: 'JP MORGAN CHASE BANK, N.A.',
+  bank_address: '383 MADISON AVENUE, NEW YORK, NY 10179', bank_reference: 'Use your Direct Line username as the reference',
+};
+export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000', subscription_price: '29', ...BANK_DEFAULTS };
 // ---------- subscription (first month free, then monthly) ----------
 export const SUB_STATUSES = ['trial', 'active', 'overdue', 'cancelled'];
 export const isoDate = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v ? v : null);
@@ -444,7 +451,7 @@ export async function handlePortal(request, url, ctx) {
     if (who.admin) return json({ ok: true, role: 'admin', name: 'Admin', settings });
     const u = await DB.prepare('SELECT id, username, display_name, active, trial_start, trial_end, sub_status, sub_last_payment FROM users WHERE id = ?').bind(who.clientId).first();
     if (!u || !u.active) return json({ ok: false, error: 'Account disabled' }, 403);
-    return json({ ok: true, role: 'client', preview: !!who.preview, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor }, subscription: subscriptionOut(u, settings), summary: (({ commission, supplierShare, ourShare, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
+    return json({ ok: true, role: 'client', preview: !!who.preview, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor, ...Object.fromEntries(BANK_FIELDS.map(k => [k, settings[k] || ''])) }, subscription: subscriptionOut(u, settings), summary: (({ commission, supplierShare, ourShare, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
   }
 
   // ----- client routes -----
@@ -765,6 +772,7 @@ export async function handlePortal(request, url, ctx) {
     if (body.monthly_order_goal !== undefined) { const v = Number(body.monthly_order_goal); if (!(Number.isInteger(v) && v >= 0 && v <= 1e6)) return json({ ok: false, error: 'Goal must be a whole number' }, 400); updates.monthly_order_goal = String(v); }
     if (body.subscription_price !== undefined) { const v = money(body.subscription_price); if (v === null || !isMoney(v) || v > 100000) return json({ ok: false, error: 'Invalid subscription price' }, 400); updates.subscription_price = String(v); }
     if (body.volumetric_divisor !== undefined) { const v = Number(body.volumetric_divisor); if (!(v >= 1000 && v <= 10000)) return json({ ok: false, error: 'Divisor must be 1000-10000' }, 400); updates.volumetric_divisor = String(v); }
+    for (const k of BANK_FIELDS) if (body[k] !== undefined) updates[k] = text(body[k], 200);
     for (const [k, v] of Object.entries(updates)) await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k, v).run();
     return json({ ok: true, settings: await getSettings(DB) });
   }
