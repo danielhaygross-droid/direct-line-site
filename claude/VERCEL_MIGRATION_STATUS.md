@@ -11,6 +11,8 @@ Production is Vercel + Neon, https://direct-line-control.vercel.app/.
 
 ## Prepared for review: PDF item #7
 
+Draft PR #18: https://github.com/danielhaygross-droid/direct-line-site/pull/18
+
 Branch: `codex/remove-client-etsy-import`, based on `f0b44fb`.
 
 - Removed client upload page, sidebar entry, Home buttons and New order banner.
