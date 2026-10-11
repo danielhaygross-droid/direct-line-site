@@ -3,8 +3,8 @@
   const { api, money, esc, trackingUrl, logout, renderLogin, quote, destinationPicker, hasRate, categoryOptions, countryName, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, $, $$ } = window.DL;
   const MAX_PHOTOS = 8;
   const UI = window.DLOrderUI, N = window.DLNotify;
-  const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-  const S = { me: null, orders: [], payments: [], transfers: [], notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
+  const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancellation_requested', 'cancelled'];
+  const S = { me: null, orders: [], payments: [], transfers: [], adjustments: [], notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
@@ -150,7 +150,7 @@
     const me = await api('/me');
     if (me.termsRequired) { S.me = { ...S.me, ...me }; await termsScreen(); return false; }
     const [o, p, n] = await Promise.all([api('/orders'), api('/payments'), api('/notifications').catch(() => null)]);
-    S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments; S.transfers = p.transfers || [];
+    S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments; S.transfers = p.transfers || []; S.adjustments = p.adjustments || [];
     if (!first && S.route === 'edit' && !S.orders.some(o => o.id === S.id && editable(o))) { go('orders'); N.popup({ icon: 'alert', title: 'This order is already being processed. Need a change? Send us a message.' }); }
     if (n) { S.notes = n.items; S.seenAt = n.seenAt; }
     const fresh = known ? S.notes.filter(x => !known.has(x.id)) : [];
@@ -300,7 +300,7 @@
   function viewHome() {
     const me = S.me, s = me.summary, o = S.orders;
     const h = new Date().getHours(), hello = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-    const active = o.filter(x => !['delivered', 'cancelled'].includes(x.status)).length;
+    const active = o.filter(x => !['delivered', 'cancellation_requested', 'cancelled'].includes(x.status)).length;
     const credit = s.outstanding < 0;
     const items = noteItems().slice(0, 6);
     const newbie = s.orders < 3;
@@ -413,7 +413,7 @@
         : '<p class="muted" style="margin:0">No tracking number yet. Direct Line will add it after the parcel ships.</p>'}</section>
       <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o)}</section>
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
-        <div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div><div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div>
+        <div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div>${o.deliveredAt ? `<div><dt>Delivered date</dt><dd>${esc(fullDate(o.deliveredAt))}</dd></div>` : ''}${o.cancellationReason ? `<div class="full"><dt>Cancellation reason</dt><dd data-no-i18n>${esc(o.cancellationReason)}</dd></div>` : ''}<div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div>
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
         <div><dt>Customer</dt><dd>${esc(o.buyerName) || '—'}</dd></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
@@ -424,7 +424,7 @@
         <div><span>Total you pay</span><span>${!o.priced ? 'Pending Direct Line' : money(o.price)}</span></div>
         ${!o.priced ? '' : `<div><span>Your estimated profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}"><b>${money(o.profit)}</b></span></div>`}</div></section>`;
     if (keepFoot && d.foot.dataset.confirm) return;
-    d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>This order is already being processed. Need a change? Send us a message.</a>`}<span class="spacer"></span>${o.status === 'pending' ? `<button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Cancel order</button>` : ''}`;
+    d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>This order is already being processed. Need a change? Send us a message.</a>`}<span class="spacer"></span>${['pending','processing','shipped'].includes(o.status) ? `<div><button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Request cancellation</button><p class="muted" style="font-size:12px">Free before the item reaches our warehouse. $4 after it arrives at the warehouse, or if the parcel is intercepted.</p></div>` : ''}${o.status === 'shipped' ? `<button type="button" class="btn btn-primary" data-delivered="${o.id}">Mark as delivered</button>` : ''}`;
   }
   function refreshDrawer() {
     const d = UI.getDrawer();
@@ -661,6 +661,7 @@
         <div class="stat"><small>Paid</small><strong class="pos">${money(s.paid)}</strong><em>${S.payments.length} payment${S.payments.length === 1 ? '' : 's'}</em></div>
         <div class="stat hero"><small>${credit ? 'Credit on your account' : 'Balance due'}</small><strong>${money(Math.abs(s.outstanding))}</strong><em>${credit ? 'It counts toward your next orders' : s.outstanding > 0 ? 'Please send this to Direct Line' : 'You’re all paid up'}</em></div>
       </section>
+      ${S.adjustments.length ? `<section class="card card-pad"><h3 class="sec-title">Balance adjustments</h3>${S.adjustments.map(a=>`<div class="confirmation-row"><a href="#/orders" data-open-order="${a.orderId}">${esc(a.orderRef || '#'+a.orderId)}</a><span>${esc(a.note)}</span><b>${money(a.amount)}</b></div>`).join('')}</section>` : ''}
       ${howToPay()}
       ${transferForm()}
       <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3></div>
@@ -716,10 +717,12 @@
     if (t.closest('[data-close-drawer]')) { UI.getDrawer().close(); return; }
     const cp = t.closest('[data-copy]');
     if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copy); cp.innerHTML = ic('check') + 'Copied'; } catch (ex) { /* no clipboard */ } return; }
+    const delivered=t.closest('[data-delivered]');
+    if(delivered){delivered.disabled=true;try{await api('/orders/'+delivered.dataset.delivered+'/mark-delivered',{method:'POST',body:{}});await refresh();N.popup({icon:'check',title:'Marked as delivered'});}catch(ex){delivered.disabled=false;N.popup({icon:'alert',title:ex.message});}return;}
     const c = t.closest('[data-cancel-order]');
     if (c) {
       const foot = UI.getDrawer().foot; foot.dataset.confirm = '1';
-      foot.innerHTML = `<span style="font-weight:600">Cancel this order?</span><span class="spacer"></span><button type="button" class="btn" data-keep>Keep it</button><button type="button" class="btn btn-danger" data-really-cancel="${c.dataset.cancelOrder}">Yes, cancel it</button>`;
+      foot.innerHTML = `<span style="font-weight:600">Request cancellation?</span><label class="field"><span>Reason <small>optional</small></span><input name="cancellationReason" maxlength="1000"></label><span class="spacer"></span><button type="button" class="btn" data-keep>Keep it</button><button type="button" class="btn btn-danger" data-really-cancel="${c.dataset.cancelOrder}">Send cancellation request</button>`;
       return;
     }
     if (t.closest('[data-keep]')) { const d = UI.getDrawer(); d.foot.dataset.confirm = ''; fillDrawer(S.orders.find(x => x.id === d.key)); return; }
@@ -727,11 +730,11 @@
     if (rc) {
       rc.disabled = true;
       try {
-        await api('/orders/' + rc.dataset.reallyCancel, { method: 'PUT', body: { status: 'cancelled' } });
+        await api('/orders/' + rc.dataset.reallyCancel + '/request-cancellation', { method: 'POST', body: { reason: $('[name=cancellationReason]',UI.getDrawer().foot).value } });
         UI.getDrawer().foot.dataset.confirm = '';
         await refresh();
-        N.popup({ icon: 'alert', tone: 'red', title: 'Order cancelled' }, { duration: 5000 });
-      } catch (ex) { rc.disabled = false; N.popup({ icon: 'alert', tone: 'red', title: 'Couldn’t cancel', text: ex.message }); }
+        N.popup({ icon: 'alert', tone: 'red', title: 'Cancellation requested' }, { duration: 5000 });
+      } catch (ex) { rc.disabled = false; N.popup({ icon: 'alert', tone: 'red', title: 'Couldn’t request cancellation', text: ex.message }); }
     }
   });
 

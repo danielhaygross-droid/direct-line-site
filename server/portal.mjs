@@ -11,6 +11,8 @@ import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms 
 
 import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } from './files.mjs';
 
+import { STATUS_SCHEMA, changeStatus, balanceAdjustments } from './order-status.mjs';
+
 const utf8 = new TextEncoder();
 const SESSION_SECONDS = 43200; // 12h, same as the Worker
 const b64url = bytes => Buffer.from(bytes).toString('base64url');
@@ -153,7 +155,7 @@ export const SCHEMA = [
 // Supplier shipping rates (USD per kg) — from the supplier's rate sheet. Admin-only: sent with
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
-SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA);
+SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -212,7 +214,6 @@ export function subscriptionOut(u, settings, today = todayIso()) {
   return { status: u.sub_status || 'trial', trialStart: u.trial_start || null, trialEnd, lastPayment: u.sub_last_payment || null, price, currency: 'ILS',
     trialDaysLeft: daysLeft, trialEnded: daysLeft !== null && daysLeft < 0 };
 }
-const ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 const now = () => Math.floor(Date.now() / 1000);
 
 export const EDIT_WINDOW_SECONDS = 72 * 3600;
@@ -290,7 +291,7 @@ function orderOut(r) {
     itemTitle: r.item_title || '', sku: r.sku || '', variant: r.variant || '', quantity: Number(r.quantity || 1), etsyUrl: r.etsy_url || '', productLinks: String(r.etsy_url || '').split(/\s+/).filter(Boolean),
     commission: Number(r.commission || 0), supplierShare: round2(r.supplier_share),
     ourShare: round2(Math.max(0, Number(r.commission || 0) - Number(r.supplier_share || 0))),
-    notes: r.notes, status: r.status, editLocked: !!r.edit_locked, source: r.source || '',
+    notes: r.notes, status: r.status, deliveredAt: r.delivered_at == null ? null : Number(r.delivered_at), cancellationReason: r.cancellation_reason || '', cancellationPreviousStatus: r.cancellation_previous_status || '', editLocked: !!r.edit_locked, source: r.source || '',
     sheetSyncStatus: r.sheet_sync_status || 'waiting',
     sheetSyncedAt: r.sheet_synced_at == null ? null : Number(r.sheet_synced_at),
     sheetSyncError: r.sheet_sync_error || '',
@@ -432,7 +433,8 @@ async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source,
 async function clientSummary(DB, clientId, settings) {
   const o = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS billed, COALESCE(SUM(commission),0) AS commission, COALESCE(SUM(LEAST(supplier_share, commission)),0) AS supplier, COALESCE(SUM(selling_price - price) FILTER (WHERE selling_price IS NOT NULL),0) AS profit FROM client_orders WHERE client_id = ? AND status <> 'cancelled'").bind(clientId).first();
   const p = await DB.prepare('SELECT COALESCE(SUM(amount),0) AS paid FROM client_payments WHERE client_id = ? AND NOT archived').bind(clientId).first();
-  const billed = round2(o.billed), paid = round2(p.paid);
+  const adjustments = (await balanceAdjustments(DB,clientId)).reduce((n,a)=>n+a.amount,0);
+  const billed = round2(Number(o.billed)+adjustments), paid = round2(p.paid);
   const commission = round2(o.commission), supplierShare = round2(o.supplier);
   return { orders: Number(o.n), billed, paid, outstanding: round2(billed - paid), commission, supplierShare, ourShare: round2(commission - supplierShare), clientProfit: round2(o.profit) };
 }
@@ -525,7 +527,7 @@ export async function handlePortal(request, url, ctx) {
   }
   if (path === '/payments' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? AND NOT archived ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
-    return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })), transfers: await transfers(DB,who.clientId) });
+    return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })), adjustments: await balanceAdjustments(DB,who.clientId), transfers: await transfers(DB,who.clientId) });
   }
   if (path === '/orders' && method === 'POST') {
     const body = await readBody(request);
@@ -583,27 +585,36 @@ export async function handlePortal(request, url, ctx) {
     const events = (await DB.prepare("SELECT * FROM order_events WHERE order_id = ? AND kind <> 'message' ORDER BY created_at, id").bind(id).all()).results || [];
     return json({ ok: true, messages: rows.map(messageOut), events: events.map(eventOut) });
   }
+  const statusAction = /^\/orders\/(\d+)\/(request-cancellation|approve-cancellation|reject-cancellation|mark-delivered)$/.exec(path);
+  if (statusAction && method === 'POST') {
+    const existing = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(Number(statusAction[1])).first();
+    if (!existing || !who.admin && Number(existing.client_id)!==Number(who.clientId)) return json({ok:false,error:'Not found'},404);
+    try {
+      const row = await changeStatus(DB,existing,statusAction[2],await readBody(request),who.admin);
+      const sync = syncPortalOrderToGoogleSheet(DB,env,row.id).catch(()=>{});if(waitUntil)waitUntil(sync);
+      const out=orderOut(row);return json({ok:true,order:who.admin?out:clientOrder(out)});
+    } catch(e) {return json({ok:false,error:e.message},e.status||409);}
+  }
   const orderMatch = /^\/orders\/(\d+)$/.exec(path);
   if (orderMatch && (method === 'PUT' || method === 'POST')) {
     const id = Number(orderMatch[1]);
-    const existing = await DB.prepare('SELECT * FROM client_orders WHERE id = ?').bind(id).first();
+    let existing = await DB.prepare('SELECT * FROM client_orders WHERE id = ?').bind(id).first();
     if (!existing || (!who.admin && existing.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
     const body = await readBody(request);
-    const cancelOnly = body.status === 'cancelled' && Object.keys(body).every(k => k === 'status');
-    if (!who.admin && !cancelOnly && !canEditOrder(existing)) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
-    if ((!who.admin && !cancelOnly || body.destination !== undefined) && (!text(body.destination ?? existing.destination, 60) || text(body.destination ?? existing.destination, 60) === '__other')) return json({ ok: false, error: 'Please choose a country.' }, 400);
+    if (body.status !== undefined) {
+      if (Object.keys(body).length!==1) return json({ok:false,error:'Change status separately from order details.'},400);
+      try { const row=await changeStatus(DB,existing,'status',body,who.admin);const out=orderOut(row);const sync=syncPortalOrderToGoogleSheet(DB,env,row.id).catch(()=>{});if(waitUntil)waitUntil(sync);return json({ok:true,order:who.admin?out:clientOrder(out)}); }
+      catch(e){return json({ok:false,error:e.message},e.status||409);}
+    }
+    if (!who.admin && !canEditOrder(existing)) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
+    if ((!who.admin || body.destination !== undefined) && (!text(body.destination ?? existing.destination, 60) || text(body.destination ?? existing.destination, 60) === '__other')) return json({ ok: false, error: 'Please choose a country.' }, 400);
     // Partial status/billing updates leave historical addresses untouched. Detail edits need complete shipping fields.
-    if (!cancelOnly && (!who.admin || ['buyerName','address1','address2','city','region','postalCode','buyerPhone','destination'].some(k => body[k] !== undefined))) {
+    if ((!who.admin || ['buyerName','address1','address2','city','region','postalCode','buyerPhone','destination'].some(k => body[k] !== undefined))) {
       const addressProblem = addressError({ ...orderOut(existing), ...body });
       if (addressProblem) return json({ ok: false, error: addressProblem }, 400);
     }
     let f; try { f = orderFields({ ...orderOut(existing), ...body }); } catch (e) { return json({ ok: false, error: e.message }, 400); }
-    // Clients can edit their own order details and cancel a pending order; only admins change other statuses/fees.
-    if (!who.admin && existing.status === 'cancelled') return json({ ok: false, error: 'This order was cancelled.' }, 409);
-    if (!who.admin && body.status === 'cancelled' && existing.status !== 'pending') return json({ ok: false, error: 'This order is already being handled, so it can’t be cancelled here. Message us instead.' }, 409);
-    const status = who.admin
-      ? (ORDER_STATUSES.includes(body.status) ? body.status : existing.status)
-      : (body.status === 'cancelled' ? 'cancelled' : existing.status);
+    const status = existing.status;
     const commission = who.admin && body.commission != null && body.commission !== '' && isMoney(money(body.commission)) ? money(body.commission) : existing.commission;
     const supplierShare = who.admin && body.supplierShare != null && body.supplierShare !== '' && isMoney(money(body.supplierShare)) ? money(body.supplierShare) : existing.supplier_share;
     if (!who.admin) {
@@ -614,8 +625,8 @@ export async function handlePortal(request, url, ctx) {
       if (f.etsy_url && !f.etsy_url.split('\n').every(validLink)) return json({ ok: false, error: 'Please paste each product link in full, starting with https://' }, 400);
       if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link from your store.' }, 400);
     }
-    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, edit_locked=edit_locked OR ? WHERE id = ? AND (? OR (status=\'pending\' AND NOT edit_locked AND created_at > ?)) RETURNING *')
-      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, status !== 'pending', id, who.admin || cancelOnly, now() - EDIT_WINDOW_SECONDS).first();
+    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, edit_locked=edit_locked OR ? WHERE id = ? AND status=? AND (? OR (status=\'pending\' AND NOT edit_locked AND created_at > ?)) RETURNING *')
+      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, ['processing','shipped','delivered','cancelled'].includes(status), id, existing.status, who.admin, now() - EDIT_WINDOW_SECONDS).first();
     if (!row) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
     const actor = who.admin ? 'admin' : 'client';
     if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);

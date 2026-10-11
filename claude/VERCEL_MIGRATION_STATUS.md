@@ -71,3 +71,14 @@ Branch codex/structured-addresses builds on codex/transfer-confirmations. Merge 
 - Existing address columns reused, no guessed backfill or destructive splitting. Historical multiline street values remain in a textarea. Partial admin status/billing updates preserve incomplete historical addresses; explicit address edits require completion.
 - Versions portal JS26/admin JS29/i18n10. 43/43 tests, build/syntax/diff checks; local DB required-field/optional-field/legacy/partial-update checks; EN/HE desktop/phone theme browser save/reopen and clipboard checks. No production data changed.
 - Local scripts ../verification/check-address-api.mjs and check-address-ui.mjs; screenshots ../verification/addresses/. Not yet deployed; no completion-report update.
+
+## Status/cancellation (#2) — ready for review after PR #21
+
+Branch codex/cancellation-status. Merge PR #20, then #21, then this change.
+- Clients request cancellation from Pending/In Progress/Shipped, with optional reason and the exact free/$4 explanation. Clients cannot directly cancel or fulfil orders. Admin receives the existing bell/activity event.
+- Admin Approve/Reject; rejection restores the previous state. Approval accepts an optional USD fee and $4 shortcut. Fee is a separate balance-adjustment line, excluded from cash payments. Status/audit/fee are one atomic SQL statement; concurrent approvals charge once.
+- Pending comes from creation. Admin sets In Progress/Shipped/Delivered, or approves cancellation. Client can Mark as delivered from Shipped. First delivered timestamp retained and historical delivered orders seeded from their last update. Manual marking works; no automatic 17TRACK integration was added (optional in PDF).
+- Requests temporarily stop editing; rejecting a pre-processing request preserves the remaining edit window. Processing remains a permanent lock. Stale detail updates cannot overwrite concurrent status changes.
+- Versions portal JS27/admin JS30/order-ui2/i18n11; shared dashboard real-ui cache bumped. Migrations add cancellation prior state/reason/delivered timestamp and adjustment ledger.
+- Validation: 45/45 automated tests; build/syntax/diff checks; local DB authorization, prior-state restore, concurrency/fee once, balance line, delivered date/idempotence/audit; all eight EN/HE desktop/phone theme browser workflows passed request→admin approval $4→balance→delivery.
+- Local ../verification/check-status-api.mjs and check-status-ui.mjs, screenshots ../verification/status/. No production data changed. Deployment/report awaits merge and verification.

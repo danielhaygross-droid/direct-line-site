@@ -3,7 +3,7 @@
 (function () {
   const { api, esc } = window.DL;
   const STEPS = ['pending', 'processing', 'shipped', 'delivered'];
-  const LABEL = { pending: 'Pending', processing: 'Processing', shipped: 'Shipped', delivered: 'Delivered', cancelled: 'Cancelled' };
+  const LABEL = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancelled: 'Cancelled', cancellation_requested: 'Cancellation Requested' };
   const ICON = {
     pending: '<path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/>',
     processing: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
@@ -19,6 +19,7 @@
 
   // Pending → Processing → Shipped → Delivered, with the date each step happened (when we know it).
   function tracker(order, events = []) {
+    if (order.status === 'cancellation_requested') return `<div class="track-cancel"><span>Cancellation Requested</span></div>`;
     if (order.status === 'cancelled') {
       const ev = [...events].reverse().find(e => e.kind === 'status' && e.detail === 'cancelled');
       return `<div class="track-cancel">${svg(ICON.x).replace('<svg', '<svg style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2"')}<span>Cancelled${ev ? ' · ' + esc(when(ev.createdAt)) : ''}${ev ? `<br><small style="font-weight:500;opacity:.8">by ${ev.actor === 'admin' ? 'Direct Line' : 'the client'}</small>` : ''}</span></div>`;

@@ -49,6 +49,8 @@
     const base = { id: 'ev-' + e.id, time: e.createdAt * 1000, orderId: e.orderId, action: L('Open order', 'פתח הזמנה') };
     if (e.kind === 'created') return { ...base, icon: 'order', tone: 'gold', title: L(`${who} added a new order`, `${who} הוסיף/ה הזמנה חדשה`), text: L(`${ref} · waiting to be processed`, `${ref} · ממתינה לטיפול`) };
     if (e.kind === 'message') return { ...base, icon: 'message', tone: 'blue', focus: 'chat', action: L('Reply', 'השב'), title: L(`${who} sent a follow-up`, `${who} שלח/ה פנייה`), text: `${ref}: ${e.detail}` };
+    if (e.kind === 'status' && e.detail === 'cancellation_requested') return { ...base, icon: 'alert', tone: 'orange', title: L(`${who} requested cancellation`, `${who} ביקש/ה ביטול`), text: ref };
+    if (e.kind === 'status' && e.detail === 'delivered') return { ...base, icon: 'check', tone: 'mint', title: L(`${who} marked an order as delivered`, `${who} סימן/ה הזמנה כנמסרה`), text: ref };
     if (e.kind === 'status' && e.detail === 'cancelled') return { ...base, icon: 'alert', tone: 'red', title: L(`${who} cancelled an order`, `${who} ביטל/ה הזמנה`), text: ref };
     if (e.kind === 'status') return { ...base, icon: 'status', tone: 'mint', title: L(`${who} changed an order status`, `${who} שינה/תה סטטוס`), text: `${ref} → ${e.detail}` };
     if (e.kind === 'tracking') return { ...base, icon: 'status', tone: 'mint', title: L(`${who} added a tracking number`, `${who} הוסיף/ה מספר מעקב`), text: `${ref} · ${e.detail}` };
