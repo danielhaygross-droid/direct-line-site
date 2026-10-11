@@ -20,7 +20,7 @@ test('old import bookmarks redirect to Home, including admin preview', () => {
 test('retired import endpoint rejects clients and admins without writing orders', async () => {
   const env = { APP_SESSION_SECRET: 'local-test-only' };
   const DB = { prepare(sql) {
-    assert.match(sql, /SELECT active, archived FROM users/);
+    assert.match(sql, /SELECT active, archived,/);
     return { bind() { return this; }, async first() { return { active: true, archived: false }; } };
   } };
   for (const role of ['client-7', 'admin']) {
@@ -38,7 +38,7 @@ test('existing imported orders remain readable with their source and photo exemp
   const row = { id: 12, client_id: 7, source: 'etsy-csv', status: 'pending', order_ref: 'E-12', price: 0 };
   const DB = { prepare(sql) {
     return { bind() { return this; }, async first() {
-      assert.match(sql, /SELECT active, archived FROM users/);
+      assert.match(sql, /SELECT active, archived,/);
       return { active: true, archived: false };
     }, async all() {
       if (sql.includes('FROM client_orders')) return { results: [row] };

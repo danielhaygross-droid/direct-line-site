@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { waitUntil } from '@vercel/functions';
 import worker from '../server/worker.mjs';
 import { createD1 } from '../server/d1-postgres.mjs';
-import { SCHEMA as PORTAL_SCHEMA, handlePortal, authenticate, createSessionCookie, readSessionRole, parseRole } from '../server/portal.mjs';
+import { SCHEMA as PORTAL_SCHEMA, handlePortal, authenticate, createSessionCookie, readSessionRole, parseRole, clientSession } from '../server/portal.mjs';
 
 const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 const DB = databaseUrl ? createD1(databaseUrl, undefined, PORTAL_SCHEMA) : undefined;
@@ -47,6 +47,11 @@ export async function route(request, { db = DB, env: baseEnv = process.env } = {
     if (path === '/api/auth/session') {
       const who = parseRole(await readSessionRole(request, env.APP_SESSION_SECRET));
       if (!who) return json({ ok: false }, 401);
+      if (!who.admin) {
+        const user = await clientSession(db, who);
+        if (!user) return json({ ok: false }, 401);
+        return json({ ok: true, role: 'client', redirect: '/portal/', passwordResetRequired: !!user.password_reset_required });
+      }
       return json(who.admin ? { ok: true, role: 'admin' } : { ok: true, role: 'client', redirect: '/portal/' });
     }
 

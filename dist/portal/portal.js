@@ -46,6 +46,8 @@
   const ago = sec => N.timeAgo(sec * 1000);
   const fullDate = sec => (sec ? new Date(sec * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
   const orderName = o => o.orderRef || 'Order #' + o.id;
+  const editable = o => o.status === 'pending' && !o.editLocked && Number(o.createdAt) > 0 && Date.now() < (Number(o.createdAt) + 72 * 3600) * 1000;
+  const hoursLeft = o => Math.ceil(((Number(o.createdAt) + 72 * 3600) * 1000 - Date.now()) / 3600000);
   const divisor = () => Number(S.me?.settings?.volumetric_divisor) || 6000;
 
   // ---------- boot ----------
@@ -55,6 +57,7 @@
       if (e.status === 401 || e.status === 403) return renderLogin(document.body, { title: 'Welcome back', subtitle: 'Sign in to add and track your orders.', portal: true });
       $('#boot').textContent = e.message; return;
     }
+    if (S.me.passwordResetRequired) return passwordScreen();
     if (S.me.role === 'admin') {
       // Admins don't get bounced to the dashboard any more: they pick a client and preview their portal (view only).
       const as = Number(new URLSearchParams(location.search).get('as'));
@@ -70,6 +73,20 @@
     addEventListener('hashchange', route);
     setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 20000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh().catch(() => {}); });
+  }
+
+  function passwordScreen() {
+    document.body.innerHTML = `<div class="login-wrap" style="display:grid;grid-template-columns:1fr;place-items:center"><section class="login-card"><h1>Choose a new password</h1><p>Your temporary password must be replaced before you can use the portal.</p><form id="password-form"><label class="field">New password<input name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></label><label class="field">Confirm new password<input name="confirmPassword" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></label><button type="submit" class="btn btn-primary">Save password</button><p class="form-msg" role="alert"></p></form><button type="button" class="btn" data-password-logout>Log out</button></section></div>`;
+    const f = $('#password-form');
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const m = $('.form-msg', f), b = $('[type=submit]', f);
+      if (f.password.value !== f.confirmPassword.value) { m.textContent = 'Passwords do not match.'; return; }
+      b.disabled = true;
+      try { await api('/password', { method: 'POST', body: { password: f.password.value } }); location.reload(); }
+      catch (ex) { m.textContent = ex.message; b.disabled = false; }
+    });
+    $('[data-password-logout]').addEventListener('click', logout);
   }
 
   // ---------- admin opening the client portal ----------
@@ -102,6 +119,7 @@
   async function refresh(first) {
     const [me, o, p, n] = await Promise.all([api('/me'), api('/orders'), api('/payments'), api('/notifications').catch(() => null)]);
     S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments;
+    if (!first && S.route === 'edit' && !S.orders.some(o => o.id === S.id && editable(o))) { go('orders'); N.popup({ icon: 'alert', title: 'This order is already being processed. Need a change? Send us a message.' }); }
     if (n) { S.notes = n.items; S.seenAt = n.seenAt; }
     const fresh = known ? S.notes.filter(x => !known.has(x.id)) : [];
     known = new Set(S.notes.map(x => x.id));
@@ -205,7 +223,7 @@
     const [r, id] = location.hash.replace(/^#\/?/, '').split('/');
     if (r === 'import') { location.replace('#/home'); return; }
     S.route = ROUTES[r] ? r : 'home'; S.id = id ? Number(id) : null;
-    if (S.route === 'edit' && !S.orders.some(o => o.id === S.id && o.status !== 'cancelled')) { location.hash = '#/orders'; return; }
+    if (S.route === 'edit' && !S.orders.some(o => o.id === S.id && editable(o))) { location.hash = '#/orders'; return; }
     // Admin preview is view only: no forms for adding or editing orders.
     if (S.me?.preview && ['new', 'edit'].includes(S.route)) { location.hash = '#/home'; return; }
     document.body.classList.remove('menu-open');
@@ -215,6 +233,7 @@
     $('[data-sub]').textContent = ROUTES[S.route].sub;
     $('.new-btn').hidden = S.route === 'new' || S.route === 'edit' || S.route === 'home';
     renderView();
+    if (S.route === 'messages' && S.id) openOrder(S.id, 'chat');
     scrollTo({ top: 0 });
   }
   const go = path => { location.hash = '#/' + path; };
@@ -257,7 +276,7 @@
       ${subBanner(me.subscription)}
       ${newbie ? `<section class="card card-pad how"><h3>How it works</h3>
         <ol class="how-steps">
-          <li><b>1</b><div><strong>Send us the order</strong><span>Got an Etsy sale? Tap “Send a new order” and fill in what the customer bought and where it goes.</span></div></li>
+          <li><b>1</b><div><strong>Send us the order</strong><span>Had a sale in your store? Click “Send new order” and fill in what your customer bought and where to ship it.</span></div></li>
           <li><b>2</b><div><strong>We pack and ship it</strong><span>We buy the product, ship it to your customer and add the tracking number here.</span></div></li>
           <li><b>3</b><div><strong>Pay your balance</strong><span>We add the order total to your balance. Payment by bank transfer.</span></div></li>
         </ol>
@@ -269,7 +288,7 @@
       </section>
       <div class="home-grid">
         <section class="card span2"><div class="card-head"><h3>Your latest orders</h3><a class="link" href="#/orders">See all ${o.length ? '(' + o.length + ')' : ''}</a></div>
-          ${o.length ? `<div class="table-wrap">${ordersTable(o.slice(0, 5), true)}</div>` : empty('orders', 'No orders yet', 'When you get an Etsy sale, send it to us here. We take care of the rest.', '<a class="btn btn-primary" href="#/new">Send a new order</a>')}
+          ${o.length ? `<div class="table-wrap">${ordersTable(o.slice(0, 5), true)}</div>` : empty('orders', 'No orders yet', 'When you get a sale in your store, send it to us here. We take care of the rest.', '<a class="btn btn-primary" href="#/new">Send a new order</a>')}
         </section>
         <section class="card"><div class="card-head"><h3>Latest updates</h3><button type="button" class="link" data-open-bell>See all</button></div>
           ${items.length ? `<div class="feed">${items.map(x => `<button type="button" class="${x.unread ? 'unread' : ''}" data-open-order="${x.orderId}" data-focus="${x.focus || ''}" data-note="${x.id}"><span class="dln-ic t-${x.tone}">${N.icon(x.icon)}</span><span style="display:grid;min-width:0"><b>${esc(x.title)}</b><span>${esc(x.text)}</span><time>${esc(N.timeAgo(x.time))}</time></span></button>`).join('')}</div>`
@@ -298,9 +317,10 @@
   const unreadOrderIds = () => new Set(noteItems().filter(x => x.unread).map(x => x.orderId));
   function ordersTable(list, compact) {
     const fresh = unreadOrderIds();
-    return `<table class="tbl stack"><thead><tr><th>Order</th><th>Destination</th>${compact ? '' : '<th>Tracking</th>'}<th class="num">Customer paid</th>${compact ? '' : '<th class="num">Profit</th>'}<th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
+    return `<table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Destination</th>${compact ? '' : '<th>Tracking</th>'}<th class="num">Customer paid</th>${compact ? '' : '<th class="num">Profit</th>'}<th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
       ${list.map(o => `<tr class="click${fresh.has(o.id) ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
         <td class="wide"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small></span></div></td>
+        <td data-label="Customer"><span data-no-i18n>${esc(o.buyerName) || '—'}</span></td>
         <td data-label="Destination">${esc(place(o.destination))}</td>
         ${compact ? '' : `<td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>` : '<span class="dim">Not yet</span>'}</td>`}
         <td data-label="Customer paid" class="num"><b>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</b></td>
@@ -370,7 +390,7 @@
         <div><span>Total you pay</span><span>${!o.priced ? 'Pending Direct Line' : money(o.price)}</span></div>
         ${!o.priced ? '' : `<div><span>Your estimated profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}"><b>${money(o.profit)}</b></span></div>`}</div></section>`;
     if (keepFoot && d.foot.dataset.confirm) return;
-    d.foot.innerHTML = `${o.status !== 'cancelled' ? `<a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a>` : ''}<span class="spacer"></span>${o.status === 'pending' ? `<button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Cancel order</button>` : o.status === 'cancelled' ? '<span class="muted" style="font-size:13px">This order was cancelled.</span>' : '<span class="muted" style="font-size:13px">Need a change? Send us a message.</span>'}`;
+    d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>This order is already being processed. Need a change? Send us a message.</a>`}<span class="spacer"></span>${o.status === 'pending' ? `<button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Cancel order</button>` : ''}`;
   }
   function refreshDrawer() {
     const d = UI.getDrawer();
@@ -387,24 +407,24 @@
     const extra = !!(ed && (ed.sellingPrice != null || ed.sku || ed.notes || (ed.currency && ed.currency !== 'USD')));
     return `<form class="form-layout" id="order-form" novalidate>
       <div class="form-main">
-        <section class="card card-pad"><h3 class="form-sec"><i>1</i>Etsy order number</h3><div class="form-grid">
+        <section class="card card-pad"><h3 class="form-sec"><i>1</i>Store order number</h3><div class="form-grid">
           <label class="field" data-f="orderRef"><span>Order number</span><input name="orderRef" required maxlength="120" inputmode="text" placeholder="e.g. 3412345678" value="${esc(ed?.orderRef)}">
-            <em class="help">On Etsy: Orders &amp; Shipping → open the order → the number after “Order #”.</em></label>
+            <em class="help">The order number from your store’s order page.</em></label>
           <label class="field" data-f="orderDate"><span>Order date</span><input name="orderDate" required type="date" value="${esc(ed?.orderDate || today)}"></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>2</i>What did the customer buy?</h3><div class="form-grid">
-          <div class="field full" data-f="links"><span>Product link <small>copy it from the Etsy listing</small></span><div class="link-list" data-links></div>
+          <div class="field full" data-f="links"><span>Product link <small>Copy from your store</small></span><div class="link-list" data-links></div>
             <button type="button" class="btn btn-sm link-add" data-link-add>+ Add another product</button></div>
           <div class="field full photo-field" data-f="photos"><span>Photo or screenshot of the product <small data-pick-count></small></span>
             <div class="pm-photos pick-zone" data-picks></div>
-            <p class="pick-hint">A screenshot of the Etsy order is perfect. You can add up to ${MAX_PHOTOS}.</p></div>
+            <p class="pick-hint">A screenshot of your store order is perfect. You can add up to ${MAX_PHOTOS}.</p></div>
           <label class="field" data-f="quantity"><span>How many?</span><input name="quantity" required type="number" min="1" max="999" step="1" inputmode="numeric" value="${ed?.quantity || 1}"></label>
           <label class="field"><span>Color, size or engraving <small>if any</small></span><input name="variant" maxlength="500" placeholder="e.g. Gold, engraved “M + K”" value="${esc(ed?.variant)}"></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>3</i>Where do we send it?</h3><div class="form-grid">
           <label class="field full" data-f="buyerName"><span>Customer name</span><input name="buyerName" required maxlength="160" autocomplete="off" value="${esc(ed?.buyerName)}"></label>
-          <label class="field full" data-f="address1"><span>Full address and phone <small>copy it from the Etsy order</small></span><textarea name="address1" required maxlength="1000" rows="4" placeholder="Street and number&#10;City, State, Postal code&#10;Country&#10;Phone (if there is one)">${esc(ed ? [ed.address1, ed.address2, ed.city, ed.region, ed.postalCode, ed.buyerPhone].filter(Boolean).join('\n') : '')}</textarea></label>
-          <label class="field full" data-f="destination"><span>Country <small data-country-auto></small></span><select name="destination" autocomplete="off"></select></label>
+          <label class="field full" data-f="address1"><span>Full address and phone <small>Copy from your store</small></span><textarea name="address1" required maxlength="1000" rows="4" placeholder="Street and number&#10;City, State, Postal code&#10;Country&#10;Phone (if there is one)">${esc(ed ? [ed.address1, ed.address2, ed.city, ed.region, ed.postalCode, ed.buyerPhone].filter(Boolean).join('\n') : '')}</textarea></label>
+          <label class="field full" data-f="destination"><span>Country <small data-country-auto></small></span><select name="destination" required aria-describedby="country-error" autocomplete="off"></select><small id="country-error" class="err-text" role="alert" hidden>Please choose a country.</small></label>
           <label class="field full" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="off"></label>
         </div></section>
         <details class="card card-pad more"${extra ? ' open' : ''}><summary><span class="form-sec"><i>+</i>More details <small>optional</small></span></summary><div class="form-grid">
@@ -471,7 +491,7 @@
     renderPicks();
     // ----- product links: one box per product, add/remove -----
     const linkBox = $('[data-links]', form);
-    const linkRow = (v = '') => `<div class="link-row"><input data-link type="url" inputmode="url" maxlength="300" placeholder="https://www.etsy.com/listing/..." value="${esc(v)}"><button type="button" class="btn btn-sm btn-ghost" data-link-remove aria-label="Remove link">×</button></div>`;
+    const linkRow = (v = '') => `<div class="link-row"><input data-link type="url" inputmode="url" maxlength="300" placeholder="https://..." value="${esc(v)}"><button type="button" class="btn btn-sm btn-ghost" data-link-remove aria-label="Remove link">×</button></div>`;
     const startLinks = (ed?.productLinks?.length ? ed.productLinks : String(ed?.etsyUrl || '').split(/\s+/).filter(Boolean));
     linkBox.innerHTML = (startLinks.length ? startLinks : ['']).map(linkRow).join('');
     const syncLinks = () => { const rows = $$('.link-row', linkBox); rows.forEach(r => { r.querySelector('[data-link-remove]').hidden = rows.length < 2; }); $('[data-link-add]', form).hidden = rows.length >= 10; };
@@ -525,6 +545,7 @@
       check('buyerName', form.buyerName.value.trim(), 'customer name');
       check('address1', form.address1.value.trim(), 'address');
       check('destination', dest.get(), 'country');
+      $('#country-error').hidden = !!dest.get();
       form.classList.toggle('tried', missing.length > 0);
       if (missing.length) {
         setMsg('Please fill in: ' + missing.map(m => m[1]).join(', ') + '.', 'err');

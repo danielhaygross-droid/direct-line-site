@@ -412,6 +412,7 @@
   function fillClient(c, soft) {
     const d = UI.getDrawer(), tab = S.drawer.tab, orders = S.orders.filter(o => o.clientId === c.id);
     d.head.innerHTML = `<div class="who"><span class="ava" style="width:44px;height:44px;border-radius:14px;font-size:14px">${esc(initials(c.name))}</span><div><h2 style="font-size:20px">${esc(c.name)}</h2><small>@${esc(c.username)} · ${c.active ? 'active' : 'disabled'}</small></div></div>`;
+    if (soft && $('[data-reset-result] input', d.body)) return;
     if (soft && d.body.contains(document.activeElement) && document.activeElement.matches('input,select,textarea')) return;
     const t = new Date(), iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     const pane = tab === 'orders'
@@ -428,7 +429,7 @@
             <label class="field full"><span>Name</span><input name="name" maxlength="120" value="${esc(c.name)}"></label>
             <label class="field"><span>Fee per order <small>empty = default</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01" value="${c.commissionPerOrder ?? ''}"></span></label>
             <label class="field"><span>Status</span><select name="active"><option value="true"${c.active ? ' selected' : ''}>Active</option><option value="false"${c.active ? '' : ' selected'}>Disabled (can’t sign in)</option></select></label>
-            <label class="field full"><span>New password <small>leave empty to keep it</small></span><input name="password" type="password" autocomplete="new-password"></label>
+            <div class="field full"><span>Username</span><div class="copy-line"><b data-no-i18n>${esc(c.username)}</b><button type="button" class="btn btn-sm" data-copy="${esc(c.username)}">Copy</button></div><p><span>Last login:</span> ${c.lastLogin ? esc(new Date(c.lastLogin * 1000).toLocaleString()) : 'Never'}</p><button type="button" class="btn" data-reset-password="${c.id}">Reset password</button><div data-reset-result role="status"></div></div>
             <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Save account</button><p class="form-msg" data-account-msg></p></div></form>
             <p class="note" style="margin-top:12px">A new fee only applies to new orders. Existing orders keep the fee they were created with.</p></section>
           ${subscriptionHTML(c)}
@@ -692,6 +693,16 @@
   // Clicks inside the side panel (it lives outside #app), plus copy buttons anywhere.
   document.addEventListener('click', async e => {
     const t = e.target, d = UI.getDrawer();
+    const reset = t.closest('[data-reset-password]');
+    if (reset) {
+      reset.disabled = true;
+      const result = $('[data-reset-result]'); result.textContent = '';
+      api('/admin/users/' + reset.dataset.resetPassword + '/reset-password', { method: 'POST' }).then(r => {
+        result.innerHTML = `<p>Temporary password — shown only here. Copy and share it privately.</p><div class="copy-line"><input type="text" readonly data-no-i18n value="${esc(r.temporaryPassword)}" aria-label="Temporary password"><button type="button" class="btn btn-sm" data-copy="${esc(r.temporaryPassword)}">Copy</button></div><p>The client must choose a new password at next login.</p>`;
+      }).catch(ex => { result.textContent = ex.message; reset.disabled = false; });
+      return;
+    }
+
     const cp = t.closest('[data-copy]');
     if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copy); toast('Copied.'); } catch (ex) { /* no clipboard */ } return; }
     if (!d.el.contains(t)) return;
@@ -754,7 +765,7 @@
     if (af) {
       e.preventDefault();
       const m = $('[data-account-msg]'), body = { name: af.name.value, active: af.active.value === 'true', commissionPerOrder: af.commissionPerOrder.value === '' ? null : af.commissionPerOrder.value };
-      if (af.password.value) body.password = af.password.value;
+
       try { await api('/admin/users/' + af.dataset.accountForm, { method: 'POST', body }); document.activeElement?.blur(); tell({ type: 'dl-clients-changed' }); await loadAll(); renderList(); fillClient(clientOf(af.dataset.accountForm)); toast('Account saved.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
     }

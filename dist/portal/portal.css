@@ -229,3 +229,5 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .pay-row b{font-weight:600;font-variant-numeric:tabular-nums;word-break:break-word;unicode-bidi:plaintext}
 .pay-row b small{display:block;font-weight:400;color:var(--muted);font-size:12px;margin-top:2px}
 @media (max-width:640px){.pay-row{grid-template-columns:1fr auto}.pay-row>span{grid-column:1/-1;margin-bottom:-6px}}
+
+.err-text{color:var(--red)}
