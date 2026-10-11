@@ -86,3 +86,5 @@ html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 @media(max-width:560px){.af .form-grid{grid-template-columns:1fr}}
 
 .confirmation-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:14px 0;border-top:1px solid var(--line)}
+
+.claim-overdue{border:2px solid var(--red)}

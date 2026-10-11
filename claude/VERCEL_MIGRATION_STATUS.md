@@ -104,3 +104,14 @@ Branch codex/saved-products. Merge #20 → #21 → #22 → #23 → this PR.
 - Versions portal JS29/admin JS32/i18n13, dashboard real-ui cache bumped. Runtime adds products/photos/events and order product/unit-price fields.
 - Validation: 48/48 automated tests; build/syntax/diff; DB submission/quote authorization, photos, fixed price/quantity edits, stale quote, unavailable note and notifications; all eight EN/HE desktop/phone themes completed submit→admin quote→auto-fill→quoted order with no second upload. Screenshots inspected. No production changes.
 - Local ../verification/check-product-api.mjs and check-product-ui.mjs; screenshots ../verification/products/. Remaining: #13 claims and #15 stores; deployment still awaits user merges.
+
+## Claims (#13) — ready for review after PR #24
+
+Branch codex/claims. Merge #20 → #21 → #22 → #23 → #24 → this PR.
+- Delivered orders: Report a problem with type, description, required problem photo/video and label photo. Countdown uses the first delivered timestamp; refund is available strictly before seven elapsed days, afterwards only reshipment. PNG/JPG/WebP and MP4/WebM evidence: 2 MB/file, 3 MB combined.
+- Shipped orders: Report lost parcel after 20 days without a tracking update, no photos required. Shipment/status/tracking changes start/reset the clock; admin Tracking update received records a manual carrier update. No automatic carrier integration was added.
+- One claim per order, private evidence, visible Open/Approved/Rejected/Resolved and admin reply. Admin Claims list filters statuses, oldest first, highlights open claims older than 3 business days. Business days use Mon–Fri UTC (explicit in UI).
+- Refund approval creates a negative balance adjustment for the original order total; concurrent approval credits once. Reshipment approval atomically creates a linked $0 pending order with copied address/product photos and immutable zero unit quote, no commission; retries do not duplicate it. Admin can mark approved claims Resolved.
+- Admin/client bell/activity notifications reuse the order audit. Selected claim evidence/drafts survive refresh. Versions portal JS30/admin JS33/CSS10/i18n14, dashboard real-ui bumped.
+- Validation: 50/50 tests, build/syntax/diff; DB evidence, seven-day boundary, permissions, 8 concurrent refund approvals, credit, reshipment linkage/photos/zero pricing, lost eligibility/tracking reset and overdue flag. All eight EN/HE desktop/phone themes completed day-three proof/label → admin approval → refund line; Hebrew phone late form offers reshipment only. Previous password/order/product checks still pass. Screenshots inspected.
+- Local ../verification/check-claim-api.mjs and check-claim-ui.mjs; screenshots ../verification/claims/. No production data changed. Remaining PDF implementation: #15 multiple stores. Deployment and report updates await user merges.

@@ -36,6 +36,7 @@ export async function changeStatus(DB, order, action, body, admin) {
   const row=await DB.prepare(`WITH changed AS (
     UPDATE client_orders SET status=?,cancellation_previous_status=?,cancellation_reason=?,
       delivered_at=CASE WHEN ?='delivered' THEN COALESCE(delivered_at,?) ELSE delivered_at END,
+      last_tracking_update_at=CASE WHEN ?='shipped' THEN ? ELSE last_tracking_update_at END,
       edit_locked=edit_locked OR ? IN ('processing','shipped','delivered','cancelled'),updated_at=? WHERE id=? AND status=? RETURNING *),
     audit AS (INSERT INTO order_events(order_id,client_id,kind,actor,detail,created_at)
       SELECT id,client_id,'status',?,?,? FROM changed),
@@ -44,7 +45,7 @@ export async function changeStatus(DB, order, action, body, admin) {
     fee AS (INSERT INTO client_balance_adjustments(client_id,order_id,kind,amount,note,created_at)
       SELECT client_id,id,'cancellation_fee',?,'Cancellation fee',? FROM changed WHERE ?>0
       ON CONFLICT(order_id,kind) DO NOTHING)
-    SELECT * FROM changed`).bind(change.status,change.previous,change.reason,change.status,t,change.status,t,order.id,order.status,
+    SELECT * FROM changed`).bind(change.status,change.previous,change.reason,change.status,t,change.status,t,change.status,t,order.id,order.status,
       actor,change.status,t,actor,action==='request-cancellation'?change.reason:action==='reject-cancellation'?'Cancellation rejected':action==='approve-cancellation'?'Cancellation approved':'',t,
       action==='request-cancellation'?change.reason:action==='reject-cancellation'?'Cancellation rejected':action==='approve-cancellation'?'Cancellation approved':'',change.fee,t,change.fee).first();
   if(!row)throw new Error('The order changed. Refresh and try again.');return row;
