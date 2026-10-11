@@ -13,6 +13,8 @@ import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } fr
 
 import { STATUS_SCHEMA, changeStatus, balanceAdjustments } from './order-status.mjs';
 
+import { INVOICE_SCHEMA, invoices, saveInvoice, monthlyInvoices } from './invoices.mjs';
+
 const utf8 = new TextEncoder();
 const SESSION_SECONDS = 43200; // 12h, same as the Worker
 const b64url = bytes => Buffer.from(bytes).toString('base64url');
@@ -155,7 +157,7 @@ export const SCHEMA = [
 // Supplier shipping rates (USD per kg) — from the supplier's rate sheet. Admin-only: sent with
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
-SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA);
+SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -527,8 +529,9 @@ export async function handlePortal(request, url, ctx) {
   }
   if (path === '/payments' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? AND NOT archived ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
-    return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })), adjustments: await balanceAdjustments(DB,who.clientId), transfers: await transfers(DB,who.clientId) });
+    return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })), invoices: await invoices(DB,who.clientId), adjustments: await balanceAdjustments(DB,who.clientId), transfers: await transfers(DB,who.clientId) });
   }
+  if (path==='/invoices/month' && method==='GET' && !who.admin) return monthlyInvoices(DB,who.clientId,url.searchParams.get('month'));
   if (path === '/orders' && method === 'POST') {
     const body = await readBody(request);
     const clientId = who.admin ? Number(body.clientId) : who.clientId;
@@ -557,8 +560,10 @@ export async function handlePortal(request, url, ctx) {
   // ----- notifications: what the other side did, newest first -----
   if (path === '/notifications' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND e.actor = 'admin' ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
+    for(const f of await invoices(DB,who.clientId)) rows.push({id:'invoice-'+f.id,order_id:f.orderIds[0]||null,client_id:who.clientId,kind:'invoice',actor:'admin',detail:f.filename,created_at:f.createdAt});
+    rows.sort((a,b)=>Number(b.created_at)-Number(a.created_at));
     const u = await DB.prepare('SELECT notif_seen_at FROM users WHERE id = ?').bind(who.clientId).first();
-    return json({ ok: true, items: rows.map(eventOut), seenAt: Number(u?.notif_seen_at || 0), now: now() });
+    return json({ ok: true, items: rows.slice(0,50).map(eventOut), seenAt: Number(u?.notif_seen_at || 0), now: now() });
   }
   if (path === '/notifications/seen' && method === 'POST' && !who.admin) {
     await DB.prepare('UPDATE users SET notif_seen_at = ? WHERE id = ?').bind(now(), who.clientId).run();
@@ -758,6 +763,8 @@ export async function handlePortal(request, url, ctx) {
       : (await DB.prepare('SELECT * FROM client_orders WHERE client_id NOT IN (SELECT id FROM users WHERE archived) ORDER BY created_at DESC, id DESC LIMIT 500').all()).results;
     return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)) });
   }
+  if (path==='/admin/invoices' && method==='GET') return json({ok:true,invoices:await invoices(DB,Number(url.searchParams.get('clientId')))});
+  if (path==='/admin/invoices' && method==='POST') {try{return json({ok:true,invoice:await saveInvoice(DB,await readBody(request))});}catch(e){return json({ok:false,error:e.message},400);}}
   if (path === '/admin/payments' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(clientId).all()).results || [];

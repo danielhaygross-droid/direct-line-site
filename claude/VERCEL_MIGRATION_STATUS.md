@@ -82,3 +82,14 @@ Branch codex/cancellation-status. Merge PR #20, then #21, then this change.
 - Versions portal JS27/admin JS30/order-ui2/i18n11; shared dashboard real-ui cache bumped. Migrations add cancellation prior state/reason/delivered timestamp and adjustment ledger.
 - Validation: 45/45 automated tests; build/syntax/diff checks; local DB authorization, prior-state restore, concurrency/fee once, balance line, delivered date/idempotence/audit; all eight EN/HE desktop/phone theme browser workflows passed request→admin approval $4→balance→delivery.
 - Local ../verification/check-status-api.mjs and check-status-ui.mjs, screenshots ../verification/status/. No production data changed. Deployment/report awaits merge and verification.
+
+## Invoices (#4) — ready for review after PR #22
+
+Branch codex/invoices. Merge #20 → #21 → #22 → this PR.
+- Admin Upload invoice (PDF/image, 2 MB) when recording cash or from client Payments or any order. One file links to one payment and/or several orders; all links must belong to the same client.
+- Clients Download invoice on payment rows and linked order details; Invoice pending when absent. Payment history has an invoice-month selector and monthly ZIP download. New uploads appear in bell/Home activity; opening them goes to Payments.
+- ZIP response streams one private file at a time, preserving Unicode filenames and checking CRC. No public file URLs. Invoice history survives payment archiving; repeat identical uploads keep the same invoice/notification.
+- Unsaved admin file selections survive refresh. An invoice failure after recording money tells the admin to retry Save invoice, avoiding another payment. Notification panel closes on navigation.
+- Versions portal JS28/admin JS31/i18n12. Runtime adds file→payment link and invoice→orders links. No invoice regeneration or supplier cost/shipping breakdown is shown by the portal.
+- Validation: 46/46 automated tests, build/syntax/diff; DB owner/link/date/dedup/notification/archive/download/month checks; Python extracted the ZIP and verified every CRC; all eight EN/HE desktop/phone themes tested actual payment+invoice/order linking, notifications, PNG and ZIP downloads; dedicated existing-order upload passed. Screenshots inspected.
+- Local ../verification/check-invoice-api.mjs and check-invoice-ui.mjs; screenshots ../verification/invoices/. No production mutations. Await merge/deployment verification before marking live or updating report.

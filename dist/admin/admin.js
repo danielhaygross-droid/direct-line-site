@@ -298,7 +298,8 @@
     d.onClose = () => { closeChat(); S.drawer = null; };
     d.open('o' + o.id);
     d.body.innerHTML = '<div data-d-info style="display:grid;gap:16px"></div><section><h3 class="sec-title">Messages with the client</h3><div data-d-chat></div></section>';
-    fillOrder(o);
+    invoiceFiles=[];fillOrder(o);
+    api('/admin/invoices?clientId='+o.clientId).then(r=>{if(S.drawer?.kind==='order'&&S.drawer.id===o.id){invoiceFiles=r.invoices;fillOrder(o,true);}}).catch(ex=>toast(ex.message));
     chatCtl = UI.chat($('[data-d-chat]', d.body), { orderId: o.id, role: 'admin', onLoad: data => {
       events = data.events || [];
       const cur = S.orders.find(x => x.id === o.id);
@@ -311,6 +312,7 @@
     const d = UI.getDrawer(), back = S.drawer?.back;
     d.head.innerHTML = `${back ? `<button type="button" class="back" data-back>${ic('back')}${esc(clientName(back))}</button>` : ''}<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}</div><p>${esc(clientName(o.clientId))} · ordered ${esc(o.orderDate || fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p>`;
     const info = $('[data-d-info]', d.body); if (!info) return;
+    if (soft && $('[name=invoiceFile]',info)?.files.length) return;
     if (soft && info.contains(document.activeElement) && document.activeElement.matches('input')) return;
     info.innerHTML = `
       <section class="card card-pad">${UI.tracker(o, events)}</section>
@@ -320,6 +322,7 @@
         <form class="inline-form" data-track-form="${o.id}" style="margin-top:14px"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(o.trackingNumber)}" placeholder="e.g. LX123456789CN"></label><button class="btn" type="submit">Save tracking</button>${o.trackingNumber ? `<a class="btn btn-ghost" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track</a>` : ''}</form>
       </section>
       ${o.status==='cancellation_requested' ? `<section class="card card-pad"><h3 class="sec-title">Cancellation request</h3><p data-no-i18n>${esc(o.cancellationReason)}</p><label class="field"><span>Cancellation fee (USD)</span><input name="cancellationFee" type="number" min="0" step="0.01" placeholder="0.00"></label><button type="button" class="btn btn-sm" data-cancel-four>$4</button><div class="status-btns"><button type="button" class="btn btn-danger" data-cancel-decision="approve" data-id="${o.id}">Approve cancellation</button><button type="button" class="btn" data-cancel-decision="reject" data-id="${o.id}">Reject cancellation</button></div></section>` : ''}
+      <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles.filter(f=>f.orderIds.includes(o.id)))}${invoiceForm(o.clientId,o.id)}</section>
       ${billHTML(o)}
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
         <div><dt>Client</dt><dd><button type="button" class="back" style="margin:0" data-open-client="${o.clientId}">${esc(clientName(o.clientId))}</button></dd></div><div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}${o.source === 'etsy-csv' ? ' <span class="st" style="--tone:var(--blue);text-transform:none">From Etsy file</span>' : ''}</dd></div>
@@ -407,11 +410,11 @@
   }
 
   // ---------- side panel: one client ----------
-  let payments = [], transferProofs = [];
+  let payments = [], transferProofs = [], invoiceFiles=[];
   async function openClient(id, tab = 'orders') {
     const c = clientOf(id); if (!c) return;
     const d = UI.getDrawer();
-    closeChat(); payments = []; transferProofs = [];
+    closeChat(); payments = []; transferProofs = []; invoiceFiles=[];
     S.drawer = { kind: 'client', id: c.id, tab };
     d.onClose = () => { S.drawer = null; };
     d.open('c' + c.id);
@@ -419,15 +422,29 @@
     await loadPayments(c.id);
   }
   async function loadPayments(id) {
-    try { const [p,t] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id)]); payments=p.payments; transferProofs=t.transfers; } catch (e) { payments = []; transferProofs = []; }
+    try { const [p,t,f] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id),api('/admin/invoices?clientId='+id)]); payments=p.payments; transferProofs=t.transfers;invoiceFiles=f.invoices; } catch (e) { payments = []; transferProofs = []; invoiceFiles=[]; }
     if (S.drawer?.kind === 'client' && S.drawer.id === id) fillClient(clientOf(id), true);
   }
+  const adminInvoiceLinks=files=>files.length ? files.map(f=>`<p><a href="/api/portal/files/${f.id}" target="_blank" rel="noopener"><span>Download invoice</span> <span data-no-i18n>${esc(f.filename)}</span></a></p>`).join('') : '<span class="muted">Invoice pending</span>';
+  function invoiceFields(clientId,orderId){
+    return `<label class="field full"><span>Upload invoice <small>PDF or image, maximum 2 MB</small></span><input name="invoiceFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp"></label>${orderId ? '' : `<label class="field full"><span>Linked orders <small>optional, select several</small></span><select name="invoiceOrders" multiple size="4">${S.orders.filter(o=>o.clientId===clientId).map(o=>`<option value="${o.id}">${esc(orderName(o))}</option>`).join('')}</select></label>`}`;
+  }
+  function invoiceForm(clientId,orderId){
+    const today=new Date().toLocaleDateString('en-CA');
+    return `<form class="form-grid" data-invoice-form="${clientId}" data-order-id="${orderId||''}">${invoiceFields(clientId,orderId)}<label class="field"><span>Invoice date</span><input name="invoiceDate" type="date" value="${today}" required></label>${orderId ? '' : `<label class="field"><span>Linked payment <small>optional</small></span><select name="invoicePayment"><option value="">No payment link</option>${payments.map(p=>`<option value="${p.id}">${money(p.amount)} · ${esc(fullDate(p.paidAt))}${p.archived?' · Archived':''}</option>`).join('')}</select></label>`}<button type="submit" class="btn btn-primary">Save invoice</button><p class="form-msg" data-invoice-msg></p></form>`;
+  }
+  async function invoiceFile(f){
+    const file=f.invoiceFile.files[0];if(!file)return null;if(file.size>2*1024*1024)throw new Error('The file is too large. Maximum 2 MB.');
+    const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});return {filename:file.name,data};
+  }
+  const selectedInvoiceOrders=f=>f.invoiceOrders?[...f.invoiceOrders.selectedOptions].map(o=>Number(o.value)):[];
   function transferProofHTML() {
     return transferProofs.length ? `<section class="card card-pad"><h3 class="sec-title">Transfer confirmations</h3><p class="note">Check the confirmation and receipt of funds before recording the payment.</p>${transferProofs.map(t=>`<div class="confirmation-row"><div><b>${money(t.amount)}</b> <small data-no-i18n>${esc(t.date)}</small><p><a href="/api/portal/files/${t.id}" target="_blank" rel="noopener">Open confirmation</a></p>${t.mime.startsWith('image/') ? `<img src="/api/portal/files/${t.id}?inline=1" style="max-width:160px;max-height:120px;object-fit:contain" alt="Transfer confirmation">` : ''}</div>${t.status==='pending' ? `<button type="button" class="btn btn-primary" data-record-transfer="${t.id}">Record this payment</button>` : t.status==='archived' ? `<button type="button" class="btn" data-restore-payment="${t.paymentId}">Restore payment</button>` : '<span class="tag">Recorded</span>'}</div>`).join('')}</section>` : '';
   }
   function fillClient(c, soft) {
     const d = UI.getDrawer(), tab = S.drawer.tab, orders = S.orders.filter(o => o.clientId === c.id);
     d.head.innerHTML = `<div class="who"><span class="ava" style="width:44px;height:44px;border-radius:14px;font-size:14px">${esc(initials(c.name))}</span><div><h2 style="font-size:20px">${esc(c.name)}</h2><small>@${esc(c.username)} · ${c.active ? 'active' : 'disabled'}</small></div></div>`;
+    if (soft && [...d.body.querySelectorAll('[name=invoiceFile]')].some(f=>f.files.length)) return;
     if (soft && $('[data-reset-result] input', d.body)) return;
     if (soft && d.body.contains(document.activeElement) && document.activeElement.matches('input,select,textarea')) return;
     const t = new Date(), iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
@@ -439,8 +456,8 @@
             <label class="field"><span>Date</span><input name="paidAt" type="date" value="${iso}"></label>
             <label class="field"><span>Method</span><select name="method"><option>PayPal</option><option>Wise</option><option>Bank transfer</option><option>Other</option></select></label>
             <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500"></label>
-            <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Record payment</button><p class="form-msg" data-pay-msg></p></div></form></section>
-          <section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td class="num">${p.archived ? `<span class="tag">Archived</span> <button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button>`}</td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
+            ${invoiceFields(c.id)}<div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Record payment</button><p class="form-msg" data-pay-msg></p></div></form></section>
+          <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles)}${invoiceForm(c.id)}</section><section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td>${adminInvoiceLinks(invoiceFiles.filter(f=>f.paymentId===p.id))}</td><td class="num">${p.archived ? `<span class="tag">Archived</span> <button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button>`}</td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
         : `<section class="card card-pad"><form class="form-grid" data-account-form="${c.id}" novalidate>
             <label class="field full"><span>Name</span><input name="name" maxlength="120" value="${esc(c.name)}"></label>
             <label class="field"><span>Fee per order <small>empty = default</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01" value="${c.commissionPerOrder ?? ''}"></span></label>
@@ -773,14 +790,20 @@
       catch (ex) { toast(ex.message); }
       return;
     }
+    const inf=e.target.closest('[data-invoice-form]');
+    if(inf){e.preventDefault();const b=$('[type=submit]',inf),m=$('[data-invoice-msg]',inf);b.disabled=true;try{const file=await invoiceFile(inf);if(!file)throw new Error('Choose an invoice file.');await api('/admin/invoices',{method:'POST',body:{clientId:Number(inf.dataset.invoiceForm),orderIds:inf.dataset.orderId?[Number(inf.dataset.orderId)]:selectedInvoiceOrders(inf),paymentId:inf.invoicePayment?.value||null,date:inf.invoiceDate.value,file}});document.activeElement?.blur();inf.reset();invoiceFiles=(await api('/admin/invoices?clientId='+inf.dataset.invoiceForm)).invoices;refreshDrawer();toast('Invoice uploaded.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     const pf = e.target.closest('[data-pay-form]');
     if (pf) {
       e.preventDefault();
       const m = $('[data-pay-msg]');
       try {
-        await api('/admin/payments', { method: 'POST', body: { clientId: Number(pf.dataset.payForm), amount: pf.amount.value, method: pf.method.value, note: pf.note.value, paidAt: pf.paidAt.value } });
-        document.activeElement?.blur(); await loadAll(); renderList(); await loadPayments(Number(pf.dataset.payForm)); toast('Payment recorded.');
-      } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+        const b=$('[type=submit]',pf);if(b.disabled)return;b.disabled=true;
+        const file=await invoiceFile(pf);
+        let invoiceError='';
+        const payment=await api('/admin/payments', { method: 'POST', body: { clientId: Number(pf.dataset.payForm), amount: pf.amount.value, method: pf.method.value, note: pf.note.value, paidAt: pf.paidAt.value } });
+        if(file){try{await api('/admin/invoices',{method:'POST',body:{clientId:Number(pf.dataset.payForm),paymentId:payment.id,orderIds:selectedInvoiceOrders(pf),date:pf.paidAt.value,file}});}catch(ex){invoiceError='Payment recorded; invoice upload failed. Use Save invoice to retry. '+ex.message;}}
+        document.activeElement?.blur();pf.reset(); await loadAll(); renderList(); await loadPayments(Number(pf.dataset.payForm)); toast(invoiceError||'Payment recorded.');
+      } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err';$('[type=submit]',pf).disabled=false; }
       return;
     }
     const sf = e.target.closest('[data-sub-form]');
