@@ -1,3 +1,9 @@
+## 12 October 2026 - My Stores save fixes (awaiting merge)
+
+User reported Save store did nothing in TEST1. Exact entered values were not supplied. Reproduced two local failures: a bare store domain was blocked by native URL validation before submit; saving one store discarded unsaved edits in another. The shared form now accepts pasted domains and server validation adds https://, with unsafe schemes/credentials still rejected. Required-field messages are visible. Client save renders directly from the successful response, independently of unrelated refresh requests, with persistent success text and preservation of other form drafts.
+
+Validated: 54/54 tests, build and diff checks; local store API totals/ownership/archive/restore; EN/HE desktop/phone regression for blank-name feedback, bare-domain creation, unrelated API failure after load, single creation, editing, preserving another draft, archive/restore, invalid-link feedback and reload persistence. No TEST1 or other production records changed. This fixes reproduced paths, not a confirmed diagnosis of the user's exact input. Versions portal JS32, shared store UI2, i18n16. PR link is in the root continuation handoff after publication.
+
 # Direct Line continuation — 12 October 2026
 
 ## Current review queue — remaining PDF changes

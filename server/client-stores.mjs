@@ -14,9 +14,9 @@ export async function ensureStores(DB,clientId){
 }
 export async function clientStores(DB,clientId=null){if(clientId!==null)await ensureStores(DB,clientId);const rows=(await DB.prepare(`SELECT s.* FROM client_stores s JOIN users u ON u.id=s.client_id WHERE ${clientId===null?'NOT u.archived':'s.client_id=?'} ORDER BY s.client_id,s.id`).bind(...(clientId===null?[]:[clientId])).all()).results||[];return rows.map(out);}
 export function storeInput(body,defaultColor='#8b6e37'){
- const name=String(body.name||'').trim().slice(0,160),platform=body.platform,color=String(body.color||defaultColor),link=String(body.link||'').trim().slice(0,1000);
+ const name=String(body.name||'').trim().slice(0,160),platform=body.platform,color=String(body.color||defaultColor);let link=String(body.link||'').trim().slice(0,1000);
  if(!name)throw new Error('Enter a store name.');if(!['Etsy','Shopify','Amazon','eBay','Other'].includes(platform))throw new Error('Choose a store platform.');if(!/^#[a-f\d]{6}$/i.test(color))throw new Error('Choose a valid store colour.');
- if(link){let u;try{u=new URL(link);}catch{throw new Error('Enter a full store link, starting with https://');}if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw new Error('Enter a full store link, starting with https://');}
+ if(link){if(/^[^\s/?#:]+(?:\.[^\s/?#:]+)+(?:[/?#][^\s]*)?$/.test(link))link='https://'+link;let u;try{u=new URL(link);}catch{throw new Error('Enter a full store link, starting with https://');}if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw new Error('Enter a full store link, starting with https://');}
  return{name,platform,color,link,archived:body.archived===true};
 }
 export async function saveStore(DB,clientId,id,body){await ensureStores(DB,clientId);const existing=id?await DB.prepare('SELECT * FROM client_stores WHERE id=? AND client_id=?').bind(id,clientId).first():null;if(id&&!existing)return null;
