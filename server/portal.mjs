@@ -19,6 +19,8 @@ import { PRODUCT_SCHEMA, products, addProduct, quoteProduct, productPhoto, produ
 
 import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from './claims.mjs';
 
+import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance } from './client-stores.mjs';
+
 const utf8 = new TextEncoder();
 const SESSION_SECONDS = 43200; // 12h, same as the Worker
 const b64url = bytes => Buffer.from(bytes).toString('base64url');
@@ -161,7 +163,7 @@ export const SCHEMA = [
 // Supplier shipping rates (USD per kg) — from the supplier's rate sheet. Admin-only: sent with
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
-SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA);
+SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -286,7 +288,7 @@ async function getSettings(DB) {
 function orderOut(r) {
   const price = Number(r.price || 0), sell = r.selling_price === null ? null : Number(r.selling_price);
   return {
-    id: r.id, clientId: r.client_id, productId:r.product_id==null?null:Number(r.product_id), quotedUnitPrice:r.quoted_unit_price==null?null:Number(r.quoted_unit_price), orderRef: r.order_ref, trackingNumber: r.tracking_number,
+    id: r.id, clientId: r.client_id, storeId:r.store_id==null?null:Number(r.store_id),productId:r.product_id==null?null:Number(r.product_id), quotedUnitPrice:r.quoted_unit_price==null?null:Number(r.quoted_unit_price), orderRef: r.order_ref, trackingNumber: r.tracking_number,
     destination: r.destination, category: r.category, weightKg: r.weight_kg === null ? null : Number(r.weight_kg),
     // price = what the client pays for the order = product cost (incl. our hidden fee) + shipping fee.
     productCost: r.product_cost === null || r.product_cost === undefined ? null : Number(r.product_cost),
@@ -337,7 +339,7 @@ async function logEvent(DB, orderId, clientId, kind, actor, detail = '') {
   await DB.prepare('INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,?,?,?,?)')
     .bind(orderId, clientId, kind, actor, String(detail).slice(0, 200), now()).run();
 }
-const EDIT_FIELDS = ['order_ref', 'destination', 'category', 'weight_kg', 'product_cost', 'shipping_fee', 'selling_price', 'notes', 'order_date', 'currency', 'buyer_name', 'buyer_phone', 'address_line_1', 'address_line_2', 'city', 'region', 'postal_code', 'item_title', 'sku', 'variant', 'quantity', 'etsy_url'];
+const EDIT_FIELDS = ['store_id','order_ref', 'destination', 'category', 'weight_kg', 'product_cost', 'shipping_fee', 'selling_price', 'notes', 'order_date', 'currency', 'buyer_name', 'buyer_phone', 'address_line_1', 'address_line_2', 'city', 'region', 'postal_code', 'item_title', 'sku', 'variant', 'quantity', 'etsy_url'];
 async function readBody(request) { return request.json().catch(() => ({})); }
 
 // ---------- product photos ----------
@@ -426,8 +428,8 @@ async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source,
   const commission = client.commission_per_order ?? Number(settings.commission_per_order);
   const supplierShare = Math.min(commission, Number(settings.supplier_share_per_order) || 0);
   const t = now();
-  const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at, order_date, currency, buyer_name, buyer_phone, address_line_1, address_line_2, city, region, postal_code, item_title, sku, variant, quantity, etsy_url, source, product_id, quoted_unit_price) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
-    .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t, f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, source,f.product_id||null,f.quoted_unit_price??null).first();
+  const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at, order_date, currency, buyer_name, buyer_phone, address_line_1, address_line_2, city, region, postal_code, item_title, sku, variant, quantity, etsy_url, source, product_id, quoted_unit_price,store_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
+    .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t, f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, source,f.product_id||null,f.quoted_unit_price??null,f.store_id).first();
   const saved = [];
   for (const p of photos) saved.push(await insertPhoto(DB, row.id, clientId, p, actor));
   await logEvent(DB, row.id, clientId, 'created', actor);
@@ -439,10 +441,10 @@ async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source,
 async function clientSummary(DB, clientId, settings) {
   const o = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS billed, COALESCE(SUM(commission),0) AS commission, COALESCE(SUM(LEAST(supplier_share, commission)),0) AS supplier, COALESCE(SUM(selling_price - price) FILTER (WHERE selling_price IS NOT NULL),0) AS profit FROM client_orders WHERE client_id = ? AND status <> 'cancelled'").bind(clientId).first();
   const p = await DB.prepare('SELECT COALESCE(SUM(amount),0) AS paid FROM client_payments WHERE client_id = ? AND NOT archived').bind(clientId).first();
-  const adjustments = (await balanceAdjustments(DB,clientId)).reduce((n,a)=>n+a.amount,0);
-  const billed = round2(Number(o.billed)+adjustments), paid = round2(p.paid);
+  const performance=await clientPerformance(DB,clientId);
+  const billed = performance.totals.billed, paid = round2(p.paid);
   const commission = round2(o.commission), supplierShare = round2(o.supplier);
-  return { orders: Number(o.n), billed, paid, outstanding: round2(billed - paid), commission, supplierShare, ourShare: round2(commission - supplierShare), clientProfit: round2(o.profit) };
+  return { orders: Number(o.n), billed, paid, outstanding: round2(billed - paid), commission, supplierShare, ourShare: round2(commission - supplierShare), clientProfit: performance.totals.profit };
 }
 
 // ---------- request handler ----------
@@ -536,6 +538,8 @@ export async function handlePortal(request, url, ctx) {
     return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })), invoices: await invoices(DB,who.clientId), adjustments: await balanceAdjustments(DB,who.clientId), transfers: await transfers(DB,who.clientId) });
   }
   if (path==='/invoices/month' && method==='GET' && !who.admin) return monthlyInvoices(DB,who.clientId,url.searchParams.get('month'));
+  if(path==='/client-stores'&&!who.admin){if(method==='GET')return json({ok:true,stores:await clientStores(DB,who.clientId)});if(method==='POST'){try{const store=await saveStore(DB,who.clientId,null,await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}}
+  const storeEdit=/^\/client-stores\/(\d+)$/.exec(path);if(storeEdit&&method==='POST'&&!who.admin){try{const store=await saveStore(DB,who.clientId,Number(storeEdit[1]),await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
   if(path==='/products' && !who.admin){if(method==='GET')return json({ok:true,products:await products(DB,who.clientId)});if(method==='POST'){try{return json({ok:true,product:await addProduct(DB,who.clientId,await readBody(request))});}catch(e){return json({ok:false,error:e.message},400);}}}
   const productImage=/^\/products\/(\d+)\/photos\/(\d+)$/.exec(path);if(productImage&&method==='GET')return productPhoto(DB,Number(productImage[1]),Number(productImage[2]),who);
   if (path === '/orders' && method === 'POST') {
@@ -551,6 +555,7 @@ export async function handlePortal(request, url, ctx) {
       f.tracking_number = ''; f.category = ''; f.weight_kg = null;
       f.product_cost = null; f.shipping_fee = null; f.price = 0;
     }
+    try{f.store_id=await orderStore(DB,clientId,body.storeId);}catch(e){return json({ok:false,error:e.message},400);}
     let savedProduct=null,productPhotos=[];
     if(body.productId){
       savedProduct=await DB.prepare("SELECT * FROM portal_products WHERE id=? AND client_id=? AND status='approved'").bind(Number(body.productId),clientId).first();
@@ -642,13 +647,14 @@ export async function handlePortal(request, url, ctx) {
       f.tracking_number = existing.tracking_number; f.category = existing.category; f.weight_kg = existing.weight_kg;
       f.product_cost = existing.product_cost; f.shipping_fee = existing.shipping_fee; f.price = existing.price;
     }
+    try{f.store_id=await orderStore(DB,existing.client_id,body.storeId,Number(existing.store_id),who.admin);}catch(e){return json({ok:false,error:e.message},400);}
     if(existing.quoted_unit_price!=null){f.price=round2(Number(existing.quoted_unit_price)*f.quantity);if(f.price>=1e7)return json({ok:false,error:'Order total is too large.'},400);f.product_cost=existing.product_cost;f.shipping_fee=existing.shipping_fee;f.etsy_url=existing.etsy_url;f.item_title=existing.item_title;}
     if (body.etsyUrl !== undefined) {
       if (f.etsy_url && !f.etsy_url.split('\n').every(validLink)) return json({ ok: false, error: 'Please paste each product link in full, starting with https://' }, 400);
       if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link from your store.' }, 400);
     }
-    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, edit_locked=edit_locked OR ?,last_tracking_update_at=CASE WHEN tracking_number<>? THEN ? ELSE last_tracking_update_at END WHERE id = ? AND status=? AND (? OR (status=\'pending\' AND NOT edit_locked AND created_at > ?)) RETURNING *')
-      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, ['processing','shipped','delivered','cancelled'].includes(status),f.tracking_number,now(), id, existing.status, who.admin, now() - EDIT_WINDOW_SECONDS).first();
+    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, store_id=?,edit_locked=edit_locked OR ?,last_tracking_update_at=CASE WHEN tracking_number<>? THEN ? ELSE last_tracking_update_at END WHERE id = ? AND status=? AND (? OR (status=\'pending\' AND NOT edit_locked AND created_at > ?)) RETURNING *')
+      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, f.store_id,['processing','shipped','delivered','cancelled'].includes(status),f.tracking_number,now(), id, existing.status, who.admin, now() - EDIT_WINDOW_SECONDS).first();
     if (!row) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
     const actor = who.admin ? 'admin' : 'client';
     if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);
@@ -780,6 +786,8 @@ export async function handlePortal(request, url, ctx) {
       : (await DB.prepare('SELECT * FROM client_orders WHERE client_id NOT IN (SELECT id FROM users WHERE archived) ORDER BY created_at DESC, id DESC LIMIT 500').all()).results;
     return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)) });
   }
+  if(path==='/admin/client-stores'&&method==='GET'){const clientId=url.searchParams.has('clientId')?Number(url.searchParams.get('clientId')):null;return json({ok:true,stores:await clientStores(DB,clientId)});}
+  const adminStore=/^\/admin\/client-stores(?:\/(\d+))?$/.exec(path);if(adminStore&&method==='POST'){const body=await readBody(request);try{const store=await saveStore(DB,Number(body.clientId),adminStore[1]?Number(adminStore[1]):null,body);return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
   if(path==='/admin/claims'&&method==='GET')return json({ok:true,claims:await claims(DB)});
   const claimDecision=/^\/admin\/claims\/(\d+)$/.exec(path);if(claimDecision&&method==='POST'){try{const claim=await decideClaim(DB,Number(claimDecision[1]),await readBody(request));if(claim.reshipmentOrderId){const sync=syncPortalOrderToGoogleSheet(DB,env,claim.reshipmentOrderId).catch(()=>{});if(waitUntil)waitUntil(sync);}return json({ok:true,claim});}catch(e){return json({ok:false,error:e.message},409);}}
   const trackingUpdate=/^\/admin\/orders\/(\d+)\/tracking-update$/.exec(path);if(trackingUpdate&&method==='POST'){const order=await DB.prepare('UPDATE client_orders SET last_tracking_update_at=?,updated_at=? WHERE id=? RETURNING *').bind(now(),now(),Number(trackingUpdate[1])).first();if(!order)return json({ok:false,error:'Not found'},404);await logEvent(DB,order.id,order.client_id,'tracking_update','admin');return json({ok:true,order:orderOut(order)});}
@@ -790,7 +798,7 @@ export async function handlePortal(request, url, ctx) {
   if (path === '/admin/payments' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(clientId).all()).results || [];
-    return json({ ok: true, payments: rows.map(r => ({ id: r.id, clientId: r.client_id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), archived: !!r.archived })) });
+    return json({ ok: true, payments: rows.map(r => ({ id: r.id, clientId: r.client_id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), archived: !!r.archived })),adjustments:await balanceAdjustments(DB,clientId) });
   }
   if (path === '/admin/payments' && method === 'POST') {
     const body = await readBody(request);
@@ -827,6 +835,7 @@ export async function handlePortal(request, url, ctx) {
     const row = await DB.prepare('INSERT INTO users (username, password_hash, role, display_name, commission_per_order, active, created_at, trial_start, trial_end, sub_status) VALUES (?,?,?,?,?,TRUE,?,?,?,?) RETURNING id')
       .bind(username, await hashPassword(password), userRole, text(body.name, 120) || username, userRole === 'client' ? cpo : null, now(), trialStart, trialEnd, subStatus).first();
     if (userRole === 'client') {
+      await ensureStores(DB,row.id);
       const sheetSync = syncClientToGoogleSheet(DB, env, row.id).catch(error => console.error('Google Sheets client sync failed', error));
       if (waitUntil) waitUntil(sheetSync); else await sheetSync;
     }

@@ -10,7 +10,7 @@ test('old import bookmarks redirect to Home, including admin preview', () => {
   for (const hash of ['#/import', '#/import/123']) {
     for (const preview of [false, true]) {
       const location = { hash, replace(next) { this.hash = next; } };
-      const ctx = { location, panel:null, S: { me: { preview } } };
+      const ctx = { location, panel:null, URLSearchParams, S: { me: { preview } } };
       vm.runInNewContext(route + '\nroute();', ctx);
       assert.equal(location.hash, '#/home');
     }
