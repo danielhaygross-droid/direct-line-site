@@ -38,9 +38,10 @@
     new: { title: 'Send a new order', sub: 'Fill in 3 short steps and press Send' },
     edit: { title: 'Edit order', sub: 'Change the details of an order' },
     messages: { title: 'Messages', sub: 'Your conversations with Direct Line' },
+    terms: { title: 'Terms of Service', sub: 'Service, fulfillment and after-sales policy' },
     payments: { title: 'Payments', sub: 'What you’ve been billed and paid' },
   };
-  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet']];
+  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['terms', 'Terms of Service', 'orders']];
   const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
   const place = d => (d ? countryName(d) : '—');
   const ago = sec => N.timeAgo(sec * 1000);
@@ -57,6 +58,7 @@
       if (e.status === 401 || e.status === 403) return renderLogin(document.body, { title: 'Welcome back', subtitle: 'Sign in to add and track your orders.', portal: true });
       $('#boot').textContent = e.message; return;
     }
+    if (S.me.termsRequired) return termsScreen();
     if (S.me.passwordResetRequired) return passwordScreen();
     if (S.me.role === 'admin') {
       // Admins don't get bounced to the dashboard any more: they pick a client and preview their portal (view only).
@@ -68,11 +70,38 @@
     shell();
     if (S.me.preview) previewBanner();
     $('#boot').remove(); $('#app').hidden = false;
-    await refresh(true);
+    if (await refresh(true) === false) return;
     route();
     addEventListener('hashchange', route);
     setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 20000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh().catch(() => {}); });
+  }
+
+  const acceptedText = a => a ? `<span>Terms accepted:</span> <time data-no-i18n>${esc(new Date(a.accepted_at * 1000).toISOString().replace('T', ' ').replace('.000Z', ' UTC'))} · v${a.version}</time>` : '<span>Not accepted yet</span>';
+  function policyHTML(data) {
+    const text = window.DLi18n?.lang === 'he' ? data.policy.hebrew : data.policy.english;
+    return `<article class="card card-pad terms-paper"><h2 id="terms-title">${esc(data.policy.title)}</h2><p class="muted"><span>Version</span> <b data-no-i18n>${data.policy.version}</b></p><div class="terms-content" tabindex="0" aria-labelledby="terms-title" data-no-i18n>${esc(text)}</div></article>`;
+  }
+  async function termsScreen() {
+    try {
+      const data = await api('/terms');
+      document.body.innerHTML = `<main class="terms-page"><div class="terms-top"><span class="brand"><span>direct<b>↗</b>line.</span></span><button type="button" class="btn btn-sm" data-terms-lang>${window.DLi18n?.lang === 'he' ? 'EN' : 'עב'}</button></div><h1>Terms of Service</h1><p>Please read and accept before using the portal.</p>${policyHTML(data)}<form id="terms-agreement"><label class="terms-check"><input type="checkbox" name="accepted"> <span>I have read and agree to the Terms of Service</span></label><div class="terms-actions"><button type="submit" class="btn btn-primary" disabled>Accept &amp; continue</button><button type="button" class="btn" data-terms-logout>Log out</button></div><p class="form-msg err" role="alert"></p></form></main>`;
+      const f = $('#terms-agreement'), b = $('[type=submit]', f);
+      f.accepted.addEventListener('change', () => { b.disabled = !f.accepted.checked; });
+      f.addEventListener('submit', async e => {
+        e.preventDefault(); if (!f.accepted.checked) return; b.disabled = true;
+        try { await api('/terms/accept', { method: 'POST', body: { version: data.policy.version, accepted: true } }); location.reload(); }
+        catch (ex) { $('.form-msg', f).textContent = ex.message; b.disabled = false; }
+      });
+      $('[data-terms-lang]').addEventListener('click', () => window.DLi18n.setLang(window.DLi18n.lang === 'he' ? 'en' : 'he'));
+      $('[data-terms-logout]').addEventListener('click', logout);
+    } catch (ex) { $('#boot') ? $('#boot').textContent = ex.message : N.popup({ icon: 'alert', title: ex.message }); }
+  }
+  const viewTerms = () => '<section data-terms-view><p>Loading…</p></section>';
+  async function bindTerms() {
+    const target = $('[data-terms-view]');
+    try { const data = await api('/terms'); if (target.isConnected) target.innerHTML = policyHTML(data) + `<p class="note">${acceptedText(data.accepted)}</p>`; }
+    catch (ex) { if (target.isConnected) target.textContent = ex.message; }
   }
 
   function passwordScreen() {
@@ -117,7 +146,10 @@
   // ---------- data ----------
   let known = null;
   async function refresh(first) {
-    const [me, o, p, n] = await Promise.all([api('/me'), api('/orders'), api('/payments'), api('/notifications').catch(() => null)]);
+    if (S.me?.termsRequired) return false;
+    const me = await api('/me');
+    if (me.termsRequired) { S.me = { ...S.me, ...me }; await termsScreen(); return false; }
+    const [o, p, n] = await Promise.all([api('/orders'), api('/payments'), api('/notifications').catch(() => null)]);
     S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments;
     if (!first && S.route === 'edit' && !S.orders.some(o => o.id === S.id && editable(o))) { go('orders'); N.popup({ icon: 'alert', title: 'This order is already being processed. Need a change? Send us a message.' }); }
     if (n) { S.notes = n.items; S.seenAt = n.seenAt; }
@@ -220,6 +252,7 @@
 
   // ---------- routing ----------
   function route() {
+    if (S.me?.termsRequired) return;
     const [r, id] = location.hash.replace(/^#\/?/, '').split('/');
     if (r === 'import') { location.replace('#/home'); return; }
     S.route = ROUTES[r] ? r : 'home'; S.id = id ? Number(id) : null;
@@ -240,9 +273,9 @@
   function renderView(soft) {
     const view = $('#view');
     if (soft && S.route === 'orders' && $('[data-orders-list]')) { renderChips(); renderOrdersList(); return; }
-    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments }[S.route]();
+    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, terms: viewTerms }[S.route]();
     if (soft) view.querySelectorAll(':scope > *').forEach(el => { el.style.animation = 'none'; });
-    ({ orders: bindOrders, new: bindForm, edit: bindForm })[S.route]?.();
+    ({ orders: bindOrders, new: bindForm, edit: bindForm, terms: bindTerms })[S.route]?.();
   }
   const empty = (icon, title, text, extra = '') => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><h3>${esc(title)}</h3><p>${esc(text)}</p>${extra}</div>`;
 
