@@ -4,7 +4,7 @@
 //   role "admin"          -> Daniel / Erwin (env admin or admin users in the DB)
 //   role "client-<id>"    -> a client account from the users table
 
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { googleSheetsConfigured, retryPendingGoogleSheetOrders, syncClientToGoogleSheet, syncPortalOrderToGoogleSheet } from './google-sheets.mjs';
 
 const utf8 = new TextEncoder();
@@ -16,6 +16,7 @@ const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(d
 });
 
 export const SCHEMA = [
+
   `CREATE TABLE IF NOT EXISTS users (
      id SERIAL PRIMARY KEY,
      username TEXT NOT NULL UNIQUE,
@@ -105,6 +106,11 @@ export const SCHEMA = [
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE',
   // Client subscription (first month free, then a monthly price). Dates are YYYY-MM-DD.
   // Tracked by hand for now: nothing is charged or blocked automatically.
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_required BOOLEAN NOT NULL DEFAULT FALSE',
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login INTEGER',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS edit_locked BOOLEAN NOT NULL DEFAULT FALSE',
+  "UPDATE client_orders SET edit_locked=TRUE WHERE NOT edit_locked AND (status <> 'pending' OR EXISTS (SELECT 1 FROM order_events e WHERE e.order_id=client_orders.id AND e.kind='status' AND e.detail IN ('processing','shipped','delivered')))",
   // Where an order came from: '' = typed in the portal, 'etsy-csv' = imported from an Etsy orders file.
   "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT ''",
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_start TEXT',
@@ -198,6 +204,16 @@ export function subscriptionOut(u, settings, today = todayIso()) {
 const ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 const now = () => Math.floor(Date.now() / 1000);
 
+export const EDIT_WINDOW_SECONDS = 72 * 3600;
+export function canEditOrder(order, at = now()) {
+  const created = Number(order.created_at ?? order.createdAt);
+  return order.status === 'pending' && !order.edit_locked && !order.editLocked && created > 0 && at < created + EDIT_WINDOW_SECONDS;
+}
+export async function clientSession(DB, who) {
+  const u = await DB.prepare("SELECT active, archived, password_reset_required, session_version FROM users WHERE id = ? AND role = 'client'").bind(who.clientId).first();
+  return u && u.active && !u.archived && (who.preview || Number(u.session_version || 0) === Number(who.sessionVersion || 0)) ? u : null;
+}
+
 // ---------- passwords (PBKDF2-SHA256) ----------
 export async function hashPassword(password, iterations = 210000) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -235,8 +251,8 @@ export async function readSessionRole(request, secret) {
 }
 export function parseRole(role) {
   if (role === 'admin') return { admin: true };
-  const m = /^client-(\d+)$/.exec(role || '');
-  return m ? { admin: false, clientId: Number(m[1]) } : null;
+  const m = /^client-(\d+)(?:-v(\d+))?$/.exec(role || '');
+  return m ? { admin: false, clientId: Number(m[1]), sessionVersion: Number(m[2] || 0) } : null;
 }
 
 // ---------- helpers ----------
@@ -263,7 +279,7 @@ function orderOut(r) {
     itemTitle: r.item_title || '', sku: r.sku || '', variant: r.variant || '', quantity: Number(r.quantity || 1), etsyUrl: r.etsy_url || '', productLinks: String(r.etsy_url || '').split(/\s+/).filter(Boolean),
     commission: Number(r.commission || 0), supplierShare: round2(r.supplier_share),
     ourShare: round2(Math.max(0, Number(r.commission || 0) - Number(r.supplier_share || 0))),
-    notes: r.notes, status: r.status, source: r.source || '',
+    notes: r.notes, status: r.status, editLocked: !!r.edit_locked, source: r.source || '',
     sheetSyncStatus: r.sheet_sync_status || 'waiting',
     sheetSyncedAt: r.sheet_synced_at == null ? null : Number(r.sheet_synced_at),
     sheetSyncError: r.sheet_sync_error || '',
@@ -401,7 +417,6 @@ async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source,
   if (waitUntil) waitUntil(sheetSync); else await sheetSync;
   return { row, saved };
 }
-export const MAX_IMPORT_ORDERS = 100;
 
 async function clientSummary(DB, clientId, settings) {
   const o = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS billed, COALESCE(SUM(commission),0) AS commission, COALESCE(SUM(LEAST(supplier_share, commission)),0) AS supplier, COALESCE(SUM(selling_price - price) FILTER (WHERE selling_price IS NOT NULL),0) AS profit FROM client_orders WHERE client_id = ? AND status <> 'cancelled'").bind(clientId).first();
@@ -442,8 +457,22 @@ export async function handlePortal(request, url, ctx) {
     who = { admin: false, clientId: c.id, preview: true };
   }
   if (!who.admin) {
-    const me = await DB.prepare("SELECT active, archived FROM users WHERE id = ? AND role = 'client'").bind(who.clientId).first();
-    if (!me || !me.active || me.archived) return json({ ok: false, error: 'Account disabled' }, 403);
+    const me = await clientSession(DB, who);
+    if (!me) return json({ ok: false, error: 'Please sign in again.' }, 401);
+    if (!who.preview && me.password_reset_required) {
+      if (path === '/me' && method === 'GET') return json({ ok: true, role: 'client', passwordResetRequired: true });
+      if (path !== '/password') return json({ ok: false, error: 'Choose a new password to continue.' }, 423);
+    }
+  }
+  if (path === '/password' && method === 'POST' && !who.admin && !who.preview) {
+    const u = await DB.prepare('SELECT password_hash, password_reset_required, session_version FROM users WHERE id = ?').bind(who.clientId).first();
+    const body = await readBody(request), password = String(body.password || '');
+    if (password.length < 8 || password.length > 128) return json({ ok: false, error: 'Use 8 to 128 characters for your password.' }, 400);
+    if (!u.password_reset_required && !await verifyPassword(String(body.currentPassword || ''), u.password_hash)) return json({ ok: false, error: 'Wrong current password.' }, 400);
+    if (await verifyPassword(password, u.password_hash)) return json({ ok: false, error: 'Choose a different password.' }, 400);
+    const changed = await DB.prepare('UPDATE users SET password_hash=?, password_reset_required=FALSE, session_version=session_version+1 WHERE id=? AND session_version=? RETURNING session_version').bind(await hashPassword(password), who.clientId, Number(u.session_version || 0)).first();
+    if (!changed) return json({ ok: false, error: 'Please sign in again.' }, 401);
+    return json({ ok: true }, 200, { 'set-cookie': await createSessionCookie('client-' + who.clientId + '-v' + changed.session_version, env.APP_SESSION_SECRET) });
   }
 
   if (path === '/me' && method === 'GET') {
@@ -468,6 +497,7 @@ export async function handlePortal(request, url, ctx) {
     const clientId = who.admin ? Number(body.clientId) : who.clientId;
     const client = await DB.prepare("SELECT id, commission_per_order, active FROM users WHERE id = ? AND role = 'client'").bind(clientId).first();
     if (!client || !client.active) return json({ ok: false, error: 'Unknown client' }, 400);
+    if (!text(body.destination, 60) || text(body.destination, 60) === '__other') return json({ ok: false, error: 'Please choose a country.' }, 400);
     let f; try { f = orderFields(body); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     if (!who.admin) {
       f.tracking_number = ''; f.category = ''; f.weight_kg = null;
@@ -475,7 +505,7 @@ export async function handlePortal(request, url, ctx) {
     }
     // Clients must show us what was ordered: the product link plus at least one photo / screenshot.
     if (f.etsy_url && !f.etsy_url.split('\n').every(validLink)) return json({ ok: false, error: 'Please paste each product link in full, starting with https://' }, 400);
-    if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link (the Etsy listing).' }, 400);
+    if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link from your store.' }, 400);
     const photoBodies = Array.isArray(body.photos) ? body.photos : [];
     if (photoBodies.length > MAX_PHOTOS_PER_ORDER) return json({ ok: false, error: `Up to ${MAX_PHOTOS_PER_ORDER} photos per order` }, 400);
     let photos; try { photos = photoBodies.map(photoInput); } catch (e) { return json({ ok: false, error: e.message }, 400); }
@@ -484,37 +514,6 @@ export async function handlePortal(request, url, ctx) {
     const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, who.admin ? 'admin' : 'client', '', settings);
     const out = { ...orderOut(row), photos: saved };
     return json({ ok: true, order: who.admin ? out : clientOrder(out) });
-  }
-  // ----- bulk import from an Etsy orders file (parsed in the browser) -----
-  // Each order still needs the product link(s) (built from the Etsy listing IDs); photos are optional
-  // here because the link already shows the item. Orders whose Etsy order number is already in the
-  // portal for this client are skipped, so uploading the same file twice is safe.
-  if (path === '/orders/import' && method === 'POST') {
-    const body = await readBody(request);
-    const clientId = who.admin ? Number(body.clientId) : who.clientId;
-    const client = await DB.prepare("SELECT id, commission_per_order, active FROM users WHERE id = ? AND role = 'client' AND NOT archived").bind(clientId).first();
-    if (!client || !client.active) return json({ ok: false, error: 'Unknown client' }, 400);
-    const list = Array.isArray(body.orders) ? body.orders : [];
-    if (!list.length) return json({ ok: false, error: 'No orders to import' }, 400);
-    if (list.length > MAX_IMPORT_ORDERS) return json({ ok: false, error: `Up to ${MAX_IMPORT_ORDERS} orders per upload. Split the file by month.` }, 400);
-    const existing = new Set(((await DB.prepare("SELECT order_ref FROM client_orders WHERE client_id = ? AND order_ref <> ''").bind(clientId).all()).results || []).map(r => r.order_ref.replace(/^#/, '')));
-    const settings = await getSettings(DB);
-    const created = [], skipped = [], failed = [];
-    for (const [i, o] of list.entries()) {
-      const ref = text(o?.orderRef, 120);
-      const label = ref || `Row ${i + 1}`;
-      if (ref && existing.has(ref.replace(/^#/, ''))) { skipped.push({ orderRef: label, reason: 'Already in your orders' }); continue; }
-      let f; try { f = orderFields({ ...o, trackingNumber: '', category: '', weightKg: null, productCost: null, shippingFee: null, price: null, notes: text(o?.notes, 2000) }); }
-      catch (e) { failed.push({ orderRef: label, reason: e.message }); continue; }
-      if (!who.admin) { f.tracking_number = ''; f.category = ''; f.weight_kg = null; f.product_cost = null; f.shipping_fee = null; f.price = 0; }
-      if (!f.etsy_url) { failed.push({ orderRef: label, reason: 'No product link (Listing ID missing)' }); continue; }
-      if (!f.etsy_url.split('\n').every(validLink)) { failed.push({ orderRef: label, reason: 'Product link is not a full https:// link' }); continue; }
-      if (!f.buyer_name || !f.address_line_1) { failed.push({ orderRef: label, reason: 'Recipient name or address missing' }); continue; }
-      const { row } = await insertOrder(DB, env, waitUntil, client, f, [], who.admin ? 'admin' : 'client', 'etsy-csv', settings);
-      if (ref) existing.add(ref.replace(/^#/, ''));
-      created.push(row.id);
-    }
-    return json({ ok: true, created: created.length, ids: created, skipped, failed });
   }
   // ----- notifications: what the other side did, newest first -----
   if (path === '/notifications' && method === 'GET' && !who.admin) {
@@ -553,6 +552,9 @@ export async function handlePortal(request, url, ctx) {
     const existing = await DB.prepare('SELECT * FROM client_orders WHERE id = ?').bind(id).first();
     if (!existing || (!who.admin && existing.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
     const body = await readBody(request);
+    const cancelOnly = body.status === 'cancelled' && Object.keys(body).every(k => k === 'status');
+    if (!who.admin && !cancelOnly && !canEditOrder(existing)) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
+    if ((!who.admin && !cancelOnly || body.destination !== undefined) && (!text(body.destination ?? existing.destination, 60) || text(body.destination ?? existing.destination, 60) === '__other')) return json({ ok: false, error: 'Please choose a country.' }, 400);
     let f; try { f = orderFields({ ...orderOut(existing), ...body }); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     // Clients can edit their own order details and cancel a pending order; only admins change other statuses/fees.
     if (!who.admin && existing.status === 'cancelled') return json({ ok: false, error: 'This order was cancelled.' }, 409);
@@ -568,10 +570,11 @@ export async function handlePortal(request, url, ctx) {
     }
     if (body.etsyUrl !== undefined) {
       if (f.etsy_url && !f.etsy_url.split('\n').every(validLink)) return json({ ok: false, error: 'Please paste each product link in full, starting with https://' }, 400);
-      if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link (the Etsy listing).' }, 400);
+      if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link from your store.' }, 400);
     }
-    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=? WHERE id = ? RETURNING *')
-      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, id).first();
+    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, edit_locked=edit_locked OR ? WHERE id = ? AND (? OR (status=\'pending\' AND NOT edit_locked AND created_at > ?)) RETURNING *')
+      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, status !== 'pending', id, who.admin || cancelOnly, now() - EDIT_WINDOW_SECONDS).first();
+    if (!row) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
     const actor = who.admin ? 'admin' : 'client';
     if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);
     if (row.tracking_number !== existing.tracking_number && row.tracking_number) await logEvent(DB, id, existing.client_id, 'tracking', actor, row.tracking_number);
@@ -587,10 +590,11 @@ export async function handlePortal(request, url, ctx) {
   const photoOne = /^\/orders\/(\d+)\/photos\/(\d+)(\/delete)?$/.exec(path);
   if (photoAdd || photoOne) {
     const id = Number((photoAdd || photoOne)[1]);
-    const order = await DB.prepare('SELECT id, client_id, status, created_at FROM client_orders WHERE id = ?').bind(id).first();
+    const order = await DB.prepare('SELECT id, client_id, status, created_at, edit_locked FROM client_orders WHERE id = ?').bind(id).first();
     if (!order || (!who.admin && order.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
     const actor = who.admin ? 'admin' : 'client';
     // Photos added right after the order was created belong to the "new order" notification.
+    if (method === 'POST' && !who.admin && !canEditOrder(order)) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
     const quiet = now() - Number(order.created_at) < 900;
     if (photoAdd && method === 'POST') {
       if (!who.admin && order.status === 'cancelled') return json({ ok: false, error: 'This order was cancelled.' }, 409);
@@ -634,11 +638,11 @@ export async function handlePortal(request, url, ctx) {
     const pendingSync = retryPendingGoogleSheetOrders(DB, env).catch(error => console.error('Google Sheets pending-order retry failed', error));
     if (waitUntil) waitUntil(pendingSync);
     const settings = await getSettings(DB);
-    const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, active, archived, created_at, trial_start, trial_end, sub_status, sub_last_payment FROM users ORDER BY role, display_name').all()).results || [];
+    const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, active, archived, created_at, trial_start, trial_end, sub_status, sub_last_payment, last_login, password_reset_required FROM users ORDER BY role, display_name').all()).results || [];
     const clients = [];
     const archived = [];
     for (const u of users.filter(u => u.role === 'client' && u.archived)) archived.push({ id: u.id, username: u.username, name: u.display_name, orders: Number((await DB.prepare('SELECT COUNT(*) AS n FROM client_orders WHERE client_id = ?').bind(u.id).first()).n) });
-    for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, commissionPerOrder: u.commission_per_order, subscription: subscriptionOut(u, settings), ...(await clientSummary(DB, u.id, settings)) });
+    for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, lastLogin: u.last_login == null ? null : Number(u.last_login), passwordResetRequired: !!u.password_reset_required, commissionPerOrder: u.commission_per_order, subscription: subscriptionOut(u, settings), ...(await clientSummary(DB, u.id, settings)) });
     const keys = ['billed', 'paid', 'outstanding', 'commission', 'supplierShare', 'ourShare'];
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
@@ -727,6 +731,13 @@ export async function handlePortal(request, url, ctx) {
     }
     return json({ ok: true, id: row.id });
   }
+  const resetMatch = /^\/admin\/users\/(\d+)\/reset-password$/.exec(path);
+  if (resetMatch && method === 'POST') {
+    const password = randomBytes(18).toString('base64url');
+    const changed = await DB.prepare("UPDATE users SET password_hash=?, password_reset_required=TRUE, session_version=session_version+1 WHERE id=? AND role='client' AND NOT archived RETURNING id").bind(await hashPassword(password), Number(resetMatch[1])).first();
+    if (!changed) return json({ ok: false, error: 'Unknown client' }, 404);
+    return json({ ok: true, temporaryPassword: password });
+  }
   const userUpd = /^\/admin\/users\/(\d+)$/.exec(path);
   if (userUpd && method === 'POST') {
     const id = Number(userUpd[1]);
@@ -754,7 +765,7 @@ export async function handlePortal(request, url, ctx) {
       if (trialStart && trialEnd && trialEnd < trialStart) return json({ ok: false, error: 'Trial end must be after the trial start' }, 400);
       if (!subStatus && trialStart) subStatus = 'trial';
     }
-    await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=?, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=? WHERE id = ?').bind(name, active, cpo, hash, archived, trialStart, trialEnd, subStatus, lastPay, id).run();
+    await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=CASE WHEN ? THEN ? ELSE password_hash END, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=?, password_reset_required=CASE WHEN ? THEN ? ELSE password_reset_required END, session_version=session_version+? WHERE id = ?').bind(name, active, cpo, !!body.password, hash, archived, trialStart, trialEnd, subStatus, lastPay, !!body.password, u.role === 'client', body.password ? 1 : 0, id).run();
     if (u.role === 'client') {
       const sheetSync = syncClientToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets client update failed', error));
       if (waitUntil) waitUntil(sheetSync); else await sheetSync;
@@ -785,7 +796,8 @@ export async function authenticate(DB, env, username, password) {
   if (!username || !password) return null;
   if (env.ADMIN_USERNAME && env.ADMIN_PASSWORD && username === env.ADMIN_USERNAME && password === env.ADMIN_PASSWORD) return 'admin';
   if (!DB) return null;
-  const u = await DB.prepare('SELECT id, role, password_hash, active, archived FROM users WHERE LOWER(username) = LOWER(?)').bind(username).first();
+  const u = await DB.prepare('SELECT id, role, password_hash, active, archived, session_version FROM users WHERE LOWER(username) = LOWER(?)').bind(username).first();
   if (!u || !u.active || u.archived || !(await verifyPassword(password, u.password_hash))) return null;
-  return u.role === 'admin' ? 'admin' : 'client-' + u.id;
+  await DB.prepare('UPDATE users SET last_login=? WHERE id=?').bind(now(), u.id).run();
+  return u.role === 'admin' ? 'admin' : 'client-' + u.id + '-v' + Number(u.session_version || 0);
 }

@@ -35,6 +35,33 @@
   const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 
   const D = {
+    // Portal changes #3, #8, #9, #11 and #14.
+    "Store order number": "מספר ההזמנה בחנות",
+    "The order number from your store’s order page.": "מספר ההזמנה מעמוד ההזמנות בחנות שלך.",
+    "Copy from your store": "העתיקו מהחנות שלכם",
+    "A screenshot of your store order is perfect. You can add up to 8.": "צילום מסך של ההזמנה מהחנות מצוין. אפשר להוסיף עד 8.",
+    "Had a sale in your store? Click “Send new order” and fill in what your customer bought and where to ship it.": "הייתה מכירה בחנות שלך? לחצו על ״שליחת הזמנה חדשה״ ומלאו מה הלקוח קנה ולאן לשלוח.",
+    "When you get a sale in your store, send it to us here. We take care of the rest.": "כשיש מכירה בחנות שלך, שלחו לנו אותה כאן. אנחנו נדאג לשאר.",
+    "Please choose a country.": "נא לבחור מדינה.",
+    "Please add the product link from your store.": "נא להוסיף את הקישור למוצר מהחנות שלך.",
+    "This order is already being processed. Need a change? Send us a message.": "ההזמנה כבר בטיפול. צריך שינוי? שלחו לנו הודעה.",
+    "Choose a new password": "בחרו סיסמה חדשה",
+    "Your temporary password must be replaced before you can use the portal.": "יש להחליף את הסיסמה הזמנית לפני השימוש בפורטל.",
+    "Confirm new password": "אימות הסיסמה החדשה",
+    "Save password": "שמירת הסיסמה",
+    "Passwords do not match.": "הסיסמאות אינן תואמות.",
+    "Use 8 to 128 characters for your password.": "בחרו סיסמה באורך 8 עד 128 תווים.",
+    "Wrong current password.": "הסיסמה הנוכחית שגויה.",
+    "Choose a different password.": "בחרו סיסמה אחרת.",
+    "Please sign in again.": "נא להתחבר מחדש.",
+    "Choose a new password to continue.": "בחרו סיסמה חדשה כדי להמשיך.",
+    "Last login:": "כניסה אחרונה:",
+    "Never": "מעולם לא",
+    "Reset password": "איפוס סיסמה",
+    "Temporary password": "סיסמה זמנית",
+    "Temporary password — shown only here. Copy and share it privately.": "סיסמה זמנית — מוצגת רק כאן. העתיקו ושתפו אותה באופן פרטי.",
+    "The client must choose a new password at next login.": "הלקוח חייב לבחור סיסמה חדשה בכניסה הבאה.",
+
     // ----- shared / navigation -----
     'Direct Line clients': 'לקוחות Direct Line', 'Clients': 'לקוחות', 'Orders': 'הזמנות', 'orders': 'הזמנות', 'Overview': 'סקירה',
     'Fees & settings': 'עמלות והגדרות', 'Every order your clients send in, what they owe, and what we earn.': 'כל ההזמנות שהלקוחות שולחים, כמה הם חייבים וכמה אנחנו מרוויחים.',
@@ -211,6 +238,7 @@
 
   const tc = s => tr(s); // translate a captured piece (e.g. a country or date)
   const R = [
+    [/^You can edit for (\d+) more hours\.$/, (_, n) => `אפשר לערוך במשך ${n} שעות נוספות.`],
     [/^(\d+) accounts?$/, (m, n) => `${n} ${plural(n, 'חשבון', 'חשבונות')}`],
     [/^(\d+) waiting to be processed$/, (m, n) => `${n} ממתינות לטיפול`],
     [/^Billed (\S+) · paid (\S+)$/, (m, a, b) => `חויב ${a} · שולם ${b}`],
