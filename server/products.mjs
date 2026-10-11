@@ -1,0 +1,33 @@
+import {uploadedFile} from './files.mjs';
+export const PRODUCT_SCHEMA=[
+ `CREATE TABLE IF NOT EXISTS portal_products(id SERIAL PRIMARY KEY,client_id INTEGER NOT NULL REFERENCES users(id),name TEXT NOT NULL,link TEXT NOT NULL,variant TEXT NOT NULL DEFAULT '',expected_quantity INTEGER,status TEXT NOT NULL DEFAULT 'awaiting_quote',unit_price DOUBLE PRECISION,note TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)`,
+ `CREATE TABLE IF NOT EXISTS portal_product_photos(id SERIAL PRIMARY KEY,product_id INTEGER NOT NULL REFERENCES portal_products(id),mime TEXT NOT NULL,data TEXT NOT NULL,bytes INTEGER NOT NULL)`,
+ `CREATE TABLE IF NOT EXISTS portal_product_events(id SERIAL PRIMARY KEY,product_id INTEGER NOT NULL REFERENCES portal_products(id),client_id INTEGER NOT NULL REFERENCES users(id),actor TEXT NOT NULL,detail TEXT NOT NULL,created_at INTEGER NOT NULL)`,
+ 'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES portal_products(id)',
+ 'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS quoted_unit_price DOUBLE PRECISION',
+];
+export function productInput(body){
+ let url;try{url=new URL(body.link);}catch{throw new Error('Please paste a full product link, starting with https://');}if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw new Error('Please paste a full product link, starting with https://');
+ const qty=body.expectedQuantity==null||body.expectedQuantity===''?null:Number(body.expectedQuantity);if(qty!==null&&(!Number.isSafeInteger(qty)||qty<1||qty>1000000))throw new Error('Enter a valid expected monthly quantity.');
+ if(!Array.isArray(body.photos)||!body.photos.length||body.photos.length>3)throw new Error('Add one to three product photos.');
+ const photos=body.photos.map(uploadedFile);if(photos.some(p=>!p.mime.startsWith('image/')))throw new Error('Choose product photos, not a PDF.');if(photos.reduce((n,p)=>n+p.bytes,0)>3*1024*1024)throw new Error('Product photos must total 3 MB or less.');
+ return {name:String(body.name||url.hostname).trim().slice(0,160)||url.hostname,link:url.href.slice(0,1000),variant:String(body.variant||'').trim().slice(0,500),qty,photos};
+}
+export async function products(DB,clientId=null){
+ const where=clientId===null?'NOT u.archived':'p.client_id=?';
+ const rows=(await DB.prepare(`SELECT p.*,u.display_name AS client_name,COALESCE(array_agg(ph.id) FILTER(WHERE ph.id IS NOT NULL),ARRAY[]::integer[]) AS photo_ids FROM portal_products p JOIN users u ON u.id=p.client_id LEFT JOIN portal_product_photos ph ON ph.product_id=p.id WHERE ${where} GROUP BY p.id,u.display_name ORDER BY p.created_at,p.id`).bind(...(clientId===null?[]:[clientId])).all()).results||[];
+ return rows.map(r=>({id:Number(r.id),clientId:Number(r.client_id),clientName:r.client_name,name:r.name,link:r.link,variant:r.variant,expectedQuantity:r.expected_quantity==null?null:Number(r.expected_quantity),status:r.status,unitPrice:r.unit_price==null?null:Number(r.unit_price),note:r.note,photoIds:r.photo_ids.map(Number),createdAt:Number(r.created_at),updatedAt:Number(r.updated_at)}));
+}
+export async function addProduct(DB,clientId,body){
+ const f=productInput(body),t=Math.floor(Date.now()/1000),photos=f.photos.map(p=>({mime:p.mime,data:p.content,bytes:p.bytes}));
+ const r=await DB.prepare(`WITH product AS (INSERT INTO portal_products(client_id,name,link,variant,expected_quantity,created_at,updated_at) VALUES (?,?,?,?,?,?,?) RETURNING id),photos AS (INSERT INTO portal_product_photos(product_id,mime,data,bytes) SELECT product.id,p.mime,p.data,p.bytes FROM product CROSS JOIN jsonb_to_recordset(?::jsonb) p(mime text,data text,bytes integer)),event AS (INSERT INTO portal_product_events(product_id,client_id,actor,detail,created_at) SELECT id,?,'client','New product awaiting quote',? FROM product) SELECT id FROM product`).bind(clientId,f.name,f.link,f.variant,f.qty,t,t,JSON.stringify(photos),clientId,t).first();
+ return (await products(DB,clientId)).find(p=>p.id===Number(r.id));
+}
+export function quoteInput(body){const status=body.status,price=Number(body.unitPrice),note=String(body.note||'').trim().slice(0,1000);
+ if(!['approved','not_available'].includes(status))throw new Error('Choose Approved or Not available.');
+ if(status==='approved'&&(body.unitPrice==null||body.unitPrice===''||!Number.isFinite(price)||price<0||price>=1e7||Math.abs(price*100-Math.round(price*100))>1e-7))throw new Error('Enter a unit price with up to two decimal places.');
+ if(status==='not_available'&&!note)throw new Error('Add a note explaining why the product is not available.');return{status,price:status==='approved'?price:null,note};}
+export async function quoteProduct(DB,id,body){const f=quoteInput(body),t=Math.floor(Date.now()/1000);
+ const r=await DB.prepare(`WITH changed AS (UPDATE portal_products SET status=?,unit_price=?,note=?,updated_at=? WHERE id=? RETURNING *),event AS (INSERT INTO portal_product_events(product_id,client_id,actor,detail,created_at) SELECT id,client_id,'admin',?,? FROM changed) SELECT * FROM changed`).bind(f.status,f.price,f.note,t,id,f.status,t).first();if(!r)return null;return(await products(DB,r.client_id)).find(p=>p.id===Number(id));}
+export async function productPhoto(DB,productId,photoId,who){const row=await DB.prepare('SELECT ph.*,p.client_id FROM portal_product_photos ph JOIN portal_products p ON p.id=ph.product_id WHERE ph.id=? AND ph.product_id=?').bind(photoId,productId).first();if(!row||!who.admin&&Number(row.client_id)!==Number(who.clientId))return new Response('Not found',{status:404});return new Response(Buffer.from(row.data,'base64'),{headers:{'content-type':row.mime,'cache-control':'private, no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox"}});}
+export async function productEvents(DB,clientId=null,actor='admin'){const rows=(await DB.prepare(`SELECT e.*,p.name AS product_name,u.display_name AS client_name FROM portal_product_events e JOIN portal_products p ON p.id=e.product_id JOIN users u ON u.id=e.client_id WHERE e.actor=? AND NOT u.archived ${clientId===null?'':'AND e.client_id=?'} ORDER BY e.created_at DESC,e.id DESC LIMIT 50`).bind(actor,...(clientId===null?[]:[clientId])).all()).results||[];return rows.map(r=>({id:'product-'+r.id,productId:Number(r.product_id),orderId:null,clientId:Number(r.client_id),clientName:r.client_name,kind:'product',actor:r.actor,detail:r.detail,productName:r.product_name,createdAt:Number(r.created_at)}));}

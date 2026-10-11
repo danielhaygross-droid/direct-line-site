@@ -47,6 +47,7 @@
   function eventItem(e) {
     const who = e.clientName || L('A client', 'לקוח'), ref = e.orderRef || '#' + e.orderId;
     const base = { id: 'ev-' + e.id, time: e.createdAt * 1000, orderId: e.orderId, action: L('Open order', 'פתח הזמנה') };
+    if(e.kind==='product')return {...base,view:'client-products',action:L('View products','צפייה במוצרים'),icon:'order',tone:'gold',title:L(`${who} submitted a product for quote`,`${who} שלח/ה מוצר להצעת מחיר`),text:e.productName};
     if (e.kind === 'created') return { ...base, icon: 'order', tone: 'gold', title: L(`${who} added a new order`, `${who} הוסיף/ה הזמנה חדשה`), text: L(`${ref} · waiting to be processed`, `${ref} · ממתינה לטיפול`) };
     if (e.kind === 'message') return { ...base, icon: 'message', tone: 'blue', focus: 'chat', action: L('Reply', 'השב'), title: L(`${who} sent a follow-up`, `${who} שלח/ה פנייה`), text: `${ref}: ${e.detail}` };
     if (e.kind === 'status' && e.detail === 'cancellation_requested') return { ...base, icon: 'alert', tone: 'orange', title: L(`${who} requested cancellation`, `${who} ביקש/ה ביטול`), text: ref };
@@ -137,6 +138,7 @@
     addEventListener('message', onMsg);
   }
   function openItem(n) {
+    if(n.view==='client-products'){document.getElementById('nav-client-orders')?.click();sendToAdminView({type:'dl-open-products'});return;}
     if (n.orderId || n.view === 'client-orders') {
       document.getElementById('nav-client-orders')?.click();
       if (n.orderId) sendToAdminView({ type: 'dl-open-order', id: n.orderId, focus: n.focus || 'details' });

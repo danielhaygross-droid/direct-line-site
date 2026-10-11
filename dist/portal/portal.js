@@ -4,7 +4,7 @@
   const MAX_PHOTOS = 8;
   const UI = window.DLOrderUI, N = window.DLNotify;
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancellation_requested', 'cancelled'];
-  const S = { me: null, orders: [], payments: [], transfers: [], adjustments: [], invoices: [], notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
+  const S = { me: null, orders: [], payments: [], transfers: [], adjustments: [], invoices: [], products: [], notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
@@ -33,6 +33,7 @@
   };
   const ic = n => UI.svg(P[n]);
   const ROUTES = {
+    products: {title:'My Products',sub:'Submit products for a fixed unit quote'},
     home: { title: 'Home', sub: 'Your orders at a glance' },
     orders: { title: 'Orders', sub: 'Every order you’ve sent us' },
     new: { title: 'Send a new order', sub: 'Fill in 3 short steps and press Send' },
@@ -41,7 +42,7 @@
     terms: { title: 'Terms of Service', sub: 'Service, fulfillment and after-sales policy' },
     payments: { title: 'Payments', sub: 'What you’ve been billed and paid' },
   };
-  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['terms', 'Terms of Service', 'orders']];
+  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['products','My Products','orders'], ['terms', 'Terms of Service', 'orders']];
   const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
   const place = d => (d ? countryName(d) : '—');
   const ago = sec => N.timeAgo(sec * 1000);
@@ -149,8 +150,8 @@
     if (S.me?.termsRequired) return false;
     const me = await api('/me');
     if (me.termsRequired) { S.me = { ...S.me, ...me }; await termsScreen(); return false; }
-    const [o, p, n] = await Promise.all([api('/orders'), api('/payments'), api('/notifications').catch(() => null)]);
-    S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments; S.transfers = p.transfers || []; S.adjustments = p.adjustments || []; S.invoices=p.invoices || [];
+    const [o, p, n, products] = await Promise.all([api('/orders'), api('/payments'), api('/notifications').catch(() => null),api('/products')]);
+    S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments; S.transfers = p.transfers || []; S.adjustments = p.adjustments || []; S.invoices=p.invoices || []; S.products=products.products || [];
     if (!first && S.route === 'edit' && !S.orders.some(o => o.id === S.id && editable(o))) { go('orders'); N.popup({ icon: 'alert', title: 'This order is already being processed. Need a change? Send us a message.' }); }
     if (n) { S.notes = n.items; S.seenAt = n.seenAt; }
     const fresh = known ? S.notes.filter(x => !known.has(x.id)) : [];
@@ -160,7 +161,7 @@
       if (S.route !== 'new' && S.route !== 'edit') renderView(true);
       refreshDrawer();
       fresh.slice(0, 3).reverse().map(noteItem).filter(x => x.unread)
-        .forEach(x => N.popup(x, { onClick: () => { markRead(x); x.invoice ? go('payments') : openOrder(x.orderId, x.focus); }, duration: 10000 }));
+        .forEach(x => N.popup(x, { onClick: () => { markRead(x); x.product ? go('products') : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); }, duration: 10000 }));
     }
   }
 
@@ -172,7 +173,8 @@
     const o = S.orders.find(x => x.id === e.orderId), ref = e.orderRef || (o ? orderName(o) : '#' + e.orderId);
     const base = { id: 'n' + e.id, orderId: e.orderId, time: e.createdAt * 1000, action: 'View order' };
     let it;
-    if (e.kind === 'invoice') it = {...base, invoice:true, action:'View payments', icon:'wallet',tone:'mint',title:'New invoice available',text:e.detail};
+    if(e.kind==='product')it={...base,product:true,action:'View products',icon:'order',tone:'gold',title:'Product quote updated',text:e.productName};
+    else if (e.kind === 'invoice') it = {...base, invoice:true, action:'View payments', icon:'wallet',tone:'mint',title:'New invoice available',text:e.detail};
     else if (e.kind === 'status') {
       const words = { processing: 'We’re working on it now.', shipped: 'It’s on its way to your customer.', delivered: 'It was delivered to your customer.', cancelled: 'This order was cancelled.', pending: 'It’s back to pending.' };
       it = { ...base, icon: e.detail === 'cancelled' ? 'alert' : e.detail === 'delivered' ? 'check' : 'status', tone: { processing: 'blue', shipped: 'gold', delivered: 'mint', cancelled: 'red' }[e.detail] || 'orange', title: `${ref} is now ${e.detail}`, text: words[e.detail] || '' };
@@ -225,7 +227,7 @@
     const bell = $('[data-bell]');
     panel = N.panel({
       anchor: bell,
-      onItem: x => { markRead(x); x.invoice ? go('payments') : openOrder(x.orderId, x.focus); },
+      onItem: x => { markRead(x); x.product ? go('products') : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); },
       onMarkAll: async () => { try { const r = await api('/notifications/seen', { method: 'POST' }); S.seenAt = r.seenAt; readIds = new Set(); store.set(readKey(), []); updateChrome(); if (S.route === 'home' || S.route === 'orders') renderView(true); } catch (e) { /* offline */ } },
       onOpen: () => { store.set(badgeKey(), Date.now()); updateChrome(); },
       footer: 'Updates come in by themselves every 20 seconds.',
@@ -274,11 +276,12 @@
   const go = path => { location.hash = '#/' + path; };
   function renderView(soft) {
     const view = $('#view');
+    if(soft && S.route==='products' && $('#product-form')?.dataset.dirty)return;
     if (soft && S.route === 'payments' && $('#transfer-form')?.dataset.dirty) return;
     if (soft && S.route === 'orders' && $('[data-orders-list]')) { renderChips(); renderOrdersList(); return; }
-    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, terms: viewTerms }[S.route]();
+    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, products:viewProducts, terms: viewTerms }[S.route]();
     if (soft) view.querySelectorAll(':scope > *').forEach(el => { el.style.animation = 'none'; });
-    ({ orders: bindOrders, new: bindForm, edit: bindForm, terms: bindTerms, payments: bindPayments })[S.route]?.();
+    ({ orders: bindOrders, new: bindForm, edit: bindForm, terms: bindTerms, payments: bindPayments, products:bindProducts })[S.route]?.();
   }
   const empty = (icon, title, text, extra = '') => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><h3>${esc(title)}</h3><p>${esc(text)}</p>${extra}</div>`;
 
@@ -327,7 +330,7 @@
           ${o.length ? `<div class="table-wrap">${ordersTable(o.slice(0, 5), true)}</div>` : empty('orders', 'No orders yet', 'When you get a sale in your store, send it to us here. We take care of the rest.', '<a class="btn btn-primary" href="#/new">Send a new order</a>')}
         </section>
         <section class="card"><div class="card-head"><h3>Latest updates</h3><button type="button" class="link" data-open-bell>See all</button></div>
-          ${items.length ? `<div class="feed">${items.map(x => `<button type="button" class="${x.unread ? 'unread' : ''}" ${x.invoice ? 'data-invoice-note="1"' : `data-open-order="${x.orderId}"`} data-focus="${x.focus || ''}" data-note="${x.id}"><span class="dln-ic t-${x.tone}">${N.icon(x.icon)}</span><span style="display:grid;min-width:0"><b>${esc(x.title)}</b><span>${esc(x.text)}</span><time>${esc(N.timeAgo(x.time))}</time></span></button>`).join('')}</div>`
+          ${items.length ? `<div class="feed">${items.map(x => `<button type="button" class="${x.unread ? 'unread' : ''}" ${x.product ? 'data-product-note="1"' : x.invoice ? 'data-invoice-note="1"' : `data-open-order="${x.orderId}"`} data-focus="${x.focus || ''}" data-note="${x.id}"><span class="dln-ic t-${x.tone}">${N.icon(x.icon)}</span><span style="display:grid;min-width:0"><b>${esc(x.title)}</b><span>${esc(x.text)}</span><time>${esc(N.timeAgo(x.time))}</time></span></button>`).join('')}</div>`
             : empty('bell', 'No updates yet', 'When we change an order’s status or reply to you, it shows up here.')}
         </section>
         <section class="card"><div class="card-head"><h3>Profit by month</h3><span class="tag">Last 6 months</span></div>${profitChart()}</section>
@@ -450,6 +453,7 @@
           <label class="field" data-f="orderDate"><span>Order date</span><input name="orderDate" required type="date" value="${esc(ed?.orderDate || today)}"></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>2</i>What did the customer buy?</h3><div class="form-grid">
+          ${!ed ? `<label class="field full"><span>Choose from My Products</span><select name="productId"><option value="">Free-form order</option>${S.products.filter(p=>p.status==='approved').map(p=>`<option value="${p.id}">${esc(p.name)} · ${money(p.unitPrice)} / unit</option>`).join('')}</select><small data-product-price></small></label>` : ed.quotedUnitPrice!=null ? `<p class="note full"><span>Fixed unit quote</span> <b>${money(ed.quotedUnitPrice)}</b></p>` : ''}
           <div class="field full" data-f="links"><span>Product link <small>Copy from your store</small></span><div class="link-list" data-links></div>
             <button type="button" class="btn btn-sm link-add" data-link-add>+ Add another product</button></div>
           <div class="field full photo-field" data-f="photos"><span>Photo or screenshot of the product <small data-pick-count></small></span>
@@ -495,10 +499,11 @@
     const locked = ed && ['shipped', 'delivered'].includes(ed.status);
     let picks = (ed?.photos || []).map(p => ({ key: 'p' + p.id, id: p.id }));
     const removed = [];
+    let selectedProduct=null;
     let pickSeq = 0;
     const zone = $('[data-picks]', form);
     function renderPicks() {
-      zone.innerHTML = picks.map(p => `<figure class="pm-photo"><img src="${p.id ? photoUrl(ed.id, p.id, true) : p.thumb}" alt="Product photo">${p.id && locked ? '' : `<button type="button" class="pm-remove" data-pick-remove="${p.key}" aria-label="Remove photo">×</button>`}</figure>`).join('')
+      zone.innerHTML = picks.map(p => `<figure class="pm-photo"><img src="${p.id ? photoUrl(ed.id, p.id, true) : p.thumb}" alt="Product photo">${p.productFrom || p.id && locked ? '' : `<button type="button" class="pm-remove" data-pick-remove="${p.key}" aria-label="Remove photo">×</button>`}</figure>`).join('')
         + (picks.length < MAX_PHOTOS ? `<label class="pm-add${picks.length ? '' : ' big'}"><input type="file" accept="image/*" multiple hidden data-pick-input><span>+</span><small>${picks.length ? 'Add more' : 'Add photo or screenshot'}</small></label>` : '');
       $('[data-pick-count]', form).textContent = picks.length ? `${picks.length} of ${MAX_PHOTOS}` : (ed?.source === 'etsy-csv' ? 'optional' : 'required');
       if (picks.length) form.querySelector('[data-f="photos"]')?.classList.remove('bad');
@@ -542,6 +547,14 @@
       if (e.target.closest('[data-link-add]')) { linkBox.insertAdjacentHTML('beforeend', linkRow()); syncLinks(); $$('[data-link]', linkBox).pop().focus(); }
       const rm = e.target.closest('[data-link-remove]'); if (rm) { rm.closest('.link-row').remove(); syncLinks(); }
     });
+    form.productId?.addEventListener('change',()=>{
+      selectedProduct=S.products.find(p=>p.id===Number(form.productId.value))||null;
+      linkBox.innerHTML=linkRow(selectedProduct?.link||'');syncLinks();
+      picks=selectedProduct ? selectedProduct.photoIds.map(id=>({key:'product-'+id,productFrom:true,thumb:'/api/portal/products/'+selectedProduct.id+'/photos/'+id})) : [];
+      if(selectedProduct)form.variant.value=selectedProduct.variant;
+      $('[data-product-price]',form).innerHTML=selectedProduct ? `<span>Fixed unit quote</span> <b>${money(selectedProduct.unitPrice)}</b>` : '';
+      renderPicks();updateSum();
+    });
     // ----- check everything at once, mark what's missing -----
     const mark = (key, bad) => { const f = form.querySelector(`[data-f="${key}"]`); if (f) f.classList.toggle('bad', !!bad); };
     form.addEventListener('input', e => { const f = e.target.closest('[data-f]'); if (f) f.classList.remove('bad'); });
@@ -550,7 +563,7 @@
       const where = [form.buyerName.value.trim(), dest.label()].filter(Boolean).join(' · ');
       const row = (label, value) => `<div><span>${label}</span><b>${value ? esc(value) : '<em class="miss">not filled in yet</em>'}</b></div>`;
       $('[data-sum]').innerHTML = row('Order number', form.orderRef.value.trim()) + row('Product', links ? `${links} link${links > 1 ? 's' : ''} · ${qty} item${qty > 1 ? 's' : ''}` : '')
-        + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
+        + ((selectedProduct?.unitPrice ?? ed?.quotedUnitPrice)!=null ? row('Order total',money((selectedProduct?.unitPrice ?? ed.quotedUnitPrice)*qty)) : '') + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
     }
     form.addEventListener('input', updateSum);
     form.addEventListener('change', updateSum);
@@ -586,7 +599,8 @@
         city: form.city.value, region: form.region.value, postalCode: form.postalCode.value, destination: dest.get(), notes: form.notes.value,
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');
-      const fresh = picks.filter(p => !p.id), photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
+      if(selectedProduct){body.productId=selectedProduct.id;body.quotedUnitPrice=selectedProduct.unitPrice;}
+      const fresh = picks.filter(p => !p.id && !p.productFrom), photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
       let r;
       try {
         r = ed ? await api('/orders/' + ed.id, { method: 'PUT', body })
@@ -659,6 +673,9 @@
       } catch(ex) {m.textContent=ex.message;b.disabled=false;}
     });
   }
+  const productStatus=s=>({awaiting_quote:'Awaiting quote',approved:'Approved',not_available:'Not available'}[s]||s);
+  function viewProducts(){return `${S.me.preview?'':`<section class="card card-pad"><h3 class="sec-title">Add product</h3><form id="product-form" class="form-grid"><label class="field"><span>Product name <small>optional</small></span><input name="name" maxlength="160"></label><label class="field"><span>Product link</span><input name="link" type="url" maxlength="1000" required></label><label class="field"><span>Variant notes</span><input name="variant" maxlength="500"></label><label class="field"><span>Expected monthly quantity <small>optional</small></span><input name="expectedQuantity" type="number" min="1" step="1"></label><label class="field full"><span>Product photos <small>one to three</small></span><input name="photos" type="file" accept="image/*" multiple required></label><button type="submit" class="btn btn-primary">Send for quote</button><p class="form-msg" data-product-msg></p></form></section>`}<section class="card card-pad"><h3 class="sec-title">My Products</h3>${S.products.length?S.products.map(p=>`<article class="confirmation-row"><div>${p.photoIds[0]?`<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="72" height="72" style="object-fit:contain" alt="Product photo">`:''}<b data-no-i18n>${esc(p.name)}</b><p><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a></p><p data-no-i18n>${esc(p.variant)}</p>${p.note?`<p data-no-i18n>${esc(p.note)}</p>`:''}</div><div><span>${productStatus(p.status)}</span>${p.unitPrice!=null?`<p><span>Fixed unit quote</span> <b>${money(p.unitPrice)}</b></p>`:''}</div></article>`).join(''):'<p class="muted">No products yet.</p>'}</section>`;}
+  function bindProducts(){const f=$('#product-form');if(!f)return;f.addEventListener('input',()=>{f.dataset.dirty='1';});f.addEventListener('change',()=>{f.dataset.dirty='1';});f.addEventListener('submit',async e=>{e.preventDefault();const b=$('[type=submit]',f),m=$('[data-product-msg]',f);b.disabled=true;m.textContent='';try{const files=[...f.photos.files];if(!files.length||files.length>3)throw new Error('Add one to three product photos.');const photos=[];for(const file of files){const p=await shrinkImage(file);photos.push({filename:file.name,data:p.data});}await api('/products',{method:'POST',body:{name:f.name.value,link:f.link.value,variant:f.variant.value,expectedQuantity:f.expectedQuantity.value,photos}});f.dataset.dirty='';await refresh();N.popup({icon:'check',title:'Product sent for quote.'});}catch(ex){m.textContent=ex.message;b.disabled=false;}});}
   function invoiceLinks(files) {
     return files.length ? files.map(f=>`<p><a class="btn btn-sm" href="/api/portal/files/${f.id}" target="_blank" rel="noopener"><span>Download invoice</span> <small data-no-i18n>${esc(f.filename)}</small></a></p>`).join('') : '<span class="muted">Invoice pending</span>';
   }
@@ -700,6 +717,7 @@
     const f = t.closest('[data-filter]'); if (f) { S.filter = f.dataset.filter; renderChips(); renderOrdersList(); return; }
     const gf = t.closest('[data-go-filter]'); if (gf) { S.filter = gf.dataset.goFilter; S.q = ''; go('orders'); return; }
     if (t.closest('[data-ask-go]')) { openOrder($('[data-ask]').value, 'chat'); return; }
+    const productNote=t.closest('[data-product-note]');if(productNote){const note=noteItems().find(x=>x.id===productNote.dataset.note);if(note)markRead(note);go('products');return;}
     const invoiceNote=t.closest('[data-invoice-note]');if(invoiceNote){const note=noteItems().find(x=>x.id===invoiceNote.dataset.note);if(note)markRead(note);go('payments');return;}
     const oo = t.closest('[data-open-order]');
     if (oo && !t.closest('a')) {

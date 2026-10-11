@@ -93,3 +93,14 @@ Branch codex/invoices. Merge #20 → #21 → #22 → this PR.
 - Versions portal JS28/admin JS31/i18n12. Runtime adds file→payment link and invoice→orders links. No invoice regeneration or supplier cost/shipping breakdown is shown by the portal.
 - Validation: 46/46 automated tests, build/syntax/diff; DB owner/link/date/dedup/notification/archive/download/month checks; Python extracted the ZIP and verified every CRC; all eight EN/HE desktop/phone themes tested actual payment+invoice/order linking, notifications, PNG and ZIP downloads; dedicated existing-order upload passed. Screenshots inspected.
 - Local ../verification/check-invoice-api.mjs and check-invoice-ui.mjs; screenshots ../verification/invoices/. No production mutations. Await merge/deployment verification before marking live or updating report.
+
+## My Products (#12) — ready for review after PR #23
+
+Branch codex/saved-products. Merge #20 → #21 → #22 → #23 → this PR.
+- Client My Products submits a link, one to three photos, variant notes and optional expected monthly quantity. Photos remain private. Admin cross-client Products list prioritizes awaiting quotes; client page also shows quote forms.
+- Admin approves a USD unit price or marks Not available with a required note, and can update a quote later. New submissions/quote changes use bell/activity notifications with links to Products.
+- New order approved-product selector fills link, photos, variant and unit quote; total reflects quantity. No new photo upload needed. Free-form orders remain available. Server checks ownership/approved status and rejects a stale displayed quote.
+- Orders copy their product photos and snapshot the unit price. Later price changes or admin billing cannot change this snapshot; quantity edits use that original unit price. Client sees unit quote/total only, without cost/shipping breakdown.
+- Versions portal JS29/admin JS32/i18n13, dashboard real-ui cache bumped. Runtime adds products/photos/events and order product/unit-price fields.
+- Validation: 48/48 automated tests; build/syntax/diff; DB submission/quote authorization, photos, fixed price/quantity edits, stale quote, unavailable note and notifications; all eight EN/HE desktop/phone themes completed submit→admin quote→auto-fill→quoted order with no second upload. Screenshots inspected. No production changes.
+- Local ../verification/check-product-api.mjs and check-product-ui.mjs; screenshots ../verification/products/. Remaining: #13 claims and #15 stores; deployment still awaits user merges.

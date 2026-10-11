@@ -6,7 +6,7 @@
   const UI = window.DLOrderUI;
   const STATUSES = ['pending','processing','shipped','delivered','cancellation_requested','cancelled'];
   const ADMIN_STATUSES = ['processing','shipped','delivered'];
-  const S = { ov: null, orders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null };
+  const S = { ov: null, orders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[] };
   const embedded = window.top !== window.self;
   const tell = m => { if (embedded) parent.postMessage(m, location.origin); };
   const P = {
@@ -56,8 +56,8 @@
   }
 
   async function loadAll() {
-    const [ov, o] = await Promise.all([api('/admin/overview'), api('/admin/orders')]);
-    S.ov = ov; S.orders = o.orders; window.DL.setRates(ov.rates);
+    const [ov, o, p] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products')]);
+    S.ov = ov; S.orders = o.orders; S.products=p.products; window.DL.setRates(ov.rates);
     if (S.filter === null) S.filter = S.orders.some(x => x.status === 'cancellation_requested') ? 'cancellation_requested' : S.orders.some(x => x.unreadMessages) ? 'followups' : S.orders.some(x => x.status === 'pending') ? 'pending' : 'all';
     renderKpis();
     tell({ type: 'dl-followups', unread: unreadTotal() });
@@ -77,7 +77,7 @@
       <section class="adm-head"><div><p class="eyebrow">Direct Line clients</p><h1>Clients <span>&amp;</span> orders</h1><p>Every order your clients send in, what they owe, and what we earn.</p></div>
         <div class="adm-actions"><button type="button" class="btn" data-add-account="client">${ic('users')}Add client</button><button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button></div></section>
       <section class="kpis" data-kpis></section>
-      <div class="seg" role="tablist">${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
+      <div class="seg" role="tablist">${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['products','Products'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
       <section data-tab-body style="display:grid;gap:14px"></section>`;
     $('#app').addEventListener('click', onClick);
     $('#app').addEventListener('input', onInput);
@@ -96,6 +96,7 @@
   }
   function renderTab() {
     $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === S.tab); b.setAttribute('aria-selected', String(b.dataset.tab === S.tab)); });
+    if(S.tab==='products'){renderProducts();return;}
     const body = $('[data-tab-body]');
     if (S.tab === 'orders') {
       body.innerHTML = `<div class="bar"><div class="chips" data-chips></div><div class="bar-r"><select data-client-filter aria-label="Client"></select><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, tracking, client…" value="${esc(S.q)}" data-q></label></div></div>
@@ -109,6 +110,7 @@
     if (S.tab === 'settings') bindSettings();
   }
   function renderList() {
+    if(S.tab==='products')return;
     if (S.tab === 'orders') renderOrders();
     else if (S.tab === 'clients') renderClients();
     else if (S.tab === 'overview') renderOverview();
@@ -183,6 +185,8 @@
     return '<span class="st" style="--tone:var(--dim)">Cancelled</span>';
   }
 
+  function productQuoteForm(p){return `<form class="form-grid" data-product-quote="${p.id}"><h3 class="full" data-no-i18n>${esc(p.name)} · ${esc(p.clientName)}</h3><div class="full">${p.photoIds.map(id=>`<img src="/api/portal/products/${p.id}/photos/${id}" width="80" height="80" style="object-fit:contain" alt="Product photo">`).join('')}<p><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a></p><p data-no-i18n>${esc(p.variant)}${p.expectedQuantity?' · '+p.expectedQuantity:''}</p></div><label class="field"><span>Status</span><select name="status"><option value="approved"${p.status==='approved'?' selected':''}>Approved</option><option value="not_available"${p.status==='not_available'?' selected':''}>Not available</option></select></label><label class="field"><span>Price per unit (USD)</span><input name="unitPrice" type="number" min="0" step="0.01" value="${p.unitPrice??''}"></label><label class="field full"><span>Note</span><textarea name="note" maxlength="1000">${esc(p.note)}</textarea></label><button type="submit" class="btn btn-primary">Save quote</button><p class="form-msg" data-quote-msg></p></form>`;}
+  function renderProducts(){const products=[...S.products].sort((a,b)=>(a.status==='awaiting_quote'?0:1)-(b.status==='awaiting_quote'?0:1)||a.createdAt-b.createdAt);$('[data-tab-body]').innerHTML=`<section class="card card-pad"><h3 class="sec-title">Products awaiting quote</h3><p>${products.filter(p=>p.status==='awaiting_quote').length}</p></section>${products.map(p=>`<section class="card card-pad"><span>${p.status==='awaiting_quote'?'Awaiting quote':p.status==='approved'?'Approved':'Not available'}</span>${productQuoteForm(p)}</section>`).join('')}`;}
   // ---------- clients tab ----------
   function archivedHTML() {
     const a = S.ov.archived || [];
@@ -323,7 +327,7 @@
       </section>
       ${o.status==='cancellation_requested' ? `<section class="card card-pad"><h3 class="sec-title">Cancellation request</h3><p data-no-i18n>${esc(o.cancellationReason)}</p><label class="field"><span>Cancellation fee (USD)</span><input name="cancellationFee" type="number" min="0" step="0.01" placeholder="0.00"></label><button type="button" class="btn btn-sm" data-cancel-four>$4</button><div class="status-btns"><button type="button" class="btn btn-danger" data-cancel-decision="approve" data-id="${o.id}">Approve cancellation</button><button type="button" class="btn" data-cancel-decision="reject" data-id="${o.id}">Reject cancellation</button></div></section>` : ''}
       <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles.filter(f=>f.orderIds.includes(o.id)))}${invoiceForm(o.clientId,o.id)}</section>
-      ${billHTML(o)}
+      ${o.quotedUnitPrice!=null ? `<section class="card card-pad"><span>Fixed unit quote</span> <b>${money(o.quotedUnitPrice)}</b> × ${o.quantity} = <b>${money(o.price)}</b></section>` : billHTML(o)}
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
         <div><dt>Client</dt><dd><button type="button" class="back" style="margin:0" data-open-client="${o.clientId}">${esc(clientName(o.clientId))}</button></dd></div><div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}${o.source === 'etsy-csv' ? ' <span class="st" style="--tone:var(--blue);text-transform:none">From Etsy file</span>' : ''}</dd></div>
         <div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div><div><dt>Customer paid</dt><dd>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</dd></div>
@@ -449,7 +453,7 @@
     if (soft && d.body.contains(document.activeElement) && document.activeElement.matches('input,select,textarea')) return;
     const t = new Date(), iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     const pane = tab === 'orders'
-      ? (orders.length ? `<section class="card" style="padding:4px 16px"><div class="mini-orders">${orders.map(o => `<button type="button" data-open-order="${o.id}" data-back="${c.id}"><span><b>${esc(orderName(o))}</b><small>${esc(fullDate(o.createdAt))} · ${esc(place(o.destination))}</small></span><span><b>${money(o.price)}</b></span>${UI.pill(o.status)}</button>`).join('')}</div></section>` : empty('No orders yet', 'Orders this client adds show up here.'))
+      ? `<section class="card card-pad"><h3 class="sec-title">My Products</h3>${S.products.filter(p=>p.clientId===c.id).map(productQuoteForm).join('')}</section>` + (orders.length ? `<section class="card" style="padding:4px 16px"><div class="mini-orders">${orders.map(o => `<button type="button" data-open-order="${o.id}" data-back="${c.id}"><span><b>${esc(orderName(o))}</b><small>${esc(fullDate(o.createdAt))} · ${esc(place(o.destination))}</small></span><span><b>${money(o.price)}</b></span>${UI.pill(o.status)}</button>`).join('')}</div></section>` : empty('No orders yet', 'Orders this client adds show up here.'))
       : tab === 'payments'
         ? `${transferProofHTML()}<section class="card card-pad"><h3 class="sec-title">Record a payment</h3><form class="form-grid" data-pay-form="${c.id}" novalidate>
             <label class="field"><span>Amount received</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal"></span></label>
@@ -790,6 +794,7 @@
       catch (ex) { toast(ex.message); }
       return;
     }
+    const pq=e.target.closest('[data-product-quote]');if(pq){e.preventDefault();const b=$('[type=submit]',pq),m=$('[data-quote-msg]',pq);b.disabled=true;try{await api('/admin/products/'+pq.dataset.productQuote,{method:'POST',body:{status:pq.status.value,unitPrice:pq.unitPrice.value,note:pq.note.value}});document.activeElement?.blur();await loadAll();if(S.tab==='products')renderProducts();else refreshDrawer();toast('Quote saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     const inf=e.target.closest('[data-invoice-form]');
     if(inf){e.preventDefault();const b=$('[type=submit]',inf),m=$('[data-invoice-msg]',inf);b.disabled=true;try{const file=await invoiceFile(inf);if(!file)throw new Error('Choose an invoice file.');await api('/admin/invoices',{method:'POST',body:{clientId:Number(inf.dataset.invoiceForm),orderIds:inf.dataset.orderId?[Number(inf.dataset.orderId)]:selectedInvoiceOrders(inf),paymentId:inf.invoicePayment?.value||null,date:inf.invoiceDate.value,file}});document.activeElement?.blur();inf.reset();invoiceFiles=(await api('/admin/invoices?clientId='+inf.dataset.invoiceForm)).invoices;refreshDrawer();toast('Invoice uploaded.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     const pf = e.target.closest('[data-pay-form]');
@@ -830,6 +835,7 @@
     if (m.type === 'dl-open-client' && clientOf(m.id)) openClient(m.id);
     if (m.type === 'dl-add-admin') openAddAccount('admin');
     if (m.type === 'dl-set-tab' && ['overview', 'orders', 'clients', 'settings'].includes(m.tab) && m.tab !== S.tab) { S.tab = m.tab; if (S.ov) renderTab(); }
+    if(m.type==='dl-open-products'){S.tab='products';loadAll().then(renderTab);return;}
     if (m.type === 'dl-open-order') {
       const go = () => { if (S.orders.some(o => o.id === m.id)) openOrder(m.id, m.focus); };
       if (S.orders.some(o => o.id === m.id)) go(); else loadAll().then(() => { renderList(); go(); });
