@@ -207,6 +207,8 @@
     return S.ov.admins.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b><small>@${esc(x.username)}${x.active ? '' : ' · disabled'}</small></span></span></div>`).join('')
       + '<div><span class="ava">DL</span><span class="who"><span><b>Main admin login</b><small>set in Vercel</small></span></span></div>';
   }
+  const BANK_UI = [['bank_currency', 'Currency'], ['bank_holder', 'Account holder name'], ['bank_account', 'Account number'], ['bank_ach', 'ACH routing number'],
+    ['bank_wire', 'Wire routing number'], ['bank_swift', 'SWIFT/BIC'], ['bank_name', 'Bank name'], ['bank_address', 'Bank address'], ['bank_reference', 'Payment reference note']];
   function settingsHTML() {
     const s = S.ov.settings, rated = COUNTRIES.filter(([c]) => RATES[c]);
     return `<div class="settings-grid">
@@ -221,6 +223,14 @@
           <p class="form-msg full" data-settings-msg></p>
         </form>
         <p class="note" style="margin-top:6px">The fee is already inside the product cost the client pays, so clients don’t see it. Changes apply to new orders only. Size-based weight = L × W × H ÷ divisor (6000 until the supplier confirms).</p>
+      </section>
+      <section class="card card-pad"><h3 class="form-sec">How clients pay (bank details)</h3>
+        <form class="form-grid" id="bank-form" novalidate>
+          ${BANK_UI.map(([k, label]) => `<label class="field${k === 'bank_address' || k === 'bank_reference' ? ' full' : ''}"><span>${label}</span><input name="${k}" type="text" maxlength="200" value="${esc(s[k] ?? '')}"></label>`).join('')}
+          <div class="field" style="align-content:end"><button class="btn btn-primary" type="submit">Save bank details</button></div>
+          <p class="form-msg full" data-bank-msg></p>
+        </form>
+        <p class="note" style="margin-top:6px">Clients see these on their Payments page under “How to pay”, each with a Copy button. Leave a field empty to hide it.</p>
       </section>
       <section class="card card-pad"><h3 class="form-sec">Shipping calculator</h3>
         <form class="form-grid" data-calc onsubmit="return false">
@@ -238,6 +248,13 @@
     </div>`;
   }
   function bindSettings() {
+    const bf = $('#bank-form');
+    if (bf) bf.addEventListener('submit', async e => {
+      e.preventDefault();
+      const m = $('[data-bank-msg]');
+      try { await api('/admin/settings', { method: 'POST', body: Object.fromEntries(BANK_UI.map(([k]) => [k, bf[k].value])) }); m.textContent = 'Saved. Clients see the new details right away.'; m.className = 'form-msg full ok'; await loadAll(); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
+    });
     const f = $('#settings-form');
     const split = () => {
       const fee = parseFloat(f.commission_per_order.value), sup = parseFloat(f.supplier_share_per_order.value), ok = Number.isFinite(fee) && Number.isFinite(sup);
