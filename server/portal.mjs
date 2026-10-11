@@ -263,6 +263,13 @@ function orderOut(r) {
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   };
 }
+// What a client may see of an order: total only, never the product vs shipping breakdown (item #6).
+const CLIENT_HIDDEN = ['commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee'];
+function clientOrder(o) {
+  const out = { ...o, priced: o.productCost != null || o.shippingFee != null };
+  for (const k of CLIENT_HIDDEN) delete out[k];
+  return out;
+}
 // Adds message counts to orders: messages, unread (for the viewer's side).
 async function withMessages(DB, orders, forAdmin) {
   if (!orders.length) return orders;
@@ -443,7 +450,7 @@ export async function handlePortal(request, url, ctx) {
   // ----- client routes -----
   if (path === '/orders' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? ORDER BY created_at DESC, id DESC').bind(who.clientId).all()).results || [];
-    return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, rows.map(orderOut).map(({ commission, supplierShare, ourShare, ...o }) => o), false)) });
+    return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, rows.map(orderOut).map(clientOrder), false)) });
   }
   if (path === '/payments' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
@@ -469,8 +476,7 @@ export async function handlePortal(request, url, ctx) {
     const settings = await getSettings(DB);
     const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, who.admin ? 'admin' : 'client', '', settings);
     const out = { ...orderOut(row), photos: saved };
-    if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; delete out.sheetSyncStatus; delete out.sheetSyncedAt; delete out.sheetSyncError; }
-    return json({ ok: true, order: out });
+    return json({ ok: true, order: who.admin ? out : clientOrder(out) });
   }
   // ----- bulk import from an Etsy orders file (parsed in the browser) -----
   // Each order still needs the product link(s) (built from the Etsy listing IDs); photos are optional
@@ -566,8 +572,7 @@ export async function handlePortal(request, url, ctx) {
     const sheetSync = syncPortalOrderToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets order update failed', error));
     if (waitUntil) waitUntil(sheetSync); else await sheetSync;
     const [out] = await withPhotos(DB, [orderOut(row)]);
-    if (!who.admin) { delete out.commission; delete out.supplierShare; delete out.ourShare; delete out.sheetSyncStatus; delete out.sheetSyncedAt; delete out.sheetSyncError; }
-    return json({ ok: true, order: out });
+    return json({ ok: true, order: who.admin ? out : clientOrder(out) });
   }
 
   // ----- product photos on an order -----
