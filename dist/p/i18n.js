@@ -35,6 +35,8 @@
   const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 
   const D = {
+    'City': 'עיר',
+    'Phone': 'טלפון',
     'Street address line 1': 'כתובת רחוב, שורה 1',
     'Street address line 2': 'כתובת רחוב, שורה 2',
     'State / Province / Region': 'מדינה / מחוז / אזור',
