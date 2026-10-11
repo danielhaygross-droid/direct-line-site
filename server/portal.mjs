@@ -9,6 +9,8 @@ import { googleSheetsConfigured, retryPendingGoogleSheetOrders, syncClientToGoog
 
 import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms } from './terms.mjs';
 
+import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } from './files.mjs';
+
 const utf8 = new TextEncoder();
 const SESSION_SECONDS = 43200; // 12h, same as the Worker
 const b64url = bytes => Buffer.from(bytes).toString('base64url');
@@ -151,7 +153,7 @@ export const SCHEMA = [
 // Supplier shipping rates (USD per kg) — from the supplier's rate sheet. Admin-only: sent with
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
-SCHEMA.push(...TERMS_SCHEMA);
+SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -424,7 +426,7 @@ async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source,
 
 async function clientSummary(DB, clientId, settings) {
   const o = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS billed, COALESCE(SUM(commission),0) AS commission, COALESCE(SUM(LEAST(supplier_share, commission)),0) AS supplier, COALESCE(SUM(selling_price - price) FILTER (WHERE selling_price IS NOT NULL),0) AS profit FROM client_orders WHERE client_id = ? AND status <> 'cancelled'").bind(clientId).first();
-  const p = await DB.prepare('SELECT COALESCE(SUM(amount),0) AS paid FROM client_payments WHERE client_id = ?').bind(clientId).first();
+  const p = await DB.prepare('SELECT COALESCE(SUM(amount),0) AS paid FROM client_payments WHERE client_id = ? AND NOT archived').bind(clientId).first();
   const billed = round2(o.billed), paid = round2(p.paid);
   const commission = round2(o.commission), supplierShare = round2(o.supplier);
   return { orders: Number(o.n), billed, paid, outstanding: round2(billed - paid), commission, supplierShare, ourShare: round2(commission - supplierShare), clientProfit: round2(o.profit) };
@@ -485,6 +487,13 @@ export async function handlePortal(request, url, ctx) {
     if (body.version !== policy.version) return json({ ok: false, error: 'The terms have changed. Please reload and read the current version.' }, 409);
     return json({ ok: true, accepted: await acceptTerms(DB,who.clientId,policy.version,request) });
   }
+  const fileMatch=/^\/files\/(\d+)$/.exec(path);
+  if (fileMatch && method === 'GET') return downloadFile(DB,Number(fileMatch[1]),who,url);
+  if (path === '/transfers' && method === 'GET' && !who.admin) return json({ ok:true, transfers:await transfers(DB,who.clientId) });
+  if (path === '/transfers' && method === 'POST' && !who.admin && !who.preview) {
+    try { return json({ ok:true, transfer:await saveTransfer(DB,who.clientId,await readBody(request)) }); }
+    catch(e) { return json({ ok:false,error:e.message },400); }
+  }
   if (path === '/password' && method === 'POST' && !who.admin && !who.preview) {
     const u = await DB.prepare('SELECT password_hash, password_reset_required, session_version FROM users WHERE id = ?').bind(who.clientId).first();
     const body = await readBody(request), password = String(body.password || '');
@@ -510,8 +519,8 @@ export async function handlePortal(request, url, ctx) {
     return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, rows.map(orderOut).map(clientOrder), false)) });
   }
   if (path === '/payments' && method === 'GET' && !who.admin) {
-    const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
-    return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })) });
+    const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? AND NOT archived ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
+    return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })), transfers: await transfers(DB,who.clientId) });
   }
   if (path === '/orders' && method === 'POST') {
     const body = await readBody(request);
@@ -659,6 +668,17 @@ export async function handlePortal(request, url, ctx) {
     try { return json({ ok: true, policy: await publishTerms(DB,await readBody(request)) }); }
     catch (e) { return json({ ok: false, error: e.message }, 400); }
   }
+  if (path === '/admin/transfers' && method === 'GET') return json({ ok:true, transfers:await transfers(DB,Number(url.searchParams.get('clientId') || 0)) });
+  const recordMatch=/^\/admin\/transfers\/(\d+)\/record$/.exec(path);
+  if (recordMatch && method === 'POST') {
+    const transfer=await recordTransfer(DB,Number(recordMatch[1]));
+    return transfer ? json({ok:true,transfer}) : json({ok:false,error:'Not found'},404);
+  }
+  const restorePayment=/^\/admin\/payments\/(\d+)\/restore$/.exec(path);
+  if (restorePayment && method === 'POST') {
+    await DB.prepare('UPDATE client_payments SET archived=FALSE WHERE id=?').bind(Number(restorePayment[1])).run();
+    return json({ok:true});
+  }
   if (path === '/admin/overview' && method === 'GET') {
     const pendingSync = retryPendingGoogleSheetOrders(DB, env).catch(error => console.error('Google Sheets pending-order retry failed', error));
     if (waitUntil) waitUntil(pendingSync);
@@ -667,10 +687,11 @@ export async function handlePortal(request, url, ctx) {
     const termsRows = (await DB.prepare('SELECT DISTINCT ON (client_id) client_id,version,accepted_at FROM client_terms_acceptances ORDER BY client_id,version DESC').all()).results || [];
     const acceptedTerms = new Map(termsRows.map(r => [r.client_id, { version: Number(r.version), acceptedAt: Number(r.accepted_at) }]));
     const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, active, archived, created_at, trial_start, trial_end, sub_status, sub_last_payment, last_login, password_reset_required FROM users ORDER BY role, display_name').all()).results || [];
+    const pendingTransfers = new Map(((await DB.prepare("SELECT f.client_id,COUNT(*) AS n FROM portal_files f LEFT JOIN client_payments p ON p.confirmation_id=f.id WHERE f.kind='confirmation' AND NOT f.archived AND p.id IS NULL GROUP BY f.client_id").all()).results || []).map(r=>[r.client_id,Number(r.n)]));
     const clients = [];
     const archived = [];
     for (const u of users.filter(u => u.role === 'client' && u.archived)) archived.push({ id: u.id, username: u.username, name: u.display_name, orders: Number((await DB.prepare('SELECT COUNT(*) AS n FROM client_orders WHERE client_id = ?').bind(u.id).first()).n) });
-    for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, termsAccepted: acceptedTerms.get(u.id) || null, termsRequired: acceptedTerms.get(u.id)?.version !== termsPolicy.version, lastLogin: u.last_login == null ? null : Number(u.last_login), passwordResetRequired: !!u.password_reset_required, commissionPerOrder: u.commission_per_order, subscription: subscriptionOut(u, settings), ...(await clientSummary(DB, u.id, settings)) });
+    for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, pendingTransfers: pendingTransfers.get(u.id) || 0, termsAccepted: acceptedTerms.get(u.id) || null, termsRequired: acceptedTerms.get(u.id)?.version !== termsPolicy.version, lastLogin: u.last_login == null ? null : Number(u.last_login), passwordResetRequired: !!u.password_reset_required, commissionPerOrder: u.commission_per_order, subscription: subscriptionOut(u, settings), ...(await clientSummary(DB, u.id, settings)) });
     const keys = ['billed', 'paid', 'outstanding', 'commission', 'supplierShare', 'ourShare'];
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
@@ -717,7 +738,7 @@ export async function handlePortal(request, url, ctx) {
   if (path === '/admin/payments' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(clientId).all()).results || [];
-    return json({ ok: true, payments: rows.map(r => ({ id: r.id, clientId: r.client_id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })) });
+    return json({ ok: true, payments: rows.map(r => ({ id: r.id, clientId: r.client_id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), archived: !!r.archived })) });
   }
   if (path === '/admin/payments' && method === 'POST') {
     const body = await readBody(request);
@@ -731,7 +752,7 @@ export async function handlePortal(request, url, ctx) {
   }
   const payDel = /^\/admin\/payments\/(\d+)\/delete$/.exec(path);
   if (payDel && method === 'POST') {
-    await DB.prepare('DELETE FROM client_payments WHERE id = ?').bind(Number(payDel[1])).run();
+    await DB.prepare('UPDATE client_payments SET archived=TRUE WHERE id = ?').bind(Number(payDel[1])).run();
     return json({ ok: true });
   }
   if (path === '/admin/users' && method === 'POST') {

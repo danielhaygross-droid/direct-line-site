@@ -31,11 +31,11 @@ Full history: root CONTINUE_HERE.md at C:/Users/erwin/Downloads/Direct Line/dire
 
 Completion report: `../output/pdf/Direct-Line-Completion-Report-2026-10-12.pdf` (2 pages, demo screenshots).
 
-## PR #19 ready: #1 Terms acceptance
+## PR #19 merged and live: #1 Terms acceptance
 
 https://github.com/danielhaygross-droid/direct-line-site/pull/19
 
-Branch `codex/client-terms`, based on merged PR #18 (`37dba0d`). Not live until the next PR is merged.
+Branch `codex/client-terms`, based on merged PR #18 (`37dba0d`). Merged and deployed as production `36fd01e`; Vercel success and live portal/admin file matches verified.
 
 - Exact Appendix A English policy is in `content/service-policy-v1.mjs`, alongside the Hebrew text. Backend title is the requested Direct Line service policy title.
 - First-login agreement with scrollable text, checkbox and disabled Accept button; direct links and portal API data/actions are blocked until acceptance. Password replacement takes priority when a reset is pending.
@@ -47,4 +47,18 @@ Branch `codex/client-terms`, based on merged PR #18 (`37dba0d`). Not live until 
 - Validation: 41/41 unit tests, build and syntax/diff checks; PGlite/browser EN/HE 1440/390 light/dark tests, admin editor/audit, repeated acceptance immutability, v2 re-acceptance and old snapshot preservation. Previous country/edit/password API checks remain green.
 - Local verification: `../verification/check-terms.mjs`; screenshots: `../verification/terms/`. No production acceptance or policy changes were made.
 
-After merge, all existing clients will need to accept v1 before portal access. Bank-transfer confirmations (#5 phase 2) remain the next optional task.
+PR #19 is now live. All existing clients need to accept v1 before portal access. Bank-transfer confirmations (#5 phase 2) remain the next optional task.
+
+Production verification: portal JS v24, CSS v13, admin JS v27, i18n v8; Vercel Deployment has completed. Protected Terms endpoint returns 401 without a login. Signed-in production acceptance/admin checks remain for the user.
+
+## Transfer confirmations — ready for review (not yet deployed)
+
+Branch `codex/transfer-confirmations`, based on merged PR #19 (`36fd01e`).
+- #5 phase 2: client uploads PDF/JPG/PNG/WebP proof (2 MB), amount and date on Payments. Pending proof does not change the balance. File access requires its own client session or an admin session.
+- Admin client Payments shows proof, image preview, pending count and Record this payment. A unique confirmation/payment link prevents duplicate credit from concurrent clicks or retries.
+- Payment removal now archives; Restore retains the original record and attached proof. Archived payments are excluded from balance totals.
+- Unsaved upload forms survive background refresh. EN/HE, desktop/phone and light/dark supported; admin preview cannot upload or credit.
+- Versions: portal JS25/CSS14, admin JS28/CSS9, i18n9. Runtime creates portal_files and adds payment confirmation link/archive fields.
+- Validation: 43/43 unit tests; build/syntax/diff checks; private-file ownership, duplicate uploads, eight concurrent recordings, balance/archive/restore tested in PGlite. All eight EN/HE desktop/phone theme browser combinations passed; screenshots inspected. No production mutations.
+- Verification: ../verification/check-transfers-api.mjs and check-transfers-ui.mjs; screenshots ../verification/transfers/. Reports must distinguish ready PR from deployed work.
+- Remaining PDF work: #10 structured addresses; #2 status/cancellation; #4 invoices; #12 products; #13 claims; #15 stores. Continue under Erwin's explicit request to finish the remainder while usage permits.

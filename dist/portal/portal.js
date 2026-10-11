@@ -4,7 +4,7 @@
   const MAX_PHOTOS = 8;
   const UI = window.DLOrderUI, N = window.DLNotify;
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-  const S = { me: null, orders: [], payments: [], notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
+  const S = { me: null, orders: [], payments: [], transfers: [], notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
@@ -150,7 +150,7 @@
     const me = await api('/me');
     if (me.termsRequired) { S.me = { ...S.me, ...me }; await termsScreen(); return false; }
     const [o, p, n] = await Promise.all([api('/orders'), api('/payments'), api('/notifications').catch(() => null)]);
-    S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments;
+    S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments; S.transfers = p.transfers || [];
     if (!first && S.route === 'edit' && !S.orders.some(o => o.id === S.id && editable(o))) { go('orders'); N.popup({ icon: 'alert', title: 'This order is already being processed. Need a change? Send us a message.' }); }
     if (n) { S.notes = n.items; S.seenAt = n.seenAt; }
     const fresh = known ? S.notes.filter(x => !known.has(x.id)) : [];
@@ -272,10 +272,11 @@
   const go = path => { location.hash = '#/' + path; };
   function renderView(soft) {
     const view = $('#view');
+    if (soft && S.route === 'payments' && $('#transfer-form')?.dataset.dirty) return;
     if (soft && S.route === 'orders' && $('[data-orders-list]')) { renderChips(); renderOrdersList(); return; }
     view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, terms: viewTerms }[S.route]();
     if (soft) view.querySelectorAll(':scope > *').forEach(el => { el.style.animation = 'none'; });
-    ({ orders: bindOrders, new: bindForm, edit: bindForm, terms: bindTerms })[S.route]?.();
+    ({ orders: bindOrders, new: bindForm, edit: bindForm, terms: bindTerms, payments: bindPayments })[S.route]?.();
   }
   const empty = (icon, title, text, extra = '') => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><h3>${esc(title)}</h3><p>${esc(text)}</p>${extra}</div>`;
 
@@ -645,6 +646,26 @@
       <div class="pay-rows">${rows.map(([l, v]) => line(l, v, v)).join('')}
         ${user ? `<div class="pay-row"><span>Payment reference</span><b><span data-no-i18n>${esc(user)}</span><small>${esc(b.bank_reference || 'Use your Direct Line username as the reference')}</small></b><button type="button" class="btn btn-sm" data-copy="${esc(user)}">${ic('copy')}Copy</button></div>` : ''}</div></section>`;
   }
+  const confirmationCards = () => S.transfers.map(t => `<div class="confirmation-row"><div><b>${money(t.amount)}</b> <span class="muted" data-no-i18n>${esc(t.date)}</span><p><a href="/api/portal/files/${t.id}" target="_blank" rel="noopener"><span>Open confirmation</span> <small data-no-i18n>${esc(t.filename)}</small></a></p></div><span class="tag">${t.status === 'recorded' ? 'Recorded' : t.status === 'archived' ? 'Payment archived' : 'Pending review'}</span></div>`).join('');
+  function transferForm() {
+    if (S.me.preview) return S.transfers.length ? `<section class="card card-pad"><h3 class="sec-title">Your transfer confirmations</h3>${confirmationCards()}</section>` : '';
+    const d=new Date(), today=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    return `<section class="card card-pad"><h3 class="sec-title">Upload transfer confirmation</h3><p class="note">Your balance changes only after the team records receipt.</p><form id="transfer-form" class="form-grid" novalidate><label class="field"><span>Amount (USD)</span><input name="amount" type="number" min="0.01" max="9999999" step="0.01" required></label><label class="field"><span>Transfer date</span><input name="date" type="date" value="${today}" required></label><label class="field full"><span>Confirmation file</span><input name="file" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" required><small>PDF, JPG, PNG or WebP. Maximum 2 MB.</small></label><div class="field full"><button type="submit" class="btn btn-primary">Send confirmation</button></div><p class="form-msg full" data-transfer-msg role="status"></p></form>${S.transfers.length ? `<h3 class="sec-title">Your transfer confirmations</h3>${confirmationCards()}` : ''}</section>`;
+  }
+  function bindPayments() {
+    const f=$('#transfer-form'); if (!f) return;
+    f.addEventListener('input',()=>{f.dataset.dirty='1';});
+    f.addEventListener('submit',async e=>{
+      e.preventDefault();const b=$('[type=submit]',f), m=$('[data-transfer-msg]',f), file=f.file.files[0];
+      if (!file || !f.amount.value || !f.date.value) {m.textContent='Fill in the amount, date and confirmation file.';return;} if (file.size>2*1024*1024) {m.textContent='The file is too large. Maximum 2 MB.';return;}
+      b.disabled=true;f.dataset.dirty='1';
+      try {
+        const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error('Could not read the file.'));r.readAsDataURL(file);});
+        const result=await api('/transfers',{method:'POST',body:{amount:Number(f.amount.value),date:f.date.value,file:{data,filename:file.name}}});
+        f.dataset.dirty='';await refresh();N.popup({icon:'check',title:result.transfer.status==='pending' ? 'Confirmation sent for review.' : 'This confirmation is already on file.'});
+      } catch(ex) {m.textContent=ex.message;b.disabled=false;}
+    });
+  }
   function viewPayments() {
     const s = S.me.summary, credit = s.outstanding < 0;
     return `<section class="stats">
@@ -653,6 +674,7 @@
         <div class="stat hero"><small>${credit ? 'Credit on your account' : 'Balance due'}</small><strong>${money(Math.abs(s.outstanding))}</strong><em>${credit ? 'It counts toward your next orders' : s.outstanding > 0 ? 'Please send this to Direct Line' : 'You’re all paid up'}</em></div>
       </section>
       ${howToPay()}
+      ${transferForm()}
       <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3></div>
         ${S.payments.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Date</th><th>Method</th><th>Note</th><th class="num">Amount</th></tr></thead><tbody>
           ${S.payments.map(p => `<tr><td data-label="Date">${esc(fullDate(p.paidAt))}</td><td data-label="Method">${esc(p.method) || '—'}</td><td data-label="Note" class="wide">${esc(p.note) || '<span class="dim">—</span>'}</td><td data-label="Amount" class="num"><b class="pos">${money(p.amount)}</b></td></tr>`).join('')}

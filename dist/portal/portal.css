@@ -242,3 +242,7 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .terms-check input{width:20px;height:20px;flex:none;margin-top:2px;accent-color:var(--gold)}
 .terms-actions{justify-content:flex-start}
 @media(max-width:560px){.terms-page{padding:20px 16px}.terms-paper h2{font-size:17px}.terms-content{max-height:45vh;padding:12px}.terms-actions .btn{flex:1}}
+
+.confirmation-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;border-top:1px solid var(--line)}
+.confirmation-row p{margin:6px 0 0;overflow-wrap:anywhere}.confirmation-row small{display:block}
+@media(max-width:560px){.confirmation-row{align-items:flex-start;flex-wrap:wrap}}

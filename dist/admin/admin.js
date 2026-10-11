@@ -67,7 +67,7 @@
     const a = document.activeElement;
     const busy = a && a.matches('select, input, textarea') && !a.matches('[data-q],[data-cq]');
     try { await loadAll(); } catch (e) { return; }
-    if (!busy) { renderList(); refreshDrawer(); }
+    if (!busy) { renderList(); if (S.drawer?.kind==='client' && S.drawer.tab==='payments') await loadPayments(S.drawer.id); else refreshDrawer(); }
   }
 
   // ---------- layout ----------
@@ -137,7 +137,7 @@
       .sort((a, b) => b.last - a.last);
     const recent = os.slice(0, 6);
     box.innerHTML = `<section class="card card-pad"><h3 class="sec-title">Needs your attention</h3>${todo.length ? `<div class="todo-list">${todo.map(([n, text, attr, tone]) => `<button type="button" class="todo" ${attr} style="--tone:${tone}"><b>${n}</b><span>${esc(text)}</span>${UI.svg(P.chev)}</button>`).join('')}</div>` : '<p class="muted" style="margin:0">All caught up. Nothing is waiting on you.</p>'}</section>
-      <div class="ovw-grid"><section class="card"><div class="card-pad" style="padding-bottom:0"><h3 class="sec-title">Your clients</h3></div>${rows.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">This month</th><th class="num">Open</th><th class="num">Outstanding</th><th class="num">We earned</th><th>Last order</th></tr></thead><tbody>${rows.map(({ c, month, open, last }) => `<tr class="click" data-open-client="${c.id}" tabindex="0"><td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small></div></div></td><td data-label="This month" class="num">${month}</td><td data-label="Open" class="num">${open}</td><td data-label="Outstanding" class="num ${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</td><td data-label="We earned" class="num">${money(c.ourShare)}</td><td data-label="Last order">${last ? esc(fullDate(last)) : '—'}</td></tr>`).join('')}</tbody></table></div>` : empty('No clients yet', 'Add your first client to give them portal access.', '<button type="button" class="btn btn-primary" data-add-account="client">Add client</button>')}</section>
+      <div class="ovw-grid"><section class="card"><div class="card-pad" style="padding-bottom:0"><h3 class="sec-title">Your clients</h3></div>${rows.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">This month</th><th class="num">Open</th><th class="num">Outstanding</th><th class="num">We earned</th><th>Last order</th></tr></thead><tbody>${rows.map(({ c, month, open, last }) => `<tr class="click" data-open-client="${c.id}" tabindex="0"><td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small>${c.pendingTransfers ? `<small>${c.pendingTransfers} transfer confirmation${c.pendingTransfers === 1 ? '' : 's'} waiting</small>` : ''}</div></div></td><td data-label="This month" class="num">${month}</td><td data-label="Open" class="num">${open}</td><td data-label="Outstanding" class="num ${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</td><td data-label="We earned" class="num">${money(c.ourShare)}</td><td data-label="Last order">${last ? esc(fullDate(last)) : '—'}</td></tr>`).join('')}</tbody></table></div>` : empty('No clients yet', 'Add your first client to give them portal access.', '<button type="button" class="btn btn-primary" data-add-account="client">Add client</button>')}</section>
       <section class="card"><div class="card-pad" style="padding-bottom:0"><h3 class="sec-title">Latest orders</h3></div>${recent.length ? `<div class="mini-orders" style="padding:0 16px 8px">${recent.map(o => `<button type="button" data-open-order="${o.id}"><span class="ord-cell">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : '<span class="ord-thumb none">—</span>'}<span><b>${esc(orderName(o))}</b><small>${esc(clientName(o.clientId))} · ${esc(fullDate(o.createdAt))}</small></span></span>${UI.pill(o.status)}<span></span></button>`).join('')}</div>` : '<p class="muted card-pad" style="margin:0">No client orders yet.</p>'}</section></div>`;
   }
 
@@ -193,7 +193,7 @@
     const list = S.ov.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q));
     $('[data-list]').innerHTML = list.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Orders</th><th class="num">Billed</th><th class="num">Paid</th><th class="num">Outstanding</th><th class="num">Our earnings</th><th class="num">Fee / order</th><th>Subscription</th><th>Status</th></tr></thead><tbody>
       ${list.map(c => `<tr class="click" data-open-client="${c.id}" tabindex="0">
-        <td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small></div></div></td>
+        <td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small>${c.pendingTransfers ? `<small>${c.pendingTransfers} transfer confirmation${c.pendingTransfers === 1 ? '' : 's'} waiting</small>` : ''}</div></div></td>
         <td data-label="Orders" class="num">${c.orders}</td><td data-label="Billed" class="num">${money(c.billed)}</td><td data-label="Paid" class="num">${money(c.paid)}</td>
         <td data-label="Outstanding" class="num ${c.outstanding > 0 ? 'neg' : ''}"><b>${money(c.outstanding)}</b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
         <td data-label="Fee / order" class="num">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="dim" style="font-size:12px">default</span>' : ''}</td>
@@ -405,11 +405,11 @@
   }
 
   // ---------- side panel: one client ----------
-  let payments = [];
+  let payments = [], transferProofs = [];
   async function openClient(id, tab = 'orders') {
     const c = clientOf(id); if (!c) return;
     const d = UI.getDrawer();
-    closeChat(); payments = [];
+    closeChat(); payments = []; transferProofs = [];
     S.drawer = { kind: 'client', id: c.id, tab };
     d.onClose = () => { S.drawer = null; };
     d.open('c' + c.id);
@@ -417,8 +417,11 @@
     await loadPayments(c.id);
   }
   async function loadPayments(id) {
-    try { payments = (await api('/admin/payments?clientId=' + id)).payments; } catch (e) { payments = []; }
+    try { const [p,t] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id)]); payments=p.payments; transferProofs=t.transfers; } catch (e) { payments = []; transferProofs = []; }
     if (S.drawer?.kind === 'client' && S.drawer.id === id) fillClient(clientOf(id), true);
+  }
+  function transferProofHTML() {
+    return transferProofs.length ? `<section class="card card-pad"><h3 class="sec-title">Transfer confirmations</h3><p class="note">Check the confirmation and receipt of funds before recording the payment.</p>${transferProofs.map(t=>`<div class="confirmation-row"><div><b>${money(t.amount)}</b> <small data-no-i18n>${esc(t.date)}</small><p><a href="/api/portal/files/${t.id}" target="_blank" rel="noopener">Open confirmation</a></p>${t.mime.startsWith('image/') ? `<img src="/api/portal/files/${t.id}?inline=1" style="max-width:160px;max-height:120px;object-fit:contain" alt="Transfer confirmation">` : ''}</div>${t.status==='pending' ? `<button type="button" class="btn btn-primary" data-record-transfer="${t.id}">Record this payment</button>` : t.status==='archived' ? `<button type="button" class="btn" data-restore-payment="${t.paymentId}">Restore payment</button>` : '<span class="tag">Recorded</span>'}</div>`).join('')}</section>` : '';
   }
   function fillClient(c, soft) {
     const d = UI.getDrawer(), tab = S.drawer.tab, orders = S.orders.filter(o => o.clientId === c.id);
@@ -429,13 +432,13 @@
     const pane = tab === 'orders'
       ? (orders.length ? `<section class="card" style="padding:4px 16px"><div class="mini-orders">${orders.map(o => `<button type="button" data-open-order="${o.id}" data-back="${c.id}"><span><b>${esc(orderName(o))}</b><small>${esc(fullDate(o.createdAt))} · ${esc(place(o.destination))}</small></span><span><b>${money(o.price)}</b></span>${UI.pill(o.status)}</button>`).join('')}</div></section>` : empty('No orders yet', 'Orders this client adds show up here.'))
       : tab === 'payments'
-        ? `<section class="card card-pad"><h3 class="sec-title">Record a payment</h3><form class="form-grid" data-pay-form="${c.id}" novalidate>
+        ? `${transferProofHTML()}<section class="card card-pad"><h3 class="sec-title">Record a payment</h3><form class="form-grid" data-pay-form="${c.id}" novalidate>
             <label class="field"><span>Amount received</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal"></span></label>
             <label class="field"><span>Date</span><input name="paidAt" type="date" value="${iso}"></label>
             <label class="field"><span>Method</span><select name="method"><option>PayPal</option><option>Wise</option><option>Bank transfer</option><option>Other</option></select></label>
             <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500"></label>
             <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Record payment</button><p class="form-msg" data-pay-msg></p></div></form></section>
-          <section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td class="num"><button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Remove</button></td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
+          <section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td class="num">${p.archived ? `<span class="tag">Archived</span> <button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button>`}</td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
         : `<section class="card card-pad"><form class="form-grid" data-account-form="${c.id}" novalidate>
             <label class="field full"><span>Name</span><input name="name" maxlength="120" value="${esc(c.name)}"></label>
             <label class="field"><span>Fee per order <small>empty = default</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01" value="${c.commissionPerOrder ?? ''}"></span></label>
@@ -732,16 +735,22 @@
     const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
     const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
     const oo = t.closest('[data-open-order]'); if (oo) { openOrder(oo.dataset.openOrder, null, oo.dataset.back ? Number(oo.dataset.back) : null); return; }
-    const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; fillClient(clientOf(S.drawer.id)); return; }
+    const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; fillClient(clientOf(S.drawer.id)); if (ct.dataset.ctab==='payments') await loadPayments(S.drawer.id); return; }
     const ar = t.closest('[data-archive]');
     if (ar) {
       if (!ar.dataset.armed) { ar.dataset.armed = '1'; ar.textContent = 'Click again to archive'; setTimeout(() => { if (ar.isConnected) { delete ar.dataset.armed; ar.textContent = 'Archive client'; } }, 4000); return; }
       setArchived(Number(ar.dataset.archive), true, ar); return;
     }
+    const record=t.closest('[data-record-transfer]'), restore=t.closest('[data-restore-payment]');
+    if (record || restore) {
+      const b=record || restore;b.disabled=true;
+      try { await api(record ? '/admin/transfers/'+record.dataset.recordTransfer+'/record' : '/admin/payments/'+restore.dataset.restorePayment+'/restore',{method:'POST'}); await loadAll();renderList();await loadPayments(S.drawer.id);toast(record ? 'Payment recorded.' : 'Payment restored.'); }
+      catch(ex) {toast(ex.message);b.disabled=false;} return;
+    }
     const dp = t.closest('[data-del-payment]');
     if (dp) {
-      if (!dp.dataset.armed) { dp.dataset.armed = '1'; dp.textContent = 'Click again to remove'; setTimeout(() => { if (dp.isConnected) { delete dp.dataset.armed; dp.textContent = 'Remove'; } }, 4000); return; }
-      try { await api('/admin/payments/' + dp.dataset.delPayment + '/delete', { method: 'POST' }); await loadAll(); renderList(); await loadPayments(S.drawer.id); toast('Payment removed.'); }
+      if (!dp.dataset.armed) { dp.dataset.armed = '1'; dp.textContent = 'Click again to archive'; setTimeout(() => { if (dp.isConnected) { delete dp.dataset.armed; dp.textContent = 'Archive payment'; } }, 4000); return; }
+      try { await api('/admin/payments/' + dp.dataset.delPayment + '/delete', { method: 'POST' }); await loadAll(); renderList(); await loadPayments(S.drawer.id); toast('Payment archived.'); }
       catch (ex) { toast(ex.message); }
     }
   });
