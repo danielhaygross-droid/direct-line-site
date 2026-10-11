@@ -181,6 +181,11 @@ export const SHIPPING_RATES = {
     NO: { name: 'Norway', general: 10, battery: 12, cosmetic: 15, est: true },
   };
 // Bank details clients see on Payments → "How to pay" (item #5). Editable in admin Fees & settings.
+export function addressError(body) {
+  if (!String(body.destination || '').trim() || body.destination === '__other') return 'Please choose a country.';
+  if (['buyerName','address1','city','postalCode'].some(k => !String(body[k] || '').trim())) return 'Please fill in the name, street address, city and ZIP / postal code.';
+  return null;
+}
 export const BANK_FIELDS = ['bank_currency', 'bank_holder', 'bank_account', 'bank_ach', 'bank_wire', 'bank_swift', 'bank_name', 'bank_address', 'bank_reference'];
 const BANK_DEFAULTS = {
   bank_currency: 'USD', bank_holder: 'Guangzhou Huadu Beyond E-Commerce Firm', bank_account: '20000013048280',
@@ -528,6 +533,8 @@ export async function handlePortal(request, url, ctx) {
     const client = await DB.prepare("SELECT id, commission_per_order, active FROM users WHERE id = ? AND role = 'client'").bind(clientId).first();
     if (!client || !client.active) return json({ ok: false, error: 'Unknown client' }, 400);
     if (!text(body.destination, 60) || text(body.destination, 60) === '__other') return json({ ok: false, error: 'Please choose a country.' }, 400);
+    const addressProblem = addressError(body);
+    if (addressProblem) return json({ ok: false, error: addressProblem }, 400);
     let f; try { f = orderFields(body); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     if (!who.admin) {
       f.tracking_number = ''; f.category = ''; f.weight_kg = null;
@@ -585,6 +592,11 @@ export async function handlePortal(request, url, ctx) {
     const cancelOnly = body.status === 'cancelled' && Object.keys(body).every(k => k === 'status');
     if (!who.admin && !cancelOnly && !canEditOrder(existing)) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
     if ((!who.admin && !cancelOnly || body.destination !== undefined) && (!text(body.destination ?? existing.destination, 60) || text(body.destination ?? existing.destination, 60) === '__other')) return json({ ok: false, error: 'Please choose a country.' }, 400);
+    // Partial status/billing updates leave historical addresses untouched. Detail edits need complete shipping fields.
+    if (!cancelOnly && (!who.admin || ['buyerName','address1','address2','city','region','postalCode','buyerPhone','destination'].some(k => body[k] !== undefined))) {
+      const addressProblem = addressError({ ...orderOut(existing), ...body });
+      if (addressProblem) return json({ ok: false, error: addressProblem }, 400);
+    }
     let f; try { f = orderFields({ ...orderOut(existing), ...body }); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     // Clients can edit their own order details and cancel a pending order; only admins change other statuses/fees.
     if (!who.admin && existing.status === 'cancelled') return json({ ok: false, error: 'This order was cancelled.' }, 409);

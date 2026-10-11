@@ -35,6 +35,17 @@
   const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 
   const D = {
+    'Street address line 1': 'כתובת רחוב, שורה 1',
+    'Street address line 2': 'כתובת רחוב, שורה 2',
+    'State / Province / Region': 'מדינה / מחוז / אזור',
+    'ZIP / Postal code': 'מיקוד',
+    'Recommended, couriers often need it': 'מומלץ, חברות משלוחים זקוקות לכך לעיתים קרובות',
+    'Copy full address': 'העתקת הכתובת המלאה',
+    'Please fill in the name, street address, city and ZIP / postal code.': 'יש למלא שם, כתובת רחוב, עיר ומיקוד.',
+    'street address': 'כתובת רחוב',
+    'city': 'עיר',
+    'ZIP / postal code': 'מיקוד',
+
     'Fill in the amount, date and confirmation file.': 'מלאו את הסכום, תאריך ההעברה וקובץ האישור.',
     'This confirmation is already on file.': 'אישור זה כבר שמור במערכת.',
 

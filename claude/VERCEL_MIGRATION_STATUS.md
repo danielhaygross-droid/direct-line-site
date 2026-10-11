@@ -62,3 +62,12 @@ Branch `codex/transfer-confirmations`, based on merged PR #19 (`36fd01e`).
 - Validation: 43/43 unit tests; build/syntax/diff checks; private-file ownership, duplicate uploads, eight concurrent recordings, balance/archive/restore tested in PGlite. All eight EN/HE desktop/phone theme browser combinations passed; screenshots inspected. No production mutations.
 - Verification: ../verification/check-transfers-api.mjs and check-transfers-ui.mjs; screenshots ../verification/transfers/. Reports must distinguish ready PR from deployed work.
 - Remaining PDF work: #10 structured addresses; #2 status/cancellation; #4 invoices; #12 products; #13 claims; #15 stores. Continue under Erwin's explicit request to finish the remainder while usage permits.
+
+## Structured addresses (#10) — ready for review, after PR #20
+
+Branch codex/structured-addresses builds on codex/transfer-confirmations. Merge PR #20 first; then this PR shows only the address changes.
+- Client/admin new and edit forms keep name, street 1/2, city, region, postal code, country and phone separately. Name/street/city/postal code/country required; line 2/region/phone optional. Phone courier hint translated.
+- Country comes from the same field; removed address-text auto-selection. Details display recipient, street, city, state, postal code, country, phone. Admin Copy full address copies a clean multi-line block.
+- Existing address columns reused, no guessed backfill or destructive splitting. Historical multiline street values remain in a textarea. Partial admin status/billing updates preserve incomplete historical addresses; explicit address edits require completion.
+- Versions portal JS26/admin JS29/i18n10. 43/43 tests, build/syntax/diff checks; local DB required-field/optional-field/legacy/partial-update checks; EN/HE desktop/phone theme browser save/reopen and clipboard checks. No production data changed.
+- Local scripts ../verification/check-address-api.mjs and check-address-ui.mjs; screenshots ../verification/addresses/. Not yet deployed; no completion-report update.

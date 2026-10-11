@@ -325,7 +325,7 @@
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
         <div class="full"><dt>Recipient</dt><dd>${esc(o.buyerName) || '—'}</dd></div>
-        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.address1, o.address2, o.city, o.region, o.postalCode, o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
+        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.buyerName, o.address1, o.address2, o.city, o.region, o.postalCode, o.destination ? place(o.destination) : '', o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd><button type="button" class="btn btn-sm" data-copy="${esc([o.buyerName, o.address1, o.address2, o.city, o.region, o.postalCode, o.destination ? place(o.destination) : '', o.buyerPhone].map(x => String(x || '').trim()).filter(Boolean).join('\n'))}">Copy full address</button></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
         <div><dt>Product type</dt><dd>${esc(shortCat(o.category))}</dd></div><div><dt>Weight</dt><dd>${o.weightKg != null ? esc(o.weightKg) + ' kg' : 'Not entered yet'}</dd></div><div><dt>Last update</dt><dd>${esc(fullDate(o.updatedAt))}</dd></div>
         <div><dt>Google Sheet</dt><dd>${o.sheetSyncStatus === 'synced' ? 'Synced' : o.sheetSyncStatus === 'error' ? 'Needs retry' : 'Waiting to sync'}</dd></div>
         ${o.sheetSyncError ? `<div class="full"><dt>Sheet sync note</dt><dd>${esc(o.sheetSyncError)}</dd></div>` : ''}
@@ -471,7 +471,6 @@
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
     const currencies = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD'];
     if (order?.currency && !currencies.includes(order.currency)) currencies.push(order.currency);
-    const addr = order ? [order.address1, order.address2, order.city, order.region, order.postalCode, order.buyerPhone].filter(Boolean).join('\n') : '';
     d.body.innerHTML = `<form id="order-form" class="af" novalidate>
       <section class="af-sec"><h3 class="form-sec"><i>1</i>Order</h3><div class="form-grid">
       <label class="field full"><span>Client</span><select name="clientId"${order ? ' disabled' : ''}><option value="">Choose a client…</option>${S.ov.clients.filter(c => c.active || c.id === cid).map(c => `<option value="${c.id}"${c.id === cid ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
@@ -492,7 +491,12 @@
       </div></section>
       <section class="af-sec"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
       <label class="field full"><span>Customer / recipient name</span><input name="buyerName" maxlength="160" value="${esc(order?.buyerName)}"></label>
-      <label class="field full"><span>Full address &amp; phone <small>street, city, state, postal code, phone</small></span><textarea name="address1" maxlength="1000" rows="4" placeholder="Paste the whole address, plus the phone number if there is one">${esc(addr)}</textarea></label>
+      <label class="field full"><span>Street address line 1</span><textarea name="address1" maxlength="1000" rows="2">${esc(order?.address1)}</textarea></label>
+      <label class="field full"><span>Street address line 2 <small>optional</small></span><input name="address2" maxlength="200" value="${esc(order?.address2)}"></label>
+      <label class="field"><span>City</span><input name="city" maxlength="100" value="${esc(order?.city)}"></label>
+      <label class="field"><span>State / Province / Region <small>optional</small></span><input name="region" maxlength="100" value="${esc(order?.region)}"></label>
+      <label class="field"><span>ZIP / Postal code</span><input name="postalCode" maxlength="40" value="${esc(order?.postalCode)}"></label>
+      <label class="field"><span>Phone <small>Recommended, couriers often need it</small></span><input name="buyerPhone" maxlength="80" value="${esc(order?.buyerPhone)}"></label>
       <label class="field"><span>Destination</span><select name="destination"></select></label>
       <label class="field" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden"></label>
       </div></section>
@@ -564,6 +568,8 @@
     f.addEventListener('submit', async e => {
       e.preventDefault();
       if (!order && !f.clientId.value) return err('Please choose the client.');
+      if (!f.buyerName.value.trim() || !f.address1.value.trim() || !f.city.value.trim() || !f.postalCode.value.trim()) return err('Please fill in the name, street address, city and ZIP / postal code.');
+      if (!dest.get()) return err('Please choose a country.');
       if (dest.isOther() && !dest.get()) return err('Please type the country name.');
       const linkInputs = $$('[data-link]', f), links = linkInputs.map(i => i.value.trim()).filter(Boolean);
       const badLink = linkInputs.find(i => i.value.trim() && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(i.value.trim()));
@@ -573,7 +579,7 @@
       const body = { clientId: order ? order.clientId : Number(f.clientId.value), orderRef: f.orderRef.value, orderDate: f.orderDate.value, currency: f.currency.value,
         sellingPrice: f.sellingPrice.value === '' ? null : f.sellingPrice.value,
         etsyUrl: links.join('\n'), quantity: qty, sku: f.sku.value, variant: f.variant.value,
-        buyerName: f.buyerName.value, address1: f.address1.value, address2: '', city: '', region: '', postalCode: '', buyerPhone: '',
+        buyerName: f.buyerName.value, address1: f.address1.value, address2: f.address2.value, city: f.city.value, region: f.region.value, postalCode: f.postalCode.value, buyerPhone: f.buyerPhone.value,
         trackingNumber: f.trackingNumber.value, destination: dest.get(), category: f.category.value,
         weightKg: f.weightKg.value === '' ? null : f.weightKg.value, productCost: f.productCost.value === '' ? null : f.productCost.value, shippingFee: f.price.value === '' ? null : f.price.value,
         notes: f.notes.value };

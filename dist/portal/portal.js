@@ -417,7 +417,7 @@
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
         <div><dt>Customer</dt><dd>${esc(o.buyerName) || '—'}</dd></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
-        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.address1, o.address2, o.city, o.region, o.postalCode, o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd></div>
+        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.buyerName, o.address1, o.address2, o.city, o.region, o.postalCode, o.destination ? place(o.destination) : '', o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd></div>
         ${o.notes ? `<div class="full"><dt>Notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl></section>
       <section class="card card-pad"><h3 class="sec-title">Sale &amp; cost</h3><div class="money-rows">
         <div class="total"><span>Customer paid</span><span>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</span></div>
@@ -457,7 +457,12 @@
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>3</i>Where do we send it?</h3><div class="form-grid">
           <label class="field full" data-f="buyerName"><span>Customer name</span><input name="buyerName" required maxlength="160" autocomplete="off" value="${esc(ed?.buyerName)}"></label>
-          <label class="field full" data-f="address1"><span>Full address and phone <small>Copy from your store</small></span><textarea name="address1" required maxlength="1000" rows="4" placeholder="Street and number&#10;City, State, Postal code&#10;Country&#10;Phone (if there is one)">${esc(ed ? [ed.address1, ed.address2, ed.city, ed.region, ed.postalCode, ed.buyerPhone].filter(Boolean).join('\n') : '')}</textarea></label>
+          <label class="field full" data-f="address1"><span>Street address line 1</span><textarea name="address1" required maxlength="1000" rows="2" autocomplete="off">${esc(ed?.address1)}</textarea></label>
+          <label class="field full" data-f="address2"><span>Street address line 2 <small>optional</small></span><input name="address2" maxlength="200" autocomplete="off" value="${esc(ed?.address2)}"></label>
+          <label class="field" data-f="city"><span>City</span><input name="city" required maxlength="100" autocomplete="off" value="${esc(ed?.city)}"></label>
+          <label class="field" data-f="region"><span>State / Province / Region <small>optional</small></span><input name="region" maxlength="100" autocomplete="off" value="${esc(ed?.region)}"></label>
+          <label class="field" data-f="postalCode"><span>ZIP / Postal code</span><input name="postalCode" required maxlength="40" autocomplete="off" value="${esc(ed?.postalCode)}"></label>
+          <label class="field" data-f="buyerPhone"><span>Phone <small>Recommended, couriers often need it</small></span><input name="buyerPhone" maxlength="80" autocomplete="off" value="${esc(ed?.buyerPhone)}"></label>
           <label class="field full" data-f="destination"><span>Country <small data-country-auto></small></span><select name="destination" required aria-describedby="country-error" autocomplete="off"></select><small id="country-error" class="err-text" role="alert" hidden>Please choose a country.</small></label>
           <label class="field full" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="off"></label>
         </div></section>
@@ -534,25 +539,6 @@
       if (e.target.closest('[data-link-add]')) { linkBox.insertAdjacentHTML('beforeend', linkRow()); syncLinks(); $$('[data-link]', linkBox).pop().focus(); }
       const rm = e.target.closest('[data-link-remove]'); if (rm) { rm.closest('.link-row').remove(); syncLinks(); }
     });
-    // ----- country: picked automatically from the last lines of the pasted address -----
-    const ALIAS = { usa: 'US', 'u.s.a.': 'US', 'united states of america': 'US', america: 'US', uk: 'UK', 'great britain': 'UK', england: 'UK', scotland: 'UK', wales: 'UK', 'northern ireland': 'UK', deutschland: 'DE', 'the netherlands': 'NL', holland: 'NL', schweiz: 'CH', suisse: 'CH', italia: 'IT', norge: 'NO', 'österreich': 'AT', danmark: 'DK', 'españa': 'ES', polska: 'PL', 'belgië': 'BE', belgique: 'BE', 'czech republic': 'CZ', 'česko': 'CZ', 'slovensko': 'SK' };
-    const countryFrom = text => {
-      const lines = String(text || '').split(/\n|,/).map(x => x.trim().toLowerCase().replace(/[.]$/, '')).filter(Boolean).reverse().slice(0, 3);
-      for (const l of lines) {
-        if (ALIAS[l]) return ALIAS[l];
-        const hit = COUNTRIES.find(([c, n]) => n.toLowerCase() === l || c.toLowerCase() === l);
-        if (hit) return hit[0];
-      }
-      return '';
-    };
-    let autoPicked = false;
-    const autoCountry = () => {
-      if (dest.get() && !autoPicked) return;
-      const c = countryFrom(form.address1.value);
-      if (c && c !== dest.get()) { dest.set(c); autoPicked = true; $('[data-country-auto]', form).textContent = 'picked from the address, change it if wrong'; }
-    };
-    form.address1.addEventListener('input', autoCountry);
-    form.destination.addEventListener('change', () => { autoPicked = false; $('[data-country-auto]', form).textContent = ''; });
     // ----- check everything at once, mark what's missing -----
     const mark = (key, bad) => { const f = form.querySelector(`[data-f="${key}"]`); if (f) f.classList.toggle('bad', !!bad); };
     form.addEventListener('input', e => { const f = e.target.closest('[data-f]'); if (f) f.classList.remove('bad'); });
@@ -577,7 +563,9 @@
       check('photos', picks.length || ed?.source === 'etsy-csv', 'photo or screenshot');
       const q = parseInt(form.quantity.value, 10); check('quantity', q >= 1 && q <= 999, 'how many');
       check('buyerName', form.buyerName.value.trim(), 'customer name');
-      check('address1', form.address1.value.trim(), 'address');
+      check('address1', form.address1.value.trim(), 'street address');
+      check('city', form.city.value.trim(), 'city');
+      check('postalCode', form.postalCode.value.trim(), 'ZIP / postal code');
       check('destination', dest.get(), 'country');
       $('#country-error').hidden = !!dest.get();
       form.classList.toggle('tried', missing.length > 0);
@@ -591,8 +579,8 @@
       const body = {
         orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value,
         sku: form.sku.value, quantity: form.quantity.value, variant: form.variant.value, etsyUrl: links.join('\n'),
-        buyerName: form.buyerName.value, buyerPhone: '', address1: form.address1.value, address2: '',
-        city: '', region: '', postalCode: '', destination: dest.get(), notes: form.notes.value,
+        buyerName: form.buyerName.value, buyerPhone: form.buyerPhone.value, address1: form.address1.value, address2: form.address2.value,
+        city: form.city.value, region: form.region.value, postalCode: form.postalCode.value, destination: dest.get(), notes: form.notes.value,
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');
       const fresh = picks.filter(p => !p.id), photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
