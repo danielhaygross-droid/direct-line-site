@@ -10,7 +10,7 @@ test('client order form requires product photos and the product link', () => {
   assert.match(form, /Photo or screenshot of the product/);
   assert.match(form, /data-pick-input/);
   assert.match(form, /data-link-add/);
-  assert.match(form, /Full address and phone/);
+  assert.match(form, /Street address line 1/);
   assert.doesNotMatch(form, /name="itemTitle"/);
   // Everything missing is listed at once ("Please fill in: …"); photo and link are both checked.
   assert.match(form, /check\('photos', picks\.length \|\| ed\?\.source === 'etsy-csv'/);

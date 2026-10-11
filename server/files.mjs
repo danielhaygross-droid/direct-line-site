@@ -16,7 +16,7 @@ export function documentDate(value) {
   const s=String(value || '');
   return /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(Date.parse(s+'T12:00:00Z')) && new Date(s+'T12:00:00Z').toISOString().slice(0,10)===s ? s : null;
 }
-export function uploadedFile(input) {
+export function uploadedFile(input, allowVideo=false) {
   if (typeof input?.data !== 'string' || input.data.length > MAX_FILE_BYTES * 1.4 + 100) throw new Error('The file is too large. Maximum 2 MB.');
   const match=/^data:[^;,]+;base64,([A-Za-z0-9+/]*={0,2})$/.exec(input.data);
   if (!match) throw new Error('Choose a PDF, JPG, PNG or WebP file.');
@@ -26,6 +26,8 @@ export function uploadedFile(input) {
   if (bytes.length>=33 && bytes.subarray(12,16).toString()==='IHDR' && bytes.readUInt32BE(16)>0 && bytes.readUInt32BE(20)>0 && bytes.readUInt32BE(16)<=16000 && bytes.readUInt32BE(20)<=16000 && bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) {mime='image/png';ext='png';}
   else if (bytes.length>=12 && bytes[0]===255 && bytes[1]===216 && bytes[2]===255 && bytes[bytes.length-2]===255 && bytes[bytes.length-1]===217) {mime='image/jpeg';ext='jpg';}
   else if (bytes.subarray(0,4).toString()==='RIFF' && bytes.length>=20 && bytes.readUInt32LE(4)===bytes.length-8 && bytes.subarray(8,12).toString()==='WEBP') {mime='image/webp';ext='webp';}
+  else if(allowVideo && bytes.length>=16 && bytes.subarray(4,8).toString()==='ftyp'){mime='video/mp4';ext='mp4';}
+  else if(allowVideo && bytes.length>=16 && bytes.subarray(0,4).equals(Buffer.from([26,69,223,163]))){mime='video/webm';ext='webm';}
   else if (bytes.subarray(0,5).toString()==='%PDF-' && bytes.subarray(-1024).toString().includes('%%EOF') && bytes.subarray(-1024).toString().includes('startxref')) {mime='application/pdf';ext='pdf';}
   else throw new Error('Choose a PDF, JPG, PNG or WebP file.');
   const name=String(input.filename || 'transfer-confirmation').split(/[\\/]/).pop().replace(/\.[^.]*$/,'').replace(/[^\p{L}\p{N} ._-]/gu,'_').replace(/^\.+|[. ]+$/g,'').slice(0,100) || 'transfer-confirmation';

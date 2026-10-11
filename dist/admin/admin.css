@@ -86,3 +86,7 @@ html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 @media(max-width:560px){.af .form-grid{grid-template-columns:1fr}}
 
 .confirmation-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:14px 0;border-top:1px solid var(--line)}
+
+.claim-overdue{border:2px solid var(--red)}
+
+.store-label{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}.store-label i{width:9px;height:9px;border-radius:50%;flex:none}.store-label small{font-size:11px;opacity:.7}.store-switcher{margin-bottom:16px}.store-period{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px}.store-period .field{min-width:130px;flex:1}.store-performance small{display:block}.store-performance progress{width:70px;max-width:100%;accent-color:var(--gold)}.store-total{font-weight:700;background:var(--surface)}[data-client-store-form]{padding:12px 0}[data-client-store-form] input[type=checkbox]{width:20px;height:20px}.bars{overflow:hidden}.bars .bar-col{min-width:0}.bars .bar-col small{font-size:10px}

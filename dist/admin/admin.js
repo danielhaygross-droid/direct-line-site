@@ -4,8 +4,9 @@
   const MAX_PICKS = 8;
   const { api, money, esc, trackingUrl, renderLogin, quote, destinationPicker, categoryOptions, countryName, toast, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, $, $$ } = window.DL;
   const UI = window.DLOrderUI;
-  const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-  const S = { ov: null, orders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null };
+  const STATUSES = ['pending','processing','shipped','delivered','cancellation_requested','cancelled'];
+  const ADMIN_STATUSES = ['processing','shipped','delivered'];
+  const S = { ov: null, orders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
   const embedded = window.top !== window.self;
   const tell = m => { if (embedded) parent.postMessage(m, location.origin); };
   const P = {
@@ -55,9 +56,9 @@
   }
 
   async function loadAll() {
-    const [ov, o] = await Promise.all([api('/admin/overview'), api('/admin/orders')]);
-    S.ov = ov; S.orders = o.orders; window.DL.setRates(ov.rates);
-    if (S.filter === null) S.filter = S.orders.some(x => x.unreadMessages) ? 'followups' : S.orders.some(x => x.status === 'pending') ? 'pending' : 'all';
+    const [ov, o, p, c, stores] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores')]);
+    S.ov = ov; S.orders = o.orders; S.products=p.products; S.claims=c.claims;S.stores=stores.stores; window.DL.setRates(ov.rates);
+    if (S.filter === null) S.filter = S.orders.some(x => x.status === 'cancellation_requested') ? 'cancellation_requested' : S.orders.some(x => x.unreadMessages) ? 'followups' : S.orders.some(x => x.status === 'pending') ? 'pending' : 'all';
     renderKpis();
     tell({ type: 'dl-followups', unread: unreadTotal() });
   }
@@ -76,7 +77,7 @@
       <section class="adm-head"><div><p class="eyebrow">Direct Line clients</p><h1>Clients <span>&amp;</span> orders</h1><p>Every order your clients send in, what they owe, and what we earn.</p></div>
         <div class="adm-actions"><button type="button" class="btn" data-add-account="client">${ic('users')}Add client</button><button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button></div></section>
       <section class="kpis" data-kpis></section>
-      <div class="seg" role="tablist">${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
+      <div class="seg" role="tablist">${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['claims','Claims'], ['products','Products'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
       <section data-tab-body style="display:grid;gap:14px"></section>`;
     $('#app').addEventListener('click', onClick);
     $('#app').addEventListener('input', onInput);
@@ -95,6 +96,8 @@
   }
   function renderTab() {
     $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === S.tab); b.setAttribute('aria-selected', String(b.dataset.tab === S.tab)); });
+    if(S.tab==='claims'){renderClaims();return;}
+    if(S.tab==='products'){renderProducts();return;}
     const body = $('[data-tab-body]');
     if (S.tab === 'orders') {
       body.innerHTML = `<div class="bar"><div class="chips" data-chips></div><div class="bar-r"><select data-client-filter aria-label="Client"></select><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, tracking, client…" value="${esc(S.q)}" data-q></label></div></div>
@@ -108,6 +111,7 @@
     if (S.tab === 'settings') bindSettings();
   }
   function renderList() {
+    if(S.tab==='products'||S.tab==='claims')return;
     if (S.tab === 'orders') renderOrders();
     else if (S.tab === 'clients') renderClients();
     else if (S.tab === 'overview') renderOverview();
@@ -160,7 +164,7 @@
         <td data-label="Order"><div class="ord-cell">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : '<span class="ord-thumb none" title="No photo">—</span>'}<span class="t-main"><b>${esc(orderName(o))}</b>${o.itemTitle ? `<small>${esc(o.itemTitle)}</small>` : ''}<small class="mono">${esc(o.trackingNumber) || 'No tracking yet'}</small></span></div></td>
         <td data-label="Destination">${esc(place(o.destination))}</td>
         <td data-label="Total" class="num"><b>${money(o.price)}</b></td>
-        <td data-label="Status"><select data-status="${o.id}" aria-label="Status of ${esc(orderName(o))}">${STATUSES.map(s => `<option value="${s}"${s === o.status ? ' selected' : ''}>${UI.LABEL[s]}</option>`).join('')}</select></td>
+        <td data-label="Status"><select data-status="${o.id}" aria-label="Status of ${esc(orderName(o))}">${[o.status,...ADMIN_STATUSES.filter(s=>s!==o.status)].map(s => `<option value="${s}"${s === o.status ? ' selected' : ''}>${UI.LABEL[s]}</option>`).join('')}</select></td>
         <td data-label="Messages">${o.unreadMessages ? `<span class="unread-pill">${ic('chat')}${o.unreadMessages} new</span>` : o.messages ? `<span class="msgs">${ic('chat')}${o.messages}</span>` : '<span class="dim">—</span>'}</td>
         <td class="num hide-sm">${UI.svg(P.chev).replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:var(--dim);stroke-width:2"')}</td></tr>`).join('')}
       </tbody></table></div>`
@@ -182,6 +186,10 @@
     return '<span class="st" style="--tone:var(--dim)">Cancelled</span>';
   }
 
+  function adminClaimCard(c){return c?`<section class="card card-pad${c.overdue?' claim-overdue':''}"><h3 data-no-i18n>${esc(c.orderRef||'#'+c.orderId)} · ${esc(c.clientName)}</h3><p><span>${c.status==='open'?'Open':c.status==='approved'?'Approved':c.status==='rejected'?'Rejected':'Resolved'}</span> · <span>${c.resolution==='refund'?'Refund':'Reshipment'}</span></p><p><b data-no-i18n>${c.businessDays}</b> <span>business days (Mon–Fri)</span></p>${c.overdue?'<p class="err-text">Overdue: more than 3 business days</p>':''}<p data-no-i18n>${esc(c.problem)}: ${esc(c.description)}</p>${c.fileIds.map(id=>`<a class="btn btn-sm" href="/api/portal/files/${id}" target="_blank" rel="noopener">Open evidence</a>`).join('')}${c.reshipmentOrderId?`<button class="btn btn-sm" type="button" data-open-order="${c.reshipmentOrderId}">Open reshipment</button>`:''}${['open','approved'].includes(c.status)?`<form class="form-grid" data-claim-decision="${c.id}"><label class="field full"><span>Admin reply</span><textarea name="reply" maxlength="2000">${esc(c.reply)}</textarea></label><label class="field"><span>Decision</span><select name="status">${c.status==='open'?'<option value="approved">Approved</option><option value="rejected">Rejected</option>':'<option value="resolved">Resolved</option>'}</select></label><button class="btn btn-primary" type="submit">Save claim decision</button><p class="form-msg" data-claim-msg></p></form>`:`<p data-no-i18n>${esc(c.reply)}</p>`}</section>`:'';}
+  function renderClaims(){$('[data-tab-body]').innerHTML=`<div class="chips">${['all','open','approved','rejected','resolved'].map(s=>`<button class="chip${S.claimFilter===s?' on':''}" type="button" data-claim-filter="${s}">${s==='all'?'All':s==='open'?'Open':s==='approved'?'Approved':s==='rejected'?'Rejected':'Resolved'}</button>`).join('')}</div>${S.claims.filter(c=>S.claimFilter==='all'||c.status===S.claimFilter).map(adminClaimCard).join('')||'<p>No claims yet.</p>'}`;}
+  function productQuoteForm(p){return `<form class="form-grid" data-product-quote="${p.id}"><h3 class="full" data-no-i18n>${esc(p.name)} · ${esc(p.clientName)}</h3><div class="full">${p.photoIds.map(id=>`<img src="/api/portal/products/${p.id}/photos/${id}" width="80" height="80" style="object-fit:contain" alt="Product photo">`).join('')}<p><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a></p><p data-no-i18n>${esc(p.variant)}${p.expectedQuantity?' · '+p.expectedQuantity:''}</p></div><label class="field"><span>Status</span><select name="status"><option value="approved"${p.status==='approved'?' selected':''}>Approved</option><option value="not_available"${p.status==='not_available'?' selected':''}>Not available</option></select></label><label class="field"><span>Price per unit (USD)</span><input name="unitPrice" type="number" min="0" step="0.01" value="${p.unitPrice??''}"></label><label class="field full"><span>Note</span><textarea name="note" maxlength="1000">${esc(p.note)}</textarea></label><button type="submit" class="btn btn-primary">Save quote</button><p class="form-msg" data-quote-msg></p></form>`;}
+  function renderProducts(){const products=[...S.products].sort((a,b)=>(a.status==='awaiting_quote'?0:1)-(b.status==='awaiting_quote'?0:1)||a.createdAt-b.createdAt);$('[data-tab-body]').innerHTML=`<section class="card card-pad"><h3 class="sec-title">Products awaiting quote</h3><p>${products.filter(p=>p.status==='awaiting_quote').length}</p></section>${products.map(p=>`<section class="card card-pad"><span>${p.status==='awaiting_quote'?'Awaiting quote':p.status==='approved'?'Approved':'Not available'}</span>${productQuoteForm(p)}</section>`).join('')}`;}
   // ---------- clients tab ----------
   function archivedHTML() {
     const a = S.ov.archived || [];
@@ -297,7 +305,8 @@
     d.onClose = () => { closeChat(); S.drawer = null; };
     d.open('o' + o.id);
     d.body.innerHTML = '<div data-d-info style="display:grid;gap:16px"></div><section><h3 class="sec-title">Messages with the client</h3><div data-d-chat></div></section>';
-    fillOrder(o);
+    invoiceFiles=[];fillOrder(o);
+    api('/admin/invoices?clientId='+o.clientId).then(r=>{if(S.drawer?.kind==='order'&&S.drawer.id===o.id){invoiceFiles=r.invoices;fillOrder(o,true);}}).catch(ex=>toast(ex.message));
     chatCtl = UI.chat($('[data-d-chat]', d.body), { orderId: o.id, role: 'admin', onLoad: data => {
       events = data.events || [];
       const cur = S.orders.find(x => x.id === o.id);
@@ -310,22 +319,27 @@
     const d = UI.getDrawer(), back = S.drawer?.back;
     d.head.innerHTML = `${back ? `<button type="button" class="back" data-back>${ic('back')}${esc(clientName(back))}</button>` : ''}<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}</div><p>${esc(clientName(o.clientId))} · ordered ${esc(o.orderDate || fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p>`;
     const info = $('[data-d-info]', d.body); if (!info) return;
+    if (soft && $('[name=invoiceFile]',info)?.files.length) return;
     if (soft && info.contains(document.activeElement) && document.activeElement.matches('input')) return;
     info.innerHTML = `
       <section class="card card-pad">${UI.tracker(o, events)}</section>
       <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o, { removable: true, canAdd: (o.photos || []).length < 8 })}</section>
       <section class="card card-pad"><h3 class="sec-title">Update status</h3>
-        <div class="status-btns">${STATUSES.map(s => `<button type="button" class="t-${s}${s === o.status ? ' on' : ''}" data-set-status="${s}" data-id="${o.id}">${UI.LABEL[s]}</button>`).join('')}</div>
-        <form class="inline-form" data-track-form="${o.id}" style="margin-top:14px"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(o.trackingNumber)}" placeholder="e.g. LX123456789CN"></label><button class="btn" type="submit">Save tracking</button>${o.trackingNumber ? `<a class="btn btn-ghost" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track</a>` : ''}</form>
+        <div class="status-btns">${ADMIN_STATUSES.map(s => `<button type="button" class="t-${s}${s === o.status ? ' on' : ''}" data-set-status="${s}" data-id="${o.id}">${UI.LABEL[s]}</button>`).join('')}</div>
+        <form class="inline-form" data-track-form="${o.id}" style="margin-top:14px"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(o.trackingNumber)}" placeholder="e.g. LX123456789CN"></label><button class="btn" type="submit">Save tracking</button><button type="button" class="btn btn-sm" data-tracking-update="${o.id}">Tracking update received</button>${o.trackingNumber ? `<a class="btn btn-ghost" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track</a>` : ''}</form>
       </section>
-      ${billHTML(o)}
+      <section class="card card-pad"><label class="field"><span>Store</span><select data-move-order="${o.id}">${S.stores.filter(s=>s.clientId===o.clientId&&(!s.archived||s.id===o.storeId)).map(s=>`<option value="${s.id}"${s.id===o.storeId?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label></section>
+      ${adminClaimCard(S.claims.find(c=>c.orderId===o.id))}
+      ${o.status==='cancellation_requested' ? `<section class="card card-pad"><h3 class="sec-title">Cancellation request</h3><p data-no-i18n>${esc(o.cancellationReason)}</p><label class="field"><span>Cancellation fee (USD)</span><input name="cancellationFee" type="number" min="0" step="0.01" placeholder="0.00"></label><button type="button" class="btn btn-sm" data-cancel-four>$4</button><div class="status-btns"><button type="button" class="btn btn-danger" data-cancel-decision="approve" data-id="${o.id}">Approve cancellation</button><button type="button" class="btn" data-cancel-decision="reject" data-id="${o.id}">Reject cancellation</button></div></section>` : ''}
+      <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles.filter(f=>f.orderIds.includes(o.id)))}${invoiceForm(o.clientId,o.id)}</section>
+      ${o.quotedUnitPrice!=null ? `<section class="card card-pad"><span>Fixed unit quote</span> <b>${money(o.quotedUnitPrice)}</b> × ${o.quantity} = <b>${money(o.price)}</b></section>` : billHTML(o)}
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
         <div><dt>Client</dt><dd><button type="button" class="back" style="margin:0" data-open-client="${o.clientId}">${esc(clientName(o.clientId))}</button></dd></div><div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}${o.source === 'etsy-csv' ? ' <span class="st" style="--tone:var(--blue);text-transform:none">From Etsy file</span>' : ''}</dd></div>
         <div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div><div><dt>Customer paid</dt><dd>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</dd></div>
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
         <div class="full"><dt>Recipient</dt><dd>${esc(o.buyerName) || '—'}</dd></div>
-        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.address1, o.address2, o.city, o.region, o.postalCode, o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
+        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.buyerName, o.address1, o.address2, o.city, o.region, o.postalCode, o.destination ? place(o.destination) : '', o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd><button type="button" class="btn btn-sm" data-copy="${esc([o.buyerName, o.address1, o.address2, o.city, o.region, o.postalCode, o.destination ? place(o.destination) : '', o.buyerPhone].map(x => String(x || '').trim()).filter(Boolean).join('\n'))}">Copy full address</button></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
         <div><dt>Product type</dt><dd>${esc(shortCat(o.category))}</dd></div><div><dt>Weight</dt><dd>${o.weightKg != null ? esc(o.weightKg) + ' kg' : 'Not entered yet'}</dd></div><div><dt>Last update</dt><dd>${esc(fullDate(o.updatedAt))}</dd></div>
         <div><dt>Google Sheet</dt><dd>${o.sheetSyncStatus === 'synced' ? 'Synced' : o.sheetSyncStatus === 'error' ? 'Needs retry' : 'Waiting to sync'}</dd></div>
         ${o.sheetSyncError ? `<div class="full"><dt>Sheet sync note</dt><dd>${esc(o.sheetSyncError)}</dd></div>` : ''}
@@ -405,11 +419,11 @@
   }
 
   // ---------- side panel: one client ----------
-  let payments = [], transferProofs = [];
+  let payments = [], transferProofs = [], invoiceFiles=[], balanceAdjustments=[];
   async function openClient(id, tab = 'orders') {
     const c = clientOf(id); if (!c) return;
     const d = UI.getDrawer();
-    closeChat(); payments = []; transferProofs = [];
+    closeChat(); payments = []; transferProofs = []; invoiceFiles=[];balanceAdjustments=[];
     S.drawer = { kind: 'client', id: c.id, tab };
     d.onClose = () => { S.drawer = null; };
     d.open('c' + c.id);
@@ -417,28 +431,42 @@
     await loadPayments(c.id);
   }
   async function loadPayments(id) {
-    try { const [p,t] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id)]); payments=p.payments; transferProofs=t.transfers; } catch (e) { payments = []; transferProofs = []; }
+    try { const [p,t,f] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id),api('/admin/invoices?clientId='+id)]); payments=p.payments; transferProofs=t.transfers;invoiceFiles=f.invoices;balanceAdjustments=p.adjustments||[]; } catch (e) { payments = []; transferProofs = []; invoiceFiles=[]; }
     if (S.drawer?.kind === 'client' && S.drawer.id === id) fillClient(clientOf(id), true);
   }
+  const adminInvoiceLinks=files=>files.length ? files.map(f=>`<p><a href="/api/portal/files/${f.id}" target="_blank" rel="noopener"><span>Download invoice</span> <span data-no-i18n>${esc(f.filename)}</span></a></p>`).join('') : '<span class="muted">Invoice pending</span>';
+  function invoiceFields(clientId,orderId){
+    return `<label class="field full"><span>Upload invoice <small>PDF or image, maximum 2 MB</small></span><input name="invoiceFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp"></label>${orderId ? '' : `<label class="field full"><span>Linked orders <small>optional, select several</small></span><select name="invoiceOrders" multiple size="4">${S.orders.filter(o=>o.clientId===clientId).map(o=>`<option value="${o.id}">${esc(orderName(o))}</option>`).join('')}</select></label>`}`;
+  }
+  function invoiceForm(clientId,orderId){
+    const today=new Date().toLocaleDateString('en-CA');
+    return `<form class="form-grid" data-invoice-form="${clientId}" data-order-id="${orderId||''}">${invoiceFields(clientId,orderId)}<label class="field"><span>Invoice date</span><input name="invoiceDate" type="date" value="${today}" required></label>${orderId ? '' : `<label class="field"><span>Linked payment <small>optional</small></span><select name="invoicePayment"><option value="">No payment link</option>${payments.map(p=>`<option value="${p.id}">${money(p.amount)} · ${esc(fullDate(p.paidAt))}${p.archived?' · Archived':''}</option>`).join('')}</select></label>`}<button type="submit" class="btn btn-primary">Save invoice</button><p class="form-msg" data-invoice-msg></p></form>`;
+  }
+  async function invoiceFile(f){
+    const file=f.invoiceFile.files[0];if(!file)return null;if(file.size>2*1024*1024)throw new Error('The file is too large. Maximum 2 MB.');
+    const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});return {filename:file.name,data};
+  }
+  const selectedInvoiceOrders=f=>f.invoiceOrders?[...f.invoiceOrders.selectedOptions].map(o=>Number(o.value)):[];
   function transferProofHTML() {
     return transferProofs.length ? `<section class="card card-pad"><h3 class="sec-title">Transfer confirmations</h3><p class="note">Check the confirmation and receipt of funds before recording the payment.</p>${transferProofs.map(t=>`<div class="confirmation-row"><div><b>${money(t.amount)}</b> <small data-no-i18n>${esc(t.date)}</small><p><a href="/api/portal/files/${t.id}" target="_blank" rel="noopener">Open confirmation</a></p>${t.mime.startsWith('image/') ? `<img src="/api/portal/files/${t.id}?inline=1" style="max-width:160px;max-height:120px;object-fit:contain" alt="Transfer confirmation">` : ''}</div>${t.status==='pending' ? `<button type="button" class="btn btn-primary" data-record-transfer="${t.id}">Record this payment</button>` : t.status==='archived' ? `<button type="button" class="btn" data-restore-payment="${t.paymentId}">Restore payment</button>` : '<span class="tag">Recorded</span>'}</div>`).join('')}</section>` : '';
   }
   function fillClient(c, soft) {
-    const d = UI.getDrawer(), tab = S.drawer.tab, orders = S.orders.filter(o => o.clientId === c.id);
+    const d = UI.getDrawer(), tab = S.drawer.tab, allOrders=S.orders.filter(o=>o.clientId===c.id),orders=allOrders.filter(o=>!S.drawer.storeId||o.storeId===S.drawer.storeId),stores=S.stores.filter(s=>s.clientId===c.id),stats=window.DLClientStoreMath.performance(stores,allOrders,balanceAdjustments,window.DLClientStoreMath.periodRange(S.period,S.from,S.to)||window.DLClientStoreMath.periodRange('month'));
     d.head.innerHTML = `<div class="who"><span class="ava" style="width:44px;height:44px;border-radius:14px;font-size:14px">${esc(initials(c.name))}</span><div><h2 style="font-size:20px">${esc(c.name)}</h2><small>@${esc(c.username)} · ${c.active ? 'active' : 'disabled'}</small></div></div>`;
+    if (soft && [...d.body.querySelectorAll('[name=invoiceFile]')].some(f=>f.files.length)) return;
     if (soft && $('[data-reset-result] input', d.body)) return;
     if (soft && d.body.contains(document.activeElement) && document.activeElement.matches('input,select,textarea')) return;
     const t = new Date(), iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     const pane = tab === 'orders'
-      ? (orders.length ? `<section class="card" style="padding:4px 16px"><div class="mini-orders">${orders.map(o => `<button type="button" data-open-order="${o.id}" data-back="${c.id}"><span><b>${esc(orderName(o))}</b><small>${esc(fullDate(o.createdAt))} · ${esc(place(o.destination))}</small></span><span><b>${money(o.price)}</b></span>${UI.pill(o.status)}</button>`).join('')}</div></section>` : empty('No orders yet', 'Orders this client adds show up here.'))
+      ? `<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.periodFields(S.period,S.from,S.to)}${window.DLClientStoreUI.table(stats,'data-admin-select-store')}<button class="btn btn-sm" type="button" data-admin-select-store="0">All stores</button></section><section class="card card-pad"><h3 class="sec-title">My Stores</h3>${stores.map(s=>`<details><summary>${window.DLClientStoreUI.label(s)}</summary>${window.DLClientStoreUI.form(s,c.id)}</details>`).join('')}<details><summary>Add store</summary>${window.DLClientStoreUI.form(null,c.id)}</details></section><section class="card card-pad"><h3 class="sec-title">My Products</h3>${S.products.filter(p=>p.clientId===c.id).map(productQuoteForm).join('')}</section>` + (orders.length ? `<section class="card"><div class="table-wrap"><table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Store</th><th>Total</th><th>Status</th></tr></thead><tbody>${orders.map(o=>`<tr class="click" data-open-order="${o.id}" data-back="${c.id}" tabindex="0"><td><b>${esc(orderName(o))}</b></td><td data-label="Customer" data-no-i18n>${esc(o.buyerName)}</td><td data-label="Store">${window.DLClientStoreUI.label(stores.find(s=>s.id===o.storeId))}</td><td data-label="Total">${money(o.price)}</td><td data-label="Status">${UI.pill(o.status)}</td></tr>`).join('')}</tbody></table></div></section>` : empty('No orders yet', 'Orders this client adds show up here.'))
       : tab === 'payments'
         ? `${transferProofHTML()}<section class="card card-pad"><h3 class="sec-title">Record a payment</h3><form class="form-grid" data-pay-form="${c.id}" novalidate>
             <label class="field"><span>Amount received</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal"></span></label>
             <label class="field"><span>Date</span><input name="paidAt" type="date" value="${iso}"></label>
             <label class="field"><span>Method</span><select name="method"><option>PayPal</option><option>Wise</option><option>Bank transfer</option><option>Other</option></select></label>
             <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500"></label>
-            <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Record payment</button><p class="form-msg" data-pay-msg></p></div></form></section>
-          <section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td class="num">${p.archived ? `<span class="tag">Archived</span> <button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button>`}</td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
+            ${invoiceFields(c.id)}<div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Record payment</button><p class="form-msg" data-pay-msg></p></div></form></section>
+          <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles)}${invoiceForm(c.id)}</section><section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td>${adminInvoiceLinks(invoiceFiles.filter(f=>f.paymentId===p.id))}</td><td class="num">${p.archived ? `<span class="tag">Archived</span> <button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button>`}</td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
         : `<section class="card card-pad"><form class="form-grid" data-account-form="${c.id}" novalidate>
             <label class="field full"><span>Name</span><input name="name" maxlength="120" value="${esc(c.name)}"></label>
             <label class="field"><span>Fee per order <small>empty = default</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01" value="${c.commissionPerOrder ?? ''}"></span></label>
@@ -471,10 +499,10 @@
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
     const currencies = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD'];
     if (order?.currency && !currencies.includes(order.currency)) currencies.push(order.currency);
-    const addr = order ? [order.address1, order.address2, order.city, order.region, order.postalCode, order.buyerPhone].filter(Boolean).join('\n') : '';
     d.body.innerHTML = `<form id="order-form" class="af" novalidate>
       <section class="af-sec"><h3 class="form-sec"><i>1</i>Order</h3><div class="form-grid">
       <label class="field full"><span>Client</span><select name="clientId"${order ? ' disabled' : ''}><option value="">Choose a client…</option>${S.ov.clients.filter(c => c.active || c.id === cid).map(c => `<option value="${c.id}"${c.id === cid ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+      <label class="field full"><span>Store</span><select name="storeId" required></select></label>
       <label class="field"><span>Order number</span><input name="orderRef" maxlength="120" value="${esc(order?.orderRef)}" placeholder="e.g. Etsy #3412"></label>
       <label class="field"><span>Order date</span><input name="orderDate" type="date" value="${esc(order ? order.orderDate : today)}"></label>
       <label class="field"><span>Customer paid <small>on Etsy, optional</small></span><span class="money"><input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal" value="${v2(order?.sellingPrice)}"></span></label>
@@ -492,7 +520,12 @@
       </div></section>
       <section class="af-sec"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
       <label class="field full"><span>Customer / recipient name</span><input name="buyerName" maxlength="160" value="${esc(order?.buyerName)}"></label>
-      <label class="field full"><span>Full address &amp; phone <small>street, city, state, postal code, phone</small></span><textarea name="address1" maxlength="1000" rows="4" placeholder="Paste the whole address, plus the phone number if there is one">${esc(addr)}</textarea></label>
+      <label class="field full"><span>Street address line 1</span><textarea name="address1" maxlength="1000" rows="2">${esc(order?.address1)}</textarea></label>
+      <label class="field full"><span>Street address line 2 <small>optional</small></span><input name="address2" maxlength="200" value="${esc(order?.address2)}"></label>
+      <label class="field"><span>City</span><input name="city" maxlength="100" value="${esc(order?.city)}"></label>
+      <label class="field"><span>State / Province / Region <small>optional</small></span><input name="region" maxlength="100" value="${esc(order?.region)}"></label>
+      <label class="field"><span>ZIP / Postal code</span><input name="postalCode" maxlength="40" value="${esc(order?.postalCode)}"></label>
+      <label class="field"><span>Phone <small>Recommended, couriers often need it</small></span><input name="buyerPhone" maxlength="80" value="${esc(order?.buyerPhone)}"></label>
       <label class="field"><span>Destination</span><select name="destination"></select></label>
       <label class="field" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden"></label>
       </div></section>
@@ -511,6 +544,7 @@
     d.foot.innerHTML = `<button type="submit" form="order-form" class="btn btn-primary" data-submit>${order ? 'Save changes' : 'Add order'}</button><button type="button" class="btn btn-ghost" data-close-drawer>Cancel</button>`;
     const f = $('#order-form'), dest = destinationPicker(f.destination, $('[data-other-country]', f));
     dest.set(order?.destination || '');
+    const setStores=()=>{const clientId=Number(f.clientId.value),stores=S.stores.filter(s=>s.clientId===clientId&&(!s.archived||s.id===order?.storeId));f.storeId.innerHTML='<option value="">Choose a store</option>'+stores.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');f.storeId.value=String(order?.storeId||(stores.length===1?stores[0].id:''));};setStores();f.clientId.addEventListener('change',setStores);
     const msg = $('[data-form-msg]', f), err = t => { msg.textContent = t; msg.className = 'form-msg err'; msg.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); };
     // ----- product links: one box per product -----
     const linkBox = $('[data-links]', f);
@@ -563,17 +597,20 @@
     });
     f.addEventListener('submit', async e => {
       e.preventDefault();
+      if(!f.storeId.value)return err('Choose a store.');
       if (!order && !f.clientId.value) return err('Please choose the client.');
+      if (!f.buyerName.value.trim() || !f.address1.value.trim() || !f.city.value.trim() || !f.postalCode.value.trim()) return err('Please fill in the name, street address, city and ZIP / postal code.');
+      if (!dest.get()) return err('Please choose a country.');
       if (dest.isOther() && !dest.get()) return err('Please type the country name.');
       const linkInputs = $$('[data-link]', f), links = linkInputs.map(i => i.value.trim()).filter(Boolean);
       const badLink = linkInputs.find(i => i.value.trim() && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(i.value.trim()));
       if (badLink) { badLink.focus(); return err('Please paste each product link in full, starting with https://'); }
       const qty = parseInt(f.quantity.value, 10);
       if (!(qty >= 1 && qty <= 999)) return err('Quantity must be between 1 and 999.');
-      const body = { clientId: order ? order.clientId : Number(f.clientId.value), orderRef: f.orderRef.value, orderDate: f.orderDate.value, currency: f.currency.value,
+      const body = { storeId:Number(f.storeId.value),clientId: order ? order.clientId : Number(f.clientId.value), orderRef: f.orderRef.value, orderDate: f.orderDate.value, currency: f.currency.value,
         sellingPrice: f.sellingPrice.value === '' ? null : f.sellingPrice.value,
         etsyUrl: links.join('\n'), quantity: qty, sku: f.sku.value, variant: f.variant.value,
-        buyerName: f.buyerName.value, address1: f.address1.value, address2: '', city: '', region: '', postalCode: '', buyerPhone: '',
+        buyerName: f.buyerName.value, address1: f.address1.value, address2: f.address2.value, city: f.city.value, region: f.region.value, postalCode: f.postalCode.value, buyerPhone: f.buyerPhone.value,
         trackingNumber: f.trackingNumber.value, destination: dest.get(), category: f.category.value,
         weightKg: f.weightKg.value === '' ? null : f.weightKg.value, productCost: f.productCost.value === '' ? null : f.productCost.value, shippingFee: f.price.value === '' ? null : f.price.value,
         notes: f.notes.value };
@@ -647,6 +684,12 @@
     if (s.kind === 'client') { const c = clientOf(s.id); if (c) fillClient(c, true); }
   }
 
+  document.addEventListener('input',e=>{if(e.target.name==='color'){const f=e.target.closest('[data-client-store-form]');if(f)f.dataset.colourEdited='1';}});
+  document.addEventListener('change',async e=>{
+    if(e.target.matches('[data-move-order]')){const f=e.target;f.disabled=true;try{await api('/orders/'+f.dataset.moveOrder,{method:'PUT',body:{storeId:Number(f.value)}});await loadAll();renderList();refreshDrawer();toast('Order moved to store.');}catch(ex){toast(ex.message);f.disabled=false;}}
+    const p=e.target.closest('[data-period-form]');if(p&&S.drawer?.kind==='client'){S.period=p.period.value;if(p.from)S.from=p.from.value;if(p.to)S.to=p.to.value;if(e.target.name==='period'||window.DLClientStoreMath.periodRange('custom',S.from,S.to)){document.activeElement?.blur();fillClient(clientOf(S.drawer.id));}}
+  });
+  document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
   // ---------- events ----------
   async function setStatus(id, status, el) {
     if (el) el.disabled = true;
@@ -655,6 +698,8 @@
   }
   function onClick(e) {
     const t = e.target;
+    const st=t.closest('[data-admin-select-store]');if(st&&S.drawer?.kind==='client'){S.drawer.storeId=Number(st.dataset.adminSelectStore);fillClient(clientOf(S.drawer.id));return;}
+    const cf=t.closest('[data-claim-filter]');if(cf){S.claimFilter=cf.dataset.claimFilter;renderClaims();return;}
     const tab = t.closest('[data-tab]'); if (tab) { S.tab = tab.dataset.tab; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
     const gt = t.closest('[data-go-tab]'); if (gt) { S.tab = gt.dataset.goTab; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
     const gf = t.closest('[data-go-filter]'); if (gf) { S.filter = gf.dataset.goFilter; S.tab = 'orders'; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
@@ -730,6 +775,10 @@
       catch (ex) { pr.disabled = false; toast(ex.message); }
       return;
     }
+    if(t.closest('[data-cancel-four]')){$('[name=cancellationFee]').value='4';return;}
+    const decision=t.closest('[data-cancel-decision]');
+    if(decision){decision.disabled=true;try{await api('/orders/'+decision.dataset.id+'/'+decision.dataset.cancelDecision+'-cancellation',{method:'POST',body:{fee:$('[name=cancellationFee]').value}});await loadAll();renderList();refreshDrawer();toast('Cancellation request updated.');}catch(ex){decision.disabled=false;toast(ex.message);}return;}
+    const tracking=t.closest('[data-tracking-update]');if(tracking){tracking.disabled=true;try{await api('/admin/orders/'+tracking.dataset.trackingUpdate+'/tracking-update',{method:'POST',body:{}});await loadAll();refreshDrawer();toast('Tracking update recorded.');}catch(ex){tracking.disabled=false;toast(ex.message);}return;}
     const ss = t.closest('[data-set-status]'); if (ss) { if (!ss.classList.contains('on')) setStatus(ss.dataset.id, ss.dataset.setStatus, ss); return; }
     const eo = t.closest('[data-edit-order]'); if (eo) { openOrderForm(S.orders.find(o => o.id === Number(eo.dataset.editOrder))); return; }
     const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
@@ -762,14 +811,23 @@
       catch (ex) { toast(ex.message); }
       return;
     }
+    const storeForm=e.target.closest('[data-client-store-form]');if(storeForm){e.preventDefault();const sf=storeForm,b=$('[type=submit]',sf),m=$('[data-store-msg]',sf);b.disabled=true;try{await api('/admin/client-stores'+(sf.dataset.clientStoreForm?'/'+sf.dataset.clientStoreForm:''),{method:'POST',body:{clientId:Number(sf.dataset.clientId),name:sf.storeName.value,platform:sf.platform.value,link:sf.link.value,color:sf.dataset.clientStoreForm||sf.dataset.colourEdited?sf.color.value:undefined,archived:!!sf.archived?.checked}});document.activeElement?.blur();await loadAll();refreshDrawer();toast('Store saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
+    const cd=e.target.closest('[data-claim-decision]');if(cd){e.preventDefault();const b=$('[type=submit]',cd),m=$('[data-claim-msg]',cd);b.disabled=true;try{await api('/admin/claims/'+cd.dataset.claimDecision,{method:'POST',body:{status:cd.status.value,reply:cd.reply.value}});document.activeElement?.blur();await loadAll();if(S.tab==='claims')renderClaims();else refreshDrawer();toast('Claim decision saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
+    const pq=e.target.closest('[data-product-quote]');if(pq){e.preventDefault();const b=$('[type=submit]',pq),m=$('[data-quote-msg]',pq);b.disabled=true;try{await api('/admin/products/'+pq.dataset.productQuote,{method:'POST',body:{status:pq.status.value,unitPrice:pq.unitPrice.value,note:pq.note.value}});document.activeElement?.blur();await loadAll();if(S.tab==='products')renderProducts();else refreshDrawer();toast('Quote saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
+    const inf=e.target.closest('[data-invoice-form]');
+    if(inf){e.preventDefault();const b=$('[type=submit]',inf),m=$('[data-invoice-msg]',inf);b.disabled=true;try{const file=await invoiceFile(inf);if(!file)throw new Error('Choose an invoice file.');await api('/admin/invoices',{method:'POST',body:{clientId:Number(inf.dataset.invoiceForm),orderIds:inf.dataset.orderId?[Number(inf.dataset.orderId)]:selectedInvoiceOrders(inf),paymentId:inf.invoicePayment?.value||null,date:inf.invoiceDate.value,file}});document.activeElement?.blur();inf.reset();invoiceFiles=(await api('/admin/invoices?clientId='+inf.dataset.invoiceForm)).invoices;refreshDrawer();toast('Invoice uploaded.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     const pf = e.target.closest('[data-pay-form]');
     if (pf) {
       e.preventDefault();
       const m = $('[data-pay-msg]');
       try {
-        await api('/admin/payments', { method: 'POST', body: { clientId: Number(pf.dataset.payForm), amount: pf.amount.value, method: pf.method.value, note: pf.note.value, paidAt: pf.paidAt.value } });
-        document.activeElement?.blur(); await loadAll(); renderList(); await loadPayments(Number(pf.dataset.payForm)); toast('Payment recorded.');
-      } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+        const b=$('[type=submit]',pf);if(b.disabled)return;b.disabled=true;
+        const file=await invoiceFile(pf);
+        let invoiceError='';
+        const payment=await api('/admin/payments', { method: 'POST', body: { clientId: Number(pf.dataset.payForm), amount: pf.amount.value, method: pf.method.value, note: pf.note.value, paidAt: pf.paidAt.value } });
+        if(file){try{await api('/admin/invoices',{method:'POST',body:{clientId:Number(pf.dataset.payForm),paymentId:payment.id,orderIds:selectedInvoiceOrders(pf),date:pf.paidAt.value,file}});}catch(ex){invoiceError='Payment recorded; invoice upload failed. Use Save invoice to retry. '+ex.message;}}
+        document.activeElement?.blur();pf.reset(); await loadAll(); renderList(); await loadPayments(Number(pf.dataset.payForm)); toast(invoiceError||'Payment recorded.');
+      } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err';$('[type=submit]',pf).disabled=false; }
       return;
     }
     const sf = e.target.closest('[data-sub-form]');
@@ -796,6 +854,7 @@
     if (m.type === 'dl-open-client' && clientOf(m.id)) openClient(m.id);
     if (m.type === 'dl-add-admin') openAddAccount('admin');
     if (m.type === 'dl-set-tab' && ['overview', 'orders', 'clients', 'settings'].includes(m.tab) && m.tab !== S.tab) { S.tab = m.tab; if (S.ov) renderTab(); }
+    if(m.type==='dl-open-products'){S.tab='products';loadAll().then(renderTab);return;}
     if (m.type === 'dl-open-order') {
       const go = () => { if (S.orders.some(o => o.id === m.id)) openOrder(m.id, m.focus); };
       if (S.orders.some(o => o.id === m.id)) go(); else loadAll().then(() => { renderList(); go(); });

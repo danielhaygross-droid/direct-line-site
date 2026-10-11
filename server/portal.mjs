@@ -11,6 +11,16 @@ import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms 
 
 import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } from './files.mjs';
 
+import { STATUS_SCHEMA, changeStatus, balanceAdjustments } from './order-status.mjs';
+
+import { INVOICE_SCHEMA, invoices, saveInvoice, monthlyInvoices } from './invoices.mjs';
+
+import { PRODUCT_SCHEMA, products, addProduct, quoteProduct, productPhoto, productEvents } from './products.mjs';
+
+import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from './claims.mjs';
+
+import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance } from './client-stores.mjs';
+
 const utf8 = new TextEncoder();
 const SESSION_SECONDS = 43200; // 12h, same as the Worker
 const b64url = bytes => Buffer.from(bytes).toString('base64url');
@@ -153,7 +163,7 @@ export const SCHEMA = [
 // Supplier shipping rates (USD per kg) — from the supplier's rate sheet. Admin-only: sent with
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
-SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA);
+SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -181,6 +191,11 @@ export const SHIPPING_RATES = {
     NO: { name: 'Norway', general: 10, battery: 12, cosmetic: 15, est: true },
   };
 // Bank details clients see on Payments → "How to pay" (item #5). Editable in admin Fees & settings.
+export function addressError(body) {
+  if (!String(body.destination || '').trim() || body.destination === '__other') return 'Please choose a country.';
+  if (['buyerName','address1','city','postalCode'].some(k => !String(body[k] || '').trim())) return 'Please fill in the name, street address, city and ZIP / postal code.';
+  return null;
+}
 export const BANK_FIELDS = ['bank_currency', 'bank_holder', 'bank_account', 'bank_ach', 'bank_wire', 'bank_swift', 'bank_name', 'bank_address', 'bank_reference'];
 const BANK_DEFAULTS = {
   bank_currency: 'USD', bank_holder: 'Guangzhou Huadu Beyond E-Commerce Firm', bank_account: '20000013048280',
@@ -207,7 +222,6 @@ export function subscriptionOut(u, settings, today = todayIso()) {
   return { status: u.sub_status || 'trial', trialStart: u.trial_start || null, trialEnd, lastPayment: u.sub_last_payment || null, price, currency: 'ILS',
     trialDaysLeft: daysLeft, trialEnded: daysLeft !== null && daysLeft < 0 };
 }
-const ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 const now = () => Math.floor(Date.now() / 1000);
 
 export const EDIT_WINDOW_SECONDS = 72 * 3600;
@@ -274,7 +288,7 @@ async function getSettings(DB) {
 function orderOut(r) {
   const price = Number(r.price || 0), sell = r.selling_price === null ? null : Number(r.selling_price);
   return {
-    id: r.id, clientId: r.client_id, orderRef: r.order_ref, trackingNumber: r.tracking_number,
+    id: r.id, clientId: r.client_id, storeId:r.store_id==null?null:Number(r.store_id),productId:r.product_id==null?null:Number(r.product_id), quotedUnitPrice:r.quoted_unit_price==null?null:Number(r.quoted_unit_price), orderRef: r.order_ref, trackingNumber: r.tracking_number,
     destination: r.destination, category: r.category, weightKg: r.weight_kg === null ? null : Number(r.weight_kg),
     // price = what the client pays for the order = product cost (incl. our hidden fee) + shipping fee.
     productCost: r.product_cost === null || r.product_cost === undefined ? null : Number(r.product_cost),
@@ -285,7 +299,7 @@ function orderOut(r) {
     itemTitle: r.item_title || '', sku: r.sku || '', variant: r.variant || '', quantity: Number(r.quantity || 1), etsyUrl: r.etsy_url || '', productLinks: String(r.etsy_url || '').split(/\s+/).filter(Boolean),
     commission: Number(r.commission || 0), supplierShare: round2(r.supplier_share),
     ourShare: round2(Math.max(0, Number(r.commission || 0) - Number(r.supplier_share || 0))),
-    notes: r.notes, status: r.status, editLocked: !!r.edit_locked, source: r.source || '',
+    reshipmentOf:r.reshipment_of==null?null:Number(r.reshipment_of),lastTrackingUpdateAt:r.last_tracking_update_at==null?null:Number(r.last_tracking_update_at),claimEligibility:claimEligibility(r),notes: r.notes, status: r.status, deliveredAt: r.delivered_at == null ? null : Number(r.delivered_at), cancellationReason: r.cancellation_reason || '', cancellationPreviousStatus: r.cancellation_previous_status || '', editLocked: !!r.edit_locked, source: r.source || '',
     sheetSyncStatus: r.sheet_sync_status || 'waiting',
     sheetSyncedAt: r.sheet_synced_at == null ? null : Number(r.sheet_synced_at),
     sheetSyncError: r.sheet_sync_error || '',
@@ -295,7 +309,7 @@ function orderOut(r) {
 // What a client may see of an order: total only, never the product vs shipping breakdown (item #6).
 const CLIENT_HIDDEN = ['commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee'];
 function clientOrder(o) {
-  const out = { ...o, priced: o.productCost != null || o.shippingFee != null };
+  const out = { ...o, priced: o.productCost != null || o.shippingFee != null || o.quotedUnitPrice != null };
   for (const k of CLIENT_HIDDEN) delete out[k];
   return out;
 }
@@ -325,7 +339,7 @@ async function logEvent(DB, orderId, clientId, kind, actor, detail = '') {
   await DB.prepare('INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,?,?,?,?)')
     .bind(orderId, clientId, kind, actor, String(detail).slice(0, 200), now()).run();
 }
-const EDIT_FIELDS = ['order_ref', 'destination', 'category', 'weight_kg', 'product_cost', 'shipping_fee', 'selling_price', 'notes', 'order_date', 'currency', 'buyer_name', 'buyer_phone', 'address_line_1', 'address_line_2', 'city', 'region', 'postal_code', 'item_title', 'sku', 'variant', 'quantity', 'etsy_url'];
+const EDIT_FIELDS = ['store_id','order_ref', 'destination', 'category', 'weight_kg', 'product_cost', 'shipping_fee', 'selling_price', 'notes', 'order_date', 'currency', 'buyer_name', 'buyer_phone', 'address_line_1', 'address_line_2', 'city', 'region', 'postal_code', 'item_title', 'sku', 'variant', 'quantity', 'etsy_url'];
 async function readBody(request) { return request.json().catch(() => ({})); }
 
 // ---------- product photos ----------
@@ -414,8 +428,8 @@ async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source,
   const commission = client.commission_per_order ?? Number(settings.commission_per_order);
   const supplierShare = Math.min(commission, Number(settings.supplier_share_per_order) || 0);
   const t = now();
-  const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at, order_date, currency, buyer_name, buyer_phone, address_line_1, address_line_2, city, region, postal_code, item_title, sku, variant, quantity, etsy_url, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
-    .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t, f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, source).first();
+  const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at, order_date, currency, buyer_name, buyer_phone, address_line_1, address_line_2, city, region, postal_code, item_title, sku, variant, quantity, etsy_url, source, product_id, quoted_unit_price,store_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
+    .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t, f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, source,f.product_id||null,f.quoted_unit_price??null,f.store_id).first();
   const saved = [];
   for (const p of photos) saved.push(await insertPhoto(DB, row.id, clientId, p, actor));
   await logEvent(DB, row.id, clientId, 'created', actor);
@@ -427,9 +441,10 @@ async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source,
 async function clientSummary(DB, clientId, settings) {
   const o = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS billed, COALESCE(SUM(commission),0) AS commission, COALESCE(SUM(LEAST(supplier_share, commission)),0) AS supplier, COALESCE(SUM(selling_price - price) FILTER (WHERE selling_price IS NOT NULL),0) AS profit FROM client_orders WHERE client_id = ? AND status <> 'cancelled'").bind(clientId).first();
   const p = await DB.prepare('SELECT COALESCE(SUM(amount),0) AS paid FROM client_payments WHERE client_id = ? AND NOT archived').bind(clientId).first();
-  const billed = round2(o.billed), paid = round2(p.paid);
+  const performance=await clientPerformance(DB,clientId);
+  const billed = performance.totals.billed, paid = round2(p.paid);
   const commission = round2(o.commission), supplierShare = round2(o.supplier);
-  return { orders: Number(o.n), billed, paid, outstanding: round2(billed - paid), commission, supplierShare, ourShare: round2(commission - supplierShare), clientProfit: round2(o.profit) };
+  return { orders: Number(o.n), billed, paid, outstanding: round2(billed - paid), commission, supplierShare, ourShare: round2(commission - supplierShare), clientProfit: performance.totals.profit };
 }
 
 // ---------- request handler ----------
@@ -520,25 +535,41 @@ export async function handlePortal(request, url, ctx) {
   }
   if (path === '/payments' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? AND NOT archived ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
-    return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })), transfers: await transfers(DB,who.clientId) });
+    return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })), invoices: await invoices(DB,who.clientId), adjustments: await balanceAdjustments(DB,who.clientId), transfers: await transfers(DB,who.clientId) });
   }
+  if (path==='/invoices/month' && method==='GET' && !who.admin) return monthlyInvoices(DB,who.clientId,url.searchParams.get('month'));
+  if(path==='/client-stores'&&!who.admin){if(method==='GET')return json({ok:true,stores:await clientStores(DB,who.clientId)});if(method==='POST'){try{const store=await saveStore(DB,who.clientId,null,await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}}
+  const storeEdit=/^\/client-stores\/(\d+)$/.exec(path);if(storeEdit&&method==='POST'&&!who.admin){try{const store=await saveStore(DB,who.clientId,Number(storeEdit[1]),await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
+  if(path==='/products' && !who.admin){if(method==='GET')return json({ok:true,products:await products(DB,who.clientId)});if(method==='POST'){try{return json({ok:true,product:await addProduct(DB,who.clientId,await readBody(request))});}catch(e){return json({ok:false,error:e.message},400);}}}
+  const productImage=/^\/products\/(\d+)\/photos\/(\d+)$/.exec(path);if(productImage&&method==='GET')return productPhoto(DB,Number(productImage[1]),Number(productImage[2]),who);
   if (path === '/orders' && method === 'POST') {
     const body = await readBody(request);
     const clientId = who.admin ? Number(body.clientId) : who.clientId;
     const client = await DB.prepare("SELECT id, commission_per_order, active FROM users WHERE id = ? AND role = 'client'").bind(clientId).first();
     if (!client || !client.active) return json({ ok: false, error: 'Unknown client' }, 400);
     if (!text(body.destination, 60) || text(body.destination, 60) === '__other') return json({ ok: false, error: 'Please choose a country.' }, 400);
+    const addressProblem = addressError(body);
+    if (addressProblem) return json({ ok: false, error: addressProblem }, 400);
     let f; try { f = orderFields(body); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     if (!who.admin) {
       f.tracking_number = ''; f.category = ''; f.weight_kg = null;
       f.product_cost = null; f.shipping_fee = null; f.price = 0;
     }
+    try{f.store_id=await orderStore(DB,clientId,body.storeId);}catch(e){return json({ok:false,error:e.message},400);}
+    let savedProduct=null,productPhotos=[];
+    if(body.productId){
+      savedProduct=await DB.prepare("SELECT * FROM portal_products WHERE id=? AND client_id=? AND status='approved'").bind(Number(body.productId),clientId).first();
+      if(!savedProduct)return json({ok:false,error:'Choose an approved product belonging to your account.'},400);
+      if(body.quotedUnitPrice!==undefined && Number(body.quotedUnitPrice)!==Number(savedProduct.unit_price))return json({ok:false,error:'The product quote changed. Refresh and review the price before sending.'},409);
+      f.product_id=savedProduct.id;f.quoted_unit_price=Number(savedProduct.unit_price);f.price=round2(f.quoted_unit_price*f.quantity);if(f.price>=1e7)return json({ok:false,error:'Order total is too large.'},400);f.product_cost=null;f.shipping_fee=null;f.etsy_url=savedProduct.link;f.item_title=savedProduct.name;
+      productPhotos=(await DB.prepare('SELECT * FROM portal_product_photos WHERE product_id=? ORDER BY id').bind(savedProduct.id).all()).results||[];
+    }
     // Clients must show us what was ordered: the product link plus at least one photo / screenshot.
     if (f.etsy_url && !f.etsy_url.split('\n').every(validLink)) return json({ ok: false, error: 'Please paste each product link in full, starting with https://' }, 400);
     if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link from your store.' }, 400);
-    const photoBodies = Array.isArray(body.photos) ? body.photos : [];
+    const photoBodies = savedProduct ? [] : Array.isArray(body.photos) ? body.photos : [];
     if (photoBodies.length > MAX_PHOTOS_PER_ORDER) return json({ ok: false, error: `Up to ${MAX_PHOTOS_PER_ORDER} photos per order` }, 400);
-    let photos; try { photos = photoBodies.map(photoInput); } catch (e) { return json({ ok: false, error: e.message }, 400); }
+    let photos; try { photos = savedProduct ? productPhotos.map(p=>({mime:p.mime,b64:p.data,bytes:p.bytes,thumbMime:p.mime,thumbB64:p.data,width:null,height:null})) : photoBodies.map(photoInput); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     if (!who.admin && !photos.length) return json({ ok: false, error: 'Please add at least one photo or screenshot of the product.' }, 400);
     const settings = await getSettings(DB);
     const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, who.admin ? 'admin' : 'client', '', settings);
@@ -548,8 +579,10 @@ export async function handlePortal(request, url, ctx) {
   // ----- notifications: what the other side did, newest first -----
   if (path === '/notifications' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND e.actor = 'admin' ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
+    for(const f of await invoices(DB,who.clientId)) rows.push({id:'invoice-'+f.id,order_id:f.orderIds[0]||null,client_id:who.clientId,kind:'invoice',actor:'admin',detail:f.filename,created_at:f.createdAt});
+    rows.sort((a,b)=>Number(b.created_at)-Number(a.created_at));
     const u = await DB.prepare('SELECT notif_seen_at FROM users WHERE id = ?').bind(who.clientId).first();
-    return json({ ok: true, items: rows.map(eventOut), seenAt: Number(u?.notif_seen_at || 0), now: now() });
+    return json({ ok: true, items: [...rows.map(eventOut),...await productEvents(DB,who.clientId)].sort((a,b)=>b.createdAt-a.createdAt).slice(0,50), seenAt: Number(u?.notif_seen_at || 0), now: now() });
   }
   if (path === '/notifications/seen' && method === 'POST' && !who.admin) {
     await DB.prepare('UPDATE users SET notif_seen_at = ? WHERE id = ?').bind(now(), who.clientId).run();
@@ -576,34 +609,52 @@ export async function handlePortal(request, url, ctx) {
     const events = (await DB.prepare("SELECT * FROM order_events WHERE order_id = ? AND kind <> 'message' ORDER BY created_at, id").bind(id).all()).results || [];
     return json({ ok: true, messages: rows.map(messageOut), events: events.map(eventOut) });
   }
+  if(path==='/claims'&&method==='GET'&&!who.admin)return json({ok:true,claims:await claims(DB,who.clientId)});
+  const newClaim=/^\/orders\/(\d+)\/claims$/.exec(path);if(newClaim&&method==='POST'&&!who.admin){const order=await DB.prepare('SELECT * FROM client_orders WHERE id=? AND client_id=?').bind(Number(newClaim[1]),who.clientId).first();if(!order)return json({ok:false,error:'Not found'},404);try{return json({ok:true,claim:await submitClaim(DB,order,await readBody(request))});}catch(e){return json({ok:false,error:e.message},409);}}
+  const statusAction = /^\/orders\/(\d+)\/(request-cancellation|approve-cancellation|reject-cancellation|mark-delivered)$/.exec(path);
+  if (statusAction && method === 'POST') {
+    const existing = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(Number(statusAction[1])).first();
+    if (!existing || !who.admin && Number(existing.client_id)!==Number(who.clientId)) return json({ok:false,error:'Not found'},404);
+    try {
+      const row = await changeStatus(DB,existing,statusAction[2],await readBody(request),who.admin);
+      const sync = syncPortalOrderToGoogleSheet(DB,env,row.id).catch(()=>{});if(waitUntil)waitUntil(sync);
+      const out=orderOut(row);return json({ok:true,order:who.admin?out:clientOrder(out)});
+    } catch(e) {return json({ok:false,error:e.message},e.status||409);}
+  }
   const orderMatch = /^\/orders\/(\d+)$/.exec(path);
   if (orderMatch && (method === 'PUT' || method === 'POST')) {
     const id = Number(orderMatch[1]);
-    const existing = await DB.prepare('SELECT * FROM client_orders WHERE id = ?').bind(id).first();
+    let existing = await DB.prepare('SELECT * FROM client_orders WHERE id = ?').bind(id).first();
     if (!existing || (!who.admin && existing.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
     const body = await readBody(request);
-    const cancelOnly = body.status === 'cancelled' && Object.keys(body).every(k => k === 'status');
-    if (!who.admin && !cancelOnly && !canEditOrder(existing)) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
-    if ((!who.admin && !cancelOnly || body.destination !== undefined) && (!text(body.destination ?? existing.destination, 60) || text(body.destination ?? existing.destination, 60) === '__other')) return json({ ok: false, error: 'Please choose a country.' }, 400);
+    if (body.status !== undefined) {
+      if (Object.keys(body).length!==1) return json({ok:false,error:'Change status separately from order details.'},400);
+      try { const row=await changeStatus(DB,existing,'status',body,who.admin);const out=orderOut(row);const sync=syncPortalOrderToGoogleSheet(DB,env,row.id).catch(()=>{});if(waitUntil)waitUntil(sync);return json({ok:true,order:who.admin?out:clientOrder(out)}); }
+      catch(e){return json({ok:false,error:e.message},e.status||409);}
+    }
+    if (!who.admin && !canEditOrder(existing)) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
+    if ((!who.admin || body.destination !== undefined) && (!text(body.destination ?? existing.destination, 60) || text(body.destination ?? existing.destination, 60) === '__other')) return json({ ok: false, error: 'Please choose a country.' }, 400);
+    // Partial status/billing updates leave historical addresses untouched. Detail edits need complete shipping fields.
+    if ((!who.admin || ['buyerName','address1','address2','city','region','postalCode','buyerPhone','destination'].some(k => body[k] !== undefined))) {
+      const addressProblem = addressError({ ...orderOut(existing), ...body });
+      if (addressProblem) return json({ ok: false, error: addressProblem }, 400);
+    }
     let f; try { f = orderFields({ ...orderOut(existing), ...body }); } catch (e) { return json({ ok: false, error: e.message }, 400); }
-    // Clients can edit their own order details and cancel a pending order; only admins change other statuses/fees.
-    if (!who.admin && existing.status === 'cancelled') return json({ ok: false, error: 'This order was cancelled.' }, 409);
-    if (!who.admin && body.status === 'cancelled' && existing.status !== 'pending') return json({ ok: false, error: 'This order is already being handled, so it can’t be cancelled here. Message us instead.' }, 409);
-    const status = who.admin
-      ? (ORDER_STATUSES.includes(body.status) ? body.status : existing.status)
-      : (body.status === 'cancelled' ? 'cancelled' : existing.status);
+    const status = existing.status;
     const commission = who.admin && body.commission != null && body.commission !== '' && isMoney(money(body.commission)) ? money(body.commission) : existing.commission;
     const supplierShare = who.admin && body.supplierShare != null && body.supplierShare !== '' && isMoney(money(body.supplierShare)) ? money(body.supplierShare) : existing.supplier_share;
     if (!who.admin) {
       f.tracking_number = existing.tracking_number; f.category = existing.category; f.weight_kg = existing.weight_kg;
       f.product_cost = existing.product_cost; f.shipping_fee = existing.shipping_fee; f.price = existing.price;
     }
+    try{f.store_id=await orderStore(DB,existing.client_id,body.storeId,Number(existing.store_id),who.admin);}catch(e){return json({ok:false,error:e.message},400);}
+    if(existing.quoted_unit_price!=null){f.price=round2(Number(existing.quoted_unit_price)*f.quantity);if(f.price>=1e7)return json({ok:false,error:'Order total is too large.'},400);f.product_cost=existing.product_cost;f.shipping_fee=existing.shipping_fee;f.etsy_url=existing.etsy_url;f.item_title=existing.item_title;}
     if (body.etsyUrl !== undefined) {
       if (f.etsy_url && !f.etsy_url.split('\n').every(validLink)) return json({ ok: false, error: 'Please paste each product link in full, starting with https://' }, 400);
       if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link from your store.' }, 400);
     }
-    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, edit_locked=edit_locked OR ? WHERE id = ? AND (? OR (status=\'pending\' AND NOT edit_locked AND created_at > ?)) RETURNING *')
-      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, status !== 'pending', id, who.admin || cancelOnly, now() - EDIT_WINDOW_SECONDS).first();
+    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, store_id=?,edit_locked=edit_locked OR ?,last_tracking_update_at=CASE WHEN tracking_number<>? THEN ? ELSE last_tracking_update_at END WHERE id = ? AND status=? AND (? OR (status=\'pending\' AND NOT edit_locked AND created_at > ?)) RETURNING *')
+      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, f.store_id,['processing','shipped','delivered','cancelled'].includes(status),f.tracking_number,now(), id, existing.status, who.admin, now() - EDIT_WINDOW_SECONDS).first();
     if (!row) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
     const actor = who.admin ? 'admin' : 'client';
     if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);
@@ -726,7 +777,7 @@ export async function handlePortal(request, url, ctx) {
   }
   if (path === '/admin/notifications' && method === 'GET') {
     const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE e.actor = 'client' AND NOT u.archived ORDER BY e.created_at DESC, e.id DESC LIMIT 60").all()).results || [];
-    return json({ ok: true, items: rows.map(eventOut), now: now() });
+    return json({ ok: true, items: [...rows.map(eventOut),...await productEvents(DB,null,'client')].sort((a,b)=>b.createdAt-a.createdAt).slice(0,60), now: now() });
   }
   if (path === '/admin/orders' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
@@ -735,10 +786,19 @@ export async function handlePortal(request, url, ctx) {
       : (await DB.prepare('SELECT * FROM client_orders WHERE client_id NOT IN (SELECT id FROM users WHERE archived) ORDER BY created_at DESC, id DESC LIMIT 500').all()).results;
     return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)) });
   }
+  if(path==='/admin/client-stores'&&method==='GET'){const clientId=url.searchParams.has('clientId')?Number(url.searchParams.get('clientId')):null;return json({ok:true,stores:await clientStores(DB,clientId)});}
+  const adminStore=/^\/admin\/client-stores(?:\/(\d+))?$/.exec(path);if(adminStore&&method==='POST'){const body=await readBody(request);try{const store=await saveStore(DB,Number(body.clientId),adminStore[1]?Number(adminStore[1]):null,body);return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
+  if(path==='/admin/claims'&&method==='GET')return json({ok:true,claims:await claims(DB)});
+  const claimDecision=/^\/admin\/claims\/(\d+)$/.exec(path);if(claimDecision&&method==='POST'){try{const claim=await decideClaim(DB,Number(claimDecision[1]),await readBody(request));if(claim.reshipmentOrderId){const sync=syncPortalOrderToGoogleSheet(DB,env,claim.reshipmentOrderId).catch(()=>{});if(waitUntil)waitUntil(sync);}return json({ok:true,claim});}catch(e){return json({ok:false,error:e.message},409);}}
+  const trackingUpdate=/^\/admin\/orders\/(\d+)\/tracking-update$/.exec(path);if(trackingUpdate&&method==='POST'){const order=await DB.prepare('UPDATE client_orders SET last_tracking_update_at=?,updated_at=? WHERE id=? RETURNING *').bind(now(),now(),Number(trackingUpdate[1])).first();if(!order)return json({ok:false,error:'Not found'},404);await logEvent(DB,order.id,order.client_id,'tracking_update','admin');return json({ok:true,order:orderOut(order)});}
+  if(path==='/admin/products'&&method==='GET')return json({ok:true,products:await products(DB)});
+  const productQuote=/^\/admin\/products\/(\d+)$/.exec(path);if(productQuote&&method==='POST'){try{const product=await quoteProduct(DB,Number(productQuote[1]),await readBody(request));return product?json({ok:true,product}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
+  if (path==='/admin/invoices' && method==='GET') return json({ok:true,invoices:await invoices(DB,Number(url.searchParams.get('clientId')))});
+  if (path==='/admin/invoices' && method==='POST') {try{return json({ok:true,invoice:await saveInvoice(DB,await readBody(request))});}catch(e){return json({ok:false,error:e.message},400);}}
   if (path === '/admin/payments' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(clientId).all()).results || [];
-    return json({ ok: true, payments: rows.map(r => ({ id: r.id, clientId: r.client_id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), archived: !!r.archived })) });
+    return json({ ok: true, payments: rows.map(r => ({ id: r.id, clientId: r.client_id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), archived: !!r.archived })),adjustments:await balanceAdjustments(DB,clientId) });
   }
   if (path === '/admin/payments' && method === 'POST') {
     const body = await readBody(request);
@@ -775,6 +835,7 @@ export async function handlePortal(request, url, ctx) {
     const row = await DB.prepare('INSERT INTO users (username, password_hash, role, display_name, commission_per_order, active, created_at, trial_start, trial_end, sub_status) VALUES (?,?,?,?,?,TRUE,?,?,?,?) RETURNING id')
       .bind(username, await hashPassword(password), userRole, text(body.name, 120) || username, userRole === 'client' ? cpo : null, now(), trialStart, trialEnd, subStatus).first();
     if (userRole === 'client') {
+      await ensureStores(DB,row.id);
       const sheetSync = syncClientToGoogleSheet(DB, env, row.id).catch(error => console.error('Google Sheets client sync failed', error));
       if (waitUntil) waitUntil(sheetSync); else await sheetSync;
     }

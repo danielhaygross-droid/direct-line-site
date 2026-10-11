@@ -3,8 +3,8 @@
   const { api, money, esc, trackingUrl, logout, renderLogin, quote, destinationPicker, hasRate, categoryOptions, countryName, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, $, $$ } = window.DL;
   const MAX_PHOTOS = 8;
   const UI = window.DLOrderUI, N = window.DLNotify;
-  const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-  const S = { me: null, orders: [], payments: [], transfers: [], notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
+  const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancellation_requested', 'cancelled'];
+  const S = { me: null, orders: [], payments: [], transfers: [], adjustments: [], invoices: [], products: [], claims: [], stores: [], storeId:0, period:'month', from:'', to:'', notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
@@ -33,6 +33,8 @@
   };
   const ic = n => UI.svg(P[n]);
   const ROUTES = {
+    stores: {title:'My Stores',sub:'Manage stores and keep their order history'},
+    products: {title:'My Products',sub:'Submit products for a fixed unit quote'},
     home: { title: 'Home', sub: 'Your orders at a glance' },
     orders: { title: 'Orders', sub: 'Every order you’ve sent us' },
     new: { title: 'Send a new order', sub: 'Fill in 3 short steps and press Send' },
@@ -41,7 +43,7 @@
     terms: { title: 'Terms of Service', sub: 'Service, fulfillment and after-sales policy' },
     payments: { title: 'Payments', sub: 'What you’ve been billed and paid' },
   };
-  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['terms', 'Terms of Service', 'orders']];
+  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['stores','My Stores','orders'], ['products','My Products','orders'], ['terms', 'Terms of Service', 'orders']];
   const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
   const place = d => (d ? countryName(d) : '—');
   const ago = sec => N.timeAgo(sec * 1000);
@@ -149,8 +151,8 @@
     if (S.me?.termsRequired) return false;
     const me = await api('/me');
     if (me.termsRequired) { S.me = { ...S.me, ...me }; await termsScreen(); return false; }
-    const [o, p, n] = await Promise.all([api('/orders'), api('/payments'), api('/notifications').catch(() => null)]);
-    S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments; S.transfers = p.transfers || [];
+    const [o, p, n, products, claims, stores] = await Promise.all([api('/orders'), api('/payments'), api('/notifications').catch(() => null),api('/products'),api('/claims'),api('/client-stores')]);
+    S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments; S.transfers = p.transfers || []; S.adjustments = p.adjustments || []; S.invoices=p.invoices || []; S.products=products.products || [];S.claims=claims.claims || [];S.stores=stores.stores || [];if(first)S.storeId=Number(store.get('dl-client-store-'+S.me.id,0));if(S.storeId&&!S.stores.some(s=>s.id===S.storeId))S.storeId=0;
     if (!first && S.route === 'edit' && !S.orders.some(o => o.id === S.id && editable(o))) { go('orders'); N.popup({ icon: 'alert', title: 'This order is already being processed. Need a change? Send us a message.' }); }
     if (n) { S.notes = n.items; S.seenAt = n.seenAt; }
     const fresh = known ? S.notes.filter(x => !known.has(x.id)) : [];
@@ -160,7 +162,7 @@
       if (S.route !== 'new' && S.route !== 'edit') renderView(true);
       refreshDrawer();
       fresh.slice(0, 3).reverse().map(noteItem).filter(x => x.unread)
-        .forEach(x => N.popup(x, { onClick: () => { markRead(x); openOrder(x.orderId, x.focus); }, duration: 10000 }));
+        .forEach(x => N.popup(x, { onClick: () => { markRead(x); x.product ? go('products') : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); }, duration: 10000 }));
     }
   }
 
@@ -172,7 +174,10 @@
     const o = S.orders.find(x => x.id === e.orderId), ref = e.orderRef || (o ? orderName(o) : '#' + e.orderId);
     const base = { id: 'n' + e.id, orderId: e.orderId, time: e.createdAt * 1000, action: 'View order' };
     let it;
-    if (e.kind === 'status') {
+    if(e.kind==='product')it={...base,product:true,action:'View products',icon:'order',tone:'gold',title:'Product quote updated',text:e.productName};
+    else if (e.kind === 'invoice') it = {...base, invoice:true, action:'View payments', icon:'wallet',tone:'mint',title:'New invoice available',text:e.detail};
+    else if(e.kind==='claim')it={...base,icon:'alert',tone:'gold',title:'Claim updated',text:ref};
+    else if (e.kind === 'status') {
       const words = { processing: 'We’re working on it now.', shipped: 'It’s on its way to your customer.', delivered: 'It was delivered to your customer.', cancelled: 'This order was cancelled.', pending: 'It’s back to pending.' };
       it = { ...base, icon: e.detail === 'cancelled' ? 'alert' : e.detail === 'delivered' ? 'check' : 'status', tone: { processing: 'blue', shipped: 'gold', delivered: 'mint', cancelled: 'red' }[e.detail] || 'orange', title: `${ref} is now ${e.detail}`, text: words[e.detail] || '' };
     } else if (e.kind === 'tracking') it = { ...base, icon: 'status', tone: 'mint', title: 'Tracking number added', text: `${ref} · ${e.detail}` };
@@ -224,7 +229,7 @@
     const bell = $('[data-bell]');
     panel = N.panel({
       anchor: bell,
-      onItem: x => { markRead(x); openOrder(x.orderId, x.focus); },
+      onItem: x => { markRead(x); x.product ? go('products') : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); },
       onMarkAll: async () => { try { const r = await api('/notifications/seen', { method: 'POST' }); S.seenAt = r.seenAt; readIds = new Set(); store.set(readKey(), []); updateChrome(); if (S.route === 'home' || S.route === 'orders') renderView(true); } catch (e) { /* offline */ } },
       onOpen: () => { store.set(badgeKey(), Date.now()); updateChrome(); },
       footer: 'Updates come in by themselves every 20 seconds.',
@@ -252,8 +257,11 @@
 
   // ---------- routing ----------
   function route() {
+    panel?.close();
     if (S.me?.termsRequired) return;
-    const [r, id] = location.hash.replace(/^#\/?/, '').split('/');
+    const [hashPath,query='']=location.hash.replace(/^#\/?/,'').split('?');
+    const [r,id]=hashPath.split('/');
+    const selected=new URLSearchParams(query).get('store');if(selected!==null){S.storeId=Number(selected)||0;if(S.storeId&&!S.stores.some(s=>s.id===S.storeId))S.storeId=0;store.set('dl-client-store-'+S.me.id,S.storeId);}
     if (r === 'import') { location.replace('#/home'); return; }
     S.route = ROUTES[r] ? r : 'home'; S.id = id ? Number(id) : null;
     if (S.route === 'edit' && !S.orders.some(o => o.id === S.id && editable(o))) { location.hash = '#/orders'; return; }
@@ -272,11 +280,14 @@
   const go = path => { location.hash = '#/' + path; };
   function renderView(soft) {
     const view = $('#view');
+    if(soft && S.route==='products' && $('#product-form')?.dataset.dirty)return;
     if (soft && S.route === 'payments' && $('#transfer-form')?.dataset.dirty) return;
-    if (soft && S.route === 'orders' && $('[data-orders-list]')) { renderChips(); renderOrdersList(); return; }
-    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, terms: viewTerms }[S.route]();
+    if(soft && S.route==='stores' && [...document.querySelectorAll('[data-client-store-form]')].some(f=>f.dataset.dirty))return;
+    if (soft && S.route === 'orders' && $('[data-orders-list]')) {const sw=$('[data-store-switcher]');if(sw)sw.outerHTML=storeSwitcher(); renderChips(); renderOrdersList(); return; }
+    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, products:viewProducts, stores:viewStores, terms: viewTerms }[S.route]();
+    if(['home','orders','payments'].includes(S.route))view.insertAdjacentHTML('afterbegin',storeSwitcher());
     if (soft) view.querySelectorAll(':scope > *').forEach(el => { el.style.animation = 'none'; });
-    ({ orders: bindOrders, new: bindForm, edit: bindForm, terms: bindTerms, payments: bindPayments })[S.route]?.();
+    ({ orders: bindOrders, new: bindForm, edit: bindForm, terms: bindTerms, payments: bindPayments, products:bindProducts, stores:bindStores })[S.route]?.();
   }
   const empty = (icon, title, text, extra = '') => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><h3>${esc(title)}</h3><p>${esc(text)}</p>${extra}</div>`;
 
@@ -298,15 +309,17 @@
 
   // ---------- home ----------
   function viewHome() {
-    const me = S.me, s = me.summary, o = S.orders;
+    const me = S.me, range=homeRange(), stats=window.DLClientStoreMath.performance(S.stores,S.orders,S.adjustments,range),selected=S.storeId?stats.rows.find(s=>s.id===S.storeId):stats.totals, s={...me.summary,orders:selected?.orders||0,billed:selected?.billed||0,clientProfit:selected?.profit||0}, o=storeOrders().filter(o=>inRange(o,range));
     const h = new Date().getHours(), hello = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-    const active = o.filter(x => !['delivered', 'cancelled'].includes(x.status)).length;
+    const active=selected?.active||0;
     const credit = s.outstanding < 0;
-    const items = noteItems().slice(0, 6);
-    const newbie = s.orders < 3;
+    const items = noteItems().filter(x=>(!S.storeId||S.orders.some(o=>o.id===x.orderId&&o.storeId===S.storeId)) && x.time/1000>=Date.parse(range.from+'T00:00:00Z')/1000 && x.time/1000<Date.parse(range.to+'T23:59:59Z')/1000).slice(0,6);
+    const newbie = me.summary.orders < 3;
     return `
       <section class="hello"><div><h2>${hello}, <span>${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p>${o.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Send us your first order to get started.'}</p></div>
         <div class="hello-actions"><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a></div></section>
+      ${window.DLClientStoreUI.periodFields(S.period,S.from,S.to)}
+      ${!S.storeId&&S.stores.length>1?`<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>`:''}
       ${subBanner(me.subscription)}
       ${newbie ? `<section class="card card-pad how"><h3>How it works</h3>
         <ol class="how-steps">
@@ -316,46 +329,39 @@
         </ol>
         <div class="how-actions"><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a></div></section>` : ''}
       <section class="stats stats-3">
-        <div class="stat hero"><span class="stat-ic">${ic('wallet')}</span><small>${credit ? 'Credit on your account' : 'You owe Direct Line'}</small><strong>${money(Math.abs(s.outstanding))}</strong><em>${credit ? 'You’ve paid more than you were billed' : s.outstanding > 0 ? 'Billed ' + money(s.billed) + ' · paid ' + money(s.paid) : 'You’re all paid up'}</em></div>
-        <div class="stat" style="--tone:var(--blue)"><span class="stat-ic">${ic('orders')}</span><small>Orders in progress</small><strong>${active}</strong><em>${s.orders} order${s.orders === 1 ? '' : 's'} in total</em></div>
-        <div class="stat" style="--tone:var(--gold)"><span class="stat-ic">${ic('chart')}</span><small>Your profit</small><strong class="${s.clientProfit < 0 ? 'neg' : ''}">${money(s.clientProfit)}</strong><em>What your customers paid, minus our bill</em></div>
+        <div class="stat hero"><span class="stat-ic">${ic('wallet')}</span><small>${S.storeId?'Billed for this store':'Billed in selected period'}</small><strong>${money(s.billed)}</strong><em><span>Overall account balance</span>: ${money(me.summary.outstanding)}</em></div>
+        <div class="stat" style="--tone:var(--blue)"><span class="stat-ic">${ic('orders')}</span><small>Orders in progress</small><strong>${selected?.active||0}</strong><em>${s.orders} order${s.orders === 1 ? '' : 's'} in total</em></div>
+        <div class="stat" style="--tone:var(--gold)"><span class="stat-ic">${ic('chart')}</span><small>Your profit</small><strong class="${s.clientProfit < 0 ? 'neg' : ''}">${money(s.clientProfit)}</strong><em>What your customers paid, minus our bill</em>${selected?.missingSalePrice ? `<small><b data-no-i18n>${selected.missingSalePrice}</b> <span>orders missing sale price</span></small>` : ''}</div>
       </section>
       <div class="home-grid">
         <section class="card span2"><div class="card-head"><h3>Your latest orders</h3><a class="link" href="#/orders">See all ${o.length ? '(' + o.length + ')' : ''}</a></div>
           ${o.length ? `<div class="table-wrap">${ordersTable(o.slice(0, 5), true)}</div>` : empty('orders', 'No orders yet', 'When you get a sale in your store, send it to us here. We take care of the rest.', '<a class="btn btn-primary" href="#/new">Send a new order</a>')}
         </section>
         <section class="card"><div class="card-head"><h3>Latest updates</h3><button type="button" class="link" data-open-bell>See all</button></div>
-          ${items.length ? `<div class="feed">${items.map(x => `<button type="button" class="${x.unread ? 'unread' : ''}" data-open-order="${x.orderId}" data-focus="${x.focus || ''}" data-note="${x.id}"><span class="dln-ic t-${x.tone}">${N.icon(x.icon)}</span><span style="display:grid;min-width:0"><b>${esc(x.title)}</b><span>${esc(x.text)}</span><time>${esc(N.timeAgo(x.time))}</time></span></button>`).join('')}</div>`
+          ${items.length ? `<div class="feed">${items.map(x => `<button type="button" class="${x.unread ? 'unread' : ''}" ${x.product ? 'data-product-note="1"' : x.invoice ? 'data-invoice-note="1"' : `data-open-order="${x.orderId}"`} data-focus="${x.focus || ''}" data-note="${x.id}"><span class="dln-ic t-${x.tone}">${N.icon(x.icon)}</span><span style="display:grid;min-width:0"><b>${esc(x.title)}</b><span>${esc(x.text)}</span><time>${esc(N.timeAgo(x.time))}</time></span></button>`).join('')}</div>`
             : empty('bell', 'No updates yet', 'When we change an order’s status or reply to you, it shows up here.')}
         </section>
-        <section class="card"><div class="card-head"><h3>Profit by month</h3><span class="tag">Last 6 months</span></div>${profitChart()}</section>
+        <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
       </div>`;
   }
 
-  function profitChart() {
-    const months = [], d = new Date(); d.setDate(1);
-    for (let i = 5; i >= 0; i--) { const m = new Date(d.getFullYear(), d.getMonth() - i, 1); months.push({ y: m.getFullYear(), m: m.getMonth(), label: m.toLocaleDateString(undefined, { month: 'short' }), profit: 0, orders: 0 }); }
-    for (const o of S.orders) {
-      if (o.status === 'cancelled') continue;
-      const t = new Date(o.createdAt * 1000), b = months.find(x => x.y === t.getFullYear() && x.m === t.getMonth());
-      if (b) { b.orders++; b.profit += Number(o.profit || 0); }
-    }
-    const max = Math.max(1, ...months.map(x => Math.abs(x.profit)));
-    const total = months.reduce((t, x) => t + x.profit, 0), orders = months.reduce((t, x) => t + x.orders, 0);
-    return `<div class="bars" role="img" aria-label="Profit for the last 6 months">${months.map(x => `<div class="bar-col" title="${esc(x.label)}: ${money(x.profit)} profit, ${x.orders} order${x.orders === 1 ? '' : 's'}">
-        <span class="bar-val">${x.orders ? money(x.profit) : ''}</span><i class="${x.profit < 0 ? 'neg' : ''}${x.orders ? '' : ' none'}" style="height:${x.orders ? Math.max(4, Math.abs(x.profit) / max * 100) : 0}%"></i><small>${esc(x.label)}</small></div>`).join('')}</div>
-      <div class="chart-legend"><span>${orders} order${orders === 1 ? '' : 's'} in 6 months</span><span>Profit: <b class="${total < 0 ? 'neg' : ''}">${money(total)}</b></span></div>`;
+  function profitChart(){
+    const range=homeRange(),[fy,fm]=range.from.split('-').map(Number),[ty,tm]=range.to.split('-').map(Number),span=(ty-fy)*12+tm-fm+1,buckets=[];
+    if(span<=24){for(let n=0;n<span;n++){const date=new Date(fy,fm-1+n,1),y=date.getFullYear(),m=date.getMonth()+1,key=y+'-'+String(m).padStart(2,'0');buckets.push({from:key+'-01',to:key+'-31',label:date.toLocaleDateString(undefined,{month:'short',year:fy!==ty?'2-digit':undefined})});}}
+    else {for(const year of [...new Set(storeOrders().filter(o=>inRange(o,range)).map(o=>window.DLClientStoreMath.dateKey(o).slice(0,4)))].sort())buckets.push({from:year+'-01-01',to:year+'-12-31',label:year});}
+    for(const b of buckets){const r={from:b.from<range.from?range.from:b.from,to:b.to>range.to?range.to:b.to},tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,r).totals;b.profit=tot.profit;b.orders=tot.orders;}
+    const max=Math.max(1,...buckets.map(b=>Math.abs(b.profit))),tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,range).totals;
+    return `<div class="bars" role="img" aria-label="Profit over selected period">${buckets.map(b=>`<div class="bar-col" title="${money(b.profit)}"><span class="bar-val">${b.orders||b.profit?money(b.profit):''}</span><i class="${b.profit<0?'neg':''}" style="height:${b.orders||b.profit?Math.max(4,Math.abs(b.profit)/max*100):0}%"></i><small data-no-i18n>${esc(b.label)}</small></div>`).join('')}</div><div class="chart-legend"><span>Profit</span><b>${money(tot.profit)}</b></div>`;
   }
 
-  // ---------- orders ----------
-  const unreadOrderIds = () => new Set(noteItems().filter(x => x.unread).map(x => x.orderId));
+  const unreadOrderIds=()=>new Set(noteItems().filter(x=>x.unread).map(x=>x.orderId));
   function ordersTable(list, compact) {
     const fresh = unreadOrderIds();
-    return `<table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Destination</th>${compact ? '' : '<th>Tracking</th>'}<th class="num">Customer paid</th>${compact ? '' : '<th class="num">Profit</th>'}<th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
+    return `<table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Store</th><th>Destination</th>${compact ? '' : '<th>Tracking</th>'}<th class="num">Customer paid</th>${compact ? '' : '<th class="num">Profit</th>'}<th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
       ${list.map(o => `<tr class="click${fresh.has(o.id) ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
         <td class="wide"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small></span></div></td>
         <td data-label="Customer"><span data-no-i18n>${esc(o.buyerName) || '—'}</span></td>
-        <td data-label="Destination">${esc(place(o.destination))}</td>
+        <td data-label="Store">${window.DLClientStoreUI.label(S.stores.find(s=>s.id===o.storeId))}</td><td data-label="Destination">${esc(place(o.destination))}</td>
         ${compact ? '' : `<td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>` : '<span class="dim">Not yet</span>'}</td>`}
         <td data-label="Customer paid" class="num"><b>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</b></td>
         ${compact ? '' : `<td data-label="Profit" class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${!o.priced ? '<span class="dim">Pending</span>' : money(o.profit)}</td>`}
@@ -366,14 +372,14 @@
   const viewOrders = () => `<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label></div>
       <section class="card" data-orders-list></section>`;
   function renderChips() {
-    const c = st => S.orders.filter(o => st === 'all' || o.status === st).length;
+    const c = st => storeOrders().filter(o => st === 'all' || o.status === st).length;
     $('[data-chips]').innerHTML = ['all', ...STATUSES].filter(st => st === 'all' || c(st) || st === S.filter)
       .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
   }
   function renderOrdersList() {
     const q = S.q.toLowerCase();
-    const list = S.orders.filter(o => (S.filter === 'all' || o.status === S.filter)
-      && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination)].join(' ').toLowerCase().includes(q)));
+    const list = storeOrders().filter(o => (S.filter === 'all' || o.status === S.filter)
+      && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination),S.stores.find(s=>s.id===o.storeId)?.name].join(' ').toLowerCase().includes(q)));
     $('[data-orders-list]').innerHTML = list.length ? `<div class="table-wrap">${ordersTable(list)}</div>`
       : S.orders.length ? empty('search', 'No orders match', 'Try another search or status.') : empty('orders', 'No orders yet', 'Add your first order and we’ll take it from there.', '<a class="btn btn-primary" href="#/new">New order</a>');
   }
@@ -404,27 +410,30 @@
     if (focus === 'chat') setTimeout(() => { $('[data-d-chat]', d.body)?.scrollIntoView({ block: 'start' }); chatCtl?.focus(); }, 320);
   }
   function fillDrawer(o, keepFoot) {
+    if(keepFoot && $('#claim-form')?.dataset.dirty)return;
     const d = UI.getDrawer();
     d.head.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}</div><p>Added ${esc(fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p>`;
     $('[data-d-info]', d.body).innerHTML = `
       <section class="card card-pad">${UI.tracker(o, drawerEvents)}</section>
+      ${claimCard(S.claims.find(c=>c.orderId===o.id))}
+      <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${invoiceLinks(S.invoices.filter(f=>f.orderIds.includes(o.id)))}</section>
       <section class="card card-pad"><h3 class="sec-title">Tracking</h3>${o.trackingNumber
         ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="tracking" style="font-size:16px;font-weight:600">${esc(o.trackingNumber)}</span><span style="flex:1"></span><button type="button" class="btn btn-sm" data-copy="${esc(o.trackingNumber)}">${ic('copy')}Copy</button><a class="btn btn-sm" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track parcel</a></div>`
         : '<p class="muted" style="margin:0">No tracking number yet. Direct Line will add it after the parcel ships.</p>'}</section>
       <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o)}</section>
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
-        <div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div><div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div>
+        <div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div>${o.deliveredAt ? `<div><dt>Delivered date</dt><dd>${esc(fullDate(o.deliveredAt))}</dd></div>` : ''}${o.cancellationReason ? `<div class="full"><dt>Cancellation reason</dt><dd data-no-i18n>${esc(o.cancellationReason)}</dd></div>` : ''}<div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div>
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
         <div><dt>Customer</dt><dd>${esc(o.buyerName) || '—'}</dd></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
-        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.address1, o.address2, o.city, o.region, o.postalCode, o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd></div>
+        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.buyerName, o.address1, o.address2, o.city, o.region, o.postalCode, o.destination ? place(o.destination) : '', o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd></div>
         ${o.notes ? `<div class="full"><dt>Notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl></section>
       <section class="card card-pad"><h3 class="sec-title">Sale &amp; cost</h3><div class="money-rows">
         <div class="total"><span>Customer paid</span><span>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</span></div>
         <div><span>Total you pay</span><span>${!o.priced ? 'Pending Direct Line' : money(o.price)}</span></div>
         ${!o.priced ? '' : `<div><span>Your estimated profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}"><b>${money(o.profit)}</b></span></div>`}</div></section>`;
     if (keepFoot && d.foot.dataset.confirm) return;
-    d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>This order is already being processed. Need a change? Send us a message.</a>`}<span class="spacer"></span>${o.status === 'pending' ? `<button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Cancel order</button>` : ''}`;
+    d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>This order is already being processed. Need a change? Send us a message.</a>`}<span class="spacer"></span>${['pending','processing','shipped'].includes(o.status) ? `<div><button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Request cancellation</button><p class="muted" style="font-size:12px">Free before the item reaches our warehouse. $4 after it arrives at the warehouse, or if the parcel is intercepted.</p></div>` : ''}${o.status === 'shipped' ? `<button type="button" class="btn btn-primary" data-delivered="${o.id}">Mark as delivered</button>` : ''}${!S.claims.some(c=>c.orderId===o.id) && (o.claimEligibility?.problem || o.claimEligibility?.lost) ? `<button type="button" class="btn" data-report-claim="${o.id}">${o.claimEligibility.lost ? 'Report lost parcel' : 'Report a problem'}</button>` : ''}`;
   }
   function refreshDrawer() {
     const d = UI.getDrawer();
@@ -442,11 +451,13 @@
     return `<form class="form-layout" id="order-form" novalidate>
       <div class="form-main">
         <section class="card card-pad"><h3 class="form-sec"><i>1</i>Store order number</h3><div class="form-grid">
+          <label class="field full" data-f="storeId"${S.stores.filter(s=>!s.archived).length===1&&(!ed||!S.stores.find(s=>s.id===ed.storeId)?.archived)?' hidden':''}><span>Store</span><select name="storeId" required><option value="">Choose a store</option>${S.stores.filter(s=>!s.archived||s.id===ed?.storeId).map(st=>`<option value="${st.id}"${st.id===(ed?.storeId||(S.stores.some(s=>s.id===S.storeId&&!s.archived)?S.storeId:0)||(S.stores.filter(s=>!s.archived).length===1?S.stores.find(s=>!s.archived).id:0))?' selected':''}>${esc(st.name)}</option>`).join('')}</select></label>
           <label class="field" data-f="orderRef"><span>Order number</span><input name="orderRef" required maxlength="120" inputmode="text" placeholder="e.g. 3412345678" value="${esc(ed?.orderRef)}">
             <em class="help">The order number from your store’s order page.</em></label>
           <label class="field" data-f="orderDate"><span>Order date</span><input name="orderDate" required type="date" value="${esc(ed?.orderDate || today)}"></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>2</i>What did the customer buy?</h3><div class="form-grid">
+          ${!ed ? `<label class="field full"><span>Choose from My Products</span><select name="productId"><option value="">Free-form order</option>${S.products.filter(p=>p.status==='approved').map(p=>`<option value="${p.id}">${esc(p.name)} · ${money(p.unitPrice)} / unit</option>`).join('')}</select><small data-product-price></small></label>` : ed.quotedUnitPrice!=null ? `<p class="note full"><span>Fixed unit quote</span> <b>${money(ed.quotedUnitPrice)}</b></p>` : ''}
           <div class="field full" data-f="links"><span>Product link <small>Copy from your store</small></span><div class="link-list" data-links></div>
             <button type="button" class="btn btn-sm link-add" data-link-add>+ Add another product</button></div>
           <div class="field full photo-field" data-f="photos"><span>Photo or screenshot of the product <small data-pick-count></small></span>
@@ -457,7 +468,12 @@
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>3</i>Where do we send it?</h3><div class="form-grid">
           <label class="field full" data-f="buyerName"><span>Customer name</span><input name="buyerName" required maxlength="160" autocomplete="off" value="${esc(ed?.buyerName)}"></label>
-          <label class="field full" data-f="address1"><span>Full address and phone <small>Copy from your store</small></span><textarea name="address1" required maxlength="1000" rows="4" placeholder="Street and number&#10;City, State, Postal code&#10;Country&#10;Phone (if there is one)">${esc(ed ? [ed.address1, ed.address2, ed.city, ed.region, ed.postalCode, ed.buyerPhone].filter(Boolean).join('\n') : '')}</textarea></label>
+          <label class="field full" data-f="address1"><span>Street address line 1</span><textarea name="address1" required maxlength="1000" rows="2" autocomplete="off">${esc(ed?.address1)}</textarea></label>
+          <label class="field full" data-f="address2"><span>Street address line 2 <small>optional</small></span><input name="address2" maxlength="200" autocomplete="off" value="${esc(ed?.address2)}"></label>
+          <label class="field" data-f="city"><span>City</span><input name="city" required maxlength="100" autocomplete="off" value="${esc(ed?.city)}"></label>
+          <label class="field" data-f="region"><span>State / Province / Region <small>optional</small></span><input name="region" maxlength="100" autocomplete="off" value="${esc(ed?.region)}"></label>
+          <label class="field" data-f="postalCode"><span>ZIP / Postal code</span><input name="postalCode" required maxlength="40" autocomplete="off" value="${esc(ed?.postalCode)}"></label>
+          <label class="field" data-f="buyerPhone"><span>Phone <small>Recommended, couriers often need it</small></span><input name="buyerPhone" maxlength="80" autocomplete="off" value="${esc(ed?.buyerPhone)}"></label>
           <label class="field full" data-f="destination"><span>Country <small data-country-auto></small></span><select name="destination" required aria-describedby="country-error" autocomplete="off"></select><small id="country-error" class="err-text" role="alert" hidden>Please choose a country.</small></label>
           <label class="field full" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden" autocomplete="off"></label>
         </div></section>
@@ -487,10 +503,11 @@
     const locked = ed && ['shipped', 'delivered'].includes(ed.status);
     let picks = (ed?.photos || []).map(p => ({ key: 'p' + p.id, id: p.id }));
     const removed = [];
+    let selectedProduct=null;
     let pickSeq = 0;
     const zone = $('[data-picks]', form);
     function renderPicks() {
-      zone.innerHTML = picks.map(p => `<figure class="pm-photo"><img src="${p.id ? photoUrl(ed.id, p.id, true) : p.thumb}" alt="Product photo">${p.id && locked ? '' : `<button type="button" class="pm-remove" data-pick-remove="${p.key}" aria-label="Remove photo">×</button>`}</figure>`).join('')
+      zone.innerHTML = picks.map(p => `<figure class="pm-photo"><img src="${p.id ? photoUrl(ed.id, p.id, true) : p.thumb}" alt="Product photo">${p.productFrom || p.id && locked ? '' : `<button type="button" class="pm-remove" data-pick-remove="${p.key}" aria-label="Remove photo">×</button>`}</figure>`).join('')
         + (picks.length < MAX_PHOTOS ? `<label class="pm-add${picks.length ? '' : ' big'}"><input type="file" accept="image/*" multiple hidden data-pick-input><span>+</span><small>${picks.length ? 'Add more' : 'Add photo or screenshot'}</small></label>` : '');
       $('[data-pick-count]', form).textContent = picks.length ? `${picks.length} of ${MAX_PHOTOS}` : (ed?.source === 'etsy-csv' ? 'optional' : 'required');
       if (picks.length) form.querySelector('[data-f="photos"]')?.classList.remove('bad');
@@ -534,25 +551,14 @@
       if (e.target.closest('[data-link-add]')) { linkBox.insertAdjacentHTML('beforeend', linkRow()); syncLinks(); $$('[data-link]', linkBox).pop().focus(); }
       const rm = e.target.closest('[data-link-remove]'); if (rm) { rm.closest('.link-row').remove(); syncLinks(); }
     });
-    // ----- country: picked automatically from the last lines of the pasted address -----
-    const ALIAS = { usa: 'US', 'u.s.a.': 'US', 'united states of america': 'US', america: 'US', uk: 'UK', 'great britain': 'UK', england: 'UK', scotland: 'UK', wales: 'UK', 'northern ireland': 'UK', deutschland: 'DE', 'the netherlands': 'NL', holland: 'NL', schweiz: 'CH', suisse: 'CH', italia: 'IT', norge: 'NO', 'österreich': 'AT', danmark: 'DK', 'españa': 'ES', polska: 'PL', 'belgië': 'BE', belgique: 'BE', 'czech republic': 'CZ', 'česko': 'CZ', 'slovensko': 'SK' };
-    const countryFrom = text => {
-      const lines = String(text || '').split(/\n|,/).map(x => x.trim().toLowerCase().replace(/[.]$/, '')).filter(Boolean).reverse().slice(0, 3);
-      for (const l of lines) {
-        if (ALIAS[l]) return ALIAS[l];
-        const hit = COUNTRIES.find(([c, n]) => n.toLowerCase() === l || c.toLowerCase() === l);
-        if (hit) return hit[0];
-      }
-      return '';
-    };
-    let autoPicked = false;
-    const autoCountry = () => {
-      if (dest.get() && !autoPicked) return;
-      const c = countryFrom(form.address1.value);
-      if (c && c !== dest.get()) { dest.set(c); autoPicked = true; $('[data-country-auto]', form).textContent = 'picked from the address, change it if wrong'; }
-    };
-    form.address1.addEventListener('input', autoCountry);
-    form.destination.addEventListener('change', () => { autoPicked = false; $('[data-country-auto]', form).textContent = ''; });
+    form.productId?.addEventListener('change',()=>{
+      selectedProduct=S.products.find(p=>p.id===Number(form.productId.value))||null;
+      linkBox.innerHTML=linkRow(selectedProduct?.link||'');syncLinks();
+      picks=selectedProduct ? selectedProduct.photoIds.map(id=>({key:'product-'+id,productFrom:true,thumb:'/api/portal/products/'+selectedProduct.id+'/photos/'+id})) : [];
+      if(selectedProduct)form.variant.value=selectedProduct.variant;
+      $('[data-product-price]',form).innerHTML=selectedProduct ? `<span>Fixed unit quote</span> <b>${money(selectedProduct.unitPrice)}</b>` : '';
+      renderPicks();updateSum();
+    });
     // ----- check everything at once, mark what's missing -----
     const mark = (key, bad) => { const f = form.querySelector(`[data-f="${key}"]`); if (f) f.classList.toggle('bad', !!bad); };
     form.addEventListener('input', e => { const f = e.target.closest('[data-f]'); if (f) f.classList.remove('bad'); });
@@ -561,7 +567,7 @@
       const where = [form.buyerName.value.trim(), dest.label()].filter(Boolean).join(' · ');
       const row = (label, value) => `<div><span>${label}</span><b>${value ? esc(value) : '<em class="miss">not filled in yet</em>'}</b></div>`;
       $('[data-sum]').innerHTML = row('Order number', form.orderRef.value.trim()) + row('Product', links ? `${links} link${links > 1 ? 's' : ''} · ${qty} item${qty > 1 ? 's' : ''}` : '')
-        + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
+        + ((selectedProduct?.unitPrice ?? ed?.quotedUnitPrice)!=null ? row('Order total',money((selectedProduct?.unitPrice ?? ed.quotedUnitPrice)*qty)) : '') + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
     }
     form.addEventListener('input', updateSum);
     form.addEventListener('change', updateSum);
@@ -571,13 +577,16 @@
       const badLink = linkInputs.find(i => i.value.trim() && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(i.value.trim()));
       const missing = [];
       const check = (key, ok, label) => { mark(key, !ok); if (!ok) missing.push([key, label]); };
+      check('storeId',form.storeId.value,'store');
       check('orderRef', form.orderRef.value.trim(), 'order number');
       check('orderDate', form.orderDate.value, 'order date');
       check('links', links.length && !badLink, badLink ? 'a full product link (starting with https://)' : 'product link');
       check('photos', picks.length || ed?.source === 'etsy-csv', 'photo or screenshot');
       const q = parseInt(form.quantity.value, 10); check('quantity', q >= 1 && q <= 999, 'how many');
       check('buyerName', form.buyerName.value.trim(), 'customer name');
-      check('address1', form.address1.value.trim(), 'address');
+      check('address1', form.address1.value.trim(), 'street address');
+      check('city', form.city.value.trim(), 'city');
+      check('postalCode', form.postalCode.value.trim(), 'ZIP / postal code');
       check('destination', dest.get(), 'country');
       $('#country-error').hidden = !!dest.get();
       form.classList.toggle('tried', missing.length > 0);
@@ -589,20 +598,21 @@
         return;
       }
       const body = {
-        orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value,
+        storeId:Number(form.storeId.value),orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value,
         sku: form.sku.value, quantity: form.quantity.value, variant: form.variant.value, etsyUrl: links.join('\n'),
-        buyerName: form.buyerName.value, buyerPhone: '', address1: form.address1.value, address2: '',
-        city: '', region: '', postalCode: '', destination: dest.get(), notes: form.notes.value,
+        buyerName: form.buyerName.value, buyerPhone: form.buyerPhone.value, address1: form.address1.value, address2: form.address2.value,
+        city: form.city.value, region: form.region.value, postalCode: form.postalCode.value, destination: dest.get(), notes: form.notes.value,
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');
-      const fresh = picks.filter(p => !p.id), photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
+      if(selectedProduct){body.productId=selectedProduct.id;body.quotedUnitPrice=selectedProduct.unitPrice;}
+      const fresh = picks.filter(p => !p.id && !p.productFrom), photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
       let r;
       try {
         r = ed ? await api('/orders/' + ed.id, { method: 'PUT', body })
           : await api('/orders', { method: 'POST', body: { ...body, photos: fresh.slice(0, 1).map(photoBody) } });
       } catch (ex) { setMsg(ex.message, 'err'); btn.disabled = false; return; }
       // The order is saved. Upload the remaining photos one by one (keeps each request small), then remove the ones taken out.
-      const orderId = r.order.id, queue = ed ? fresh : fresh.slice(1);
+      const orderId = r.order.id, queue = ed || selectedProduct ? fresh : fresh.slice(1);
       let failed = 0;
       for (let i = 0; i < queue.length; i++) {
         setMsg(`Uploading photos… ${i + 1} of ${queue.length}`);
@@ -653,6 +663,8 @@
     return `<section class="card card-pad"><h3 class="sec-title">Upload transfer confirmation</h3><p class="note">Your balance changes only after the team records receipt.</p><form id="transfer-form" class="form-grid" novalidate><label class="field"><span>Amount (USD)</span><input name="amount" type="number" min="0.01" max="9999999" step="0.01" required></label><label class="field"><span>Transfer date</span><input name="date" type="date" value="${today}" required></label><label class="field full"><span>Confirmation file</span><input name="file" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" required><small>PDF, JPG, PNG or WebP. Maximum 2 MB.</small></label><div class="field full"><button type="submit" class="btn btn-primary">Send confirmation</button></div><p class="form-msg full" data-transfer-msg role="status"></p></form>${S.transfers.length ? `<h3 class="sec-title">Your transfer confirmations</h3>${confirmationCards()}` : ''}</section>`;
   }
   function bindPayments() {
+    const monthly=$('#invoice-month-form');if(monthly)monthly.addEventListener('submit',async e=>{e.preventDefault();const msg=$('[data-month-msg]',monthly),b=$('[type=submit]',monthly);msg.textContent='';b.disabled=true;try{const r=await fetch('/api/portal/invoices/month?month='+encodeURIComponent(monthly.month.value),{credentials:'same-origin'});if(!r.ok)throw new Error(r.status===404?'No invoices for this month.':'Could not download invoices.');const url=URL.createObjectURL(await r.blob()),a=document.createElement('a');a.href=url;a.download='Direct-Line-invoices-'+monthly.month.value+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(ex){msg.textContent=ex.message;}finally{b.disabled=false;}});
+
     const f=$('#transfer-form'); if (!f) return;
     f.addEventListener('input',()=>{f.dataset.dirty='1';});
     f.addEventListener('submit',async e=>{
@@ -666,18 +678,40 @@
       } catch(ex) {m.textContent=ex.message;b.disabled=false;}
     });
   }
+  const homeRange=()=>window.DLClientStoreMath.periodRange(S.period,S.from,S.to)||window.DLClientStoreMath.periodRange('month');
+  const inRange=(o,r)=>{const d=window.DLClientStoreMath.dateKey(o);return d>=r.from&&d<=r.to;};
+  const storeOrders=()=>S.orders.filter(o=>!S.storeId||o.storeId===S.storeId);
+  function storeSwitcher(){return `<div data-store-switcher>${S.stores.length>1?`<div class="chips store-switcher"><button class="chip${!S.storeId?' on':''}" type="button" data-select-store="0">All stores</button>${S.stores.map(s=>`<button class="chip${s.id===S.storeId?' on':''}" type="button" data-select-store="${s.id}">${window.DLClientStoreUI.label(s)}</button>`).join('')}<a class="chip" href="#/stores">+ Add store</a></div>`:''}</div>`;}
+  function selectStore(id){S.storeId=Number(id)||0;store.set('dl-client-store-'+S.me.id,S.storeId);location.hash='#/'+S.route+(S.id?'/'+S.id:'')+'?store='+S.storeId;}
+  function viewStores(){return `${S.me.preview?'':`<section class="card card-pad">${window.DLClientStoreUI.form(null,S.me.id)}</section>`}${S.stores.map(s=>`<section class="card card-pad">${window.DLClientStoreUI.label(s)}${S.me.preview?'':window.DLClientStoreUI.form(s,S.me.id)}</section>`).join('')}`;}
+  function bindStores(){for(const f of $$('[data-client-store-form]')){f.addEventListener('input',e=>{f.dataset.dirty='1';if(e.target.name==='color')f.dataset.colourEdited='1';});f.addEventListener('submit',async e=>{e.preventDefault();const b=$('[type=submit]',f),m=$('[data-store-msg]',f);b.disabled=true;try{await api('/client-stores'+(f.dataset.clientStoreForm?'/'+f.dataset.clientStoreForm:''),{method:'POST',body:{name:f.storeName.value,platform:f.platform.value,link:f.link.value,color:f.dataset.clientStoreForm||f.dataset.colourEdited?f.color.value:undefined,archived:!!f.archived?.checked}});for(const form of $$('[data-client-store-form]'))form.dataset.dirty='';await refresh();N.popup({icon:'check',title:'Store saved.'});}catch(ex){m.textContent=ex.message;b.disabled=false;}});}}
+  const claimStatus=s=>({open:'Open',approved:'Approved',rejected:'Rejected',resolved:'Resolved'}[s]||s);
+  function claimCard(c){return c?`<section class="card card-pad"><h3 class="sec-title">Claim</h3><p><span>${claimStatus(c.status)}</span> · <span>${c.resolution==='refund'?'Refund':'Reshipment'}</span></p><p data-no-i18n>${esc(c.description)}</p>${c.reply?`<p><span>Admin reply</span>: <span data-no-i18n>${esc(c.reply)}</span></p>`:''}${c.reshipmentOrderId?`<button class="btn btn-sm" type="button" data-open-order="${c.reshipmentOrderId}">Open reshipment</button>`:''}${c.fileIds.map(id=>`<p><a href="/api/portal/files/${id}" target="_blank" rel="noopener">Open evidence</a></p>`).join('')}</section>`:'';}
+  function showClaimForm(o){
+    const lost=o.claimEligibility.lost,refund=lost||o.claimEligibility.refund;
+    $('#claim-form')?.remove();const info=$('[data-d-info]',UI.getDrawer().body);info.insertAdjacentHTML('beforeend',`<section class="card card-pad"><form id="claim-form" class="form-grid" data-order-id="${o.id}"><h3 class="full">${lost?'Report lost parcel':'Report a problem'}</h3>${lost?'':`<p class="note full">${refund?`<b data-no-i18n>${o.claimEligibility.daysLeft}</b> <span>days left to choose a full refund or a reshipment</span>`:'Refunds are available within 7 days of delivery.'}</p><label class="field full"><span>Problem type</span><select name="problem"><option value="damaged">Damaged</option><option value="defective">Defective</option><option value="missing_parts">Missing parts</option><option value="wrong_item">Wrong item</option></select></label>`}<label class="field full"><span>Description</span><textarea name="description" maxlength="2000"${lost?'':' required'}></textarea></label><label class="field full"><span>Resolution</span><select name="resolution">${refund?'<option value="refund">Refund</option>':''}<option value="reshipment">Reshipment</option></select></label>${lost?'':`<label class="field full"><span>Photo or video of the problem</span><input name="proof" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required><small>Maximum 2 MB per file; 3 MB total.</small></label><label class="field full"><span>Photo of the shipping label</span><input name="label" type="file" accept="image/jpeg,image/png,image/webp" required></label>`}<button type="submit" class="btn btn-primary">Submit claim</button><p class="form-msg full" data-claim-msg></p></form></section>`);
+    const f=$('#claim-form');f.dataset.dirty='1';f.scrollIntoView({block:'start',behavior:'smooth'});f.addEventListener('submit',async e=>{e.preventDefault();const b=$('[type=submit]',f),m=$('[data-claim-msg]',f);b.disabled=true;try{const read=async input=>{const file=input.files[0];if(!file)throw new Error('Add the required evidence files.');if(file.size>2*1024*1024)throw new Error('The file is too large. Maximum 2 MB.');const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});return{filename:file.name,data};};const body={problem:lost?'lost':f.problem.value,description:f.description.value,resolution:f.resolution.value};if(!lost){body.proof=await read(f.proof);body.label=await read(f.label);}await api('/orders/'+o.id+'/claims',{method:'POST',body});f.dataset.dirty='';await refresh();N.popup({icon:'check',title:'Claim submitted.'});}catch(ex){m.textContent=ex.message;b.disabled=false;}});
+  }
+  const productStatus=s=>({awaiting_quote:'Awaiting quote',approved:'Approved',not_available:'Not available'}[s]||s);
+  function viewProducts(){return `${S.me.preview?'':`<section class="card card-pad"><h3 class="sec-title">Add product</h3><form id="product-form" class="form-grid"><label class="field"><span>Product name <small>optional</small></span><input name="name" maxlength="160"></label><label class="field"><span>Product link</span><input name="link" type="url" maxlength="1000" required></label><label class="field"><span>Variant notes</span><input name="variant" maxlength="500"></label><label class="field"><span>Expected monthly quantity <small>optional</small></span><input name="expectedQuantity" type="number" min="1" step="1"></label><label class="field full"><span>Product photos <small>one to three</small></span><input name="photos" type="file" accept="image/*" multiple required></label><button type="submit" class="btn btn-primary">Send for quote</button><p class="form-msg" data-product-msg></p></form></section>`}<section class="card card-pad"><h3 class="sec-title">My Products</h3>${S.products.length?S.products.map(p=>`<article class="confirmation-row"><div>${p.photoIds[0]?`<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="72" height="72" style="object-fit:contain" alt="Product photo">`:''}<b data-no-i18n>${esc(p.name)}</b><p><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a></p><p data-no-i18n>${esc(p.variant)}</p>${p.note?`<p data-no-i18n>${esc(p.note)}</p>`:''}</div><div><span>${productStatus(p.status)}</span>${p.unitPrice!=null?`<p><span>Fixed unit quote</span> <b>${money(p.unitPrice)}</b></p>`:''}</div></article>`).join(''):'<p class="muted">No products yet.</p>'}</section>`;}
+  function bindProducts(){const f=$('#product-form');if(!f)return;f.addEventListener('input',()=>{f.dataset.dirty='1';});f.addEventListener('change',()=>{f.dataset.dirty='1';});f.addEventListener('submit',async e=>{e.preventDefault();const b=$('[type=submit]',f),m=$('[data-product-msg]',f);b.disabled=true;m.textContent='';try{const files=[...f.photos.files];if(!files.length||files.length>3)throw new Error('Add one to three product photos.');const photos=[];for(const file of files){const p=await shrinkImage(file);photos.push({filename:file.name,data:p.data});}await api('/products',{method:'POST',body:{name:f.name.value,link:f.link.value,variant:f.variant.value,expectedQuantity:f.expectedQuantity.value,photos}});f.dataset.dirty='';await refresh();N.popup({icon:'check',title:'Product sent for quote.'});}catch(ex){m.textContent=ex.message;b.disabled=false;}});}
+  function invoiceLinks(files) {
+    return files.length ? files.map(f=>`<p><a class="btn btn-sm" href="/api/portal/files/${f.id}" target="_blank" rel="noopener"><span>Download invoice</span> <small data-no-i18n>${esc(f.filename)}</small></a></p>`).join('') : '<span class="muted">Invoice pending</span>';
+  }
   function viewPayments() {
-    const s = S.me.summary, credit = s.outstanding < 0;
+    const s = S.me.summary, credit = s.outstanding < 0, adjustments=S.adjustments.filter(a=>!S.storeId||S.orders.some(o=>o.id===a.orderId&&o.storeId===S.storeId));
     return `<section class="stats">
         <div class="stat"><small>Total billed</small><strong>${money(s.billed)}</strong><em>${s.orders} order${s.orders === 1 ? '' : 's'}, cancelled ones not counted</em></div>
         <div class="stat"><small>Paid</small><strong class="pos">${money(s.paid)}</strong><em>${S.payments.length} payment${S.payments.length === 1 ? '' : 's'}</em></div>
         <div class="stat hero"><small>${credit ? 'Credit on your account' : 'Balance due'}</small><strong>${money(Math.abs(s.outstanding))}</strong><em>${credit ? 'It counts toward your next orders' : s.outstanding > 0 ? 'Please send this to Direct Line' : 'You’re all paid up'}</em></div>
       </section>
+      ${S.storeId ? `<section class="card card-pad"><span>Billed for this store</span>: <b>${money(window.DLClientStoreMath.performance(S.stores,S.orders,S.adjustments).rows.find(s=>s.id===S.storeId)?.billed||0)}</b><p class="muted">Payments cover all stores in this account.</p></section>` : ''}
+      ${adjustments.length ? `<section class="card card-pad"><h3 class="sec-title">Balance adjustments</h3>${adjustments.map(a=>`<div class="confirmation-row"><a href="#/orders" data-open-order="${a.orderId}">${esc(a.orderRef || '#'+a.orderId)}</a><span>${esc(a.note)}</span><b>${money(a.amount)}</b></div>`).join('')}</section>` : ''}
       ${howToPay()}
       ${transferForm()}
-      <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3></div>
-        ${S.payments.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Date</th><th>Method</th><th>Note</th><th class="num">Amount</th></tr></thead><tbody>
-          ${S.payments.map(p => `<tr><td data-label="Date">${esc(fullDate(p.paidAt))}</td><td data-label="Method">${esc(p.method) || '—'}</td><td data-label="Note" class="wide">${esc(p.note) || '<span class="dim">—</span>'}</td><td data-label="Amount" class="num"><b class="pos">${money(p.amount)}</b></td></tr>`).join('')}
+      <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3><form id="invoice-month-form"><label class="field"><span>Invoice month</span><input type="month" name="month" value="${new Date().toISOString().slice(0,7)}" required></label><button class="btn btn-sm" type="submit">Download all invoices for month</button><p data-month-msg class="form-msg"></p></form></div>
+        ${S.payments.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Date</th><th>Method</th><th>Note</th><th>Invoice</th><th class="num">Amount</th></tr></thead><tbody>
+          ${S.payments.map(p => `<tr><td data-label="Date">${esc(fullDate(p.paidAt))}</td><td data-label="Method">${esc(p.method) || '—'}</td><td data-label="Note" class="wide">${esc(p.note) || '<span class="dim">—</span>'}</td><td data-label="Invoice">${invoiceLinks(S.invoices.filter(f=>f.paymentId===p.id))}</td><td data-label="Amount" class="num"><b class="pos">${money(p.amount)}</b></td></tr>`).join('')}
         </tbody></table></div>` : empty('wallet', 'No payments yet', 'When we receive a payment from you, we record it here.')}
       </section>
       <p class="note">Your bill is the total of each order. The Direct Line team records payments when they arrive.</p>`;
@@ -700,9 +734,12 @@
       return;
     }
     if (t.closest('[data-open-bell]')) { e.stopPropagation(); panel.open(); return; }
+    const st=t.closest('[data-select-store]');if(st){selectStore(st.dataset.selectStore);return;}
     const f = t.closest('[data-filter]'); if (f) { S.filter = f.dataset.filter; renderChips(); renderOrdersList(); return; }
     const gf = t.closest('[data-go-filter]'); if (gf) { S.filter = gf.dataset.goFilter; S.q = ''; go('orders'); return; }
     if (t.closest('[data-ask-go]')) { openOrder($('[data-ask]').value, 'chat'); return; }
+    const productNote=t.closest('[data-product-note]');if(productNote){const note=noteItems().find(x=>x.id===productNote.dataset.note);if(note)markRead(note);go('products');return;}
+    const invoiceNote=t.closest('[data-invoice-note]');if(invoiceNote){const note=noteItems().find(x=>x.id===invoiceNote.dataset.note);if(note)markRead(note);go('payments');return;}
     const oo = t.closest('[data-open-order]');
     if (oo && !t.closest('a')) {
       const note = oo.dataset.note && noteItems().find(x => x.id === oo.dataset.note);
@@ -710,6 +747,8 @@
       openOrder(oo.dataset.openOrder, oo.dataset.focus);
     }
   }
+  document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
+  document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
   function onInput(e) { if (e.target.matches('[data-q]')) { S.q = e.target.value; renderOrdersList(); } }
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches?.('tr[data-open-order]')) openOrder(e.target.dataset.openOrder); });
   // Paste a screenshot (Ctrl+V) anywhere on the order form to attach it. Normal text pasting into fields is left alone.
@@ -728,10 +767,13 @@
     if (t.closest('[data-close-drawer]')) { UI.getDrawer().close(); return; }
     const cp = t.closest('[data-copy]');
     if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copy); cp.innerHTML = ic('check') + 'Copied'; } catch (ex) { /* no clipboard */ } return; }
+    const report=t.closest('[data-report-claim]');if(report){const o=S.orders.find(o=>o.id===Number(report.dataset.reportClaim));if(o)showClaimForm(o);return;}
+    const delivered=t.closest('[data-delivered]');
+    if(delivered){delivered.disabled=true;try{await api('/orders/'+delivered.dataset.delivered+'/mark-delivered',{method:'POST',body:{}});await refresh();N.popup({icon:'check',title:'Marked as delivered'});}catch(ex){delivered.disabled=false;N.popup({icon:'alert',title:ex.message});}return;}
     const c = t.closest('[data-cancel-order]');
     if (c) {
       const foot = UI.getDrawer().foot; foot.dataset.confirm = '1';
-      foot.innerHTML = `<span style="font-weight:600">Cancel this order?</span><span class="spacer"></span><button type="button" class="btn" data-keep>Keep it</button><button type="button" class="btn btn-danger" data-really-cancel="${c.dataset.cancelOrder}">Yes, cancel it</button>`;
+      foot.innerHTML = `<span style="font-weight:600">Request cancellation?</span><label class="field"><span>Reason <small>optional</small></span><input name="cancellationReason" maxlength="1000"></label><span class="spacer"></span><button type="button" class="btn" data-keep>Keep it</button><button type="button" class="btn btn-danger" data-really-cancel="${c.dataset.cancelOrder}">Send cancellation request</button>`;
       return;
     }
     if (t.closest('[data-keep]')) { const d = UI.getDrawer(); d.foot.dataset.confirm = ''; fillDrawer(S.orders.find(x => x.id === d.key)); return; }
@@ -739,11 +781,11 @@
     if (rc) {
       rc.disabled = true;
       try {
-        await api('/orders/' + rc.dataset.reallyCancel, { method: 'PUT', body: { status: 'cancelled' } });
+        await api('/orders/' + rc.dataset.reallyCancel + '/request-cancellation', { method: 'POST', body: { reason: $('[name=cancellationReason]',UI.getDrawer().foot).value } });
         UI.getDrawer().foot.dataset.confirm = '';
         await refresh();
-        N.popup({ icon: 'alert', tone: 'red', title: 'Order cancelled' }, { duration: 5000 });
-      } catch (ex) { rc.disabled = false; N.popup({ icon: 'alert', tone: 'red', title: 'Couldn’t cancel', text: ex.message }); }
+        N.popup({ icon: 'alert', tone: 'red', title: 'Cancellation requested' }, { duration: 5000 });
+      } catch (ex) { rc.disabled = false; N.popup({ icon: 'alert', tone: 'red', title: 'Couldn’t request cancellation', text: ex.message }); }
     }
   });
 
