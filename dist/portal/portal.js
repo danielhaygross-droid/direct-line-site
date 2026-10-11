@@ -607,7 +607,7 @@
           : await api('/orders', { method: 'POST', body: { ...body, photos: fresh.slice(0, 1).map(photoBody) } });
       } catch (ex) { setMsg(ex.message, 'err'); btn.disabled = false; return; }
       // The order is saved. Upload the remaining photos one by one (keeps each request small), then remove the ones taken out.
-      const orderId = r.order.id, queue = ed ? fresh : fresh.slice(1);
+      const orderId = r.order.id, queue = ed || selectedProduct ? fresh : fresh.slice(1);
       let failed = 0;
       for (let i = 0; i < queue.length; i++) {
         setMsg(`Uploading photos… ${i + 1} of ${queue.length}`);
