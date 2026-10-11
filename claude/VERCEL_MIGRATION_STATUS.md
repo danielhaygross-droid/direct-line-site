@@ -1,3 +1,11 @@
+## 12 October 2026 - Restore simple customer address at Erwin's request (awaiting merge)
+
+Erwin explicitly chose the earlier customer name + full address/phone + required country form over Shahar item #10's separate street/city/ZIP fields. Restored it in client new/edit and admin order forms. Item #11 required country and admin Copy full address remain. This is an intentional scope decision, not an unfinished implementation. Prior illustrated report item #10 becomes outdated after this merges; update it to show the simpler form and explain the decision once deployment is verified.
+
+Existing structured addresses are combined for display; saving without changing the address preserves all original structured values. Editing the address saves the complete visible block and clears the separate fields to avoid duplication. No migration or historical data deletion. Combined addresses allow 2000 characters. Validation requires recipient, full address and country; no separate city/ZIP input.
+
+56 tests pass, build/diff/syntax checks pass. Local EN/HE desktop/phone checks cover editing, required address, structured preservation, combined save/reopen; admin edit and actual clipboard Copy full address; API creation without city/ZIP. No live records changed. Versions portal33, admin35, order-ui3, i18n17.
+
 ## 12 October 2026 - My Stores save fixes (awaiting merge)
 
 User reported Save store did nothing in TEST1. Exact entered values were not supplied. Reproduced two local failures: a bare store domain was blocked by native URL validation before submit; saving one store discarded unsaved edits in another. The shared form now accepts pasted domains and server validation adds https://, with unsafe schemes/credentials still rejected. Required-field messages are visible. Client save renders directly from the successful response, independently of unrelated refresh requests, with persistent success text and preservation of other form drafts.

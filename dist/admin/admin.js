@@ -520,12 +520,7 @@
       </div></section>
       <section class="af-sec"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
       <label class="field full"><span>Customer / recipient name</span><input name="buyerName" maxlength="160" value="${esc(order?.buyerName)}"></label>
-      <label class="field full"><span>Street address line 1</span><textarea name="address1" maxlength="1000" rows="2">${esc(order?.address1)}</textarea></label>
-      <label class="field full"><span>Street address line 2 <small>optional</small></span><input name="address2" maxlength="200" value="${esc(order?.address2)}"></label>
-      <label class="field"><span>City</span><input name="city" maxlength="100" value="${esc(order?.city)}"></label>
-      <label class="field"><span>State / Province / Region <small>optional</small></span><input name="region" maxlength="100" value="${esc(order?.region)}"></label>
-      <label class="field"><span>ZIP / Postal code</span><input name="postalCode" maxlength="40" value="${esc(order?.postalCode)}"></label>
-      <label class="field"><span>Phone <small>Recommended, couriers often need it</small></span><input name="buyerPhone" maxlength="80" value="${esc(order?.buyerPhone)}"></label>
+      <label class="field full"><span>Full address and phone <small>street, city, state, postal code, phone</small></span><textarea name="address1" maxlength="2000" rows="3" placeholder="Paste the full delivery address and phone number here">${esc(UI.addressText(order))}</textarea></label>
       <label class="field"><span>Destination</span><select name="destination"></select></label>
       <label class="field" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden"></label>
       </div></section>
@@ -599,7 +594,7 @@
       e.preventDefault();
       if(!f.storeId.value)return err('Choose a store.');
       if (!order && !f.clientId.value) return err('Please choose the client.');
-      if (!f.buyerName.value.trim() || !f.address1.value.trim() || !f.city.value.trim() || !f.postalCode.value.trim()) return err('Please fill in the name, street address, city and ZIP / postal code.');
+      if (!f.buyerName.value.trim() || !f.address1.value.trim()) return err('Please fill in the customer name and full address.');
       if (!dest.get()) return err('Please choose a country.');
       if (dest.isOther() && !dest.get()) return err('Please type the country name.');
       const linkInputs = $$('[data-link]', f), links = linkInputs.map(i => i.value.trim()).filter(Boolean);
@@ -610,7 +605,7 @@
       const body = { storeId:Number(f.storeId.value),clientId: order ? order.clientId : Number(f.clientId.value), orderRef: f.orderRef.value, orderDate: f.orderDate.value, currency: f.currency.value,
         sellingPrice: f.sellingPrice.value === '' ? null : f.sellingPrice.value,
         etsyUrl: links.join('\n'), quantity: qty, sku: f.sku.value, variant: f.variant.value,
-        buyerName: f.buyerName.value, address1: f.address1.value, address2: f.address2.value, city: f.city.value, region: f.region.value, postalCode: f.postalCode.value, buyerPhone: f.buyerPhone.value,
+        buyerName: f.buyerName.value, ...UI.addressFields(f.address1.value,order),
         trackingNumber: f.trackingNumber.value, destination: dest.get(), category: f.category.value,
         weightKg: f.weightKg.value === '' ? null : f.weightKg.value, productCost: f.productCost.value === '' ? null : f.productCost.value, shippingFee: f.price.value === '' ? null : f.price.value,
         notes: f.notes.value };
