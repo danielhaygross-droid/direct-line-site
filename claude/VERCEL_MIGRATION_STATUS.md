@@ -1,5 +1,22 @@
 # Direct Line continuation — 12 October 2026
 
+## Current review queue — remaining PDF changes
+
+Production last verified: PR #19 (`36fd01e`). Merge these in ascending order; all are ready for review, not yet verified live:
+
+| PR | Feature | Branch |
+|---|---|---|
+| [#20](https://github.com/danielhaygross-droid/direct-line-site/pull/20) | Transfer confirmations (#5 phase 2) | codex/transfer-confirmations |
+| [#21](https://github.com/danielhaygross-droid/direct-line-site/pull/21) | Structured addresses (#10) | codex/structured-addresses |
+| [#22](https://github.com/danielhaygross-droid/direct-line-site/pull/22) | Cancellation/delivery (#2) | codex/cancellation-status |
+| [#23](https://github.com/danielhaygross-droid/direct-line-site/pull/23) | Invoices (#4) | codex/invoices |
+| [#24](https://github.com/danielhaygross-droid/direct-line-site/pull/24) | My Products (#12) | codex/saved-products |
+| [#25](https://github.com/danielhaygross-droid/direct-line-site/pull/25) | Claims (#13) | codex/claims |
+| [#26](https://github.com/danielhaygross-droid/direct-line-site/pull/26) | My Stores (#15) | codex/client-stores |
+
+53/53 tests and local database/browser workflows pass. All remaining PDF implementation is now reviewable; Erwin handles merges and final live checks. No production mutations were performed. Do not update the completion PDF until deployment is confirmed.
+
+
 Production is Vercel + Neon at https://direct-line-control.vercel.app/ . PR #17 is merged (`f0b44fb`); its old description saying unmerged is stale.
 
 ## PR #18 — today's portal changes, ready for review
