@@ -248,3 +248,12 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 @media(max-width:560px){.confirmation-row{align-items:flex-start;flex-wrap:wrap}}
 
 .store-label{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}.store-label i{width:9px;height:9px;border-radius:50%;flex:none}.store-label small{font-size:11px;opacity:.7}.store-switcher{margin-bottom:16px}.store-period{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px}.store-period .field{min-width:130px;flex:1}.store-performance small{display:block}.store-performance progress{width:70px;max-width:100%;accent-color:var(--gold)}.store-total{font-weight:700;background:var(--surface)}[data-client-store-form]{padding:12px 0}[data-client-store-form] input[type=checkbox]{width:20px;height:20px}.bars{overflow:hidden}.bars .bar-col{min-width:0}.bars .bar-col small{font-size:10px}
+
+/* Long store names must fit the mobile store switcher without widening the page. */
+.store-switcher .chip{max-width:100%;min-width:0;white-space:normal}
+.store-switcher .store-label{min-width:0;max-width:100%}
+.store-switcher .store-label>span{min-width:0;overflow-wrap:anywhere}
+.view{grid-template-columns:minmax(0,1fr)}
+.card-head:has(#invoice-month-form){flex-wrap:wrap}
+#invoice-month-form{min-width:0;max-width:100%}
+#invoice-month-form .btn{max-width:100%;white-space:normal}
