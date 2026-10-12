@@ -1,4 +1,5 @@
 import { createSign } from 'node:crypto';
+import { sheetPhotoUrl } from './sheet-photos.mjs';
 
 const DEFAULT_SPREADSHEET_ID = '1L_C87W4jrZGIIrT2Fg_cGowNi3R5fTehdDw8d-vpZag';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
@@ -86,7 +87,7 @@ async function sheetsRequest(env, path, options = {}, fetchImpl = fetch) {
 }
 
 async function findOrderRow(env, orderId, fetchImpl) {
-  const range = encodeURIComponent('Orders!A6:A5000');
+  const range = encodeURIComponent('Orders!A6:A');
   const data = await sheetsRequest(env, '/values/' + range + '?majorDimension=ROWS', {}, fetchImpl);
   const rows = data.values || [];
   const index = rows.findIndex(row => String(row?.[0] ?? '') === String(orderId));
@@ -143,15 +144,23 @@ export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl =
   try {
     const rowNumber = await findOrderRow(env, orderId, fetchImpl);
     const syncedAt = Math.floor(Date.now() / 1000);
-    const values = [orderValues(order, syncedAt)];
+    const photos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(orderId).all()).results || [];
+    const values = [orderValues(order, syncedAt).concat(photoCells(env,orderId,photos))];
     if (rowNumber) {
-      await sheetsRequest(env, '/values/' + encodeURIComponent(`Orders!A${rowNumber}:AU${rowNumber}`) + '?valueInputOption=USER_ENTERED', {
+      await sheetsRequest(env, '/values/' + encodeURIComponent(`Orders!A${rowNumber}:BE${rowNumber}`) + '?valueInputOption=USER_ENTERED', {
         method: 'PUT', body: JSON.stringify({ majorDimension: 'ROWS', values }),
       }, fetchImpl);
     } else {
-      await sheetsRequest(env, '/values/' + encodeURIComponent('Orders!A:AU') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+      await sheetsRequest(env, '/values/' + encodeURIComponent('Orders!A:BE') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
         method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values }),
       }, fetchImpl);
+    }
+    // A photo can be added/deleted while Google is being updated. Leave the order
+    // queued for another sync instead of marking an outdated photo list complete.
+    const latestPhotos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(orderId).all()).results || [];
+    if (JSON.stringify(latestPhotos.map(p=>p.id)) !== JSON.stringify(photos.map(p=>p.id))) {
+      await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=?").bind(orderId).run();
+      return {configured:true,synced:false,rowNumber};
     }
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='synced', sheet_synced_at=?, sheet_sync_error='' WHERE id=?")
       .bind(syncedAt, orderId).run();
@@ -196,4 +205,26 @@ export async function retryPendingGoogleSheetOrders(DB, env, fetchImpl = fetch) 
     catch (error) { console.error('Google Sheets retry failed for order', row.id, error); }
   }
   return { configured: true, attempted: rows.length, synced };
+}
+
+function photoCells(env,orderId,photos) {
+  const urls=photos.map(p=>sheetPhotoUrl(env,orderId,p.id));
+  return [photos.length,urls.length ? `=IMAGE("${urls[0]}&size=thumb",1)` : '',
+    ...Array.from({length:8},(_,i)=>urls[i] ? `=HYPERLINK("${urls[i]}","Photo ${i+1}")` : '')];
+}
+// One-off maintenance: update only new photo columns; preserve all existing order cells.
+export async function backfillSheetPhotos(DB,env,fetchImpl=fetch) {
+  const source=await sheetsRequest(env,'/values/'+encodeURIComponent('Orders!A6:A'),{},fetchImpl);
+  const changes=[];const photoRows=[];
+  for (let index=0;index<(source.values||[]).length;index++) {
+    const id=Number(source.values[index]?.[0]);if(!Number.isSafeInteger(id)||id<=0)continue;
+    const photos=(await DB.prepare(`SELECT p.id FROM order_photos p JOIN client_orders o ON o.id=p.order_id
+      JOIN users u ON u.id=o.client_id WHERE p.order_id=? AND u.active AND NOT u.archived ORDER BY p.id LIMIT 8`).bind(id).all()).results||[];
+    changes.push({range:`Orders!AV${index+6}:BE${index+6}`,values:[photoCells(env,id,photos)]});
+    if(photos.length)photoRows.push(index+6);
+  }
+  for(let i=0;i<changes.length;i+=50)await sheetsRequest(env,'/values:batchUpdate',{
+    method:'POST',body:JSON.stringify({valueInputOption:'USER_ENTERED',data:changes.slice(i,i+50)})
+  },fetchImpl);
+  return {updatedRows:changes.length,photoRows};
 }

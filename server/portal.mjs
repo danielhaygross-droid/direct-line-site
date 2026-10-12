@@ -5,6 +5,7 @@
 //   role "client-<id>"    -> a client account from the users table
 
 import { timingSafeEqual, randomBytes } from 'node:crypto';
+import { serveSheetPhoto } from './sheet-photos.mjs';
 import { googleSheetsConfigured, retryPendingGoogleSheetOrders, syncClientToGoogleSheet, syncPortalOrderToGoogleSheet } from './google-sheets.mjs';
 
 import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms } from './terms.mjs';
@@ -455,6 +456,9 @@ export async function handlePortal(request, url, ctx) {
   const method = request.method;
   if (!DB) return json({ ok: false, error: 'Database is not configured' }, 503);
 
+  const sheetPhoto = /^\/sheet-photos\/([1-9]\d*)\/([1-9]\d*)$/.exec(path);
+  if (sheetPhoto && method === 'GET') return serveSheetPhoto(DB,env,url,Number(sheetPhoto[1]),Number(sheetPhoto[2]));
+
   // Public: login
   if (path === '/login' && method === 'POST') {
     const body = await readBody(request);
@@ -684,6 +688,9 @@ export async function handlePortal(request, url, ctx) {
       let photo; try { photo = photoInput(await readBody(request)); } catch (e) { return json({ ok: false, error: e.message }, 400); }
       const out = await insertPhoto(DB, id, order.client_id, photo, actor);
       if (!quiet || who.admin) await logEvent(DB, id, order.client_id, 'photo', actor, 'added');
+      await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=?").bind(id).run();
+      const sync = syncPortalOrderToGoogleSheet(DB,env,id).catch(error=>console.error('Photo sheet sync failed',error));
+      if(waitUntil)waitUntil(sync);else await sync;
       return json({ ok: true, photo: out });
     }
     if (photoOne && photoOne[3] && method === 'POST') {
@@ -697,6 +704,9 @@ export async function handlePortal(request, url, ctx) {
       }
       await DB.prepare('DELETE FROM order_photos WHERE id = ? AND order_id = ?').bind(pid, id).run();
       if (!quiet || who.admin) await logEvent(DB, id, order.client_id, 'photo', actor, 'removed');
+      await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=?").bind(id).run();
+      const sync = syncPortalOrderToGoogleSheet(DB,env,id).catch(error=>console.error('Photo sheet sync failed',error));
+      if(waitUntil)waitUntil(sync);else await sync;
       return json({ ok: true });
     }
     if (photoOne && !photoOne[3] && method === 'GET') {

@@ -1,3 +1,15 @@
+## Spreadsheet photo sync — implementation ready, 12 October 2026
+
+User requests photos in the connected spreadsheet so Ada can use Sheets. Added Orders AV:BE: photo count, first-photo IMAGE preview, eight full-size HYPERLINK cells. Photo-only HMAC links work without portal login; anyone possessing a link can view that image. They expose no order/customer data. Deleted images, disabled/archived clients, altered IDs/keys and rotated signing secrets fail closed. Photo add/delete now resync, clear removed cells, and retain retry state if photos change during sync. ID lookup now covers all Orders rows instead of stopping at row 5000.
+
+59 automated tests and local database/router integration pass. Tests cover initial/add/delete sync, exact-photo access, stale cell clearing and revocation. New sheet columns created and header formats verified; population/deployment pending. Existing-row backfill writes only AV:BE, preserving manual order columns. No portal admin login needed for Ada. Server uses APP_SESSION_SECRET (including existing runtime derivation) and production origin, optional PORTAL_PUBLIC_URL override requiring HTTPS.
+
+## PR #29 deployed and live-verified — 12 October 2026
+
+Vercel CLI was authorized by Erwin as Daniel's account. Deployed merged commit afc4a9d1a8145050995aaf4c463f87b063bc72bd to the existing z-royal/direct-line-control project. Deployment dpl_4gNBWL8TNqfcVscAeGwZwk43S2Ch is Ready/Production and aliased to https://direct-line-control.vercel.app/ . Public portal HTML and CSS exactly match the CSS16 fix.
+
+Ran 18 signed-in production layout checks WITHOUT injected CSS: EN/HE, 320/390/1440px, Home/Orders/Payments. All passed, including temporary browser-only 160-character names. No persistent records changed in this deployment check. Evidence: verification/live-2026-10-12/deployed-assets.json and mobile-wrap-deployed.json. Prior deployment-pending notes are superseded. Full admin workflow verification still needs a working admin login; supplied credentials were rejected. Vercel deployment access is now available and separate from portal admin login.
+
 ## Live verification update — 12 October 2026
 
 TEST client (ID 5) live login/logout, eight EN/HE customer pages, bank copying, validation, access controls, and store create/edit/reload/draft-preservation/archive/restore passed. QA stores 9 and 10 were created and archived; original stores were untouched. No valid orders/payments/transfers/products/claims were submitted.
