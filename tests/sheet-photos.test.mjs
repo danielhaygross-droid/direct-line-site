@@ -1,0 +1,8 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {sheetPhotoUrl,serveSheetPhoto} from '../server/sheet-photos.mjs';
+const env={APP_SESSION_SECRET:'test-only-secret'};
+const bytes=Buffer.from('sample-image');
+const DB={prepare(sql){assert.match(sql,/u.active AND NOT u.archived/);return{bind(order,photo){return{async first(){return order===42&&photo===91?{mime:'image/png',data:bytes.toString('base64'),thumb_mime:'image/png',thumb:Buffer.from('thumb').toString('base64')}:null;}}}}}};
+test('sheet links allow exactly their photo without a portal session',async()=>{const url=new URL(sheetPhotoUrl(env,42,91));let r=await serveSheetPhoto(DB,env,url,42,91);assert.equal(r.status,200);assert.equal(await r.text(),'sample-image');assert.equal(r.headers.get('cache-control'),'private, no-store');url.searchParams.set('size','thumb');r=await serveSheetPhoto(DB,env,url,42,91);assert.equal(await r.text(),'thumb');});
+test('missing/tampered keys, other photos, missing photos, and rotated secrets fail closed',async()=>{const url=new URL(sheetPhotoUrl(env,42,91));assert.equal((await serveSheetPhoto(DB,env,url,42,92)).status,404);assert.equal((await serveSheetPhoto(DB,{APP_SESSION_SECRET:'rotated'},url,42,91)).status,404);url.searchParams.set('key','tampered');assert.equal((await serveSheetPhoto(DB,env,url,42,91)).status,404);url.searchParams.delete('key');assert.equal((await serveSheetPhoto(DB,env,url,42,91)).status,404);const gone=new URL(sheetPhotoUrl(env,42,92));assert.equal((await serveSheetPhoto(DB,env,gone,42,92)).status,404);});
+test('photo links require a configured key and HTTPS origin',()=>{assert.throws(()=>sheetPhotoUrl({},42,91));assert.throws(()=>sheetPhotoUrl({...env,PORTAL_PUBLIC_URL:'http://example.com'},42,91));});

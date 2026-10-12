@@ -26,6 +26,7 @@ function fakeDatabase() {
           if (sql.includes('FROM client_orders o JOIN users')) return order;
           return null;
         },
+        async all() { return {results: sql.includes("FROM order_photos") ? [{id:91},{id:92}] : []}; },
         async run() {
           if (sql.includes("sheet_sync_status='waiting'")) { state.status = 'waiting'; state.attempts = Number(args[0]); state.error = ''; }
           if (sql.includes("sheet_sync_status='synced'")) { state.status = 'synced'; state.syncedAt = Number(args[0]); state.error = ''; }
@@ -47,12 +48,13 @@ test('portal order sync appends one idempotent order row and records success', a
   const fakeFetch = async (url, options = {}) => {
     calls.push({ url: String(url), options });
     if (String(url).includes('oauth2.googleapis.com/token')) return Response.json({ access_token: 'token', expires_in: 3600 });
-    if (String(url).includes('/values/Orders!A6%3AA5000')) return Response.json({ values: [] });
-    if (String(url).includes('/values/Orders!A%3AAU:append')) return Response.json({ updates: { updatedRows: 1 } });
+    if (String(url).includes('/values/Orders!A6%3AA')) return Response.json({ values: [] });
+    if (String(url).includes('/values/Orders!A%3ABE:append')) return Response.json({ updates: { updatedRows: 1 } });
     if (String(url).includes('/values/Sync%20Log!A%3AH:append')) return Response.json({ updates: { updatedRows: 1 } });
     return new Response('unexpected request', { status: 500 });
   };
   const result = await syncPortalOrderToGoogleSheet(DB, {
+    APP_SESSION_SECRET: 'unit-test-secret',
     GOOGLE_SHEETS_SPREADSHEET_ID: 'sheet-id',
     GOOGLE_SERVICE_ACCOUNT_EMAIL: 'sheet-writer@example.iam.gserviceaccount.com',
     GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: serviceKey,
@@ -61,10 +63,10 @@ test('portal order sync appends one idempotent order row and records success', a
   assert.deepEqual({ configured: result.configured, synced: result.synced }, { configured: true, synced: true });
   assert.equal(DB.state.status, 'synced');
   assert.equal(DB.state.attempts, 1);
-  const append = calls.find(call => call.url.includes('/values/Orders!A%3AAU:append'));
+  const append = calls.find(call => call.url.includes('/values/Orders!A%3ABE:append'));
   assert.ok(append);
   const row = JSON.parse(append.options.body).values[0];
-  assert.equal(row.length, 47);
+  assert.equal(row.length, 57);
   assert.equal(row[0], '42');
   assert.equal(row[2], 'Test Client');
   assert.equal(row[6], 'E-100');
@@ -73,6 +75,11 @@ test('portal order sync appends one idempotent order row and records success', a
   assert.equal(row[35], 'Jamie Buyer');
   assert.equal(row[42], 'Engraved lighter');
   assert.equal(row[45], 2);
+  assert.equal(row[47], 2);
+  assert.match(row[48], /^=IMAGE/);
+  assert.match(row[49], /sheet-photos\/42\/91/);
+  assert.match(row[50], /Photo 2/);
+  assert.deepEqual(row.slice(51),Array(6).fill(''));
 });
 
 test('new client accounts are mirrored to the Clients tab', async () => {
@@ -93,6 +100,7 @@ test('new client accounts are mirrored to the Clients tab', async () => {
     return new Response('unexpected request', { status: 500 });
   };
   const result = await syncClientToGoogleSheet(DB, {
+    APP_SESSION_SECRET: 'unit-test-secret',
     GOOGLE_SHEETS_SPREADSHEET_ID: 'sheet-id',
     GOOGLE_SERVICE_ACCOUNT_EMAIL: 'sheet-writer@example.iam.gserviceaccount.com',
     GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: serviceKey,
