@@ -1,3 +1,96 @@
+## Live verification update — 12 October 2026
+
+TEST client (ID 5) live login/logout, eight EN/HE customer pages, bank copying, validation, access controls, and store create/edit/reload/draft-preservation/archive/restore passed. QA stores 9 and 10 were created and archived; original stores were untouched. No valid orders/payments/transfers/products/claims were submitted.
+
+Found mobile overflow with long store names and narrow invoice controls. A CSS16 fix on branch `codex/store-mobile-wrap` passed 18 EN/HE 320/390/1440px candidate-browser layout checks, including 160-character names. The fix is not deployed yet. This branch supersedes the earlier local branch reference below.
+
+Full live verification remains incomplete: the supplied admin login was rejected and corrected access was requested. Detailed evidence/remaining workflows: project-root `verification/live-2026-10-12/LIVE_VERIFICATION.md`. Earlier statements of no pending implementation predate this newly found issue. Do not claim all features are live-tested.
+
+# Direct Line — current handoff
+
+Updated 12 October 2026. This is the current session handoff; deployment evidence below was collected earlier in this session, not rechecked while editing this document.
+
+## Current outcome
+
+Requested implementation is complete and deployed, including PR #27's store-saving fix and PR #28's simpler customer address form. The final illustrated report and folder organization are complete. No implementation or merge remains pending from this session. Full signed-in production testing of every workflow is still outstanding; deployment confirmation is not a claim that every live workflow has been tested.
+
+Production: https://direct-line-control.vercel.app/
+Repository: https://github.com/danielhaygross-droid/direct-line-site
+Active checkout: `C:/Users/erwin/Downloads/Direct Line/direct-line-control/continuation`
+Local branch: `codex/simple-customer-address`.
+
+## Deployment evidence and latest fixes
+
+- PRs #20–26 were merged and verified deployed. These cover transfer confirmations, addresses, cancellation/delivery, invoices, products, claims and stores.
+- PR #27: https://github.com/danielhaygross-droid/direct-line-site/pull/27 — merged as `e02a9576e48a2b5c5c2d0f22993aa3fb614ad2f5`. Production assets matched the tested fix. Erwin then confirmed that TEST1 could save a store.
+- PR #28: https://github.com/danielhaygross-droid/direct-line-site/pull/28 — merged as `cc1e09afdbca980607a102b6e95d5efcd21a7da8`. Automatic deployment of the merge did not appear, so Erwin manually promoted source commit `a4c1ed66880ce5008a9e6ff802e70b9efc6afed0` to Production. An initial GitHub secondary rate limit was followed by a successful Ready/Production deployment.
+- Public production portal/admin HTML and JavaScript, shared order UI and translations matched the tested local release. Versions: portal JS33, admin JS35, order-ui3, i18n17; portal CSS15, admin CSS11 and store-ui2 remain.
+- Production runs the promoted source commit above; do not incorrectly describe it as a verified deployment of the merge SHA.
+
+## Tasks in Shahar's original order
+
+These statuses describe deployed implementation, subject to the live-testing limitation above.
+
+| Task | Feature | Status |
+|---|---|---|
+| #1 | Service-policy acceptance | Deployed |
+| #2 | Cancellation and delivery | Deployed |
+| #3 | 72-hour order editing | Deployed |
+| #4 | Invoice uploads and downloads | Deployed |
+| #5 | Bank details and transfer confirmations | Deployed |
+| #6 | Client-facing pricing | Deployed |
+| #7 | Remove client Etsy upload | Deployed |
+| #8 | Customer names and search | Deployed |
+| #9 | Store-neutral wording | Deployed |
+| #10 | Simple customer address (intentional revision requested by Erwin) | Deployed |
+| #11 | Country is required | Deployed |
+| #12 | My Products and quotations | Deployed |
+| #13 | Claims, refunds and replacements | Deployed |
+| #14 | Client account management | Deployed |
+| #15 | Multiple stores and performance | Deployed; TEST1 save confirmed by Erwin |
+
+## Decisions to preserve
+
+**Task #10:** Erwin explicitly requested returning to customer name, a single full address/phone box and required country because it is easier to paste a customer's address. This deliberately replaces the separate street/city/ZIP inputs; it is not unfinished work. Explain this usability decision to Shahar. Task #11's required country and admin Copy full address remain. Existing structured addresses are combined for display; unchanged edits preserve original components, while changed address blocks clear duplicate components. No historical address deletion or migration was needed.
+
+**My Stores:** The save fix accepts bare domains with server-side HTTPS normalization, provides visible validation/saving/saved feedback, and preserves drafts in other store forms. Unsafe protocols and embedded credentials remain rejected. The user's exact original input was unknown, but reproduced failures were fixed and Erwin confirmed the live save now works.
+
+**Feature limits:** Carrier tracking/delivery updates remain manual. Claims use Monday–Friday UTC business days. Payments and invoices remain one client-wide account, with no invented allocation of payments among stores. Missing sale prices contribute zero revenue and are flagged. Evidence limits remain 2 MB per file and 3 MB combined for claims/products.
+
+## Validation and remaining work
+
+Latest implementation: 56 automated tests passed, along with build, syntax and diff checks. Local English/Hebrew desktop/phone checks covered the simplified address form, required address/country, save/reopen, preservation of historical components, admin editing and clipboard copying. Store regression checks covered creation/editing, validation, draft preservation, archive/restore, ownership and reload persistence. These are prior results; documentation cleanup did not rerun application tests.
+
+Remaining: verify signed-in production workflows with an authorized test account, especially orders, cancellation/delivery, transfer confirmations, invoices, products, claims and store editing/archive/restore. Do not create real charges, payments or customer records merely to test. No production records were changed by the assistant's verification. TEST1 store creation was performed and confirmed by Erwin.
+
+## Final report and supporting files
+
+Project root: `C:/Users/erwin/Downloads/Direct Line/direct-line-control`.
+
+- Final PDF: `output/pdf/Direct-Line-Final-Illustrated-Report-2026-10-12.pdf` — 16 pages, cover plus tasks #1–15 in order, with a corresponding screenshot for every task. Includes PR27's fix and task #10's intentional revision. Screenshots are labeled local demonstration evidence, not a claim of full live workflow testing.
+- Spreadsheet: `output/spreadsheets/Direct Line Client Orders.xlsx`.
+- Folder guide: `START_HERE.md`.
+- Report generator: `verification/build-illustrated-report.py`, reading `verification/report-items.json` and the existing screenshot folders. Run from the project root; it no longer depends on a superseded PDF.
+- Original task PDF remains outside this project at `C:/Users/erwin/Downloads/Direct-Line-Portal-Changes-for-Erwin_1.pdf`.
+
+## Folder cleanup and preservation
+
+Organization is complete. Old site copies are in `archive/earlier-work`; original backups in `archive/original-backups`; superseded PDFs in `archive/superseded-reports`; saved PR metadata in `archive/pr-metadata`; temporary previews/results in `archive/generated-previews`. Automatic approval review blocked bulk deletion, so material was archived instead. No permanent deletion or disk-space saving is claimed.
+
+Preserve `continuation`, `local-tests`, `verification` and their relative paths. Preserve the older `current-site` checkout: it already has an uncommitted deletion of `DIRECT_LINE_DASHBOARD_HANDOFF.md` and a modified `README.md`. Those changes were not made or reverted by cleanup. `spreadsheet-work/node_modules` is a junction to shared runtime dependencies outside the project; leave it and its target untouched. The continuation checkout was clean before this handoff documentation edit.
+
+## Instructions for the next session
+
+Read this current summary before historical notes. Respect Erwin's simpler-address decision, keep reports in original task-number order with screenshots, and minimize usage by avoiding redundant checks. Verify new deployment evidence before claiming new changes are live. Erwin handles GitHub merges through Daniel's account; the local Git identity uses the erwins123 fork. Do not claim browser control unless a working browser tool/session is actually available.
+
+Earlier root handoffs are preserved in `archive/handoff-history/`. Their pending-merge/deployment statements are historical and superseded by this summary. Detailed implementation history remains below the current summary in `continuation/claude/VERCEL_MIGRATION_STATUS.md`.
+
+---
+
+# Historical implementation notes — superseded status
+
+The following notes are retained for technical history. Pending merges, deployment instructions and report paths below may be obsolete; use the current summary above.
+
 ## 12 October 2026 - Restore simple customer address at Erwin's request (awaiting merge)
 
 Erwin explicitly chose the earlier customer name + full address/phone + required country form over Shahar item #10's separate street/city/ZIP fields. Restored it in client new/edit and admin order forms. Item #11 required country and admin Copy full address remain. This is an intentional scope decision, not an unfinished implementation. Prior illustrated report item #10 becomes outdated after this merges; update it to show the simpler form and explain the decision once deployment is verified.
