@@ -401,10 +401,18 @@ function storeFields(body, needName) {
   return f;
 }
 // The product link must be a real web address (usually the Etsy listing).
+export const MAX_LINK_CHARS = 2000;
 function validLink(value) {
   const v = String(value || '').trim();
-  if (!/^https?:\/\//i.test(v)) return false;
+  if (!/^https?:\/\//i.test(v) || v.length > MAX_LINK_CHARS) return false;
   try { const u = new URL(v); return /\./.test(u.hostname); } catch (e) { return false; }
+}
+
+// Up to 10 links, one per line. Links are kept whole (a cut-off link would still look valid), and a
+// link pasted without https:// ("www.etsy.com/listing/…") is completed.
+export function productLinks(value) {
+  return String(value ?? '').split(/\s+/).map(v => v.trim()).filter(Boolean).slice(0, 10)
+    .map(v => !/^[a-z][a-z0-9+.-]*:/i.test(v) && /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+([/?#]|$)/i.test(v) ? 'https://' + v : v).join('\n');
 }
 
 function orderFields(body) {
@@ -416,7 +424,7 @@ function orderFields(body) {
     order_date: text(body.orderDate, 10), currency: text(body.currency || 'USD', 3).toUpperCase(),
     buyer_name: text(body.buyerName, 160), buyer_phone: text(body.buyerPhone, 80),
     address_line_1: text(body.address1, 2000), address_line_2: text(body.address2, 200), city: text(body.city, 100), region: text(body.region, 100), postal_code: text(body.postalCode, 40),
-    item_title: text(body.itemTitle, 300), sku: text(body.sku, 120), variant: text(body.variant, 500), quantity: Number(body.quantity ?? 1), etsy_url: String(body.etsyUrl ?? '').split(/\s+/).map(v => v.trim()).filter(Boolean).slice(0, 10).join('\n').slice(0, 3000),
+    item_title: text(body.itemTitle, 300), sku: text(body.sku, 120), variant: text(body.variant, 500), quantity: Number(body.quantity ?? 1), etsy_url: productLinks(body.etsyUrl),
     notes: text(body.notes, 2000),
   };
   if (![f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee].every(isMoney)) throw new Error('Numbers must be zero or more');

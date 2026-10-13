@@ -583,7 +583,7 @@
     const msg = $('[data-form-msg]', f), err = t => { msg.textContent = t; msg.className = 'form-msg err'; msg.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); };
     // ----- product links: one box per product -----
     const linkBox = $('[data-links]', f);
-    const linkRow = (v = '') => `<div class="link-row"><input data-link type="url" inputmode="url" maxlength="300" placeholder="https://www.etsy.com/listing/..." value="${esc(v)}"><button type="button" class="btn btn-sm btn-ghost" data-link-remove aria-label="Remove link">×</button></div>`;
+    const linkRow = (v = '') => `<div class="link-row"><input data-link type="url" inputmode="url" maxlength="2000" placeholder="https://www.etsy.com/listing/..." value="${esc(v)}"><button type="button" class="btn btn-sm btn-ghost" data-link-remove aria-label="Remove link">×</button></div>`;
     const startLinks = order?.productLinks?.length ? order.productLinks : String(order?.etsyUrl || '').split(/\s+/).filter(Boolean);
     linkBox.innerHTML = (startLinks.length ? startLinks : ['']).map(linkRow).join('');
     const syncLinks = () => { const rows = $$('.link-row', linkBox); rows.forEach(r => { r.querySelector('[data-link-remove]').hidden = rows.length < 2; }); $('[data-link-add]', f).hidden = rows.length >= 10; };
@@ -637,6 +637,7 @@
       if (!f.buyerName.value.trim() || !f.address1.value.trim()) return err('Please fill in the customer name and full address.');
       if (!dest.get()) return err('Please choose a country.');
       if (dest.isOther() && !dest.get()) return err('Please type the country name.');
+      $$('[data-link]', f).forEach(i => { i.value = window.DL.fullLink(i.value); });
       const linkInputs = $$('[data-link]', f), links = linkInputs.map(i => i.value.trim()).filter(Boolean);
       const badLink = linkInputs.find(i => i.value.trim() && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(i.value.trim()));
       if (badLink) { badLink.focus(); return err('Please paste each product link in full, starting with https://'); }
