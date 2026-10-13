@@ -17,7 +17,7 @@
   const when = sec => window.DL.displayTime(sec);
   const day = when;
   function activity(events=[]) {
-    const labels={created:'Order created',edited:'Order edited',status:'Status changed',tracking:'Tracking number changed',tracking_update:'Tracking update received',photo:'Photo changed',claim:'Claim updated',archived:'Order archived',restored:'Order restored'};
+    const labels={created:'Order created',edited:'Order edited',status:'Status changed',tracking:'Tracking number changed',tracking_update:'Tracking update received',photo:'Photo changed',claim:'Claim updated',billed:'Order billed',archived:'Order archived',restored:'Order restored'};
     return `<section class="card card-pad"><h3 class="sec-title">Order activity</h3><p class="muted" data-no-i18n>${esc(window.DL.timeZoneNote())}</p>${events.length ? `<ol class="order-activity">${[...events].reverse().map(e=>`<li><b>${esc(labels[e.kind]||e.kind)}</b><span><span>${e.actor==='admin'?'Direct Line':'Client'}</span>${e.detail ? ' · '+(e.kind==='status' ? `<span>${esc(LABEL[e.detail]||e.detail)}</span>` : `<span data-no-i18n>${esc(e.detail)}</span>`) : ''}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`).join('')}</ol>` : '<p class="muted">No activity recorded yet.</p>'}</section>`;
   }
   function syncConversation(order,data) {

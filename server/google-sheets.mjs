@@ -1,5 +1,6 @@
 import { createSign } from 'node:crypto';
 import { sheetPhotoUrl } from './sheet-photos.mjs';
+import { syncWorkQueueRow, removeClientFromWorkQueue } from './supplier-sheet.mjs';
 
 const DEFAULT_SPREADSHEET_ID = '1L_C87W4jrZGIIrT2Fg_cGowNi3R5fTehdDw8d-vpZag';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
@@ -69,7 +70,7 @@ async function accessToken(env, fetchImpl = fetch) {
   return tokenCache.value;
 }
 
-async function sheetsRequest(env, path, options = {}, fetchImpl = fetch) {
+export async function sheetsRequest(env, path, options = {}, fetchImpl = fetch) {
   const { spreadsheetId } = googleSheetsConfig(env);
   const response = await fetchImpl('https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId) + path, {
     ...options,
@@ -151,6 +152,7 @@ export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl =
 
   if (order.client_archived) {
     await clearClientSheetRows(env,order.client_id,fetchImpl);
+    await removeClientFromWorkQueue(DB,env,order.client_id,fetchImpl);
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='synced',sheet_sync_error='' WHERE client_id=?").bind(order.client_id).run();
     return {configured:true,synced:true,removed:true};
   }
@@ -172,6 +174,8 @@ export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl =
         method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values }),
       }, fetchImpl);
     }
+    // Supplier Work Queue row (only once an admin has set up the supplier sheet).
+    await syncWorkQueueRow(DB, env, order, photos, fetchImpl);
     // A photo can be added/deleted while Google is being updated. Leave the order
     // queued for another sync instead of marking an outdated photo list complete.
     const latestPhotos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(orderId).all()).results || [];
@@ -198,6 +202,7 @@ export async function syncClientToGoogleSheet(DB, env, clientId, fetchImpl = fet
   if (!client) return { configured: true, synced: false };
   if (client.archived) {
     await clearClientSheetRows(env,clientId,fetchImpl);
+    await removeClientFromWorkQueue(DB,env,clientId,fetchImpl);
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='synced',sheet_sync_error='' WHERE client_id=?").bind(clientId).run();
     return {configured:true,synced:true,removed:true};
   }
