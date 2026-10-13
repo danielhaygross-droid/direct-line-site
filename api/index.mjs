@@ -1,12 +1,15 @@
 // Vercel entry point: every /api/* request is rewritten here (see vercel.json).
 // - /api/portal/*      -> client portal + admin monitoring (server/portal.mjs)
 // - /api/auth/*        -> unified login for admins (env or DB) and clients
+// - /api/cron/*        -> scheduled jobs (vercel.json "crons"), authorised by CRON_SECRET
 // - everything else    -> the original Worker (store dashboard), admins only
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { waitUntil } from '@vercel/functions';
 import worker from '../server/worker.mjs';
 import { createD1 } from '../server/d1-postgres.mjs';
 import { SCHEMA as PORTAL_SCHEMA, handlePortal, authenticate, createSessionCookie, readSessionRole, parseRole, clientSession } from '../server/portal.mjs';
+import { syncFileStorage } from '../server/file-storage.mjs';
+import { runBackup } from '../server/backup.mjs';
 
 const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 const DB = databaseUrl ? createD1(databaseUrl, undefined, PORTAL_SCHEMA) : undefined;
@@ -21,6 +24,17 @@ const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(d
   status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers },
 });
 
+// Vercel sends "Authorization: Bearer $CRON_SECRET" on scheduled calls. Without the secret set, jobs are refused.
+export function cronAuthorized(request, secret) {
+  if (!secret) return false;
+  const supplied = Buffer.from(request.headers.get('authorization') || ''), expected = Buffer.from('Bearer ' + secret);
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+const CRON_JOBS = {
+  '/api/cron/file-storage': (db, env) => syncFileStorage(db, env),
+  '/api/cron/backup': (db, env) => runBackup(db, env),
+};
+
 export async function route(request, { db = DB, env: baseEnv = process.env } = {}) {
   const url = new URL(request.url);
   const routed = url.searchParams.get('__path');
@@ -32,6 +46,12 @@ export async function route(request, { db = DB, env: baseEnv = process.env } = {
   const path = url.pathname;
 
   try {
+    if (CRON_JOBS[path]) {
+      if (!cronAuthorized(request, env.CRON_SECRET)) return json({ ok: false, error: 'Unauthorized' }, 401);
+      const result = await CRON_JOBS[path](db, env);
+      console.log('Cron', path, JSON.stringify(result));
+      return json(result, result.ok || result.configured === false ? 200 : 500);
+    }
     if (path.startsWith('/api/portal/') || path === '/api/portal') {
       return await handlePortal(request, url, { DB: db, env, waitUntil });
     }
