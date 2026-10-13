@@ -465,6 +465,7 @@
     'Saved. Clients see the new details right away.': 'נשמר. הלקוחות רואים את הפרטים החדשים מיד.',
     'Clients see these on their Payments page under “How to pay”, each with a Copy button. Leave a field empty to hide it.': 'הלקוחות רואים את הפרטים בעמוד התשלומים תחת ״איך משלמים״, עם כפתור העתקה לכל שורה. השאירו שדה ריק כדי להסתיר אותו.', 'Total you pay': 'סה״כ לתשלום', 'Your estimated profit': 'הרווח המשוער שלך',
     'Preview is read only. Sign in as the client to send messages.':'התצוגה המקדימה היא לקריאה בלבד. יש להיכנס כלקוח כדי לשלוח הודעות.',
+    'Resize panel':'שינוי רוחב החלונית','Drag to resize. Double-click to reset.':'גררו לשינוי הרוחב. לחיצה כפולה מאפסת את הרוחב.',
     'Order activity':'פעילות בהזמנה','All times are Israel time.':'כל הזמנים מוצגים לפי שעון ישראל.','No activity recorded yet.':'עדיין אין פעילות מתועדת.','Order created':'הזמנה נוצרה','Order edited':'הזמנה נערכה','Status changed':'הסטטוס השתנה','Tracking number changed':'מספר המעקב השתנה','Tracking update received':'התקבל עדכון מעקב','Photo changed':'תמונה השתנתה','Claim updated':'הפנייה עודכנה',
     'Messages with Direct Line': 'הודעות עם Direct Line', 'No messages yet. Ask us anything about this order and we’ll reply here.': 'עדיין אין הודעות. שאלו אותנו כל דבר על ההזמנה ונענה כאן.',
     'Any update on this order?': 'יש עדכון על ההזמנה הזו?', 'Can you please check this order?': 'תוכלו לבדוק את ההזמנה הזו?', 'My customer is asking where the parcel is.': 'הלקוח שלי שואל איפה החבילה.',

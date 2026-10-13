@@ -53,8 +53,35 @@
     if (drawer) return drawer;
     const scrim = document.createElement('div'); scrim.className = 'drawer-scrim';
     const el = document.createElement('aside'); el.className = 'drawer'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
-    el.innerHTML = '<div class="drawer-head"><div><div data-d-title></div></div><button type="button" class="icon-btn" data-d-close aria-label="Close">' + svg(ICON.x) + '</button></div><div class="drawer-body" data-d-body></div><div class="drawer-foot" data-d-foot></div>';
+    el.innerHTML = '<div class="drawer-resizer" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize panel" title="Drag to resize. Double-click to reset."></div><div class="drawer-head"><div><div data-d-title></div></div><button type="button" class="icon-btn" data-d-close aria-label="Close">' + svg(ICON.x) + '</button></div><div class="drawer-body" data-d-body></div><div class="drawer-foot" data-d-foot></div>';
     document.body.append(scrim, el);
+    const resizer=el.querySelector('.drawer-resizer'),widthKey='dl_drawer_width';
+    let preferredWidth=760;
+    try{const saved=Number(localStorage.getItem(widthKey));if(Number.isFinite(saved)&&saved>=560)preferredWidth=saved;}catch(e){}
+    const limits=()=>({min:Math.min(560,innerWidth),max:Math.min(1100,Math.max(0,innerWidth-24))});
+    const setWidth=(width,persist=false)=>{
+      const {min,max}=limits();const next=innerWidth>=900?Math.max(min,Math.min(max,width)):innerWidth;
+      el.style.setProperty('--dl-drawer-width',next+'px');
+      resizer.setAttribute('aria-valuemin',String(min));resizer.setAttribute('aria-valuemax',String(max));resizer.setAttribute('aria-valuenow',String(Math.round(next)));
+      if(persist&&innerWidth>=900){preferredWidth=next;try{localStorage.setItem(widthKey,String(next));}catch(e){}}
+    };
+    const notifyParent=open=>{if(window.parent!==window)parent.postMessage({type:'dl-drawer-state',open},location.origin);};
+    resizer.addEventListener('pointerdown',e=>{
+      if(e.button!==0||innerWidth<900)return;e.preventDefault();
+      const start=e.clientX,width=el.getBoundingClientRect().width,rtl=getComputedStyle(el).direction==='rtl';
+      resizer.setPointerCapture(e.pointerId);el.classList.add('resizing');
+      const move=event=>setWidth(width+(rtl?event.clientX-start:start-event.clientX));
+      const finish=event=>{resizer.removeEventListener('pointermove',move);resizer.removeEventListener('pointerup',finish);resizer.removeEventListener('pointercancel',finish);el.classList.remove('resizing');setWidth(el.getBoundingClientRect().width,true);if(resizer.hasPointerCapture(event.pointerId))resizer.releasePointerCapture(event.pointerId);};
+      resizer.addEventListener('pointermove',move);resizer.addEventListener('pointerup',finish);resizer.addEventListener('pointercancel',finish);
+    });
+    resizer.addEventListener('dblclick',()=>setWidth(760,true));
+    resizer.addEventListener('keydown',e=>{
+      const rtl=getComputedStyle(el).direction==='rtl';let width=el.getBoundingClientRect().width;
+      if(e.key==='ArrowLeft')width+=rtl?-32:32;else if(e.key==='ArrowRight')width+=rtl?32:-32;else if(e.key==='Home')width=760;else if(e.key==='End')width=limits().max;else return;
+      e.preventDefault();setWidth(width,true);
+    });
+    addEventListener('resize',()=>setWidth(preferredWidth));setWidth(preferredWidth);
+
     // Inside the store dashboard this page is a tall iframe: keep the panel in the part the user can see.
     const fit = () => {
       const area = window.DL.visibleArea?.();
@@ -70,7 +97,7 @@
       el, isOpen: false, onClose: null, key: null,
       head: el.querySelector('[data-d-title]'), body: el.querySelector('[data-d-body]'), foot: el.querySelector('[data-d-foot]'),
       open(key) {
-        d.key = key; d.isOpen = true; scrim.classList.add('open'); el.classList.add('open');
+        d.key = key; d.isOpen = true;setWidth(preferredWidth); scrim.classList.add('open'); el.classList.add('open');notifyParent(true);
         document.documentElement.style.overflow = 'hidden';
         d.body.scrollTop = 0;
         // Inside the dashboard, make the frame at least a screen tall so the panel has room.
@@ -80,7 +107,7 @@
       },
       close() {
         if (!d.isOpen) return;
-        d.isOpen = false; d.key = null; scrim.classList.remove('open'); el.classList.remove('open');
+        d.isOpen = false; d.key = null; scrim.classList.remove('open'); el.classList.remove('open');notifyParent(false);
         document.documentElement.style.overflow = '';
         document.body.style.minHeight = '';
         const cb = d.onClose; d.onClose = null; cb && cb();

@@ -1,3 +1,21 @@
+## Compact support control and resizable panels — ready, 13 October 2026
+
+User reports the Need an answer WhatsApp CTA overlaps buttons and client/order panels are too narrow. Branch codex/compact-support-resizable-panel. Support dock is a 50px icon with existing accessible label/href; large promotional text is hidden. It hides while the embedded admin drawer or a native dialog is open, restoring afterward. Iframe state messages are handled inside the existing origin/source-validated parent listener. No contact number change.
+
+Shared client/order drawer defaults to 760px on desktop, resizable from 560px to a viewport-bounded maximum1100px. Logical-edge handle supports pointer drag, arrow keys, Home reset, End maximum, double-click reset and localStorage width persistence. Phones/tablets fit the screen and hide the handle. Header wrapping and contained grid/table layouts keep controls within bounds; admin phone navigation wraps instead of widening the page. Versions dashboard styles43, clients-section6, shared order-ui5/UI CSS7, adminCSS12, i18n19.
+
+Local seeded DB/browser checks passed EN/HE x1440/390: compact support size/text, iframe hide/restore, wider panel, pointer resizing, keyboard controls, saved width, phone full width and no horizontal overflow. Screenshots: project-root verification/panel-support; script verification/check-panel-support.mjs. 59 automated tests/build/syntax/diff checks pass. No live customer records changed. Not deployed yet; create PR then user merges, verify production and live UI afterward. Custom domain unrelated and remains pending; Byzroyal excluded.
+
+## PR31 production verified — 13 October 2026
+
+PR31 merged as 088330854a6367546826fa020d54bbaea1fbd9a6. Vercel production deployment dpl_UamGc2PYZCGA5hPjtqPCXbu9ztE1 is READY and serves the public domain. Seven public portal/admin/shared assets matched the tested source. Automatic production deployment succeeded; no extra deployment was required.
+
+Definitive live test (no injected CSS/JS) passed EN/HE x desktop1440/phone390: client send, admin reply through the actual dashboard iframe, immediate Messages visibility, duplicate-send guard, order edit activity and exact Israel timestamps including winter/summer while browser timezone is Manila. Last QA account14/order15 was cancelled with zero fee, archived and disabled. Earlier QA accounts10-13 were also archived/disabled; early failed runs left orders11/12 pending within archived QA accounts, hidden from the working queue and labeled DO NOT SHIP. No real customer orders/messages/prices changed. Evidence: verification/daniel-task/live/results.json, deployment.json, screenshots and verification/check-live-daniel-task.mjs.
+
+A Hebrew phone automation failure was resolved by waiting for the drawer animation to settle. Canonical production CSS passed; an experimental header CSS adjustment was discarded and no extra PR was created. Local tests: 59 pass plus bidirectional browser/database checks. Stored timestamps remain unchanged, original order dates remain, and displayed operational timestamps use Asia/Jerusalem with seconds.
+
+Daniel task status: messaging improvements and Israel-time history DONE/LIVE. Custom domain remains incomplete pending a confirmed Direct Line-owned domain and DNS access. Byzroyal is a separate Shopify business and explicitly excluded. No domain/DNS settings were changed. Do not claim all three Daniel tasks complete or all other unrelated workflows tested.
+
 ## Daniel's messaging and Israel-time task — ready for review, 13 October 2026
 
 Branch codex/messages-israel-time. Basic live client sending was verified in a new clearly labeled QA account (client9/order10); message reached admin, then the QA account was archived and disabled. Original TEST credentials now fail; do not assume they still work. Corrected admin login works; credentials must not be written to handoffs.
