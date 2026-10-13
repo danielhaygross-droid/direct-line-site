@@ -7,6 +7,11 @@
   const L = (en, h) => (he() ? h : en);
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  const exactTime = ms => {
+    if(!ms)return '';
+    if(window.DL?.israelTime)return window.DL.israelTime(ms/1000);
+    return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Jerusalem',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(ms))+L(' (Israel time)',' (שעון ישראל)');
+  };
   function timeAgo(ms) {
     if (!ms) return '';
     const s = Math.max(0, (Date.now() - ms) / 1000);
@@ -82,7 +87,7 @@
 
   const itemHTML = (n, tag = 'button') => `<${tag} type="button" class="dln-item${n.unread ? ' unread' : ''}" data-dln-id="${esc(n.id)}">
     <span class="dln-ic t-${n.tone || 'gold'}">${icon(n.icon)}</span>
-    <span class="dln-tx"><b>${esc(n.title)}</b>${n.text ? `<span>${esc(n.text)}</span>` : ''}<time${n.time ? ` datetime="${new Date(n.time).toISOString()}" title="${esc(new Date(n.time).toLocaleString())}"` : ''}>${esc(n.time ? timeAgo(n.time) : (n.timeText || ''))}</time></span>
+    <span class="dln-tx"><b>${esc(n.title)}</b>${n.text ? `<span>${esc(n.text)}</span>` : ''}<time${n.time ? ` datetime="${new Date(n.time).toISOString()}" title="${esc(exactTime(n.time))}"` : ''}>${esc(n.time ? exactTime(n.time) : (n.timeText || ''))}</time></span>
     <i class="dln-dot" aria-label="${n.unread ? L('Unread', 'לא נקרא') : ''}"></i></${tag}>`;
 
   // ---------- dropdown ----------
@@ -142,7 +147,7 @@
     stack.dir = document.documentElement.dir || 'ltr';
     const card = document.createElement('div');
     card.className = `dln-pop t-${n.tone || 'gold'}`; card.setAttribute('role', 'status');
-    card.innerHTML = `<span class="dln-ic t-${n.tone || 'gold'}">${icon(n.icon)}</span><span class="dln-tx"><b>${esc(n.title)}</b>${n.text ? `<span>${esc(n.text)}</span>` : ''}${onClick ? `<em>${esc(n.action || L('Open', 'פתח'))} →</em>` : `<time>${esc(n.time ? timeAgo(n.time) : '')}</time>`}</span><button type="button" class="dln-x" aria-label="${L('Close', 'סגור')}">×</button>`;
+    card.innerHTML = `<span class="dln-ic t-${n.tone || 'gold'}">${icon(n.icon)}</span><span class="dln-tx"><b>${esc(n.title)}</b>${n.text ? `<span>${esc(n.text)}</span>` : ''}${onClick ? `<em>${esc(n.action || L('Open', 'פתח'))} →</em>` : `<time>${esc(n.time ? exactTime(n.time) : '')}</time>`}</span><button type="button" class="dln-x" aria-label="${L('Close', 'סגור')}">×</button>`;
     const remove = () => { if (!card.isConnected) return; card.classList.add('out'); setTimeout(() => card.remove(), 220); };
     let timer = setTimeout(remove, duration);
     card.addEventListener('mouseenter', () => clearTimeout(timer));
