@@ -1,3 +1,41 @@
+# Claude continuation handoff — 14 October 2026 (Asia/Manila)
+
+This is the current authoritative status. Older entries below are historical and may say awaiting merge even for changes already live. User is moving work to Claude; this turn updates documentation only.
+
+## Start in the correct checkout
+
+Project folder: C:/Users/erwin/Downloads/Direct Line/direct-line-control. Active Git checkout: continuation/. The old C:/Users/erwin/Downloads/direct-line-control path is stale. Current branch codex/viewer-timezone. Implementation commit03ab161; prior handoff commit77a26e7. Remote origin is danielhaygross-droid/direct-line-site; fork is erwins123/direct-line-site. Do not discard uncommitted work or reset the checkout blindly. Root verification/ contains reusable local/browser checks and screenshots. current-site/ has preserved older uncommitted changes; leave it alone. Do not delete the spreadsheet-work/node_modules junction or shared runtime folders.
+
+## Live vs pending — checked again on 14 October
+
+Production: https://direct-line-control.vercel.app. Vercel team z-royal, project direct-line-control, project ID prj_L87KzQS0ekdXau4taXJfRhlpkgMw. Current production deployment dpl_J5vFY6cBcxVd8LGq59A7QLrc3a9c is READY at main merge60b7dfcc70e6f226d63864ad504ab024da89fc47 (PR34). Local origin/main matches this SHA.
+
+PR35 is STILL OPEN and UNMERGED: https://github.com/danielhaygross-droid/direct-line-site/pull/35. Its requested time-zone behavior is implemented/tested, but NOT LIVE. English follows the viewer's device IANA zone (Manila/New York/London, etc.); Hebrew uses Asia/Jerusalem. Exact seconds and appropriate labels remain. Applies to order/client lists, messages, trackers/activity, login/terms/archive times and notifications, including dashboard fallback. Common helper displayTime/displayTimeZone/timeZoneNote replaces israelTime. UI cache versions common13, order-ui8, notify3, admin38, portal36. UTC storage, server deadlines and persisted business dates are unchanged. 64 automated tests passed on this branch; main before PR35 has60. Six local admin/client browser language+zone combinations passed, with winter/summer DST and date-rollover unit coverage. Evidence: verification/viewer-timezone/, verification/check-viewer-timezone.mjs, tests/display-time.test.mjs.
+
+NEXT STEP: after the user merges PR35 using Daniel's GitHub account, verify the production commit/READY state and public assets, then check live English in at least Manila and New York and Hebrew in both browser zones. Check order lists, drawer/history/messages and notifications. Update these documents with actual evidence before calling the change live. No live timestamp verification for PR35 has been done yet. Avoid redeploying when automatic production deployment already matches. Vercel previously blocked direct deployments authored by Erwin; do not spoof commit authors or bypass that restriction.
+
+## Completed and live
+
+PR31: client/admin conversation visibility, immediate send/reply display and exact timestamp history. PR32: wider/resizable order and client drawers (desktop default760px, pointer/keyboard resize and saved width, full-width phone). PR33: support CTA exists only for authenticated clients, absent from admins, admin-preview and signed-out views; compact icon clears phone tabs and hides over open drawers/menus. PR34: admin Archive order with confirmation, Archived orders filter and Restore; archived orders are read-only and excluded from normal client/admin lists, notifications, claims and supplier Work Queue. Stored status, amounts, payments, refund/cancellation adjustments and edit locks remain; billing history is retained. Sheet-photo bearer links are revoked while the order/client is archived. Local restore behavior passed; live checks verified archived lists/read-only/Restore control without restoring the user-requested archived orders. Earlier live evidence is in verification/daniel-task/live, panel-support/live, client-only-support/live and order-archive/live.
+
+Three user-confirmed training orders are archived: DB6/ref45858595, DB7/ref247012947412412, DB8/ref41047120940. Preserve the Shahar111, hadsash and YehudaVaknin client accounts. User explicitly said KEEP hadsash. TEST/Test1/QA accounts are archived and excluded from active lists, not permanently deleted. At the last live cleanup check on13 October, eight NEW customer orders16–23 were preserved; this is a historical count, so re-read current data before any further cleanup. Do not archive additional orders just because a client previously used the site for training. Cleanup evidence: verification/confirmed-test-order-removal.json and test-cleanup-live.json.
+
+## Connected supplier spreadsheet
+
+LIVE source: https://docs.google.com/spreadsheets/d/1L_C87W4jrZGIIrT2Fg_cGowNi3R5fTehdDw8d-vpZag/edit. Backup before cleanup: https://docs.google.com/spreadsheets/d/1bdGsSBIRD1FaRZDVVk14_AStYzdjqrjLDpsIeUOwtNk/edit. Edit the existing native sheet, not a local XLSX snapshot.
+
+Work Queue (gid2026101301) is first; only Work Queue and Clients are visible. Fourteen daily columns show date, order, client, status, photo preview/link, product link, quantity, product/variation, customer, combined delivery address/phone, country, notes and tracking. Expandable O–X holds costs and photos2–8. Hidden Y contains source row indexes. Original technical tabs remain hidden with original names and schema because sync depends on them. Orders sheet ID1260969184 keeps existing57 columns; BF is the58th column, Boolean Archived. Archived training orders stay only in that hidden ledger with BF=TRUE and are absent from Work Queue. Account archival clears matching sheet rows including duplicate sync rows; restore queues repopulation.
+
+First cleanup removed11 old/test client rows,14 test order rows (including duplicates) and30 test log rows. Confirmed training cleanup subsequently removed3 source rows and46 old log rows; archive sync retains their hidden ledger records. Last readback:8 visible real orders, zero formula errors, working photo/product hyperlinks and a photo HTTP200 image/jpeg. Formatting/layout inspected through native metadata plus an exported render using Google-calculated values. Native IMAGE thumbnail appearance itself was not visually inspected. FILTER/FORMULATEXT do not recalculate in the local renderer; its initial #NAME preview was an export/render compatibility issue, not a live formula error. Work Queue currently has995 data rows of formulas; extend grid/formulas before exceeding this. Website remains the source of truth; editing Sheet cells does not update portal orders.
+
+## User constraints and artifacts
+
+Keep communications concise and minimize usage. Do not ask again for previously authorized reversible work. Never touch Byzroyal: it is a separate Shopify business and expressly excluded. Custom-domain shopping/setup is PAUSED by the user; do not buy, rename or configure a domain. The simple delivery form is intentionally customer name + combined address/phone + required country, overriding Shahar's separate-field suggestion at Erwin's request.
+
+English and Hebrew client guides must be separate PDFs: output/pdf/Direct-Line-Client-Portal-Guide-English.pdf and Direct-Line-Client-Portal-Guide-Hebrew.pdf. Reports already on disk predate some newer PRs; do not claim they include every later change. Daily report13October contains the connected sheet link and Erwin's confirmation that Etsy store checks are complete. Original illustrated12October report covers tasks1–15. Update/report/export only when requested. Do not put passwords/session cookies/tokens into handoffs or reports; credentials were supplied in chat, not saved in these documents. Request a working verification login from the user if your environment lacks it. Prefer read-only live checks; use clearly labeled QA records and archive the QA account after tests so rows do not pollute the sheet.
+
+---
+
 PR35 ready for merge: https://github.com/danielhaygross-droid/direct-line-site/pull/35 — timestamp language/zone change tested, not live yet.
 
 ## Language-based timestamp display ready — 13 October 2026
