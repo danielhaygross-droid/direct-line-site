@@ -257,11 +257,44 @@
       </section>
       <section class="card card-pad"><h3 class="form-sec">Team accounts</h3><div class="acc-list" data-admins>${adminsHTML()}</div>
         <button type="button" class="btn" style="margin-top:12px" data-add-account="admin">${ic('plus')}Add admin</button></section>
+      <section class="card card-pad"><h3 class="form-sec">Storage &amp; backups</h3><div data-storage><p class="muted" style="margin:0">Loading…</p></div>
+        <div class="row-actions" data-storage-actions hidden style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-backup-now>Back up now</button><button type="button" class="btn btn-sm" data-copy-files>Copy files now</button></div>
+        <p class="form-msg" data-storage-msg role="status"></p></section>
       <section class="card card-pad"><h3 class="form-sec">Client portal link</h3><p class="muted" style="margin:0 0 10px;font-size:14px">Clients sign in here with the username and password you give them.</p>
         <div class="copy-line"><span style="flex:1">${esc(location.origin)}/portal/</span><button type="button" class="btn btn-sm" data-copy="${esc(location.origin)}/portal/">${ic('copy')}Copy</button></div></section>
     </div>`;
   }
+  const kb = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  function storageHTML(d) {
+    const s = d.storage;
+    if (!s.configured) return '<p class="note" style="margin:0">File storage isn’t connected yet. Photos and documents stay in the database as before. Connect a private Blob store in Vercel to turn on file storage and daily backups.</p>';
+    const total = s.kinds.reduce((n, k) => n + k.total, 0), copied = s.kinds.reduce((n, k) => n + k.copied, 0), cleared = s.kinds.reduce((n, k) => n + k.cleared, 0);
+    const dbBytes = s.kinds.reduce((n, k) => n + k.databaseBytes, 0);
+    const files = `<p style="margin:0 0 6px"><b>${copied} of ${total} files copied to file storage.</b></p>
+      <p class="note" style="margin:0"><span>${s.clearing ? `${cleared} database copies removed after checking.` : 'Database copies are kept for safety.'}</span> <span>Files still in the database: ${kb(dbBytes)}</span></p>`;
+    const list = d.backups.length ? `<div class="acc-list">${d.backups.slice(0, 7).map(b => `<div><span class="who"><span><b>${esc(fmtDay(b.date))}</b><small>${kb(b.bytes)}</small></span></span><a class="btn btn-sm" style="margin-inline-start:auto" href="/api/portal/admin/backups/${encodeURIComponent(b.name)}" target="_blank" rel="noopener" data-backup-link>Download</a></div>`).join('')}</div>`
+      : `<p class="note" style="margin:0">${d.backupError ? esc(d.backupError) : 'No backups yet. The first one runs automatically within a day, or press Back up now.'}</p>`;
+    return files + '<p style="margin:12px 0 6px"><b>Daily backups</b> <small class="muted">kept for 30 days</small></p>' + list;
+  }
+  async function loadStorage() {
+    const box = $('[data-storage]'); if (!box) return;
+    try { const d = await api('/admin/storage'); box.innerHTML = storageHTML(d); $('[data-storage-actions]').hidden = !d.storage.configured; }
+    catch (ex) { box.innerHTML = `<p class="note" style="margin:0">${esc(ex.message)}</p>`; }
+  }
+  function bindStorage() {
+    loadStorage();
+    const m = $('[data-storage-msg]');
+    const run = (sel, path, done) => { const b = $(sel); if (b) b.addEventListener('click', async () => {
+      b.disabled = true; m.textContent = 'Working…'; m.className = 'form-msg';
+      try { const r = await api(path, { method: 'POST' }); m.textContent = done(r); m.className = 'form-msg ok'; await loadStorage(); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+      b.disabled = false;
+    }); };
+    run('[data-backup-now]', '/admin/backups/run', r => r.configured === false ? 'File storage isn’t connected yet.' : 'Backup saved.');
+    run('[data-copy-files]', '/admin/storage/sync', r => r.configured === false ? 'File storage isn’t connected yet.' : `${r.copied} files copied.${r.failed ? ` ${r.failed} will be retried.` : ''}${r.more ? ' More remain; they continue automatically every hour.' : ''}`);
+  }
   function bindSettings() {
+    bindStorage();
     const tf = $('#terms-publish');
     if (tf) tf.addEventListener('submit', async e => {
       e.preventDefault(); const b = $('[type=submit]', tf), m = $('[data-terms-msg]'); b.disabled = true;

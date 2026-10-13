@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { storedBytes } from './file-storage.mjs';
 
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const FILE_SCHEMA = [
@@ -61,10 +62,12 @@ export async function recordTransfer(DB, id) {
     .bind(f.client_id,f.amount,'Transfer confirmation #'+id,Math.floor(Date.parse(f.document_date+'T12:00:00Z')/1000),Math.floor(Date.now()/1000),id).run();
   return (await transfers(DB,f.client_id)).find(x=>x.id===Number(id));
 }
-export async function downloadFile(DB, id, who, url) {
+export async function downloadFile(DB, id, who, url, env={}) {
   const row=await DB.prepare('SELECT * FROM portal_files WHERE id=? AND NOT archived').bind(id).first();
   if (!row || !who.admin && Number(row.client_id)!==Number(who.clientId)) return new Response('Not found',{status:404});
+  const bytes=await storedBytes(env,row.content,row.blob_path);
+  if (!bytes) return new Response('Not found',{status:404});
   const inline=url.searchParams.get('inline')==='1' && row.mime.startsWith('image/');
-  return new Response(Buffer.from(row.content,'base64'),{headers:{'content-type':row.mime,'cache-control':'private, no-store','x-content-type-options':'nosniff',
+  return new Response(bytes,{headers:{'content-type':row.mime,'cache-control':'private, no-store','x-content-type-options':'nosniff',
     'content-security-policy':"default-src 'none'; sandbox",'content-disposition':`${inline?'inline':'attachment'}; filename*=UTF-8''${encodeURIComponent(row.filename)}`}});
 }

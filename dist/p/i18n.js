@@ -505,11 +505,21 @@
     'Client Portal': 'פורטל לקוחות', 'Clients & orders': 'לקוחות והזמנות', 'Language': 'שפה', 'Loading…': 'טוען…',
     'active': 'פעיל', 'You': 'אני', 'Preview:': 'תצוגה מקדימה:',
     'UK': 'בריטניה', 'GB': 'בריטניה', 'US': 'ארה״ב',
+    // Settings → Storage & backups
+    'Storage & backups': 'אחסון וגיבויים', 'Back up now': 'גיבוי עכשיו', 'Copy files now': 'העתקת קבצים עכשיו', 'Download': 'הורדה',
+    'File storage isn’t connected yet. Photos and documents stay in the database as before. Connect a private Blob store in Vercel to turn on file storage and daily backups.': 'אחסון הקבצים עדיין לא מחובר. תמונות ומסמכים נשמרים במסד הנתונים כמו קודם. חברו אחסון Blob פרטי ב-Vercel כדי להפעיל אחסון קבצים וגיבויים יומיים.',
+    'Database copies are kept for safety.': 'העותקים במסד הנתונים נשמרים ליתר ביטחון.', 'Daily backups': 'גיבויים יומיים', 'kept for 30 days': 'נשמרים 30 יום',
+    'No backups yet. The first one runs automatically within a day, or press Back up now.': 'עדיין אין גיבויים. הגיבוי הראשון ירוץ אוטומטית תוך יום, או לחצו על ״גיבוי עכשיו״.',
+    'Could not list backups': 'לא ניתן להציג את הגיבויים', 'Working…': 'מעבד…', 'Backup saved.': 'הגיבוי נשמר.', 'File storage isn’t connected yet.': 'אחסון הקבצים עדיין לא מחובר.',
   };
   for (const k of ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr']) D[k] = mon(k);
 
   const tc = s => tr(s); // translate a captured piece (e.g. a country or date)
   const R = [
+    [/^(\d+) of (\d+) files copied to file storage\.$/, (_, c, t) => `${c} מתוך ${t} קבצים הועתקו לאחסון הקבצים.`],
+    [/^(\d+) database copies removed after checking\.$/, (_, n) => `${n} עותקים הוסרו ממסד הנתונים לאחר בדיקה.`],
+    [/^Files still in the database: ([\d.]+ [KM]B)$/, (_, s) => `קבצים שעדיין במסד הנתונים: ${s}`],
+    [/^(\d+) files copied\.(?: (\d+) will be retried\.)?( More remain; they continue automatically every hour\.)?$/, (_, n, f, more) => `${n} קבצים הועתקו.${f ? ` ${f} יועתקו שוב בהמשך.` : ''}${more ? ' נותרו עוד קבצים; ההעתקה ממשיכה אוטומטית כל שעה.' : ''}`],
     [/^(\d+) transfer confirmations? waiting$/, (_, n) => `${n} אישורי העברה ממתינים`],
     [/^You can edit for (\d+) more hours\.$/, (_, n) => `אפשר לערוך במשך ${n} שעות נוספות.`],
     [/^(\d+) accounts?$/, (m, n) => `${n} ${plural(n, 'חשבון', 'חשבונות')}`],

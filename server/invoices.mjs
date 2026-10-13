@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {uploadedFile,documentDate} from './files.mjs';
+import {storedBytes} from './file-storage.mjs';
 export const INVOICE_SCHEMA=[
  'ALTER TABLE portal_files ADD COLUMN IF NOT EXISTS payment_id INTEGER REFERENCES client_payments(id)',
  'CREATE TABLE IF NOT EXISTS invoice_orders(file_id INTEGER NOT NULL REFERENCES portal_files(id),order_id INTEGER NOT NULL REFERENCES client_orders(id),PRIMARY KEY(file_id,order_id))',
@@ -36,10 +37,10 @@ export async function* zipEntries(entries) {
  const footer=Buffer.alloc(22),size=central.reduce((n,c)=>n+c.length,0);footer.writeUInt32LE(0x06054b50);footer.writeUInt16LE(central.length,8);footer.writeUInt16LE(central.length,10);footer.writeUInt32LE(size,12);footer.writeUInt32LE(offset,16);
  for(const c of central)yield c;yield footer;
 }
-export async function monthlyInvoices(DB,clientId,month) {
+export async function monthlyInvoices(DB,clientId,month,env={}) {
  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month||''))return new Response('Choose a valid month',{status:400});
  const files=(await invoices(DB,clientId)).filter(f=>f.date.startsWith(month));if(!files.length)return new Response('No invoices for this month',{status:404});
- async function* entries(){for(const f of files){const row=await DB.prepare("SELECT content FROM portal_files WHERE id=? AND client_id=? AND kind='invoice' AND NOT archived").bind(f.id,clientId).first();if(row)yield{name:f.id+'-'+f.filename,data:Buffer.from(row.content,'base64')};}}
+ async function* entries(){for(const f of files){const row=await DB.prepare("SELECT content,blob_path FROM portal_files WHERE id=? AND client_id=? AND kind='invoice' AND NOT archived").bind(f.id,clientId).first();const data=row&&await storedBytes(env,row.content,row.blob_path);if(data)yield{name:f.id+'-'+f.filename,data};}}
  const generator=zipEntries(entries());
  return new Response(new ReadableStream({async pull(controller){try{const {value,done}=await generator.next();if(done)controller.close();else controller.enqueue(value);}catch(e){controller.error(e);}},async cancel(){await generator.return();}}),{headers:{'content-type':'application/zip','content-disposition':`attachment; filename="Direct-Line-invoices-${month}.zip"`,'cache-control':'private, no-store','x-content-type-options':'nosniff'}});
 }

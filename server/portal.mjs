@@ -22,6 +22,9 @@ import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from
 
 import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance } from './client-stores.mjs';
 
+import { STORAGE_SCHEMA, photoBytes, syncFileStorage, fileStorageStatus } from './file-storage.mjs';
+import { runBackup, listBackups, downloadBackup } from './backup.mjs';
+
 const utf8 = new TextEncoder();
 const SESSION_SECONDS = 43200; // 12h, same as the Worker
 const b64url = bytes => Buffer.from(bytes).toString('base64url');
@@ -166,7 +169,7 @@ export const SCHEMA = [
 // Supplier shipping rates (USD per kg) — from the supplier's rate sheet. Admin-only: sent with
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
-SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA);
+SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA, ...STORAGE_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -372,8 +375,8 @@ function photoInput(p) {
   return { ...full, thumbMime: thumb.mime, thumbB64: thumb.b64, width: dim(p?.width), height: dim(p?.height) };
 }
 async function insertPhoto(DB, orderId, clientId, photo, by) {
-  const row = await DB.prepare('INSERT INTO order_photos (order_id, client_id, mime, data, thumb_mime, thumb, width, height, bytes, added_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id, order_id, width, height, added_by, created_at')
-    .bind(orderId, clientId, photo.mime, photo.b64, photo.thumbMime, photo.thumbB64, photo.width, photo.height, photo.bytes, by, now()).first();
+  const row = await DB.prepare('INSERT INTO order_photos (order_id, client_id, mime, data, thumb_mime, thumb, width, height, bytes, added_by, created_at, blob_path) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id, order_id, width, height, added_by, created_at')
+    .bind(orderId, clientId, photo.mime, photo.b64, photo.thumbMime, photo.thumbB64, photo.width, photo.height, photo.bytes, by, now(), photo.blobPath || null).first();
   return photoOut(row);
 }
 const photoOut = r => ({ id: Number(r.id), orderId: Number(r.order_id), width: r.width == null ? null : Number(r.width), height: r.height == null ? null : Number(r.height), addedBy: r.added_by, createdAt: Number(r.created_at) });
@@ -509,7 +512,7 @@ export async function handlePortal(request, url, ctx) {
     return json({ ok: true, accepted: await acceptTerms(DB,who.clientId,policy.version,request) });
   }
   const fileMatch=/^\/files\/(\d+)$/.exec(path);
-  if (fileMatch && method === 'GET') return downloadFile(DB,Number(fileMatch[1]),who,url);
+  if (fileMatch && method === 'GET') return downloadFile(DB,Number(fileMatch[1]),who,url,env);
   if (path === '/transfers' && method === 'GET' && !who.admin) return json({ ok:true, transfers:await transfers(DB,who.clientId) });
   if (path === '/transfers' && method === 'POST' && !who.admin && !who.preview) {
     try { return json({ ok:true, transfer:await saveTransfer(DB,who.clientId,await readBody(request)) }); }
@@ -549,11 +552,11 @@ export async function handlePortal(request, url, ctx) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? AND NOT archived ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
     return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })), invoices: await invoices(DB,who.clientId), adjustments: await balanceAdjustments(DB,who.clientId), transfers: await transfers(DB,who.clientId) });
   }
-  if (path==='/invoices/month' && method==='GET' && !who.admin) return monthlyInvoices(DB,who.clientId,url.searchParams.get('month'));
+  if (path==='/invoices/month' && method==='GET' && !who.admin) return monthlyInvoices(DB,who.clientId,url.searchParams.get('month'),env);
   if(path==='/client-stores'&&!who.admin){if(method==='GET')return json({ok:true,stores:await clientStores(DB,who.clientId)});if(method==='POST'){try{const store=await saveStore(DB,who.clientId,null,await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}}
   const storeEdit=/^\/client-stores\/(\d+)$/.exec(path);if(storeEdit&&method==='POST'&&!who.admin){try{const store=await saveStore(DB,who.clientId,Number(storeEdit[1]),await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
   if(path==='/products' && !who.admin){if(method==='GET')return json({ok:true,products:await products(DB,who.clientId)});if(method==='POST'){try{return json({ok:true,product:await addProduct(DB,who.clientId,await readBody(request))});}catch(e){return json({ok:false,error:e.message},400);}}}
-  const productImage=/^\/products\/(\d+)\/photos\/(\d+)$/.exec(path);if(productImage&&method==='GET')return productPhoto(DB,Number(productImage[1]),Number(productImage[2]),who);
+  const productImage=/^\/products\/(\d+)\/photos\/(\d+)$/.exec(path);if(productImage&&method==='GET')return productPhoto(DB,Number(productImage[1]),Number(productImage[2]),who,env);
   if (path === '/orders' && method === 'POST') {
     const body = await readBody(request);
     const clientId = who.admin ? Number(body.clientId) : who.clientId;
@@ -581,7 +584,7 @@ export async function handlePortal(request, url, ctx) {
     if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link from your store.' }, 400);
     const photoBodies = savedProduct ? [] : Array.isArray(body.photos) ? body.photos : [];
     if (photoBodies.length > MAX_PHOTOS_PER_ORDER) return json({ ok: false, error: `Up to ${MAX_PHOTOS_PER_ORDER} photos per order` }, 400);
-    let photos; try { photos = savedProduct ? productPhotos.map(p=>({mime:p.mime,b64:p.data,bytes:p.bytes,thumbMime:p.mime,thumbB64:p.data,width:null,height:null})) : photoBodies.map(photoInput); } catch (e) { return json({ ok: false, error: e.message }, 400); }
+    let photos; try { photos = savedProduct ? productPhotos.map(p=>({mime:p.mime,b64:p.data,blobPath:p.blob_path,bytes:p.bytes,thumbMime:'',thumbB64:'',width:null,height:null})) : photoBodies.map(photoInput); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     if (!who.admin && !photos.length) return json({ ok: false, error: 'Please add at least one photo or screenshot of the product.' }, 400);
     const settings = await getSettings(DB);
     const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, who.admin ? 'admin' : 'client', '', settings);
@@ -716,12 +719,11 @@ export async function handlePortal(request, url, ctx) {
       return json({ ok: true });
     }
     if (photoOne && !photoOne[3] && method === 'GET') {
-      const thumb = url.searchParams.get('size') === 'thumb';
-      const row = await DB.prepare(thumb ? "SELECT CASE WHEN thumb <> '' THEN thumb_mime ELSE mime END AS mime, CASE WHEN thumb <> '' THEN thumb ELSE data END AS data FROM order_photos WHERE id = ? AND order_id = ?"
-        : 'SELECT mime, data FROM order_photos WHERE id = ? AND order_id = ?').bind(Number(photoOne[2]), id).first();
-      if (!row) return new Response('Not found', { status: 404 });
-      return new Response(Buffer.from(row.data, 'base64'), { headers: {
-        'content-type': row.mime, 'cache-control': 'private, max-age=31536000, immutable', 'x-content-type-options': 'nosniff',
+      const row = await DB.prepare('SELECT mime, data, blob_path, thumb_mime, thumb, thumb_blob_path FROM order_photos WHERE id = ? AND order_id = ?').bind(Number(photoOne[2]), id).first();
+      const image = row && await photoBytes(env, row, url.searchParams.get('size') === 'thumb');
+      if (!image?.bytes) return new Response('Not found', { status: 404 });
+      return new Response(image.bytes, { headers: {
+        'content-type': image.mime, 'cache-control': 'private, max-age=31536000, immutable', 'x-content-type-options': 'nosniff',
         'content-security-policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'", 'content-disposition': 'inline',
       } });
     }
@@ -746,6 +748,18 @@ export async function handlePortal(request, url, ctx) {
     await DB.prepare('UPDATE client_payments SET archived=FALSE WHERE id=?').bind(Number(restorePayment[1])).run();
     return json({ok:true});
   }
+  // ----- file storage + backups (admin Settings → Storage & backups) -----
+  if (path === '/admin/storage' && method === 'GET') {
+    let backups = [], backupError = null;
+    try { backups = await listBackups(env); } catch (e) { backupError = 'Could not list backups'; console.error('List backups failed', e); }
+    return json({ ok: true, storage: await fileStorageStatus(DB, env), backups, backupError });
+  }
+  if (path === '/admin/storage/sync' && method === 'POST') return json(await syncFileStorage(DB, env));
+  if (path === '/admin/backups/run' && method === 'POST') {
+    try { return json(await runBackup(DB, env)); } catch (e) { console.error('Backup failed', e); return json({ ok: false, error: 'Backup failed: ' + e.message }, 500); }
+  }
+  const backupFile = /^\/admin\/backups\/([\w.-]+)$/.exec(path);
+  if (backupFile && method === 'GET') return downloadBackup(env, backupFile[1]);
   if (path === '/admin/overview' && method === 'GET') {
     const pendingSync = retryPendingGoogleSheetOrders(DB, env).catch(error => console.error('Google Sheets pending-order retry failed', error));
     if (waitUntil) waitUntil(pendingSync);
