@@ -20,7 +20,7 @@ export async function serveSheetPhoto(DB, env, url, orderId, photoId) {
   if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return missing();
   const row = await DB.prepare(`SELECT p.mime,p.data,p.thumb_mime,p.thumb FROM order_photos p
     JOIN client_orders o ON o.id=p.order_id JOIN users u ON u.id=o.client_id
-    WHERE p.order_id=? AND p.id=? AND u.active AND NOT u.archived`).bind(orderId,photoId).first();
+    WHERE p.order_id=? AND p.id=? AND u.active AND NOT u.archived AND NOT o.archived`).bind(orderId,photoId).first();
   if (!row) return missing();
   const thumb = url.searchParams.get('size') === 'thumb' && row.thumb;
   const mime = thumb ? row.thumb_mime : row.mime;

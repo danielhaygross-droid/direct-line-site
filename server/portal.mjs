@@ -119,6 +119,8 @@ export const SCHEMA = [
   // Archived clients (e.g. test accounts) are hidden from lists, totals and notifications and can't sign in.
   // Nothing is deleted: an admin can restore them.
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS archived_at INTEGER',
   // Client subscription (first month free, then a monthly price). Dates are YYYY-MM-DD.
   // Tracked by hand for now: nothing is charged or blocked automatically.
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_required BOOLEAN NOT NULL DEFAULT FALSE',
@@ -289,7 +291,7 @@ async function getSettings(DB) {
 function orderOut(r) {
   const price = Number(r.price || 0), sell = r.selling_price === null ? null : Number(r.selling_price);
   return {
-    id: r.id, clientId: r.client_id, storeId:r.store_id==null?null:Number(r.store_id),productId:r.product_id==null?null:Number(r.product_id), quotedUnitPrice:r.quoted_unit_price==null?null:Number(r.quoted_unit_price), orderRef: r.order_ref, trackingNumber: r.tracking_number,
+    id: r.id, archived: !!r.archived, archivedAt: r.archived_at == null ? null : Number(r.archived_at), clientId: r.client_id, storeId:r.store_id==null?null:Number(r.store_id),productId:r.product_id==null?null:Number(r.product_id), quotedUnitPrice:r.quoted_unit_price==null?null:Number(r.quoted_unit_price), orderRef: r.order_ref, trackingNumber: r.tracking_number,
     destination: r.destination, category: r.category, weightKg: r.weight_kg === null ? null : Number(r.weight_kg),
     // price = what the client pays for the order = product cost (incl. our hidden fee) + shipping fee.
     productCost: r.product_cost === null || r.product_cost === undefined ? null : Number(r.product_cost),
@@ -532,9 +534,15 @@ export async function handlePortal(request, url, ctx) {
     return json({ ok: true, role: 'client', preview: !!who.preview, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor, ...Object.fromEntries(BANK_FIELDS.map(k => [k, settings[k] || ''])) }, subscription: subscriptionOut(u, settings), summary: (({ commission, supplierShare, ourShare, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
   }
 
+  // Archived orders are read-only for admins and unavailable to clients.
+  const scopedOrder = /^\/orders\/(\d+)(?:\/|$)/.exec(path);
+  if (scopedOrder) {
+    const order = await DB.prepare('SELECT archived FROM client_orders WHERE id=?').bind(Number(scopedOrder[1])).first();
+    if (order?.archived && (!who.admin || method !== 'GET')) return json({ok:false,error:who.admin ? 'Restore this order before making changes.' : 'Not found'},who.admin ? 409 : 404);
+  }
   // ----- client routes -----
   if (path === '/orders' && method === 'GET' && !who.admin) {
-    const rows = (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? ORDER BY created_at DESC, id DESC').bind(who.clientId).all()).results || [];
+    const rows = (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? AND NOT archived ORDER BY created_at DESC, id DESC').bind(who.clientId).all()).results || [];
     return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, rows.map(orderOut).map(clientOrder), false)) });
   }
   if (path === '/payments' && method === 'GET' && !who.admin) {
@@ -582,7 +590,7 @@ export async function handlePortal(request, url, ctx) {
   }
   // ----- notifications: what the other side did, newest first -----
   if (path === '/notifications' && method === 'GET' && !who.admin) {
-    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND e.actor = 'admin' ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
+    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND NOT o.archived AND e.actor = 'admin' ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
     for(const f of await invoices(DB,who.clientId)) rows.push({id:'invoice-'+f.id,order_id:f.orderIds[0]||null,client_id:who.clientId,kind:'invoice',actor:'admin',detail:f.filename,created_at:f.createdAt});
     rows.sort((a,b)=>Number(b.created_at)-Number(a.created_at));
     const u = await DB.prepare('SELECT notif_seen_at FROM users WHERE id = ?').bind(who.clientId).first();
@@ -784,21 +792,33 @@ export async function handlePortal(request, url, ctx) {
     return json({ ok: true, ...(await retryPendingGoogleSheetOrders(DB, env)) });
   }
   if (path === '/admin/notifications' && method === 'GET') {
-    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE e.actor = 'client' AND NOT u.archived ORDER BY e.created_at DESC, e.id DESC LIMIT 60").all()).results || [];
+    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE e.actor = 'client' AND NOT u.archived AND NOT o.archived ORDER BY e.created_at DESC, e.id DESC LIMIT 60").all()).results || [];
     return json({ ok: true, items: [...rows.map(eventOut),...await productEvents(DB,null,'client')].sort((a,b)=>b.createdAt-a.createdAt).slice(0,60), now: now() });
   }
+  const archiveOrder = /^\/admin\/orders\/(\d+)\/archive$/.exec(path);
+  if (archiveOrder && method === 'POST') {
+    const body = await readBody(request), id = Number(archiveOrder[1]);
+    if (typeof body?.archived !== 'boolean') return json({ok:false,error:'Choose archive or restore.'},400);
+    const old = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(id).first();
+    if (!old) return json({ok:false,error:'Not found'},404);
+    if (!!old.archived !== body.archived) {
+      const row = await DB.prepare("UPDATE client_orders SET archived=?,archived_at=?,updated_at=?,sheet_sync_status='waiting' WHERE id=? AND archived<>? RETURNING *").bind(body.archived,body.archived ? now() : null,now(),id,body.archived).first();
+      if (row) await logEvent(DB,id,row.client_id,body.archived ? 'archived' : 'restored','admin');
+    }
+    const sync = syncPortalOrderToGoogleSheet(DB,env,id).catch(error=>console.error('Archived order sheet sync failed',error));
+    if (waitUntil) waitUntil(sync); else await sync;
+    return json({ok:true,archived:body.archived});
+  }
   if (path === '/admin/orders' && method === 'GET') {
-    const clientId = Number(url.searchParams.get('clientId') || 0);
-    const rows = clientId
-      ? (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? ORDER BY created_at DESC, id DESC').bind(clientId).all()).results
-      : (await DB.prepare('SELECT * FROM client_orders WHERE client_id NOT IN (SELECT id FROM users WHERE archived) ORDER BY created_at DESC, id DESC LIMIT 500').all()).results;
+    const clientId = Number(url.searchParams.get('clientId') || 0), archived = url.searchParams.get('archived') === '1';
+    const rows = (await DB.prepare(`SELECT * FROM client_orders WHERE archived=? ${clientId ? 'AND client_id=?' : 'AND client_id NOT IN (SELECT id FROM users WHERE archived)'} ORDER BY created_at DESC, id DESC LIMIT 500`).bind(archived,...(clientId ? [clientId] : [])).all()).results;
     return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)) });
   }
   if(path==='/admin/client-stores'&&method==='GET'){const clientId=url.searchParams.has('clientId')?Number(url.searchParams.get('clientId')):null;return json({ok:true,stores:await clientStores(DB,clientId)});}
   const adminStore=/^\/admin\/client-stores(?:\/(\d+))?$/.exec(path);if(adminStore&&method==='POST'){const body=await readBody(request);try{const store=await saveStore(DB,Number(body.clientId),adminStore[1]?Number(adminStore[1]):null,body);return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
   if(path==='/admin/claims'&&method==='GET')return json({ok:true,claims:await claims(DB)});
   const claimDecision=/^\/admin\/claims\/(\d+)$/.exec(path);if(claimDecision&&method==='POST'){try{const claim=await decideClaim(DB,Number(claimDecision[1]),await readBody(request));if(claim.reshipmentOrderId){const sync=syncPortalOrderToGoogleSheet(DB,env,claim.reshipmentOrderId).catch(()=>{});if(waitUntil)waitUntil(sync);}return json({ok:true,claim});}catch(e){return json({ok:false,error:e.message},409);}}
-  const trackingUpdate=/^\/admin\/orders\/(\d+)\/tracking-update$/.exec(path);if(trackingUpdate&&method==='POST'){const order=await DB.prepare('UPDATE client_orders SET last_tracking_update_at=?,updated_at=? WHERE id=? RETURNING *').bind(now(),now(),Number(trackingUpdate[1])).first();if(!order)return json({ok:false,error:'Not found'},404);await logEvent(DB,order.id,order.client_id,'tracking_update','admin');return json({ok:true,order:orderOut(order)});}
+  const trackingUpdate=/^\/admin\/orders\/(\d+)\/tracking-update$/.exec(path);if(trackingUpdate&&method==='POST'){const order=await DB.prepare('UPDATE client_orders SET last_tracking_update_at=?,updated_at=? WHERE id=? AND NOT archived RETURNING *').bind(now(),now(),Number(trackingUpdate[1])).first();if(!order)return json({ok:false,error:'Not found'},404);await logEvent(DB,order.id,order.client_id,'tracking_update','admin');return json({ok:true,order:orderOut(order)});}
   if(path==='/admin/products'&&method==='GET')return json({ok:true,products:await products(DB)});
   const productQuote=/^\/admin\/products\/(\d+)$/.exec(path);if(productQuote&&method==='POST'){try{const product=await quoteProduct(DB,Number(productQuote[1]),await readBody(request));return product?json({ok:true,product}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
   if (path==='/admin/invoices' && method==='GET') return json({ok:true,invoices:await invoices(DB,Number(url.searchParams.get('clientId')))});
@@ -885,6 +905,7 @@ export async function handlePortal(request, url, ctx) {
     }
     await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=CASE WHEN ? THEN ? ELSE password_hash END, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=?, password_reset_required=CASE WHEN ? THEN ? ELSE password_reset_required END, session_version=session_version+? WHERE id = ?').bind(name, active, cpo, !!body.password, hash, archived, trialStart, trialEnd, subStatus, lastPay, !!body.password, u.role === 'client', body.password ? 1 : 0, id).run();
     if (u.role === 'client') {
+      if (archived !== u.archived) await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE client_id=?").bind(id).run();
       const sheetSync = syncClientToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets client update failed', error));
       if (waitUntil) waitUntil(sheetSync); else await sheetSync;
     }
