@@ -48,6 +48,8 @@
   };
   const date = s => (s ? new Date(s * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
   const trackingUrl = n => 'https://t.17track.net/en#nums=' + encodeURIComponent(n);
+  // A product link pasted without https:// ("www.etsy.com/listing/…") is completed. Same rule as productLinks() on the server.
+  const fullLink = v => { const t = String(v || '').trim(); return t && !/^[a-z][a-z0-9+.-]*:/i.test(t) && /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+([/?#]|$)/i.test(t) ? 'https://' + t : t; };
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -274,5 +276,5 @@
       <div class="pm-linkrow">${link}</div>`;
   }
 
-  window.DL = { setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  window.DL = { setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();
