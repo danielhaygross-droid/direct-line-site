@@ -54,3 +54,16 @@ test('clients never receive the supplier cost; admin order panel and client noti
   const admin = await readFile(new URL('../dist/admin/admin.js', import.meta.url), 'utf8');
   assert.ok(admin.includes("'/admin/supplier-sheet/setup'") && admin.includes('Supplier total'));
 });
+
+test('rows grow to fit wrapped text (min 100 px for the photo); widths cover every column', async () => {
+  const { rowPx, WIDTHS } = await import('../server/supplier-sheet.mjs');
+  assert.equal(WIDTHS.length, HEADERS.length);
+  const base = ["'2026-10-12", '#1', 'Shop', 'Pending', '=IMAGE("x")', '=HYPERLINK("x")', '=HYPERLINK("y")', 1, 'Black', 'Jo', 'Jo\n1 St\nCity', 'US', ''];
+  assert.equal(rowPx(base), 100);
+  const tall = [...base]; tall[10] = 'Name\n560 W North St\n6302509070\nITASCA, IL 60143\nUnited States\n(630) 460-2007';
+  assert.ok(rowPx(tall) > 100, 'six-line address gets a taller row');
+  const notes = [...base]; notes[12] = 'x'.repeat(2000);
+  assert.equal(rowPx(notes), 600, 'capped');
+  const src = await readFile(new URL('../server/supplier-sheet.mjs', import.meta.url), 'utf8');
+  assert.match(src, /startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 26 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' }/, 'row 5 down: wrapped and centred');
+});

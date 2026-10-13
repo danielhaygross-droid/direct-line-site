@@ -87,7 +87,20 @@ async function idColumn(env, fetchImpl) {
 }
 const batchValues = (env, data, fetchImpl) => sheetsRequest(env, '/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data }) }, fetchImpl);
 const batch = (env, requests, fetchImpl) => sheetsRequest(env, ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests }) }, fetchImpl);
-const rowHeight = (sheetId, start, end) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: start - 1, endIndex: end }, properties: { pixelSize: 100 }, fields: 'pixelSize' } });
+// Column widths (px) for A–Z, sized to their content. Y–Z (ids) are hidden; Q–X (more photos/links) are grouped.
+export const WIDTHS = [95, 125, 135, 110, 130, 80, 115, 55, 170, 140, 230, 85, 260, 115, 180, 125, 80, 80, 80, 80, 80, 80, 80, 220, 60, 60];
+// Row height that fits the wrapped text of a row (about 7 px per character at the default font), at least
+// 100 px for the photo preview.
+export function rowPx(cells) {
+  let lines = 1;
+  cells.slice(0, 16).forEach((v, i) => {
+    if (typeof v !== 'string' || v.startsWith('=')) return;
+    const perLine = Math.max(4, Math.floor((WIDTHS[i] - 12) / 7));
+    lines = Math.max(lines, v.replace(/^'/, '').split('\n').reduce((n, part) => n + Math.max(1, Math.ceil(part.length / perLine)), 0));
+  });
+  return Math.min(600, Math.max(100, lines * 17 + 16));
+}
+const rowHeight = (sheetId, row, px) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: row - 1, endIndex: row }, properties: { pixelSize: px }, fields: 'pixelSize' } });
 
 async function deleteRows(env, rows, fetchImpl) {
   if (!rows.length) return;
@@ -120,6 +133,8 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
     }
     await batchValues(env, data, fetchImpl);
     for (const [col, v] of sets) await DB.prepare(`UPDATE client_orders SET ${col}=? WHERE id=?`).bind(v, order.id).run();
+    const sheetId = await workQueueSheetId(env, fetchImpl);
+    if (sheetId != null) await batch(env, [rowHeight(sheetId, r, rowPx(am))], fetchImpl);
     return { enabled: true, row: r };
   }
   const supplier = [order.supplier_cost == null ? '' : Number(order.supplier_cost), txt(order.tracking_number), ['shipped', 'delivered'].includes(order.status) ? SHIPPED : NOT_SHIPPED];
@@ -129,7 +144,7 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
   await DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_shipped=? WHERE id=?').bind(norm(supplier[0]), norm(order.tracking_number), supplier[2], order.id).run();
   const row = Number(/![A-Z]+(\d+)/.exec(res?.updates?.updatedRange || '')?.[1]);
   const sheetId = await workQueueSheetId(env, fetchImpl);
-  if (row && sheetId != null) await batch(env, [rowHeight(sheetId, row, row)], fetchImpl);
+  if (row && sheetId != null) await batch(env, [rowHeight(sheetId, row, rowPx(am))], fetchImpl);
   return { enabled: true, row, added: true };
 }
 
@@ -269,20 +284,20 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   const { email } = googleSheetsConfig(env);
   const cols = (a, b) => ({ sheetId, startColumnIndex: a, endColumnIndex: b });
   const yellow = { red: 1, green: 0.95, blue: 0.7 }, header = { red: 0.93, green: 0.93, blue: 0.93 };
-  const widths = [100, 120, 130, 110, 120, 80, 110, 50, 180, 140, 220, 70, 220, 120, 170, 130];
   await batch(env, [
     { repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 16 } } }, fields: 'userEnteredFormat.textFormat' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 0, endColumnIndex: 26 }, cell: { userEnteredFormat: { backgroundColor: header, textFormat: { bold: true }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE' } }, fields: 'userEnteredFormat(backgroundColor,textFormat,wrapStrategy,verticalAlignment)' } },
+    { repeatCell: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 26 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment)' } },
+    { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 0, endColumnIndex: 26 }, cell: { userEnteredFormat: { backgroundColor: header, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
     { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 13, endColumnIndex: 16 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 0, endColumnIndex: 26 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment)' } },
     { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 13, endColumnIndex: 16 }, cell: { userEnteredFormat: { backgroundColor: yellow } }, fields: 'userEnteredFormat.backgroundColor' } },
     { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 13, endColumnIndex: 14 }, cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
     { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 14, endColumnIndex: 15 }, cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } }, fields: 'userEnteredFormat.numberFormat' } },
     { setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: 13, endColumnIndex: 14 }, rule: { condition: { type: 'NUMBER_GREATER_THAN_EQ', values: [{ userEnteredValue: '0' }] }, inputMessage: 'Total cost for the whole order in USD, product + shipping.', strict: true, showCustomUi: true } } },
     { setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: 15, endColumnIndex: 16 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: NOT_SHIPPED }, { userEnteredValue: SHIPPED }] }, strict: true, showCustomUi: true } } },
-    ...widths.map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
+    ...WIDTHS.map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
     { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 24, endIndex: 26 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
-    ...(rows.length ? [rowHeight(sheetId, FIRST_ROW, last)] : []),
+    rowHeight(sheetId, 5, 44),
+    ...rows.map((row, i) => rowHeight(sheetId, FIRST_ROW + i, rowPx(row))),
     { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 16, endIndex: 24 } } },
     { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 16, endIndex: 24 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
     { setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 24 } } } },
