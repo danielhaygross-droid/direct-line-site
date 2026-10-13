@@ -225,7 +225,7 @@
         <a href="#/new" data-tab="new" class="fab" aria-label="New order"><span>${ic('plus')}</span>New order</a>
         <a href="#/messages" data-tab="messages">${ic('chat')}Messages<em data-tab-badge></em></a>
         <a href="#/payments" data-tab="payments">${ic('wallet')}Payments</a>
-      </nav>`;
+      </nav>${S.me.preview ? '' : `<a class="client-support" data-client-support href="https://wa.me/972553031093" target="_blank" rel="noopener" aria-label="Contact Direct Line on WhatsApp" title="Contact Direct Line on WhatsApp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.6A8 8 0 0 1 8.1 18.5L4 20l1.4-4A8 8 0 1 1 20 11.6Z"/><path d="M9 8.5c.5 2 2 3.5 4 4l1-1c.4-.4.8-.2 1.1 0l1.5.7c.4.2.5.5.4.9-.4 1.2-1.5 1.9-2.7 1.7-3.6-.5-6.8-3.7-7.3-7.3-.2-1.2.5-2.3 1.7-2.7.4-.1.7 0 .9.4l.7 1.5c.2.3.4.7 0 1.1l-1.3.7Z"/></svg></a>`}`;
     const bell = $('[data-bell]');
     panel = N.panel({
       anchor: bell,
