@@ -392,3 +392,8 @@ body.real-data-mode [data-risk-count]{display:none}
 @media (max-width:600px){.ls-mini{grid-template-columns:1fr 1fr 1fr}.ls-mini strong{font-size:17px}.ls-mini span{font-size:12px}}
 /* Clients first: the stores filters only apply to Daniel's stores pages */
 body.client-orders-open .topbar .context-controls{visibility:hidden}
+
+/* Compact support access; panels and dialogs keep their action buttons unobstructed. */
+.whatsapp-dock{width:50px;height:50px;min-width:50px;padding:0;border-radius:50%;display:grid;place-items:center}
+.whatsapp-dock>span{display:none}.whatsapp-dock svg{width:24px;height:24px}
+body.client-drawer-open .whatsapp-dock,body:has(dialog[open]) .whatsapp-dock{display:none!important}

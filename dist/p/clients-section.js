@@ -8,7 +8,7 @@
   const frame = section.querySelector('iframe');
   const HASH = '#client-orders';
   const TABS = ['overview', 'orders', 'clients', 'settings'];
-  let ready = false, queue = [], current = 'overview';
+  let ready = false, queue = [], current = 'overview', childDrawerOpen=false;
   const send = m => { if (ready) frame.contentWindow.postMessage(m, location.origin); else queue.push(m); };
 
   function sizeFrame() {
@@ -24,7 +24,7 @@
     if (!TABS.includes(tab)) tab = 'overview';
     if (!frame.src && authed()) frame.src = frame.dataset.src;
     section.hidden = false;
-    document.body.classList.add('client-orders-open');
+    document.body.classList.add('client-orders-open');document.body.classList.toggle('client-drawer-open',childDrawerOpen);
     current = tab; mark(tab);
     document.body.classList.remove('menu-open');
     document.querySelector('.mobile-menu')?.setAttribute('aria-expanded', 'false');
@@ -36,7 +36,7 @@
   function close() {
     if (section.hidden) return;
     section.hidden = true;
-    document.body.classList.remove('client-orders-open');
+    document.body.classList.remove('client-orders-open','client-drawer-open');
     buttons.forEach(b => b.classList.remove('active'));
     if (location.hash.startsWith(HASH)) history.replaceState(null, '', location.pathname + location.search);
   }
@@ -48,10 +48,12 @@
   window.addEventListener('message', e => {
     if (e.origin !== location.origin || e.source !== frame.contentWindow) return;
     const m = e.data || {};
+    if(m.type==='dl-drawer-state'){childDrawerOpen=m.open===true;document.body.classList.toggle('client-drawer-open',childDrawerOpen&&!section.hidden);}
     if (m.type === 'dl-admin-ready') { ready = true; frame.dataset.ready = 'true'; queue.forEach(x => frame.contentWindow.postMessage(x, location.origin)); queue = []; }
     if (m.type === 'dl-tab-changed' && !section.hidden && TABS.includes(m.tab)) { current = m.tab; mark(m.tab); if (location.hash !== hashFor(m.tab)) history.replaceState(null, '', hashFor(m.tab)); }
     if (m.type === 'dl-followups') { const b = document.querySelector('[data-client-badge]'); if (b) { b.textContent = m.unread > 9 ? '9+' : String(m.unread || ''); b.hidden = !m.unread; } }
   });
+  frame.addEventListener('load',()=>{childDrawerOpen=false;document.body.classList.remove('client-drawer-open');});
   window.addEventListener('resize', sizeFrame);
   window.addEventListener('hashchange', () => { const t = tabFromHash(); if (t) open(t); else close(); });
 
