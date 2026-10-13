@@ -305,7 +305,7 @@
   }
   async function loadSupplierSheet() {
     const box = $('[data-supplier-sheet]'); if (!box) return;
-    try { const d = await api('/admin/supplier-sheet'); box.innerHTML = supplierSheetHTML(d); $('[data-supplier-setup]').hidden = !d.configured || d.enabled; $('[data-supplier-check]').hidden = !d.enabled; }
+    try { const d = await api('/admin/supplier-sheet'); box.innerHTML = supplierSheetHTML(d); const setupBtn = $('[data-supplier-setup]'); setupBtn.hidden = !d.configured; setupBtn.textContent = d.enabled ? 'Rebuild supplier sheet' : 'Set up supplier sheet'; $('[data-supplier-check]').hidden = !d.enabled; }
     catch (ex) { box.innerHTML = `<p class="note" style="margin:0">${esc(ex.message)}</p>`; }
   }
   function bindSupplierSheet() {
