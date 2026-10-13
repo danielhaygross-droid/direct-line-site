@@ -1,3 +1,33 @@
+## Daniel's messaging and Israel-time task — ready for review, 13 October 2026
+
+Branch codex/messages-israel-time. Basic live client sending was verified in a new clearly labeled QA account (client9/order10); message reached admin, then the QA account was archived and disabled. Original TEST credentials now fail; do not assume they still work. Corrected admin login works; credentials must not be written to handoffs.
+
+Changes: conversation metadata refreshes immediately after sending/reading so Messages does not look empty until the next poll; rapid repeat sends are guarded and older in-flight poll results cannot overwrite a newer sent thread. Admin client-preview remains read-only, with an explicit explanation. Actual clients retain reply access.
+
+Order creation/update, messages, status steps, activity entries and notification timestamps now show date plus HH:mm:ss in Asia/Jerusalem, with an Israel-time label. An Order activity section displays recorded creation/edit/status/tracking/photo/claim events. Photo add/remove changes are logged even immediately after creation. Stored timestamps and original store order dates are preserved; existing events use their recorded time, not invented history. Last-login/terms timestamps also use the shared formatter. Versions common12, order-ui4, portal34, admin36, UI CSS6, i18n18, notify2.
+
+Validation: 59 automated tests, build/syntax/diff checks; local DB/browser EN/HE at 1440/390px verify client-to-admin send, admin-to-client reply, immediate Messages visibility, duplicate-send guard, audit timestamps, notification times, preview read-only state, and winter/summer Israel offsets while browser uses Manila time. Screenshots and check script in project-root verification/daniel-task and verification/check-messages-israel-time.mjs. Changes are NOT deployed yet; PR link will be recorded after creation.
+
+Custom domain is pending a confirmed Direct Line-owned domain and DNS access. User explicitly rejects Byzroyal: it is a separate Shopify business. Do not propose, connect or modify Byzroyal for Direct Line. Only a read-only domain inspection occurred; no DNS/domain changes were made.
+
+## Spreadsheet photo feature live — verified 13 October 2026
+
+PR30 merged as 05c36281036e983cbaa2ea219915e97a2858af78. Deployed through authorized Vercel API; deployment dpl_6PGEURa1wyGwZCDH3zgHG6HPxg6z is Ready/Production and aliased to direct-line-control.vercel.app. Earlier blocked deployment and pending-access notes are superseded.
+
+Existing active orders 6 and 7 were resaved without changing order fields to trigger server sync. Their existing photos were uploaded by clients (addedBy=client). They now populate Orders rows 13 and 14: AV photo count=1, AW IMAGE preview, AX Photo 1 hyperlink. Rows enlarged to 100px and new photo columns aligned centrally. Spreadsheet readback confirms IMAGE/HYPERLINK formulas and no cell errors; Google-rendered visual preview was not inspected directly. Signed-out full-size photo fetches return 200 image/jpeg and exactly match the portal originals byte-for-byte; altered keys return 404. No photos were added/replaced and no new orders were created. Comparison of original A:AU cells found only sync/update timestamps changed, no manual business fields overwritten.
+
+Corrected portal admin credentials now work (username erwins123, case-sensitive password supplied by Erwin; do not put passwords in files). Test client TEST remains ID5 with no orders; verified existing orders belong to other active accounts and were used as authorized by Erwin. Earlier portal admin access blockers are resolved. Full other workflow verification is still outstanding; this result covers spreadsheet photos.
+
+New uploads and photo add/delete trigger sync automatically. Photo links grant access only to their image without portal login; anyone receiving a link can view it. Deleted photos and inactive/archived clients are blocked. Historical archived-client rows were not populated. Existing sheet duplicate order-ID row remains unchanged. Evidence: verification/photo-live-verification.json, photo-backfill-result.json and photo-deployment.json. Temporary Vercel env pull contained sensitive placeholders, was not used for credentials and was removed.
+
+## Spreadsheet photos — PR #30 ready; Vercel author permission blocks deployment
+
+PR https://github.com/danielhaygross-droid/direct-line-site/pull/30, commit 0a4e19e on codex/sheet-order-photos. Orders AV:BE headers created (count, preview, Photo 1–8). Existing rows are intentionally not populated yet because the photo endpoint is not live. 59 tests plus local DB/router integration passed. No production orders/photos changed.
+
+Direct production deployment dpl_C88fnyodrqRJJwmuH7meXioMMyqa was BLOCKED: commit author lacks project deployment permission. Do not bypass this by changing author identity. Erwin should merge PR30 as Daniel; then deploy merged main through the authorized Vercel CLI as done for PR29. Current live release remains PR29.
+
+After deployment: use verification/backfill-sheet-photos.mjs with production environment supplied securely (do not commit/log credentials). It derives the same session secret as api/index.mjs and performs SELECT-only database reads; writes only Orders AV:BE through Sheets API, preserving manual columns and handling existing duplicate order-ID rows. Read back image/link formulas, resize only photo-bearing rows for thumbnails, verify signed full-size links work without login and tampered IDs fail, and confirm Google renders previews. No blanket live-complete claim before these steps pass. Photo links are bearer capabilities: anyone with one can see only that photo; deleted photos and inactive/archived clients are blocked. Keep sheet links within supplier team.
+
 ## Spreadsheet photo sync — implementation ready, 12 October 2026
 
 User requests photos in the connected spreadsheet so Ada can use Sheets. Added Orders AV:BE: photo count, first-photo IMAGE preview, eight full-size HYPERLINK cells. Photo-only HMAC links work without portal login; anyone possessing a link can view that image. They expose no order/customer data. Deleted images, disabled/archived clients, altered IDs/keys and rotated signing secrets fail closed. Photo add/delete now resync, clear removed cells, and retain retry state if photos change during sync. ID lookup now covers all Orders rows instead of stopping at row 5000.

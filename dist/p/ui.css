@@ -258,3 +258,5 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 
 /* Customer data typed into forms (names, addresses, notes) can be English or Hebrew: lay out each line by its own text direction. */
 .field :is(input,textarea):is([name=buyerName],[name=address1],[name=variant],[name=notes],[name=sku],[name=orderRef],[name=otherCountry]){unicode-bidi:plaintext}
+
+.order-activity{list-style:none;padding:0;margin:0;display:grid;gap:12px}.order-activity li{display:grid;gap:3px;overflow-wrap:anywhere}.order-activity span,.order-activity time{font-size:12px;color:var(--muted)}.track-step small{overflow-wrap:anywhere}

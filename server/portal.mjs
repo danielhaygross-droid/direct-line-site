@@ -678,16 +678,14 @@ export async function handlePortal(request, url, ctx) {
     const order = await DB.prepare('SELECT id, client_id, status, created_at, edit_locked FROM client_orders WHERE id = ?').bind(id).first();
     if (!order || (!who.admin && order.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
     const actor = who.admin ? 'admin' : 'client';
-    // Photos added right after the order was created belong to the "new order" notification.
     if (method === 'POST' && !who.admin && !canEditOrder(order)) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
-    const quiet = now() - Number(order.created_at) < 900;
     if (photoAdd && method === 'POST') {
       if (!who.admin && order.status === 'cancelled') return json({ ok: false, error: 'This order was cancelled.' }, 409);
       const count = Number((await DB.prepare('SELECT COUNT(*) AS n FROM order_photos WHERE order_id = ?').bind(id).first()).n);
       if (count >= MAX_PHOTOS_PER_ORDER) return json({ ok: false, error: `Up to ${MAX_PHOTOS_PER_ORDER} photos per order` }, 400);
       let photo; try { photo = photoInput(await readBody(request)); } catch (e) { return json({ ok: false, error: e.message }, 400); }
       const out = await insertPhoto(DB, id, order.client_id, photo, actor);
-      if (!quiet || who.admin) await logEvent(DB, id, order.client_id, 'photo', actor, 'added');
+      await logEvent(DB, id, order.client_id, 'photo', actor, 'added');
       await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=?").bind(id).run();
       const sync = syncPortalOrderToGoogleSheet(DB,env,id).catch(error=>console.error('Photo sheet sync failed',error));
       if(waitUntil)waitUntil(sync);else await sync;
@@ -703,7 +701,7 @@ export async function handlePortal(request, url, ctx) {
         if (count <= 1) return json({ ok: false, error: 'An order needs at least one photo. Add the new one first, then remove this one.' }, 409);
       }
       await DB.prepare('DELETE FROM order_photos WHERE id = ? AND order_id = ?').bind(pid, id).run();
-      if (!quiet || who.admin) await logEvent(DB, id, order.client_id, 'photo', actor, 'removed');
+      await logEvent(DB, id, order.client_id, 'photo', actor, 'removed');
       await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=?").bind(id).run();
       const sync = syncPortalOrderToGoogleSheet(DB,env,id).catch(error=>console.error('Photo sheet sync failed',error));
       if(waitUntil)waitUntil(sync);else await sync;

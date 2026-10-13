@@ -14,8 +14,18 @@
   };
   const svg = p => `<svg viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
   const pill = s => `<span class="st st-${esc(s)}">${esc(LABEL[s] || s)}</span>`;
-  const when = sec => (sec ? new Date(sec * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
-  const day = sec => (sec ? new Date(sec * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
+  const when = sec => window.DL.israelTime(sec);
+  const day = when;
+  function activity(events=[]) {
+    const labels={created:'Order created',edited:'Order edited',status:'Status changed',tracking:'Tracking number changed',tracking_update:'Tracking update received',photo:'Photo changed',claim:'Claim updated'};
+    return `<section class="card card-pad"><h3 class="sec-title">Order activity</h3><p class="muted">All times are Israel time.</p>${events.length ? `<ol class="order-activity">${[...events].reverse().map(e=>`<li><b>${esc(labels[e.kind]||e.kind)}</b><span>${e.actor==='admin'?'Direct Line':'Client'}${e.detail ? ' · '+esc(e.detail) : ''}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`).join('')}</ol>` : '<p class="muted">No activity recorded yet.</p>'}</section>`;
+  }
+  function syncConversation(order,data) {
+    if(!order)return;
+    const messages=data.messages||[],last=messages.at(-1);
+    order.messages=messages.length;order.unreadMessages=0;
+    if(last){order.lastMessageAt=last.createdAt;order.lastMessage={author:last.author,body:last.body,createdAt:last.createdAt};}
+  }
 
   // Pending → Processing → Shipped → Delivered, with the date each step happened (when we know it).
   function tracker(order, events = []) {
@@ -81,7 +91,7 @@
 
   // ----- conversation about one order -----
   // role: 'client' | 'admin'. onLoad(data) gets { messages, events } each time it loads.
-  function chat(root, { orderId, role, onLoad, onSent }) {
+  function chat(root, { orderId, role, onLoad, onSent, readOnly=false }) {
     const quick = role === 'client'
       ? ['Any update on this order?', 'Can you please check this order?', 'My customer is asking where the parcel is.']
       : ['We’re checking this now.', 'Shipped, the tracking is updated.', 'Delayed at the supplier, we’ll update you soon.'];
@@ -89,7 +99,8 @@
       <div class="quick">${quick.map(q => `<button type="button" data-q>${esc(q)}</button>`).join('')}</div>
       <form class="composer"><textarea name="body" rows="1" maxlength="2000" placeholder="${role === 'client' ? 'Write a message to Direct Line…' : 'Write a reply to the client…'}" aria-label="Message"></textarea><button class="btn btn-primary" type="submit">Send</button></form>
       <p class="form-msg" data-chat-msg></p>`;
-    const list = root.querySelector('.chat'), form = root.querySelector('form'), ta = form.body, msg = root.querySelector('[data-chat-msg]');
+    const list = root.querySelector('.chat'), form = root.querySelector('form'), ta = form.elements.namedItem('body'), msg = root.querySelector('[data-chat-msg]');
+    if(readOnly){ta.readOnly=true;form.querySelector('button').disabled=true;root.querySelectorAll('[data-q]').forEach(b=>b.disabled=true);msg.textContent='Preview is read only. Sign in as the client to send messages.';}
     let count = -1;
     const render = msgs => {
       const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
@@ -98,9 +109,10 @@
       if (atBottom || msgs.length !== count) list.scrollTop = list.scrollHeight;
       count = msgs.length;
     };
-    let alive = true;
+    let alive = true, sending = false, generation = 0;
     const load = async () => {
-      try { const data = await api(`/orders/${orderId}/messages`); if (!alive) return; render(data.messages); onLoad && onLoad(data); }
+      if(sending)return;const version=generation;
+      try { const data = await api(`/orders/${orderId}/messages`); if (!alive || version!==generation) return; render(data.messages); onLoad && onLoad(data); }
       catch (e) { if (alive) list.innerHTML = `<div class="chat-empty neg">${esc(e.message)}</div>`; }
     };
     const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(140, ta.scrollHeight + 2) + 'px'; };
@@ -109,16 +121,17 @@
     root.querySelectorAll('[data-q]').forEach(b => b.addEventListener('click', () => { ta.value = b.textContent; grow(); ta.focus(); }));
     form.addEventListener('submit', async e => {
       e.preventDefault();
+      if(sending || readOnly)return;
       const body = ta.value.trim();
       if (!body) { msg.textContent = 'Please write a message.'; msg.className = 'form-msg err'; ta.focus(); return; }
-      const btn = form.querySelector('button'); btn.disabled = true; msg.textContent = '';
+      const btn = form.querySelector('button'); sending=true;generation++;btn.disabled = true;ta.readOnly=true; msg.textContent = '';
       try {
         const data = await api(`/orders/${orderId}/messages`, { method: 'POST', body: { body } });
         ta.value = ''; grow(); render(data.messages); list.scrollTop = list.scrollHeight;
         msg.textContent = 'Sent.'; msg.className = 'form-msg ok'; setTimeout(() => { if (msg.textContent === 'Sent.') msg.textContent = ''; }, 2500);
-        onLoad && onLoad(data); onSent && onSent();
+        onLoad && onLoad(data); onSent && onSent(data);
       } catch (ex) { msg.textContent = ex.message; msg.className = 'form-msg err'; }
-      finally { btn.disabled = false; }
+      finally { sending=false;btn.disabled = false;ta.readOnly=readOnly; }
     });
     const timer = setInterval(() => { if (!document.hidden) load(); }, 15000);
     load();
@@ -132,5 +145,5 @@
     if(order && value===addressText(order))return Object.fromEntries(addressKeys.map(k=>[k,order[k]||'']));
     return {address1:value,address2:'',city:'',region:'',postalCode:'',buyerPhone:''};
   }
-  window.DLOrderUI = { addressText, addressFields, STEPS, LABEL, pill, tracker, getDrawer, chat, svg, when, day };
+  window.DLOrderUI = { addressText, addressFields, STEPS, LABEL, pill, tracker, getDrawer, chat, svg, when, day, activity, syncConversation };
 })();

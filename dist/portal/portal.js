@@ -47,7 +47,7 @@
   const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
   const place = d => (d ? countryName(d) : '—');
   const ago = sec => N.timeAgo(sec * 1000);
-  const fullDate = sec => (sec ? new Date(sec * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
+  const fullDate = sec => window.DL.israelTime(sec);
   const orderName = o => o.orderRef || 'Order #' + o.id;
   const editable = o => o.status === 'pending' && !o.editLocked && Number(o.createdAt) > 0 && Date.now() < (Number(o.createdAt) + 72 * 3600) * 1000;
   const hoursLeft = o => Math.ceil(((Number(o.createdAt) + 72 * 3600) * 1000 - Date.now()) / 3600000);
@@ -79,7 +79,7 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh().catch(() => {}); });
   }
 
-  const acceptedText = a => a ? `<span>Terms accepted:</span> <time data-no-i18n>${esc(new Date(a.accepted_at * 1000).toISOString().replace('T', ' ').replace('.000Z', ' UTC'))} · v${a.version}</time>` : '<span>Not accepted yet</span>';
+  const acceptedText = a => a ? `<span>Terms accepted:</span> <time data-no-i18n>${esc(fullDate(a.accepted_at))} · v${a.version}</time>` : '<span>Not accepted yet</span>';
   function policyHTML(data) {
     const text = window.DLi18n?.lang === 'he' ? data.policy.hebrew : data.policy.english;
     return `<article class="card card-pad terms-paper"><h2 id="terms-title">${esc(data.policy.title)}</h2><p class="muted"><span>Version</span> <b data-no-i18n>${data.policy.version}</b></p><div class="terms-content" tabindex="0" aria-labelledby="terms-title" data-no-i18n>${esc(text)}</div></article>`;
@@ -397,10 +397,12 @@
     d.open(o.id);
     d.body.innerHTML = '<div data-d-info style="display:grid;gap:16px"></div><section><h3 class="sec-title">Messages with Direct Line</h3><div data-d-chat></div></section>';
     fillDrawer(o);
-    chatCtl = UI.chat($('[data-d-chat]', d.body), { orderId: o.id, role: 'client', onLoad: data => {
+    chatCtl = UI.chat($('[data-d-chat]', d.body), { orderId: o.id, role: 'client', readOnly:!!S.me.preview, onLoad: data => {
       drawerEvents = data.events || [];
       const cur = S.orders.find(x => x.id === o.id);
-      if (cur && cur.unreadMessages) { cur.unreadMessages = 0; updateChrome(); if (S.route !== 'new' && S.route !== 'edit') renderView(true); }
+      const hadUnread=cur?.unreadMessages,oldCount=cur?.messages;UI.syncConversation(cur,data);
+      if (cur && hadUnread) { cur.unreadMessages = 0; updateChrome(); if (S.route !== 'new' && S.route !== 'edit') renderView(true); }
+      if(cur && oldCount!==cur.messages){updateChrome();if(S.route==='messages')renderView(true);}
       if (cur && d.isOpen && d.key === cur.id) fillDrawer(cur, true);
     } });
     // Opening an order marks its notifications as read.
@@ -414,7 +416,7 @@
     const d = UI.getDrawer();
     d.head.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}</div><p>Added ${esc(fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p>`;
     $('[data-d-info]', d.body).innerHTML = `
-      <section class="card card-pad">${UI.tracker(o, drawerEvents)}</section>
+      <section class="card card-pad">${UI.tracker(o, drawerEvents)}</section>${UI.activity(drawerEvents)}
       ${claimCard(S.claims.find(c=>c.orderId===o.id))}
       <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${invoiceLinks(S.invoices.filter(f=>f.orderIds.includes(o.id)))}</section>
       <section class="card card-pad"><h3 class="sec-title">Tracking</h3>${o.trackingNumber
