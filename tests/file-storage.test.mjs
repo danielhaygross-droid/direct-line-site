@@ -70,5 +70,5 @@ test('scheduled jobs need the cron secret and are listed in vercel.json', async 
   assert.equal(cronAuthorized(req(''), 's3cret'), false);
   assert.equal(cronAuthorized(req('Bearer '), ''), false, 'no secret set → refused');
   const crons = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url))).crons.map(c => c.path).sort();
-  assert.deepEqual(crons, ['/api/cron/backup', '/api/cron/file-storage']);
+  assert.deepEqual(crons, ['/api/cron/backup', '/api/cron/file-storage', '/api/cron/supplier-sheet']);
 });

@@ -23,6 +23,7 @@ import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from
 import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance } from './client-stores.mjs';
 
 import { STORAGE_SCHEMA, photoBytes, syncFileStorage, fileStorageStatus } from './file-storage.mjs';
+import { SUPPLIER_SHEET_SCHEMA, setupSupplierWorkQueue, pollSupplierSheet, supplierSheetStatus } from './supplier-sheet.mjs';
 import { runBackup, listBackups, downloadBackup } from './backup.mjs';
 import { LOGIN_LIMIT_SCHEMA, LOCK_MESSAGE, clientIp, loginKeys, lockedFor, recordFailure, clearFailures } from './login-limit.mjs';
 
@@ -170,7 +171,7 @@ export const SCHEMA = [
 // Supplier shipping rates (USD per kg) — from the supplier's rate sheet. Admin-only: sent with
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
-SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA, ...STORAGE_SCHEMA, ...LOGIN_LIMIT_SCHEMA);
+SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA, ...STORAGE_SCHEMA, ...LOGIN_LIMIT_SCHEMA, ...SUPPLIER_SHEET_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -310,11 +311,13 @@ function orderOut(r) {
     sheetSyncStatus: r.sheet_sync_status || 'waiting',
     sheetSyncedAt: r.sheet_synced_at == null ? null : Number(r.sheet_synced_at),
     sheetSyncError: r.sheet_sync_error || '',
+    // Supplier's total for the whole order (product + shipping), from the supplier Work Queue. Admin only.
+    supplierCost: r.supplier_cost == null ? null : Number(r.supplier_cost),
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   };
 }
 // What a client may see of an order: total only, never the product vs shipping breakdown (item #6).
-const CLIENT_HIDDEN = ['commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee'];
+const CLIENT_HIDDEN = ['commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost'];
 function clientOrder(o) {
   const out = { ...o, priced: o.productCost != null || o.shippingFee != null || o.quotedUnitPrice != null };
   for (const k of CLIENT_HIDDEN) delete out[k];
@@ -760,6 +763,12 @@ export async function handlePortal(request, url, ctx) {
     return json({ok:true});
   }
   // ----- file storage + backups (admin Settings → Storage & backups) -----
+  // ----- supplier Work Queue in the Google Sheet (admin Settings → Supplier sheet) -----
+  if (path === '/admin/supplier-sheet' && method === 'GET') return json({ ok: true, ...(await supplierSheetStatus(DB, env)) });
+  if (path === '/admin/supplier-sheet/setup' && method === 'POST') {
+    try { return json(await setupSupplierWorkQueue(DB, env)); } catch (e) { console.error('Supplier sheet setup failed', e); return json({ ok: false, error: 'Setup failed: ' + e.message }, 500); }
+  }
+  if (path === '/admin/supplier-sheet/check' && method === 'POST') return json(await pollSupplierSheet(DB, env, { waitUntil }));
   if (path === '/admin/storage' && method === 'GET') {
     let backups = [], backupError = null;
     try { backups = await listBackups(env); } catch (e) { backupError = 'Could not list backups'; console.error('List backups failed', e); }

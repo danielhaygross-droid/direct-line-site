@@ -11,6 +11,7 @@ import { LOCK_MESSAGE } from '../server/login-limit.mjs';
 import { SCHEMA as PORTAL_SCHEMA, handlePortal, signIn, createSessionCookie, readSessionRole, parseRole, clientSession } from '../server/portal.mjs';
 import { syncFileStorage } from '../server/file-storage.mjs';
 import { runBackup } from '../server/backup.mjs';
+import { pollSupplierSheet } from '../server/supplier-sheet.mjs';
 
 const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 const DB = databaseUrl ? createD1(databaseUrl, undefined, PORTAL_SCHEMA) : undefined;
@@ -34,6 +35,7 @@ export function cronAuthorized(request, secret) {
 const CRON_JOBS = {
   '/api/cron/file-storage': (db, env) => syncFileStorage(db, env),
   '/api/cron/backup': (db, env) => runBackup(db, env),
+  '/api/cron/supplier-sheet': (db, env) => pollSupplierSheet(db, env),
 };
 
 export async function route(request, { db = DB, env: baseEnv = process.env } = {}) {

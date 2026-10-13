@@ -257,6 +257,9 @@
       </section>
       <section class="card card-pad"><h3 class="form-sec">Team accounts</h3><div class="acc-list" data-admins>${adminsHTML()}</div>
         <button type="button" class="btn" style="margin-top:12px" data-add-account="admin">${ic('plus')}Add admin</button></section>
+      <section class="card card-pad"><h3 class="form-sec">Supplier sheet</h3><div data-supplier-sheet><p class="muted" style="margin:0">Loading…</p></div>
+        <div class="row-actions" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-supplier-setup>Set up supplier sheet</button><button type="button" class="btn btn-sm" data-supplier-check hidden>Check sheet now</button></div>
+        <p class="form-msg" data-supplier-msg role="status"></p></section>
       <section class="card card-pad"><h3 class="form-sec">Storage &amp; backups</h3><div data-storage><p class="muted" style="margin:0">Loading…</p></div>
         <div class="row-actions" data-storage-actions hidden style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-backup-now>Back up now</button><button type="button" class="btn btn-sm" data-copy-files>Copy files now</button></div>
         <p class="form-msg" data-storage-msg role="status"></p></section>
@@ -293,8 +296,33 @@
     run('[data-backup-now]', '/admin/backups/run', r => r.configured === false ? 'File storage isn’t connected yet.' : 'Backup saved.');
     run('[data-copy-files]', '/admin/storage/sync', r => r.configured === false ? 'File storage isn’t connected yet.' : `${r.copied} files copied.${r.failed ? ` ${r.failed} will be retried.` : ''}${r.more ? ' More remain; they continue automatically every hour.' : ''}`);
   }
+  // Supplier Work Queue: suppliers fill in total cost, tracking and shipping status in the Google Sheet.
+  function supplierSheetHTML(d) {
+    if (!d.configured) return '<p class="note" style="margin:0">The Google Sheet isn’t connected.</p>';
+    if (!d.enabled) return '<p class="note" style="margin:0">Set up adds three yellow columns to the Work Queue tab for the supplier: Total cost (whole order, USD), Tracking number and Shipping status. The website then bills clients (total + fee), adds tracking and marks orders Shipped within a minute. The current Work Queue is kept as a hidden backup tab.</p>';
+    const l = d.last;
+    return `<p style="margin:0 0 6px"><b>On.</b> <span>The website reads the supplier columns every minute.</span></p>${l ? `<p class="note" style="margin:0"><span>Last check</span> <span data-no-i18n>${esc(fullDate(l.at))}</span>: ${l.ok ? `<span data-no-i18n>${l.checked}</span> <span>orders checked</span>, <span data-no-i18n>${l.changed}</span> <span>updated</span>` : `<span>error</span> <span data-no-i18n>${esc(l.error)}</span>`}</p>${(l.skipped || []).length ? `<p class="note" style="margin:6px 0 0"><b>Needs a look:</b> <span data-no-i18n>${l.skipped.map(s => esc((s.ref || '#' + s.orderId) + ' — ' + s.why.join(', '))).join('; ')}</span></p>` : ''}` : ''}`;
+  }
+  async function loadSupplierSheet() {
+    const box = $('[data-supplier-sheet]'); if (!box) return;
+    try { const d = await api('/admin/supplier-sheet'); box.innerHTML = supplierSheetHTML(d); $('[data-supplier-setup]').hidden = !d.configured || d.enabled; $('[data-supplier-check]').hidden = !d.enabled; }
+    catch (ex) { box.innerHTML = `<p class="note" style="margin:0">${esc(ex.message)}</p>`; }
+  }
+  function bindSupplierSheet() {
+    loadSupplierSheet();
+    const m = $('[data-supplier-msg]');
+    const run = (sel, path, done) => { const b = $(sel); if (b) b.addEventListener('click', async () => {
+      b.disabled = true; m.textContent = 'Working…'; m.className = 'form-msg';
+      try { const r = await api(path, { method: 'POST' }); m.textContent = done(r); m.className = r.ok === false ? 'form-msg err' : 'form-msg ok'; await loadSupplierSheet(); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+      b.disabled = false;
+    }); };
+    run('[data-supplier-setup]', '/admin/supplier-sheet/setup', r => `Supplier sheet is set up with ${r.rows} orders.`);
+    run('[data-supplier-check]', '/admin/supplier-sheet/check', r => r.ok ? `${r.changed.length} orders updated from the sheet.` : r.error);
+  }
   function bindSettings() {
     bindStorage();
+    bindSupplierSheet();
     const tf = $('#terms-publish');
     if (tf) tf.addEventListener('submit', async e => {
       e.preventDefault(); const b = $('[type=submit]', tf), m = $('[data-terms-msg]'); b.disabled = true;
@@ -385,6 +413,7 @@
         ${o.sheetSyncError ? `<div class="full"><dt>Sheet sync note</dt><dd>${esc(o.sheetSyncError)}</dd></div>` : ''}
         ${o.notes ? `<div class="full"><dt>Client’s notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl></section>
       <section class="card card-pad"><h3 class="sec-title">Money</h3><div class="money-rows">
+        ${o.supplierCost != null ? `<div><span>Supplier total <span class="dim">(from supplier sheet)</span></span><span>${money(o.supplierCost)}</span></div>` : ''}
         <div><span>Product cost <span class="dim">(fee included)</span></span><span>${money(o.productCost)}</span></div><div><span>Shipping fee</span><span>${money(o.shippingFee)}</span></div>
         <div class="total"><span>Client pays</span><span>${money(o.price)}</span></div>
         <div><span>Customer paid client</span><span>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</span></div><div><span>Client’s profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${o.productCost == null && o.shippingFee == null ? 'Pending costs' : money(o.profit)}</span></div></div>
