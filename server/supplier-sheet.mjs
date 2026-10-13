@@ -234,9 +234,9 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     const copy = (again.sheets || []).map(s => s.properties).find(p => p.title === BACKUP_TITLE);
     if (copy) await batch(env, [{ updateSheetProperties: { properties: { sheetId: copy.sheetId, hidden: true }, fields: 'hidden' } }], fetchImpl);
   }
-  // Suppliers don't need our client list: keep the Clients tab (the website still updates it) but hide it.
-  const clientsTab = props.find(p => p.title === 'Clients');
-  if (clientsTab && !clientsTab.hidden) await batch(env, [{ updateSheetProperties: { properties: { sheetId: clientsTab.sheetId, hidden: true }, fields: 'hidden' } }], fetchImpl);
+  // Google needs one visible tab at all times: a temporary tab stands in while the Work Queue is replaced.
+  const temp = await batch(env, [{ addSheet: { properties: { title: 'Updating… ' + Date.now() } } }], fetchImpl);
+  const tempId = temp?.replies?.[0]?.addSheet?.properties?.sheetId;
   if (current) await batch(env, [{ deleteSheet: { sheetId: oldId } }], fetchImpl);
   const add = { addSheet: { properties: { title: WQ, index: 0, gridProperties: { rowCount: 1000, columnCount: 26, frozenRowCount: 5 }, ...(oldId != null ? { sheetId: oldId } : {}) } } };
   let created;
@@ -244,6 +244,10 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   catch (e) { delete add.addSheet.properties.sheetId; created = await batch(env, [add], fetchImpl); }
   const sheetId = created?.replies?.[0]?.addSheet?.properties?.sheetId ?? await workQueueSheetId(env, fetchImpl, true);
   sheetIdCache = { key: googleSheetsConfig(env).spreadsheetId, id: sheetId };
+  if (tempId != null) await batch(env, [{ deleteSheet: { sheetId: tempId } }], fetchImpl);
+  // Suppliers don't need our client list: keep the Clients tab (the website still updates it) but hide it.
+  const clientsTab = props.find(p => p.title === 'Clients');
+  if (clientsTab && !clientsTab.hidden) await batch(env, [{ updateSheetProperties: { properties: { sheetId: clientsTab.sheetId, hidden: true }, fields: 'hidden' } }], fetchImpl);
 
   const orders = (await DB.prepare(`SELECT o.*, s.name AS shop_name FROM client_orders o JOIN users u ON u.id=o.client_id
     LEFT JOIN client_stores s ON s.id=o.store_id WHERE NOT o.archived AND NOT u.archived AND u.active ORDER BY o.created_at, o.id`).all()).results || [];
