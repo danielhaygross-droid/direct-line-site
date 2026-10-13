@@ -1,3 +1,5 @@
+PR34 ready for merge: https://github.com/danielhaygross-droid/direct-line-site/pull/34 — head549c1fc. Spreadsheet cleanup/live test-account removal done; new order archive button awaiting merge and production verification.
+
 ## Spreadsheet cleanup live; order archive ready for merge — 13 October 2026
 
 User paused custom-domain shopping and requested a simpler supplier spreadsheet, removal of test clients/orders and an admin order Archive button. Explicitly keep hadsash and all its orders. Preserved Shahar111 and YehudaVaknin. Live TEST/Test1 and QA accounts are archived (restorable), not permanently deleted. TEST1 was the remaining active test account; no active TEST/QA account remains. Historical Erwin client1 was already archived and its known test rows were removed from the sheet. No administrator account or real client order was edited.
