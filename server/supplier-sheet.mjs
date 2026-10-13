@@ -22,7 +22,7 @@ export const SUPPLIER_SHEET_SCHEMA = [
 export const WQ = 'Work Queue';
 const BACKUP_TITLE = 'Work Queue (old formulas)';
 export const FIRST_ROW = 6;
-export const HEADERS = ['Date', 'Order', 'Client', 'Status', 'Photo preview', 'Photo 1', 'Product link', 'Qty', 'Product / variation',
+export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Photo 1', 'Product link', 'Qty', 'Product / variation',
   'Customer', 'Delivery address & phone', 'Country', 'Notes', 'Total cost (USD)', 'Tracking number', 'Shipping status',
   'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID'];
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped';
@@ -56,13 +56,13 @@ export async function supplierSheetEnabled(DB) {
 function addressLines(o) {
   return [o.address_line_1, o.address_line_2, o.city, o.region, o.postal_code, o.buyer_phone].map(norm).filter(Boolean).join('\n');
 }
-// Website-owned cells: A–M and Q–Z.
-export function websiteCells(env, o, photos, clientName) {
+// Website-owned cells: A–M and Q–Z. Column C is the shop the order came from — suppliers don't see who our clients are.
+export function websiteCells(env, o, photos, shopName) {
   const urls = photos.map(p => sheetPhotoUrl(env, o.id, p.id));
   const links = String(o.etsy_url || '').split(/\s+/).filter(Boolean);
   const product = [o.item_title, o.variant].map(norm).filter(Boolean).join(' · ');
   const am = [
-    txt(o.order_date || new Date(Number(o.created_at) * 1000).toISOString().slice(0, 10)), txt(o.order_ref || '#' + o.id), txt(clientName),
+    txt(o.order_date || new Date(Number(o.created_at) * 1000).toISOString().slice(0, 10)), txt(o.order_ref || '#' + o.id), txt(shopName),
     STATUS[o.status] || o.status, urls[0] ? `=IMAGE("${q(urls[0])}&size=thumb",1)` : '', urls[0] ? `=HYPERLINK("${q(urls[0])}","Photo 1")` : '',
     links[0] ? `=HYPERLINK("${q(links[0])}","Open product")` : '', Number(o.quantity || 1), txt(product), txt(o.buyer_name),
     txt(addressLines(o)), txt(o.destination), txt(o.notes),
@@ -106,7 +106,8 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
   if (!await supplierSheetEnabled(DB)) return { enabled: false };
   const rows = await idColumn(env, fetchImpl), found = rows.filter(r => r.orderId === Number(order.id));
   if (order.archived || order.client_archived) { await deleteRows(env, found.map(r => r.row), fetchImpl); return { enabled: true, removed: found.length }; }
-  const { am, qz } = websiteCells(env, order, photos, order.client_name);
+  const shop = order.store_id == null ? null : await DB.prepare('SELECT name FROM client_stores WHERE id=?').bind(order.store_id).first();
+  const { am, qz } = websiteCells(env, order, photos, shop?.name || '');
   if (found.length) {
     const r = found[0].row, data = [{ range: `${WQ}!A${r}:M${r}`, values: [am] }, { range: `${WQ}!Q${r}:Z${r}`, values: [qz] }];
     const sets = [];
@@ -233,6 +234,9 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     const copy = (again.sheets || []).map(s => s.properties).find(p => p.title === BACKUP_TITLE);
     if (copy) await batch(env, [{ updateSheetProperties: { properties: { sheetId: copy.sheetId, hidden: true }, fields: 'hidden' } }], fetchImpl);
   }
+  // Suppliers don't need our client list: keep the Clients tab (the website still updates it) but hide it.
+  const clientsTab = props.find(p => p.title === 'Clients');
+  if (clientsTab && !clientsTab.hidden) await batch(env, [{ updateSheetProperties: { properties: { sheetId: clientsTab.sheetId, hidden: true }, fields: 'hidden' } }], fetchImpl);
   if (current) await batch(env, [{ deleteSheet: { sheetId: oldId } }], fetchImpl);
   const add = { addSheet: { properties: { title: WQ, index: 0, gridProperties: { rowCount: 1000, columnCount: 26, frozenRowCount: 5 }, ...(oldId != null ? { sheetId: oldId } : {}) } } };
   let created;
@@ -241,12 +245,12 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   const sheetId = created?.replies?.[0]?.addSheet?.properties?.sheetId ?? await workQueueSheetId(env, fetchImpl, true);
   sheetIdCache = { key: googleSheetsConfig(env).spreadsheetId, id: sheetId };
 
-  const orders = (await DB.prepare(`SELECT o.*, u.display_name AS client_name FROM client_orders o JOIN users u ON u.id=o.client_id
-    WHERE NOT o.archived AND NOT u.archived AND u.active ORDER BY o.created_at, o.id`).all()).results || [];
+  const orders = (await DB.prepare(`SELECT o.*, s.name AS shop_name FROM client_orders o JOIN users u ON u.id=o.client_id
+    LEFT JOIN client_stores s ON s.id=o.store_id WHERE NOT o.archived AND NOT u.archived AND u.active ORDER BY o.created_at, o.id`).all()).results || [];
   const rows = [];
   for (const o of orders) {
     const photos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(o.id).all()).results || [];
-    const { am, qz } = websiteCells(env, o, photos, o.client_name);
+    const { am, qz } = websiteCells(env, o, photos, o.shop_name || '');
     const supplier = [o.supplier_cost == null ? '' : Number(o.supplier_cost), txt(o.tracking_number), ['shipped', 'delivered'].includes(o.status) ? SHIPPED : NOT_SHIPPED];
     rows.push([...am, ...supplier, ...qz]);
     await DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_shipped=? WHERE id=?').bind(norm(supplier[0]), norm(o.tracking_number), supplier[2], o.id).run();
