@@ -9,8 +9,9 @@
 
   const exactTime = ms => {
     if(!ms)return '';
-    if(window.DL?.israelTime)return window.DL.israelTime(ms/1000);
-    return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Jerusalem',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(ms))+L(' (Israel time)',' (שעון ישראל)');
+    if(window.DL?.displayTime)return window.DL.displayTime(ms/1000);
+    const zone=he() ? 'Asia/Jerusalem' : Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return new Intl.DateTimeFormat('en-GB',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(ms))+(he() ? ' (שעון ישראל)' : ` (${zone})`);
   };
   function timeAgo(ms) {
     if (!ms) return '';
@@ -18,10 +19,12 @@
     if (s < 60) return L('just now', 'הרגע');
     if (s < 3600) { const m = Math.floor(s / 60); return L(`${m} min ago`, `לפני ${m} דק׳`); }
     if (s < 86400) { const h = Math.floor(s / 3600); return L(`${h} h ago`, `לפני ${h} שע׳`); }
-    const d = new Date(ms), y = new Date(); y.setDate(y.getDate() - 1);
-    const time = d.toLocaleTimeString(he() ? 'he-IL' : 'en-US', { hour: 'numeric', minute: '2-digit' });
-    if (d.toDateString() === y.toDateString()) return L('Yesterday', 'אתמול') + ' ' + time;
-    return d.toLocaleDateString(he() ? 'he-IL' : 'en-US', { month: 'short', day: 'numeric' }) + ', ' + time;
+    const d = new Date(ms), zone=he() ? 'Asia/Jerusalem' : Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const dayKey=new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'});
+    const yesterday=new Date(dayKey.format(new Date())+'T12:00:00Z');yesterday.setUTCDate(yesterday.getUTCDate()-1);
+    const time = d.toLocaleTimeString(he() ? 'he-IL' : 'en-US', { timeZone:zone,hour: 'numeric', minute: '2-digit' });
+    if (dayKey.format(d) === yesterday.toISOString().slice(0,10)) return L('Yesterday', 'אתמול') + ' ' + time;
+    return d.toLocaleDateString(he() ? 'he-IL' : 'en-US', { timeZone:zone,month: 'short', day: 'numeric' }) + ', ' + time;
   }
 
   const ICONS = {

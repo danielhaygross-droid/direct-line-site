@@ -1,3 +1,21 @@
+## Language-based timestamp display ready — 13 October 2026
+
+User requested Israel time only in Hebrew; English must follow each viewer's device time zone. Branch codex/viewer-timezone changes the shared display formatter, order/client lists, order activity/trackers, message times, login/terms/archive times and notification timestamps. English shows the device's IANA zone label (for example Asia/Manila); Hebrew always uses Asia/Jerusalem with the Hebrew Israel-time label. Order activity note follows the selected view. Notification fallback on the main dashboards uses the same rules, including older relative-date labels. Invoice form's default date and new-account today display follow the view. Stored UTC timestamps and server-side edit deadlines/business dates remain unchanged; no API/database change and no live customer data edited.
+
+Versions common13, shared order-ui8, notify3, admin38, portal36. 64 automated tests passed (four new timestamp tests cover Manila/New York/London, winter/summer DST, date rollover, invalid timestamps and dashboard fallback). Local PGlite/browser checks passed both languages in all three device zones for real admin/client lists and client drawer/activity. Build/syntax/diff pass. Evidence: verification/viewer-timezone and check-viewer-timezone.mjs. Awaiting PR/merge/deployment; do not describe this timestamp change as live until verified after merge.
+
+---
+
+## PR34 production verified; three confirmed training orders archived — 13 October 2026
+
+User directly authorized removing Shahar and Daniel's three training orders after sharing confirmation. Exact identities: database6/ref45858595 (Shahar111), database7/ref247012947412412 (hadsash), database8/ref41047120940 (YehudaVaknin). Keep all client accounts, including hadsash, and new customer orders16–23. Three source-sheet rows and46 associated old Sync Log rows were removed. After native archive sync, the three test orders appear only in the hidden raw Orders ledger with BF Archived=TRUE. They are absent from the visible Work Queue; eight new customer orders remain. This is reversible archival, not permanent deletion of database history.
+
+User merged PR34. Production deployment dpl_J5vFY6cBcxVd8LGq59A7QLrc3a9c is READY at merge60b7dfcc70e6f226d63864ad504ab024da89fc47; five public admin/shared/portal assets exactly match origin/main. The archive endpoint was used successfully on exactly those three orders. Normal admin/client lists exclude them, Archived orders contains them, and billing totals/status/amounts/edit locks are unchanged. No client account was archived or changed during this three-order cleanup. TEST/Test1/QA cleanup from the earlier section remains complete.
+
+Live browser checks passed EN/HE at1440/390: normal list clean, new customer orders retained, Archived orders filter, read-only archived drawer, Restore button visible, and Yehuda's client preview excludes training order8 while keeping new orders. Restoration was already exercised locally and was not performed live on the user-requested archived records. Native Sheet readback confirms eight Work Queue entries, no confirmed test references and no formula errors. Evidence: verification/confirmed-test-order-removal.json, verification/order-archive/live/results.json, screenshots/deployment.json; scripts archive-confirmed-test-orders.mjs and check-live-order-archive.mjs. All Archive/Restore code and ongoing cleanup sync behavior from PR34 are now live. Custom domain remains paused at user's request.
+
+---
+
 PR34 ready for merge: https://github.com/danielhaygross-droid/direct-line-site/pull/34 — head549c1fc. Spreadsheet cleanup/live test-account removal done; new order archive button awaiting merge and production verification.
 
 ## Spreadsheet cleanup live; order archive ready for merge — 13 October 2026

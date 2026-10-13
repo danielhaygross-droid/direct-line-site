@@ -37,11 +37,14 @@
 
   const money = v => (v === null || v === undefined || v === '' ? '—' : (Number(v) < 0 ? '-$' : '$') + Math.abs(Number(v)).toFixed(2));
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  // Always show operational timestamps in Israel, including DST and seconds.
-  const israelTime = sec => {
+  const hebrewTime = () => window.DLi18n?.lang === 'he' || (!window.DLi18n && document.documentElement.lang === 'he');
+  const displayTimeZone = () => hebrewTime() ? 'Asia/Jerusalem' : Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const timeZoneNote = () => hebrewTime() ? 'כל הזמנים מוצגים לפי שעון ישראל.' : `Times use your device time zone (${displayTimeZone()}).`;
+  const displayTime = sec => {
     if (!Number.isFinite(Number(sec)) || Number(sec) <= 0) return '';
-    const f = new Intl.DateTimeFormat('en-GB', {timeZone:'Asia/Jerusalem',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
-    return f.format(new Date(Number(sec)*1000)) + (window.DLi18n?.lang==='he' ? ' (שעון ישראל)' : ' (Israel time)');
+    const zone = displayTimeZone();
+    const f = new Intl.DateTimeFormat('en-GB', {timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
+    return f.format(new Date(Number(sec)*1000)) + (hebrewTime() ? ' (שעון ישראל)' : ` (${zone})`);
   };
   const date = s => (s ? new Date(s * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
   const trackingUrl = n => 'https://t.17track.net/en#nums=' + encodeURIComponent(n);
@@ -199,7 +202,7 @@
       <div class="dl-thread-actions"><button class="btn btn-gold" type="submit">Send</button><p class="msg" data-thread-msg></p></div></form>`;
     const list = dlg.querySelector('.dl-thread-list'), form = dlg.querySelector('form'), msg = dlg.querySelector('[data-thread-msg]');
     const render = msgs => {
-      list.innerHTML = msgs.length ? msgs.map(m => `<div class="dl-bubble ${m.author === role ? 'mine' : 'theirs'}"><span>${esc(m.body)}</span><small>${m.author === 'admin' ? 'Direct Line' : 'Client'} · ${esc(israelTime(m.createdAt))}</small></div>`).join('')
+      list.innerHTML = msgs.length ? msgs.map(m => `<div class="dl-bubble ${m.author === role ? 'mine' : 'theirs'}"><span>${esc(m.body)}</span><small>${m.author === 'admin' ? 'Direct Line' : 'Client'} · ${esc(displayTime(m.createdAt))}</small></div>`).join('')
         : `<p class="hint">No messages yet. ${role === 'client' ? 'Send a follow-up and we’ll get back to you here.' : ''}</p>`;
       list.scrollTop = list.scrollHeight;
     };
@@ -271,5 +274,5 @@
       <div class="pm-linkrow">${link}</div>`;
   }
 
-  window.DL = { setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, israelTime, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  window.DL = { setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();
