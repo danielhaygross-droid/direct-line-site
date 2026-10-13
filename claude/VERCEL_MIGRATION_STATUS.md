@@ -1,3 +1,17 @@
+## Support CTA client-only — ready, 13 October 2026
+
+User clarifies admins are the responders and should not see Chat us/Need an answer support CTA. Removed the WhatsApp dock markup from both admin dashboard languages. Added a compact 50px support link only in the authenticated client shell, excluding admin client-preview mode and signed-out screens. Original WhatsApp target retained. Client icon sits above phone navigation and hides during drawers, menus, notifications and native dialogs. Shared drawer toggles its own body state to suppress the client icon; resizable panels from PR32 remain unchanged.
+
+Branch codex/client-only-support. Versions portalJS35, portalCSS17, order-ui6, i18n20. Local seeded DB/browser checks passed EN/HE x1440/390 for client visibility, exact href, phone tab clearance, drawer hide/restore, admin-preview exclusion and signed-out exclusion. Both admin HTML sources contain no support dock. 59 automated tests/build/syntax/diff checks pass. No live data changed. Awaiting PR/merge/deployment. Evidence: verification/client-only-support and verification/check-client-only-support.mjs.
+
+## PR32 live and verified — 13 October 2026
+
+Merged PR32 commit b871d939bc5b5e10e89bb10390a07f8cd253d248 automatically deployed to Production. Deployment dpl_EeunYabikpfHg25UtMFV2Dnjz5D5 is READY; eight public dashboard/admin/shared assets match tested source. No additional deployment needed.
+
+Read-only live admin UI checks passed EN/HE x1440/390: 50px support icon with promo text hidden, support dock hides while client panel is open and restores on close, 760px desktop default, pointer drag, keyboard resize/reset, saved width across reopen, full-width phone panel with handle hidden, and bounded page layout. Used existing TEST account view; no customer order/message fields were changed. Login audit/background retry behavior may run normally. Evidence: verification/panel-support/live/results.json, deployment.json and screenshots; script verification/check-live-panel-support.mjs. An initial drag test double-added iframe coordinates; fixed the test to use Playwright's top-level bounding box coordinates, then all four checks passed with production code and no injected styles.
+
+User instructions: refresh the website; on desktop drag the panel's inner edge to change width. Double-click the handle resets to 760px. Shared panels include client account and order details. The compact WhatsApp link keeps its original destination, but never covers panel actions. Domain task remains separate/pending; Byzroyal excluded.
+
 ## Compact support control and resizable panels — ready, 13 October 2026
 
 User reports the Need an answer WhatsApp CTA overlaps buttons and client/order panels are too narrow. Branch codex/compact-support-resizable-panel. Support dock is a 50px icon with existing accessible label/href; large promotional text is hidden. It hides while the embedded admin drawer or a native dialog is open, restoring afterward. Iframe state messages are handled inside the existing origin/source-validated parent listener. No contact number change.

@@ -97,7 +97,7 @@
       el, isOpen: false, onClose: null, key: null,
       head: el.querySelector('[data-d-title]'), body: el.querySelector('[data-d-body]'), foot: el.querySelector('[data-d-foot]'),
       open(key) {
-        d.key = key; d.isOpen = true;setWidth(preferredWidth); scrim.classList.add('open'); el.classList.add('open');notifyParent(true);
+        d.key = key; d.isOpen = true;setWidth(preferredWidth); scrim.classList.add('open'); el.classList.add('open');notifyParent(true);document.body.classList.add('dl-drawer-open');
         document.documentElement.style.overflow = 'hidden';
         d.body.scrollTop = 0;
         // Inside the dashboard, make the frame at least a screen tall so the panel has room.
@@ -107,7 +107,7 @@
       },
       close() {
         if (!d.isOpen) return;
-        d.isOpen = false; d.key = null; scrim.classList.remove('open'); el.classList.remove('open');notifyParent(false);
+        d.isOpen = false; d.key = null; scrim.classList.remove('open'); el.classList.remove('open');notifyParent(false);document.body.classList.remove('dl-drawer-open');
         document.documentElement.style.overflow = '';
         document.body.style.minHeight = '';
         const cb = d.onClose; d.onClose = null; cb && cb();

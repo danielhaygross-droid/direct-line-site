@@ -257,3 +257,10 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .card-head:has(#invoice-month-form){flex-wrap:wrap}
 #invoice-month-form{min-width:0;max-width:100%}
 #invoice-month-form .btn{max-width:100%;white-space:normal}
+
+/* Support belongs to signed-in clients, clear of the mobile navigation and drawers. */
+.client-support{position:fixed;z-index:40;inset-inline-end:20px;bottom:20px;width:50px;height:50px;display:grid;place-items:center;border:1px solid #2b806c;border-radius:50%;background:#103d32;color:#7bdfca;box-shadow:0 8px 24px #0002}
+.client-support svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.6}
+.client-support:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.dl-drawer-open .client-support,.menu-open .client-support,body:has(.dln-panel.open) .client-support,body:has(dialog[open]) .client-support{display:none}
+@media(max-width:860px){.client-support{inset-inline-end:12px;bottom:calc(88px + env(safe-area-inset-bottom))}}
