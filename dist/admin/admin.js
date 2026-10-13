@@ -25,7 +25,7 @@
   };
   const ic = n => UI.svg(P[n]);
   const place = d => (d ? countryName(d) : '—');
-  const fullDate = sec => window.DL.israelTime(sec);
+  const fullDate = sec => window.DL.displayTime(sec);
   const orderName = o => o.orderRef || 'Order #' + o.id;
   const clientOf = id => S.ov?.clients.find(c => c.id === Number(id));
   const clientName = id => clientOf(id)?.name || 'Client';
@@ -503,7 +503,7 @@
     const v2 = x => (x != null ? Number(x).toFixed(2) : '');
     const cid = order?.clientId || Number(clientId) || 0;
     d.head.innerHTML = `<h2>${order ? 'Edit order' : 'New order'}</h2><p>${order ? esc(clientName(order.clientId)) + ' · ' + esc(orderName(order)) : 'Add an order on a client’s behalf (e.g. one they sent on WhatsApp)'}</p>`;
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: window.DL.displayTimeZone() });
     const currencies = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD'];
     if (order?.currency && !currencies.includes(order.currency)) currencies.push(order.currency);
     d.body.innerHTML = `<form id="order-form" class="af" novalidate>
@@ -663,7 +663,7 @@
       // Admins sign in on the main dashboard; clients on their portal. (The admin app runs inside the dashboard.)
       $('[data-signin-note]').innerHTML = admin
         ? `They sign in at <b>${esc(location.origin)}/</b> and get full access to the dashboard.`
-        : `They sign in at <b>${esc(location.origin)}/portal/</b>. Their free month starts today (${esc(fmtDay(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' })))}).`;
+        : `They sign in at <b>${esc(location.origin)}/portal/</b>. Their free month starts today (${esc(fmtDay(new Date().toLocaleDateString('en-CA', { timeZone: window.DL.displayTimeZone() })))}).`;
     };
     f.role.addEventListener('change', sync); sync();
     f.addEventListener('submit', async e => {

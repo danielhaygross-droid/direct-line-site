@@ -14,11 +14,11 @@
   };
   const svg = p => `<svg viewBox="0 0 24 24" aria-hidden="true">${p}</svg>`;
   const pill = s => `<span class="st st-${esc(s)}">${esc(LABEL[s] || s)}</span>`;
-  const when = sec => window.DL.israelTime(sec);
+  const when = sec => window.DL.displayTime(sec);
   const day = when;
   function activity(events=[]) {
     const labels={created:'Order created',edited:'Order edited',status:'Status changed',tracking:'Tracking number changed',tracking_update:'Tracking update received',photo:'Photo changed',claim:'Claim updated',archived:'Order archived',restored:'Order restored'};
-    return `<section class="card card-pad"><h3 class="sec-title">Order activity</h3><p class="muted">All times are Israel time.</p>${events.length ? `<ol class="order-activity">${[...events].reverse().map(e=>`<li><b>${esc(labels[e.kind]||e.kind)}</b><span>${e.actor==='admin'?'Direct Line':'Client'}${e.detail ? ' · '+esc(e.detail) : ''}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`).join('')}</ol>` : '<p class="muted">No activity recorded yet.</p>'}</section>`;
+    return `<section class="card card-pad"><h3 class="sec-title">Order activity</h3><p class="muted" data-no-i18n>${esc(window.DL.timeZoneNote())}</p>${events.length ? `<ol class="order-activity">${[...events].reverse().map(e=>`<li><b>${esc(labels[e.kind]||e.kind)}</b><span>${e.actor==='admin'?'Direct Line':'Client'}${e.detail ? ' · '+esc(e.detail) : ''}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`).join('')}</ol>` : '<p class="muted">No activity recorded yet.</p>'}</section>`;
   }
   function syncConversation(order,data) {
     if(!order)return;
