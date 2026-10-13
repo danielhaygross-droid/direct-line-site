@@ -49,7 +49,7 @@ test('portal order sync appends one idempotent order row and records success', a
     calls.push({ url: String(url), options });
     if (String(url).includes('oauth2.googleapis.com/token')) return Response.json({ access_token: 'token', expires_in: 3600 });
     if (String(url).includes('/values/Orders!A6%3AA')) return Response.json({ values: [] });
-    if (String(url).includes('/values/Orders!A%3ABE:append')) return Response.json({ updates: { updatedRows: 1 } });
+    if (String(url).includes('/values/Orders!A%3ABF:append')) return Response.json({ updates: { updatedRows: 1 } });
     if (String(url).includes('/values/Sync%20Log!A%3AH:append')) return Response.json({ updates: { updatedRows: 1 } });
     return new Response('unexpected request', { status: 500 });
   };
@@ -63,10 +63,10 @@ test('portal order sync appends one idempotent order row and records success', a
   assert.deepEqual({ configured: result.configured, synced: result.synced }, { configured: true, synced: true });
   assert.equal(DB.state.status, 'synced');
   assert.equal(DB.state.attempts, 1);
-  const append = calls.find(call => call.url.includes('/values/Orders!A%3ABE:append'));
+  const append = calls.find(call => call.url.includes('/values/Orders!A%3ABF:append'));
   assert.ok(append);
   const row = JSON.parse(append.options.body).values[0];
-  assert.equal(row.length, 57);
+  assert.equal(row.length, 58);
   assert.equal(row[0], '42');
   assert.equal(row[2], 'Test Client');
   assert.equal(row[6], 'E-100');
@@ -76,10 +76,28 @@ test('portal order sync appends one idempotent order row and records success', a
   assert.equal(row[42], 'Engraved lighter');
   assert.equal(row[45], 2);
   assert.equal(row[47], 2);
+  assert.equal(row[57], false);
   assert.match(row[48], /^=IMAGE/);
   assert.match(row[49], /sheet-photos\/42\/91/);
   assert.match(row[50], /Photo 2/);
-  assert.deepEqual(row.slice(51),Array(6).fill(''));
+  assert.deepEqual(row.slice(51,57),Array(6).fill(''));
+});
+
+test('archived client sync clears their account and all duplicate order rows without appending', async () => {
+  const DB={prepare(){return{bind(){return this;},async first(){return{id:7,archived:true};},async run(){return{success:true};}};}};
+  const calls=[];
+  const fakeFetch=async(url,options={})=>{
+    calls.push({url:String(url),options});
+    if(String(url).includes('oauth2.googleapis.com/token'))return Response.json({access_token:'token',expires_in:3600});
+    if(String(url).includes('/values/Clients!A6%3AA'))return Response.json({values:[['8'],['7']]});
+    if(String(url).includes('/values/Orders!B6%3AB'))return Response.json({values:[['7'],['8'],['7']]});
+    if(String(url).endsWith('/values:batchClear'))return Response.json({clearedRanges:[]});
+    return new Response('unexpected request',{status:500});
+  };
+  const r=await syncClientToGoogleSheet(DB,{GOOGLE_SHEETS_SPREADSHEET_ID:'sheet-id',GOOGLE_SERVICE_ACCOUNT_EMAIL:'sheet-writer@example.iam.gserviceaccount.com',GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:serviceKey},7,fakeFetch);
+  assert.equal(r.removed,true);
+  assert.deepEqual(JSON.parse(calls.find(c=>c.url.endsWith('/values:batchClear')).options.body).ranges,['Clients!A7:H7','Orders!A6:BF6','Orders!A8:BF8']);
+  assert.equal(calls.some(c=>c.url.includes(':append')),false);
 });
 
 test('new client accounts are mirrored to the Clients tab', async () => {
@@ -95,7 +113,7 @@ test('new client accounts are mirrored to the Clients tab', async () => {
   const fakeFetch = async (url, options = {}) => {
     calls.push({ url: String(url), options });
     if (String(url).includes('oauth2.googleapis.com/token')) return Response.json({ access_token: 'token', expires_in: 3600 });
-    if (String(url).includes('/values/Clients!A6%3AA1000')) return Response.json({ values: [] });
+    if (String(url).includes('/values/Clients!A6%3AA')) return Response.json({ values: [] });
     if (String(url).includes('/values/Clients!A%3AH:append')) return Response.json({ updates: { updatedRows: 1 } });
     return new Response('unexpected request', { status: 500 });
   };

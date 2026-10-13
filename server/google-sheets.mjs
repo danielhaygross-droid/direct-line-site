@@ -95,11 +95,22 @@ async function findOrderRow(env, orderId, fetchImpl) {
 }
 
 async function findClientRow(env, clientId, fetchImpl) {
-  const range = encodeURIComponent('Clients!A6:A1000');
+  const range = encodeURIComponent('Clients!A6:A');
   const data = await sheetsRequest(env, '/values/' + range + '?majorDimension=ROWS', {}, fetchImpl);
   const rows = data.values || [];
   const index = rows.findIndex(row => String(row?.[0] ?? '') === String(clientId));
   return index < 0 ? null : index + 6;
+}
+
+// Clear every matching row, including historical duplicate sync rows. Keep the
+// fixed column layout so the service and the team's views remain compatible.
+async function clearClientSheetRows(env, clientId, fetchImpl) {
+  const ranges = [];
+  for (const [sheet,column,last] of [['Clients','A','H'],['Orders','B','BF']]) {
+    const data = await sheetsRequest(env,'/values/'+encodeURIComponent(`${sheet}!${column}6:${column}`)+'?majorDimension=ROWS',{},fetchImpl);
+    (data.values || []).forEach((row,i)=>{if(String(row?.[0] ?? '') === String(clientId)) ranges.push(`${sheet}!A${i+6}:${last}${i+6}`);});
+  }
+  if (ranges.length) await sheetsRequest(env,'/values:batchClear',{method:'POST',body:JSON.stringify({ranges})},fetchImpl);
 }
 
 function orderValues(order, syncedAt) {
@@ -134,9 +145,15 @@ async function appendSyncLog(env, order, result, attempt, error, fetchImpl) {
 
 export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl = fetch) {
   if (!googleSheetsConfigured(env)) return { configured: false, synced: false };
-  const order = await DB.prepare(`SELECT o.*, u.display_name AS client_name
+  const order = await DB.prepare(`SELECT o.*, u.display_name AS client_name, u.archived AS client_archived
     FROM client_orders o JOIN users u ON u.id = o.client_id WHERE o.id = ?`).bind(orderId).first();
   if (!order) throw new Error('Order not found for Google Sheets sync');
+
+  if (order.client_archived) {
+    await clearClientSheetRows(env,order.client_id,fetchImpl);
+    await DB.prepare("UPDATE client_orders SET sheet_sync_status='synced',sheet_sync_error='' WHERE client_id=?").bind(order.client_id).run();
+    return {configured:true,synced:true,removed:true};
+  }
 
   const attempt = Number(order.sheet_sync_attempts || 0) + 1;
   await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting', sheet_sync_attempts=?, sheet_sync_error='' WHERE id=?")
@@ -145,13 +162,13 @@ export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl =
     const rowNumber = await findOrderRow(env, orderId, fetchImpl);
     const syncedAt = Math.floor(Date.now() / 1000);
     const photos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(orderId).all()).results || [];
-    const values = [orderValues(order, syncedAt).concat(photoCells(env,orderId,photos))];
+    const values = [orderValues(order, syncedAt).concat(photoCells(env,orderId,photos),[!!order.archived])];
     if (rowNumber) {
-      await sheetsRequest(env, '/values/' + encodeURIComponent(`Orders!A${rowNumber}:BE${rowNumber}`) + '?valueInputOption=USER_ENTERED', {
+      await sheetsRequest(env, '/values/' + encodeURIComponent(`Orders!A${rowNumber}:BF${rowNumber}`) + '?valueInputOption=USER_ENTERED', {
         method: 'PUT', body: JSON.stringify({ majorDimension: 'ROWS', values }),
       }, fetchImpl);
     } else {
-      await sheetsRequest(env, '/values/' + encodeURIComponent('Orders!A:BE') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+      await sheetsRequest(env, '/values/' + encodeURIComponent('Orders!A:BF') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
         method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values }),
       }, fetchImpl);
     }
@@ -179,6 +196,11 @@ export async function syncClientToGoogleSheet(DB, env, clientId, fetchImpl = fet
   const client = await DB.prepare("SELECT id, username, display_name, active, archived, created_at FROM users WHERE id = ? AND role = 'client'")
     .bind(clientId).first();
   if (!client) return { configured: true, synced: false };
+  if (client.archived) {
+    await clearClientSheetRows(env,clientId,fetchImpl);
+    await DB.prepare("UPDATE client_orders SET sheet_sync_status='synced',sheet_sync_error='' WHERE client_id=?").bind(clientId).run();
+    return {configured:true,synced:true,removed:true};
+  }
   const rowNumber = await findClientRow(env, clientId, fetchImpl);
   const values = [[
     String(client.id), client.display_name || '', client.username || '', String(client.username || '').includes('@') ? client.username : '',

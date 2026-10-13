@@ -6,7 +6,7 @@
   const UI = window.DLOrderUI;
   const STATUSES = ['pending','processing','shipped','delivered','cancellation_requested','cancelled'];
   const ADMIN_STATUSES = ['processing','shipped','delivered'];
-  const S = { ov: null, orders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
+  const S = { ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
   const embedded = window.top !== window.self;
   const tell = m => { if (embedded) parent.postMessage(m, location.origin); };
   const P = {
@@ -56,8 +56,8 @@
   }
 
   async function loadAll() {
-    const [ov, o, p, c, stores] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores')]);
-    S.ov = ov; S.orders = o.orders; S.products=p.products; S.claims=c.claims;S.stores=stores.stores; window.DL.setRates(ov.rates);
+    const [ov, o, p, c, stores, archived] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores'),api('/admin/orders?archived=1')]);
+    S.ov = ov; S.orders = o.orders; S.archivedOrders = archived.orders; S.products=p.products; S.claims=c.claims;S.stores=stores.stores; window.DL.setRates(ov.rates);
     if (S.filter === null) S.filter = S.orders.some(x => x.status === 'cancellation_requested') ? 'cancellation_requested' : S.orders.some(x => x.unreadMessages) ? 'followups' : S.orders.some(x => x.status === 'pending') ? 'pending' : 'all';
     renderKpis();
     tell({ type: 'dl-followups', unread: unreadTotal() });
@@ -87,7 +87,7 @@
     const t = S.ov.totals, cl = S.ov.clients;
     $('[data-kpis]').innerHTML = [
       ['Active clients', cl.filter(c => c.active).length, `${cl.length} account${cl.length === 1 ? '' : 's'}`, 'users', 'var(--blue)'],
-      ['Client orders', t.orders, `${S.orders.filter(o => o.status === 'pending').length} waiting to be processed`, 'orders', 'var(--orange)'],
+      ['Client orders', S.orders.filter(o=>o.status!=='cancelled').length, `${S.orders.filter(o => o.status === 'pending').length} waiting to be processed`, 'orders', 'var(--orange)'],
       ['Outstanding', money(t.outstanding), `Billed ${money(t.billed)} · paid ${money(t.paid)}`, 'money', t.outstanding > 0 ? 'var(--red)' : 'var(--mint)'],
       ['Our earnings', money(t.ourShare), `Fees ${money(t.commission)} · supplier ${money(t.supplierShare)}`, 'check', 'var(--gold)'],
     ].map(([k, v, sub, icon, tone], i) => `<div class="stat${i === 3 ? ' hero' : ''}" style="--tone:${tone}"><span class="stat-ic">${ic(icon)}</span><small>${k}</small><strong>${v}</strong><em>${esc(sub)}</em></div>`).join('');
@@ -146,12 +146,13 @@
   }
 
   // ---------- orders tab ----------
-  const matches = (o, f) => f === 'all' || (f === 'followups' ? o.unreadMessages > 0 : o.status === f);
+  const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'followups' ? o.unreadMessages > 0 : o.status === f));
   function renderOrders() {
-    const inClient = S.orders.filter(o => !S.client || String(o.clientId) === S.client);
+    const all = [...S.orders,...S.archivedOrders];
+    const inClient = all.filter(o => !S.client || String(o.clientId) === S.client);
     const count = f => inClient.filter(o => matches(o, f)).length;
-    const label = f => (f === 'all' ? 'All' : f === 'followups' ? 'New follow-ups' : UI.LABEL[f]);
-    $('[data-chips]').innerHTML = ['all', 'followups', ...STATUSES].filter(f => f === 'all' || count(f) || f === S.filter)
+    const label = f => (f === 'archived' ? 'Archived orders' : f === 'all' ? 'All' : f === 'followups' ? 'New follow-ups' : UI.LABEL[f]);
+    $('[data-chips]').innerHTML = ['all', 'followups', ...STATUSES, 'archived'].filter(f => f === 'archived' || f === 'all' || count(f) || f === S.filter)
       .map(f => `<button type="button" class="chip t-${f}${f === 'followups' ? ' alert' : ''}${S.filter === f ? ' on' : ''}" data-filter="${f}">${f !== 'all' && f !== 'followups' ? '<i class="dot"></i>' : ''}${label(f)} <span>${count(f)}</span></button>`).join('');
     const sel = $('[data-client-filter]');
     sel.innerHTML = '<option value="">All clients</option>' + S.ov.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
@@ -168,7 +169,7 @@
         <td data-label="Messages">${o.unreadMessages ? `<span class="unread-pill">${ic('chat')}${o.unreadMessages} new</span>` : o.messages ? `<span class="msgs">${ic('chat')}${o.messages}</span>` : '<span class="dim">—</span>'}</td>
         <td class="num hide-sm">${UI.svg(P.chev).replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:var(--dim);stroke-width:2"')}</td></tr>`).join('')}
       </tbody></table></div>`
-      : S.orders.length ? empty('No orders here', S.filter === 'followups' ? 'No unread follow-ups. You’re all caught up.' : 'Try another filter or search.')
+      : S.orders.length ? empty('No orders here', S.filter === 'followups' ? 'No unread follow-ups. You’re all caught up.' : S.filter === 'archived' ? 'No archived orders match this search.' : 'Try another filter or search.')
         : empty('No client orders yet', 'They show up here as soon as a client adds one in their portal. You can also add one for a client.', '<button type="button" class="btn btn-primary" data-new-order>New order</button>');
   }
 
@@ -298,7 +299,7 @@
   let chatCtl = null, events = [];
   function closeChat() { chatCtl?.destroy(); chatCtl = null; }
   function openOrder(id, focus, back) {
-    const o = S.orders.find(x => x.id === Number(id)); if (!o) return;
+    const o = [...S.orders,...S.archivedOrders].find(x => x.id === Number(id)); if (!o) return;
     const d = UI.getDrawer();
     closeChat(); events = [];
     S.drawer = { kind: 'order', id: o.id, back };
@@ -307,9 +308,9 @@
     d.body.innerHTML = '<div data-d-info style="display:grid;gap:16px"></div><section><h3 class="sec-title">Messages with the client</h3><div data-d-chat></div></section>';
     invoiceFiles=[];fillOrder(o);
     api('/admin/invoices?clientId='+o.clientId).then(r=>{if(S.drawer?.kind==='order'&&S.drawer.id===o.id){invoiceFiles=r.invoices;fillOrder(o,true);}}).catch(ex=>toast(ex.message));
-    chatCtl = UI.chat($('[data-d-chat]', d.body), { orderId: o.id, role: 'admin', onLoad: data => {
+    chatCtl = UI.chat($('[data-d-chat]', d.body), { orderId: o.id, role: 'admin', readOnly: !!o.archived, onLoad: data => {
       events = data.events || [];
-      const cur = S.orders.find(x => x.id === o.id);
+      const cur = [...S.orders,...S.archivedOrders].find(x => x.id === o.id);
       const hadUnread=cur?.unreadMessages,oldCount=cur?.messages;UI.syncConversation(cur,data);
       if (cur && (hadUnread || oldCount!==cur.messages)) { cur.unreadMessages = 0; renderKpis(); renderList(); tell({ type: 'dl-followups', unread: unreadTotal() }); }
       if (cur && S.drawer?.kind === 'order' && S.drawer.id === cur.id) fillOrder(cur, true);
@@ -322,6 +323,11 @@
     const info = $('[data-d-info]', d.body); if (!info) return;
     if (soft && $('[name=invoiceFile]',info)?.files.length) return;
     if (soft && info.contains(document.activeElement) && document.activeElement.matches('input')) return;
+    if (o.archived) {
+      info.innerHTML = `<section class="card card-pad"><h3 class="sec-title">Archived order</h3><p>This order is hidden from normal order lists. Billing and payment history are preserved.</p><p><span>Archived at</span> ${esc(fullDate(o.archivedAt))}</p>${UI.activity(events)}</section>`;
+      d.foot.innerHTML = `<button type="button" class="btn btn-primary" data-restore-order="${o.id}">Restore order</button>`;
+      return;
+    }
     info.innerHTML = `
       <section class="card card-pad">${UI.tracker(o, events)}</section>${UI.activity(events)}
       <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o, { removable: true, canAdd: (o.photos || []).length < 8 })}</section>
@@ -351,7 +357,7 @@
         <div><span>Customer paid client</span><span>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</span></div><div><span>Client’s profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${o.productCost == null && o.shippingFee == null ? 'Pending costs' : money(o.profit)}</span></div></div>
         <div class="split"><div><small>Fee on this order</small><b>${money(o.commission)}</b></div><div><small>Supplier gets</small><b>${money(o.supplierShare)}</b></div><div><small>We earn</small><b class="pos">${money(o.ourShare)}</b></div></div></section>`;
     bindBill(o);
-    d.foot.innerHTML = `<button type="button" class="btn" data-edit-order="${o.id}">${ic('edit')}Edit order</button><button type="button" class="btn btn-ghost" data-open-client="${o.clientId}">Open client</button>`;
+    d.foot.innerHTML = `<button type="button" class="btn" data-edit-order="${o.id}">${ic('edit')}Edit order</button><button type="button" class="btn btn-ghost" data-open-client="${o.clientId}">Open client</button><button type="button" class="btn btn-danger" data-archive-order="${o.id}">Archive order</button>`;
   }
 
   function subscriptionHTML(c) {
@@ -412,7 +418,7 @@
       try {
         await api('/orders/' + o.id, { method: 'PUT', body });
         document.activeElement?.blur(); await loadAll(); renderList(); renderKpis();
-        const cur = S.orders.find(x => x.id === o.id); if (cur) fillOrder(cur);
+        const cur = [...S.orders,...S.archivedOrders].find(x => x.id === o.id); if (cur) fillOrder(cur);
         toast('Bill saved. ' + money(cur?.price) + ' added to what ' + (clientName(o.clientId) || 'the client') + ' owes.');
       } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
     });
@@ -676,7 +682,7 @@
 
   function refreshDrawer() {
     const s = S.drawer; if (!s) return;
-    if (s.kind === 'order') { const o = S.orders.find(x => x.id === s.id); if (o) fillOrder(o, true); }
+    if (s.kind === 'order') { const o = [...S.orders,...S.archivedOrders].find(x => x.id === s.id); if (o) fillOrder(o, true); }
     if (s.kind === 'client') { const c = clientOf(s.id); if (c) fillClient(c, true); }
   }
 
@@ -781,6 +787,15 @@
     const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
     const oo = t.closest('[data-open-order]'); if (oo) { openOrder(oo.dataset.openOrder, null, oo.dataset.back ? Number(oo.dataset.back) : null); return; }
     const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; fillClient(clientOf(S.drawer.id)); if (ct.dataset.ctab==='payments') await loadPayments(S.drawer.id); return; }
+    const ao = t.closest('[data-archive-order],[data-restore-order]');
+    if (ao) {
+      const archived = !!ao.dataset.archiveOrder, id = Number(ao.dataset.archiveOrder || ao.dataset.restoreOrder);
+      if (archived && !ao.dataset.armed) { ao.dataset.armed='1';ao.textContent='Click again to archive';setTimeout(()=>{if(ao.isConnected){delete ao.dataset.armed;ao.textContent='Archive order';}},4000);return; }
+      ao.disabled=true;
+      try { await api('/admin/orders/'+id+'/archive',{method:'POST',body:{archived}});UI.getDrawer().close();await loadAll();renderList();tell({type:'dl-clients-changed'});toast(archived ? 'Order archived. Billing history is preserved.' : 'Order restored.'); }
+      catch(ex){toast(ex.message);ao.disabled=false;}
+      return;
+    }
     const ar = t.closest('[data-archive]');
     if (ar) {
       if (!ar.dataset.armed) { ar.dataset.armed = '1'; ar.textContent = 'Click again to archive'; setTimeout(() => { if (ar.isConnected) { delete ar.dataset.armed; ar.textContent = 'Archive client'; } }, 4000); return; }
