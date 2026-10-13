@@ -1,3 +1,5 @@
+PR35 ready for merge: https://github.com/danielhaygross-droid/direct-line-site/pull/35 — timestamp language/zone change tested, not live yet.
+
 ## Language-based timestamp display ready — 13 October 2026
 
 User requested Israel time only in Hebrew; English must follow each viewer's device time zone. Branch codex/viewer-timezone changes the shared display formatter, order/client lists, order activity/trackers, message times, login/terms/archive times and notification timestamps. English shows the device's IANA zone label (for example Asia/Manila); Hebrew always uses Asia/Jerusalem with the Hebrew Israel-time label. Order activity note follows the selected view. Notification fallback on the main dashboards uses the same rules, including older relative-date labels. Invoice form's default date and new-account today display follow the view. Stored UTC timestamps and server-side edit deadlines/business dates remain unchanged; no API/database change and no live customer data edited.
