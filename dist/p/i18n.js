@@ -419,7 +419,7 @@
     'CLIENT PORTAL': 'פורטל לקוחות', 'CONTROL': 'CONTROL', 'Your orders,': 'ההזמנות שלך,', 'shipped and tracked': 'נשלחות ומנוטרות', 'in one place.': 'במקום אחד.',
     'Send us your orders in a minute': 'שולחים לנו הזמנות תוך דקה', 'Follow every order from pending to delivered': 'עוקבים אחרי כל הזמנה מקבלה ועד מסירה', 'Message our team about any order': 'כותבים לצוות שלנו על כל הזמנה',
     'Direct Line · fulfilment and shipping': 'Direct Line · הפצה ומשלוחים', 'Welcome back': 'ברוכים השבים', 'Sign in to add and track your orders.': 'היכנסו כדי להוסיף הזמנות ולעקוב אחריהן.',
-    'Sign in': 'כניסה', 'Remember me for 30 days': 'זכור אותי ל-30 יום', 'Wrong username or password.': 'שם המשתמש או הסיסמה שגויים.',
+    'Sign in': 'כניסה', 'Remember me for 30 days': 'זכור אותי ל-30 יום', 'Wrong username or password.': 'שם המשתמש או הסיסמה שגויים.', 'Too many sign-in attempts. Please wait 15 minutes and try again.': 'יותר מדי ניסיונות כניסה. נא להמתין 15 דקות ולנסות שוב.',
     // ----- portal -----
     'Home': 'בית', 'Import from Etsy': 'ייבוא מ-Etsy', 'Payments': 'תשלומים', 'Questions about an order?': 'שאלות על הזמנה?', 'Open the order and send us a message.': 'פתחו את ההזמנה ושלחו לנו הודעה.',
     'Messages →': 'הודעות ←', 'Your orders at a glance': 'ההזמנות שלך במבט אחד', 'Client portal': 'פורטל לקוחות', 'Good morning,': 'בוקר טוב,', 'Good afternoon,': 'צהריים טובים,', 'Good evening,': 'ערב טוב,',

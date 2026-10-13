@@ -24,6 +24,7 @@ import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, client
 
 import { STORAGE_SCHEMA, photoBytes, syncFileStorage, fileStorageStatus } from './file-storage.mjs';
 import { runBackup, listBackups, downloadBackup } from './backup.mjs';
+import { LOGIN_LIMIT_SCHEMA, LOCK_MESSAGE, clientIp, loginKeys, lockedFor, recordFailure, clearFailures } from './login-limit.mjs';
 
 const utf8 = new TextEncoder();
 const SESSION_SECONDS = 43200; // 12h, same as the Worker
@@ -169,7 +170,7 @@ export const SCHEMA = [
 // Supplier shipping rates (USD per kg) — from the supplier's rate sheet. Admin-only: sent with
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
-SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA, ...STORAGE_SCHEMA);
+SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA, ...STORAGE_SCHEMA, ...LOGIN_LIMIT_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -467,7 +468,9 @@ export async function handlePortal(request, url, ctx) {
   // Public: login
   if (path === '/login' && method === 'POST') {
     const body = await readBody(request);
-    const role = await authenticate(DB, env, text(body.username, 120), String(body.password || ''));
+    const signed = await signIn(DB, env, request, text(body.username, 120), String(body.password || ''));
+    if (signed.retryAfter) return json({ ok: false, error: LOCK_MESSAGE }, 429, { 'retry-after': String(signed.retryAfter) });
+    const role = signed.role;
     if (!role) return json({ ok: false, error: 'Invalid credentials' }, 401);
     const info = parseRole(role);
     return json({ ok: true, role: info.admin ? 'admin' : 'client', redirect: info.admin ? '/admin/' : '/portal/' }, 200,
@@ -953,4 +956,17 @@ export async function authenticate(DB, env, username, password) {
   if (!u || !u.active || u.archived || !(await verifyPassword(password, u.password_hash))) return null;
   await DB.prepare('UPDATE users SET last_login=? WHERE id=?').bind(now(), u.id).run();
   return u.role === 'admin' ? 'admin' : 'client-' + u.id + '-v' + Number(u.session_version || 0);
+}
+
+// authenticate() behind the failed sign-in limits (server/login-limit.mjs). Returns { role } —
+// role is null for wrong details — or { retryAfter } in seconds while the sign-in is locked.
+export async function signIn(DB, env, request, username, password) {
+  if (!DB || !username || !password) return { role: await authenticate(DB, env, username, password) };
+  const keys = loginKeys(username, clientIp(request)), at = now();
+  const wait = await lockedFor(DB, keys, at);
+  if (wait) return { retryAfter: wait };
+  const role = await authenticate(DB, env, username, password);
+  if (role) await clearFailures(DB, keys);
+  else await recordFailure(DB, keys, at);
+  return { role };
 }

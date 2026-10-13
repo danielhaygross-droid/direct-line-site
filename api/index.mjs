@@ -7,7 +7,8 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { waitUntil } from '@vercel/functions';
 import worker from '../server/worker.mjs';
 import { createD1 } from '../server/d1-postgres.mjs';
-import { SCHEMA as PORTAL_SCHEMA, handlePortal, authenticate, createSessionCookie, readSessionRole, parseRole, clientSession } from '../server/portal.mjs';
+import { LOCK_MESSAGE } from '../server/login-limit.mjs';
+import { SCHEMA as PORTAL_SCHEMA, handlePortal, signIn, createSessionCookie, readSessionRole, parseRole, clientSession } from '../server/portal.mjs';
 import { syncFileStorage } from '../server/file-storage.mjs';
 import { runBackup } from '../server/backup.mjs';
 
@@ -58,7 +59,9 @@ export async function route(request, { db = DB, env: baseEnv = process.env } = {
 
     if (path === '/api/auth/login' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
-      const role = await authenticate(db, env, String(body.username || '').trim(), String(body.password || ''));
+      const signed = await signIn(db, env, request, String(body.username || '').trim().slice(0, 120), String(body.password || ''));
+      if (signed.retryAfter) return json({ ok: false, error: LOCK_MESSAGE }, 429, { 'retry-after': String(signed.retryAfter) });
+      const role = signed.role;
       if (!role) return json({ ok: false, error: 'Invalid credentials' }, 401);
       const who = parseRole(role);
       return json({ ok: true, role: who.admin ? 'admin' : 'client', ...(who.admin ? {} : { redirect: '/portal/' }) }, 200,
