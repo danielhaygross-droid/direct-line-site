@@ -297,6 +297,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     ...WIDTHS.map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
     { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 24, endIndex: 26 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
     rowHeight(sheetId, 5, 44),
+    { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: FIRST_ROW - 1, endIndex: 1000 }, properties: { pixelSize: 100 }, fields: 'pixelSize' } },
     ...rows.map((row, i) => rowHeight(sheetId, FIRST_ROW + i, rowPx(row))),
     { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 16, endIndex: 24 } } },
     { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 16, endIndex: 24 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
