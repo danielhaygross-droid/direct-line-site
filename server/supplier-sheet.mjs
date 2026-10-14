@@ -1,10 +1,14 @@
 // Supplier Work Queue: the first tab of the connected Google Sheet, written by the website, one row per
 // active order (matched by the hidden Order ID column, so sorting/filtering by the supplier is safe).
-// The supplier fills in three columns; the website reads them every minute (cron) and applies changes:
-//   N  Total cost (USD)  — the whole order, product + shipping. Client is billed total + commission.
-//   O  Tracking number   — copied to the order.
-//   P  Shipping status   — "Shipped" moves the order to Shipped (client is notified).
-// The website never writes N, and writes O/P only when an admin changes tracking/status on the website.
+// The supplier fills in four columns; the website reads them every minute (cron) and applies changes:
+//   O  Total cost (USD)  — the whole order, product + shipping. Client is billed total + commission.
+//   P  Tracking number   — copied to the order.
+//   Q  Courier           — e.g. China Post, Yanwen (dropdown from Fees & settings; other names can be typed). Shown to the client.
+//   R  Shipping status   — "Shipped" moves the order to Shipped (client is notified).
+// The website never writes O, and writes P/Q/R only when an admin changes tracking/courier/status on the website.
+// L Tax number (e.g. Etsy's IOSS number) and M Gift message are the customer's, kept apart from the Notes (N).
+// There is no Country column: the country is the last line of the delivery address.
+// Sheets made before this layout are switched over once (see ensureLayout).
 // sheet_cost / sheet_tracking / sheet_shipped hold the last value seen in (or written to) each cell, so a
 // change is applied once, and a supplier's edit is never overwritten by an older website value.
 // Nothing here runs until an admin presses "Set up supplier sheet" (portal_settings supplier_sheet = '1').
@@ -17,17 +21,21 @@ export const SUPPLIER_SHEET_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_cost TEXT',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_tracking TEXT',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_shipped TEXT',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS courier TEXT',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_courier TEXT',
 ];
 
 export const WQ = 'Work Queue';
 const BACKUP_TITLE = 'Work Queue (old formulas)';
 export const FIRST_ROW = 6;
 export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Photo 1', 'Product link', 'Qty', 'Product / variation',
-  'Customer', 'Delivery address & phone', 'Country', 'Notes', 'Total cost (USD)', 'Tracking number', 'Shipping status',
+  'Customer', 'Delivery address & phone', 'Tax number', 'Gift message', 'Notes', 'Total cost (USD)', 'Tracking number', 'Courier', 'Shipping status',
   'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID'];
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'Cancelled' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '2';
+export const DEFAULT_COURIERS = 'China Post\nYanwen';
+export const courierList = v => [...new Set(String(v ?? DEFAULT_COURIERS).split(/[\n,]/).map(x => x.trim()).filter(Boolean))].slice(0, 30);
 
 const round2 = n => Math.round(Number(n) * 100) / 100;
 const norm = v => (v === null || v === undefined ? '' : String(v).trim());
@@ -53,8 +61,17 @@ export async function supplierSheetEnabled(DB) {
 }
 
 // ---------- website → sheet ----------
-function addressLines(o) {
-  return [o.address_line_1, o.address_line_2, o.city, o.region, o.postal_code, o.buyer_phone].map(norm).filter(Boolean).join('\n');
+// Same list as the website's country picker (dist/p/common.js); other countries are saved by name.
+const COUNTRY_NAMES = {"US":"United States","DE":"Germany","CA":"Canada","AU":"Australia","UK":"United Kingdom","NL":"Netherlands","CH":"Switzerland","IT":"Italy","NO":"Norway","AT":"Austria","DK":"Denmark","ES":"Spain","FR":"France","PL":"Poland","BE":"Belgium","BG":"Bulgaria","CZ":"Czechia","LV":"Latvia","PT":"Portugal","SK":"Slovakia","IL":"Israel"};
+const ALIASES = { US: ['usa', 'us', 'united states of america', 'u s a'], UK: ['uk', 'gb', 'great britain'] };
+const nameKey = x => norm(x).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+// There is no Country column: the country goes at the end of the address, unless the client's text already has it.
+export function addressLines(o) {
+  const lines = [o.address_line_1, o.address_line_2, o.city, o.region, o.postal_code, o.buyer_phone].flatMap(v => norm(v).split(/\r?\n/)).map(norm).filter(Boolean);
+  const code = norm(o.destination), name = COUNTRY_NAMES[code] || code;
+  const names = [nameKey(name), nameKey(code), ...(ALIASES[code] || [])].filter(Boolean), keys = lines.map(nameKey);
+  if (name && !keys.some(k => names.some(n => k === n || k.endsWith(' ' + n)))) lines.push(name);
+  return lines.join('\n');
 }
 // The customer's details were changed while the supplier already had the order: say so at the top of the notes.
 export function addressFlag(o) {
@@ -62,7 +79,7 @@ export function addressFlag(o) {
   return `⚠ ADDRESS CHANGED ${new Date(Number(o.address_changed_at) * 1000).toISOString().slice(0, 10)} — use the address in this row.
 `;
 }
-// Website-owned cells: A–M and Q–Z. Column C is the shop the order came from — suppliers don't see who our clients are.
+// Website-owned cells: A–N and S–AB. Column C is the shop the order came from — suppliers don't see who our clients are.
 export function websiteCells(env, o, photos, shopName) {
   const urls = photos.map(p => sheetPhotoUrl(env, o.id, p.id));
   const links = String(o.etsy_url || '').split(/\s+/).filter(Boolean);
@@ -71,7 +88,7 @@ export function websiteCells(env, o, photos, shopName) {
     txt(o.order_date || new Date(Number(o.created_at) * 1000).toISOString().slice(0, 10)), txt(o.order_ref || '#' + o.id), txt(shopName),
     STATUS[o.status] || o.status, urls[0] ? `=IMAGE("${q(urls[0])}&size=thumb",1)` : '', urls[0] ? `=HYPERLINK("${q(urls[0])}","Photo 1")` : '',
     links[0] ? `=HYPERLINK("${q(links[0])}","Open product")` : '', Number(o.quantity || 1), txt(product), txt(o.buyer_name),
-    txt(addressLines(o)), txt(o.destination), txt(addressFlag(o) + (o.notes || '')),
+    txt(addressLines(o)), txt(o.tax_number), txt(o.gift_message), txt(addressFlag(o) + (o.notes || '')),
   ];
   const qz = [...Array.from({ length: 7 }, (_, i) => urls[i + 1] ? `=HYPERLINK("${q(urls[i + 1])}","Photo ${i + 2}")` : ''),
     txt(links.slice(1).join('\n')), String(o.id), String(o.client_id)];
@@ -88,18 +105,18 @@ async function workQueueSheetId(env, fetchImpl, fresh) {
   return sheetIdCache.id;
 }
 async function idColumn(env, fetchImpl) {
-  const data = await sheetsRequest(env, '/values/' + encodeURIComponent(`${WQ}!Y${FIRST_ROW}:Z`) + '?majorDimension=ROWS', {}, fetchImpl);
+  const data = await sheetsRequest(env, '/values/' + encodeURIComponent(`${WQ}!AA${FIRST_ROW}:AB`) + '?majorDimension=ROWS', {}, fetchImpl);
   return (data.values || []).map((r, i) => ({ row: FIRST_ROW + i, orderId: Number(r?.[0]), clientId: Number(r?.[1]) }));
 }
 const batchValues = (env, data, fetchImpl) => sheetsRequest(env, '/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data }) }, fetchImpl);
 const batch = (env, requests, fetchImpl) => sheetsRequest(env, ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests }) }, fetchImpl);
-// Column widths (px) for A–Z, sized to their content. Y–Z (ids) are hidden; Q–X (more photos/links) are grouped.
-export const WIDTHS = [95, 125, 135, 110, 130, 80, 115, 55, 170, 140, 230, 85, 260, 115, 180, 125, 80, 80, 80, 80, 80, 80, 80, 220, 60, 60];
+// Column widths (px) for A–AB, sized to their content. AA–AB (ids) are hidden; S–Z (more photos/links) are grouped.
+export const WIDTHS = [95, 125, 135, 110, 130, 80, 115, 55, 170, 140, 230, 150, 220, 260, 115, 180, 120, 125, 80, 80, 80, 80, 80, 80, 80, 220, 60, 60];
 // Row height that fits the wrapped text of a row (about 7 px per character at the default font), at least
 // 100 px for the photo preview.
 export function rowPx(cells) {
   let lines = 1;
-  cells.slice(0, 16).forEach((v, i) => {
+  cells.slice(0, 18).forEach((v, i) => {
     if (typeof v !== 'string' || v.startsWith('=')) return;
     const perLine = Math.max(4, Math.floor((WIDTHS[i] - 12) / 7));
     lines = Math.max(lines, v.replace(/^'/, '').split('\n').reduce((n, part) => n + Math.max(1, Math.ceil(part.length / perLine)), 0));
@@ -117,25 +134,82 @@ async function deleteRows(env, rows, fetchImpl) {
 }
 export async function removeClientFromWorkQueue(DB, env, clientId, fetchImpl = fetch) {
   if (!await supplierSheetEnabled(DB)) return;
+  if (!await ensureLayout(DB, env, fetchImpl)) throw new Error('The supplier sheet is being updated. Please try again in a minute.');
   await deleteRows(env, (await idColumn(env, fetchImpl)).filter(r => r.clientId === Number(clientId)).map(r => r.row), fetchImpl);
+}
+
+// ---------- layout ----------
+const getSetting = async (DB, key) => (await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(key).first())?.value;
+const putSetting = (DB, key, value) => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key, value).run();
+const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. The website updates within a minute. Other columns are filled in by Direct Line.';
+const courierRule = (sheetId, couriers) => ({ setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 16, endColumnIndex: 17 }, rule: {
+  condition: { type: 'ONE_OF_LIST', values: couriers.map(c => ({ userEnteredValue: c })) }, inputMessage: 'The courier used for this parcel. Pick one, or type another name.', strict: false, showCustomUi: true } } });
+// The courier dropdown follows the list in Fees & settings (called when an admin saves it).
+export async function updateCourierDropdown(DB, env, fetchImpl = fetch) {
+  if (!googleSheetsConfigured(env) || !await supplierSheetEnabled(DB) || await getSetting(DB, LAYOUT) !== LAYOUT_NOW) return false;
+  const sheetId = await workQueueSheetId(env, fetchImpl);
+  if (sheetId == null) return false;
+  await batch(env, [courierRule(sheetId, courierList(await getSetting(DB, 'couriers')))], fetchImpl);
+  return true;
+}
+// Sheets set up before the Courier column: insert it at P once (Google moves everything after it, including the
+// protected ranges, dropdowns, filter and the grouped columns). Until that is done nothing reads or writes rows,
+// so the new column letters are never used on an old sheet. Safe to retry: it checks the header first.
+export async function ensureLayout(DB, env, fetchImpl = fetch) {
+  const v = await getSetting(DB, LAYOUT);
+  if (v === LAYOUT_NOW) return true;
+  const t = Math.floor(Date.now() / 1000);
+  if (String(v || '').startsWith('migrating:') && t - Number(v.split(':')[1]) < 300) return false;
+  // Claim it so only one request does the switch.
+  const claim = v == null
+    ? await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO NOTHING RETURNING key').bind(LAYOUT, 'migrating:' + t).first()
+    : await DB.prepare('UPDATE portal_settings SET value=? WHERE key=? AND value=? RETURNING key').bind('migrating:' + t, LAYOUT, v).first();
+  if (!claim) return false;
+  try {
+    const sheetId = await workQueueSheetId(env, fetchImpl, true);
+    if (sheetId == null) throw new Error('Work Queue tab not found');
+    const header = async () => (await sheetsRequest(env, '/values/' + encodeURIComponent(`${WQ}!A5:AB5`), {}, fetchImpl)).values?.[0]?.map(norm) || [];
+    let h = await header();
+    // 1) Country (L) becomes Tax number, and Gift message is added after it. The column is inserted inside the
+    //    website's protected columns (A–M), so it stays protected. Nothing is deleted.
+    if (h[12] === 'Notes') { await batch(env, [{ insertDimension: { range: { sheetId, dimension: 'COLUMNS', startIndex: 12, endIndex: 13 }, inheritFromBefore: true } }], fetchImpl); h = await header(); }
+    // The old country codes in L are cleared; each row's tax number / gift message is written by the normal sync.
+    if (h[11] === 'Country') await sheetsRequest(env, '/values/' + encodeURIComponent(`${WQ}!L${FIRST_ROW}:M`) + ':clear', { method: 'POST', body: '{}' }, fetchImpl);
+    // 2) Courier between Tracking number and Shipping status (yellow, like the other supplier columns).
+    if (h[16] === 'Shipping status') await batch(env, [{ insertDimension: { range: { sheetId, dimension: 'COLUMNS', startIndex: 16, endIndex: 17 }, inheritFromBefore: true } }], fetchImpl);
+    await batchValues(env, [{ range: `${WQ}!A5:AB5`, values: [HEADERS] }, { range: `${WQ}!A3`, values: [[instructions]] }], fetchImpl);
+    await batch(env, [courierRule(sheetId, courierList(await getSetting(DB, 'couriers'))),
+      ...[11, 12, 16].map(i => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: WIDTHS[i] }, fields: 'pixelSize' } }))], fetchImpl);
+    // Every active row is written again so the new columns get their values.
+    await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL)").run();
+    await putSetting(DB, LAYOUT, LAYOUT_NOW);
+    return true;
+  } catch (e) {
+    await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(LAYOUT, 'migrating:' + t).run();
+    throw e;
+  }
 }
 
 // Called from the normal order sync. Adds/updates/removes the order's Work Queue row.
 export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch) {
   if (!await supplierSheetEnabled(DB)) return { enabled: false };
+  if (!await ensureLayout(DB, env, fetchImpl)) throw new Error('The supplier sheet is being updated. This will be retried automatically.');
   const rows = await idColumn(env, fetchImpl), found = rows.filter(r => r.orderId === Number(order.id));
   if (order.archived || order.client_archived) { await deleteRows(env, found.map(r => r.row), fetchImpl); return { enabled: true, removed: found.length }; }
   const shop = order.store_id == null ? null : await DB.prepare('SELECT name FROM client_stores WHERE id=?').bind(order.store_id).first();
   const { am, qz } = websiteCells(env, order, photos, shop?.name || '');
   if (found.length) {
-    const r = found[0].row, data = [{ range: `${WQ}!A${r}:M${r}`, values: [am] }, { range: `${WQ}!Q${r}:Z${r}`, values: [qz] }];
+    const r = found[0].row, data = [{ range: `${WQ}!A${r}:N${r}`, values: [am] }, { range: `${WQ}!S${r}:AB${r}`, values: [qz] }];
     const sets = [];
     // An admin changed tracking / shipped on the website since the sheet last showed it: show it in the sheet too.
     if (norm(order.tracking_number) && norm(order.tracking_number) !== norm(order.sheet_tracking)) {
-      data.push({ range: `${WQ}!O${r}`, values: [[txt(order.tracking_number)]] }); sets.push(['sheet_tracking', norm(order.tracking_number)]);
+      data.push({ range: `${WQ}!P${r}`, values: [[txt(order.tracking_number)]] }); sets.push(['sheet_tracking', norm(order.tracking_number)]);
+    }
+    if (norm(order.courier) && norm(order.courier) !== norm(order.sheet_courier)) {
+      data.push({ range: `${WQ}!Q${r}`, values: [[txt(order.courier)]] }); sets.push(['sheet_courier', norm(order.courier)]);
     }
     if (['shipped', 'delivered'].includes(order.status) && !isShipped(order.sheet_shipped)) {
-      data.push({ range: `${WQ}!P${r}`, values: [[SHIPPED]] }); sets.push(['sheet_shipped', SHIPPED]);
+      data.push({ range: `${WQ}!R${r}`, values: [[SHIPPED]] }); sets.push(['sheet_shipped', SHIPPED]);
     }
     await batchValues(env, data, fetchImpl);
     for (const [col, v] of sets) await DB.prepare(`UPDATE client_orders SET ${col}=? WHERE id=?`).bind(v, order.id).run();
@@ -143,11 +217,11 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
     if (sheetId != null) await batch(env, [rowHeight(sheetId, r, rowPx(am))], fetchImpl);
     return { enabled: true, row: r };
   }
-  const supplier = [order.supplier_cost == null ? '' : Number(order.supplier_cost), txt(order.tracking_number), ['shipped', 'delivered'].includes(order.status) ? SHIPPED : NOT_SHIPPED];
-  const res = await sheetsRequest(env, '/values/' + encodeURIComponent(`${WQ}!A${FIRST_ROW}:Z`) + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+  const supplier = [order.supplier_cost == null ? '' : Number(order.supplier_cost), txt(order.tracking_number), txt(order.courier), ['shipped', 'delivered'].includes(order.status) ? SHIPPED : NOT_SHIPPED];
+  const res = await sheetsRequest(env, '/values/' + encodeURIComponent(`${WQ}!A${FIRST_ROW}:AB`) + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
     method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values: [[...am, ...supplier, ...qz]] }),
   }, fetchImpl);
-  await DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_shipped=? WHERE id=?').bind(norm(supplier[0]), norm(order.tracking_number), supplier[2], order.id).run();
+  await DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_courier=?, sheet_shipped=? WHERE id=?').bind(norm(supplier[0]), norm(order.tracking_number), norm(order.courier), supplier[3], order.id).run();
   const row = Number(/![A-Z]+(\d+)/.exec(res?.updates?.updatedRange || '')?.[1]);
   const sheetId = await workQueueSheetId(env, fetchImpl);
   if (row && sheetId != null) await batch(env, [rowHeight(sheetId, row, rowPx(am))], fetchImpl);
@@ -161,7 +235,7 @@ async function event(DB, o, kind, detail, t) {
 // Applies one Work Queue row (cost, tracking, shipped) to its order. Returns what changed.
 export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now() / 1000)) {
   const done = [], skipped = [];
-  const cost = typeof cells.cost === 'number' ? String(cells.cost) : norm(cells.cost), tracking = norm(cells.tracking), shipped = norm(cells.shipped);
+  const cost = typeof cells.cost === 'number' ? String(cells.cost) : norm(cells.cost), tracking = norm(cells.tracking), courier = norm(cells.courier), shipped = norm(cells.shipped);
   if (order.archived) return { done, skipped: ['archived'] };
   if (cost !== norm(order.sheet_cost)) {
     const n = parseCost(cells.cost);
@@ -182,6 +256,11 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
     }
     await DB.prepare('UPDATE client_orders SET sheet_tracking=? WHERE id=?').bind(tracking, order.id).run();
   }
+  // Courier: shown to the client next to the tracking number. Clearing the cell clears it.
+  if (cells.courier !== undefined && courier !== norm(order.sheet_courier)) {
+    if (courier !== norm(order.courier)) { await DB.prepare('UPDATE client_orders SET courier=?, updated_at=? WHERE id=?').bind(courier.slice(0, 60) || null, t, order.id).run(); done.push(courier ? 'courier' : 'courier cleared'); }
+    await DB.prepare('UPDATE client_orders SET sheet_courier=? WHERE id=?').bind(courier, order.id).run();
+  }
   if (shipped !== norm(order.sheet_shipped)) {
     if (isShipped(shipped)) {
       const current = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(order.id).first();
@@ -199,23 +278,24 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
   if (!await supplierSheetEnabled(DB)) return { ok: true, enabled: false };
   const t = Math.floor(Date.now() / 1000), result = { ok: true, enabled: true, checked: 0, changed: [], skipped: [] };
   try {
-    const ranges = [`${WQ}!N${FIRST_ROW}:P`, `${WQ}!Y${FIRST_ROW}:Y`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+    if (!await ensureLayout(DB, env, fetchImpl)) return { ...result, waiting: 'layout' };
+    const ranges = [`${WQ}!O${FIRST_ROW}:R`, `${WQ}!AA${FIRST_ROW}:AA`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
     const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
     const [inputs, ids] = (data.valueRanges || []).map(v => v.values || []);
-    const rows = (ids || []).map((r, i) => ({ orderId: Number(r?.[0]), cost: inputs?.[i]?.[0] ?? '', tracking: inputs?.[i]?.[1] ?? '', shipped: inputs?.[i]?.[2] ?? '' }))
+    const rows = (ids || []).map((r, i) => ({ orderId: Number(r?.[0]), cost: inputs?.[i]?.[0] ?? '', tracking: inputs?.[i]?.[1] ?? '', courier: inputs?.[i]?.[2] ?? '', shipped: inputs?.[i]?.[3] ?? '' }))
       .filter(r => Number.isSafeInteger(r.orderId) && r.orderId > 0);
     result.checked = rows.length;
     // One query for what the website last saw in each row; only rows that differ are loaded and applied.
     const seen = new Map();
     for (let i = 0; i < rows.length; i += 200) {
       const ids = rows.slice(i, i + 200).map(r => r.orderId);
-      const found = (await DB.prepare(`SELECT id, sheet_cost, sheet_tracking, sheet_shipped FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
+      const found = (await DB.prepare(`SELECT id, sheet_cost, sheet_tracking, sheet_courier, sheet_shipped FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
       for (const f of found) seen.set(Number(f.id), f);
     }
     const cellText = v => (typeof v === 'number' ? String(v) : norm(v));
     for (const r of rows) {
       const s = seen.get(r.orderId);
-      if (!s || (cellText(r.cost) === norm(s.sheet_cost) && cellText(r.tracking) === norm(s.sheet_tracking) && cellText(r.shipped) === norm(s.sheet_shipped))) continue;
+      if (!s || (cellText(r.cost) === norm(s.sheet_cost) && cellText(r.tracking) === norm(s.sheet_tracking) && cellText(r.courier) === norm(s.sheet_courier) && cellText(r.shipped) === norm(s.sheet_shipped))) continue;
       const order = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(r.orderId).first();
       if (!order) continue;
       const out = await applySupplierRow(DB, order, r, t);
@@ -259,7 +339,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   const temp = await batch(env, [{ addSheet: { properties: { title: 'Updating… ' + Date.now() } } }], fetchImpl);
   const tempId = temp?.replies?.[0]?.addSheet?.properties?.sheetId;
   if (current) await batch(env, [{ deleteSheet: { sheetId: oldId } }], fetchImpl);
-  const add = { addSheet: { properties: { title: WQ, index: 0, gridProperties: { rowCount: 1000, columnCount: 26, frozenRowCount: 5 }, ...(oldId != null ? { sheetId: oldId } : {}) } } };
+  const add = { addSheet: { properties: { title: WQ, index: 0, gridProperties: { rowCount: 1000, columnCount: 28, frozenRowCount: 5 }, ...(oldId != null ? { sheetId: oldId } : {}) } } };
   let created;
   try { created = await batch(env, [add], fetchImpl); }
   catch (e) { delete add.addSheet.properties.sheetId; created = await batch(env, [add], fetchImpl); }
@@ -276,15 +356,15 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   for (const o of orders) {
     const photos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(o.id).all()).results || [];
     const { am, qz } = websiteCells(env, o, photos, o.shop_name || '');
-    const supplier = [o.supplier_cost == null ? '' : Number(o.supplier_cost), txt(o.tracking_number), ['shipped', 'delivered'].includes(o.status) ? SHIPPED : NOT_SHIPPED];
+    const supplier = [o.supplier_cost == null ? '' : Number(o.supplier_cost), txt(o.tracking_number), txt(o.courier), ['shipped', 'delivered'].includes(o.status) ? SHIPPED : NOT_SHIPPED];
     rows.push([...am, ...supplier, ...qz]);
-    await DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_shipped=? WHERE id=?').bind(norm(supplier[0]), norm(o.tracking_number), supplier[2], o.id).run();
+    await DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_courier=?, sheet_shipped=? WHERE id=?').bind(norm(supplier[0]), norm(o.tracking_number), norm(o.courier), supplier[3], o.id).run();
   }
   const last = FIRST_ROW + Math.max(rows.length, 1) - 1;
   await batchValues(env, [
-    { range: `${WQ}!A2:A3`, values: [['Direct Line — Work Queue'], ['Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, and set Shipping status to Shipped when it leaves. The website updates within a minute. Other columns are filled in by Direct Line.']] },
-    { range: `${WQ}!A5:Z5`, values: [HEADERS] },
-    ...(rows.length ? [{ range: `${WQ}!A${FIRST_ROW}:Z${last}`, values: rows }] : []),
+    { range: `${WQ}!A2:A3`, values: [['Direct Line — Work Queue'], [instructions]] },
+    { range: `${WQ}!A5:AB5`, values: [HEADERS] },
+    ...(rows.length ? [{ range: `${WQ}!A${FIRST_ROW}:AB${last}`, values: rows }] : []),
   ], fetchImpl);
 
   const { email } = googleSheetsConfig(env);
@@ -292,28 +372,30 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   const yellow = { red: 1, green: 0.95, blue: 0.7 }, header = { red: 0.93, green: 0.93, blue: 0.93 };
   await batch(env, [
     { repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 16 } } }, fields: 'userEnteredFormat.textFormat' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 26 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment)' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 0, endColumnIndex: 26 }, cell: { userEnteredFormat: { backgroundColor: header, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 13, endColumnIndex: 16 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 13, endColumnIndex: 16 }, cell: { userEnteredFormat: { backgroundColor: yellow } }, fields: 'userEnteredFormat.backgroundColor' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 13, endColumnIndex: 14 }, cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 14, endColumnIndex: 15 }, cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } }, fields: 'userEnteredFormat.numberFormat' } },
-    { setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: 13, endColumnIndex: 14 }, rule: { condition: { type: 'NUMBER_GREATER_THAN_EQ', values: [{ userEnteredValue: '0' }] }, inputMessage: 'Total cost for the whole order in USD, product + shipping.', strict: true, showCustomUi: true } } },
-    { setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: 15, endColumnIndex: 16 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: NOT_SHIPPED }, { userEnteredValue: SHIPPED }] }, strict: true, showCustomUi: true } } },
+    { repeatCell: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 28 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment)' } },
+    { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 0, endColumnIndex: 28 }, cell: { userEnteredFormat: { backgroundColor: header, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
+    { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 14, endColumnIndex: 18 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
+    { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 14, endColumnIndex: 18 }, cell: { userEnteredFormat: { backgroundColor: yellow } }, fields: 'userEnteredFormat.backgroundColor' } },
+    { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 14, endColumnIndex: 15 }, cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
+    { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 15, endColumnIndex: 17 }, cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } }, fields: 'userEnteredFormat.numberFormat' } },
+    { setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: 14, endColumnIndex: 15 }, rule: { condition: { type: 'NUMBER_GREATER_THAN_EQ', values: [{ userEnteredValue: '0' }] }, inputMessage: 'Total cost for the whole order in USD, product + shipping.', strict: true, showCustomUi: true } } },
+    courierRule(sheetId, courierList(await getSetting(DB, 'couriers'))),
+    { setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: 17, endColumnIndex: 18 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: NOT_SHIPPED }, { userEnteredValue: SHIPPED }] }, strict: true, showCustomUi: true } } },
     ...WIDTHS.map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
-    { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 24, endIndex: 26 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
+    { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 26, endIndex: 28 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
     rowHeight(sheetId, 5, 44),
     { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: FIRST_ROW - 1, endIndex: 1000 }, properties: { pixelSize: 100 }, fields: 'pixelSize' } },
     ...rows.map((row, i) => rowHeight(sheetId, FIRST_ROW + i, rowPx(row))),
-    { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 16, endIndex: 24 } } },
-    { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 16, endIndex: 24 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
-    { setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 24 } } } },
+    { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 18, endIndex: 26 } } },
+    { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 18, endIndex: 26 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
+    { setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 26 } } } },
     // Only the supplier columns are editable by suppliers; the rest is written by the website.
-    { addProtectedRange: { protectedRange: { range: cols(0, 13), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
-    { addProtectedRange: { protectedRange: { range: cols(16, 26), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
-    { addProtectedRange: { protectedRange: { range: { sheetId, startRowIndex: 0, endRowIndex: 5, startColumnIndex: 13, endColumnIndex: 16 }, description: 'Column headers', editors: { users: [email] } } } },
+    { addProtectedRange: { protectedRange: { range: cols(0, 14), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
+    { addProtectedRange: { protectedRange: { range: cols(18, 28), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
+    { addProtectedRange: { protectedRange: { range: { sheetId, startRowIndex: 0, endRowIndex: 5, startColumnIndex: 14, endColumnIndex: 18 }, description: 'Column headers', editors: { users: [email] } } } },
   ], fetchImpl);
 
   await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(SETTING, '1').run();
+  await putSetting(DB, LAYOUT, LAYOUT_NOW);
   return { ok: true, rows: rows.length, sheetId, backup: !!current };
 }
