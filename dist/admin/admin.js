@@ -89,7 +89,7 @@
       ['Active clients', cl.filter(c => c.active).length, `${cl.length} account${cl.length === 1 ? '' : 's'}`, 'users', 'var(--blue)'],
       ['Client orders', S.orders.filter(o=>o.status!=='cancelled').length, `${S.orders.filter(o => o.status === 'pending').length} waiting to be processed`, 'orders', 'var(--orange)'],
       ['Outstanding', money(t.outstanding), `Billed ${money(t.billed)} · paid ${money(t.paid)}`, 'money', t.outstanding > 0 ? 'var(--red)' : 'var(--mint)'],
-      ['Our earnings', money(t.ourShare), `Fees ${money(t.commission)} · supplier ${money(t.supplierShare)}`, 'check', 'var(--gold)'],
+      ['Our earnings', money(t.ourShare), `Fees collected ${money(t.commission)}`, 'check', 'var(--gold)'],
     ].map(([k, v, sub, icon, tone], i) => `<div class="stat${i === 3 ? ' hero' : ''}" style="--tone:${tone}"><span class="stat-ic">${ic(icon)}</span><small>${k}</small><strong>${v}</strong><em>${esc(sub)}</em></div>`).join('');
     const unread = S.orders.filter(o => o.unreadMessages).length;
     const b = $('[data-tab-badge="orders"]'); if (b) b.innerHTML = unread ? `<span class="badge-new">${unread}</span>` : '';
@@ -228,7 +228,6 @@
       <section class="card card-pad"><h3 class="form-sec">Fee per order</h3>
         <form class="form-grid" id="settings-form" novalidate>
           <label class="field"><span>Fee per order (USD)</span><span class="money"><input name="commission_per_order" type="number" min="0" step="0.01" value="${esc(s.commission_per_order)}"></span></label>
-          <label class="field"><span>Supplier’s share (USD)</span><span class="money"><input name="supplier_share_per_order" type="number" min="0" step="0.01" value="${esc(s.supplier_share_per_order)}"></span></label>
           <div class="full split" data-split></div>
           <label class="field"><span>Client subscription <small>₪ / month, after the free month</small></span><input name="subscription_price" type="number" min="0" step="0.01" value="${esc(s.subscription_price ?? 29)}"></label>
           <label class="field"><span>Size-to-weight divisor <small>cm³ per kg</small></span><input name="volumetric_divisor" type="number" min="1000" max="10000" step="1" value="${esc(s.volumetric_divisor)}"></label>
@@ -342,14 +341,14 @@
     });
     const f = $('#settings-form');
     const split = () => {
-      const fee = parseFloat(f.commission_per_order.value), sup = parseFloat(f.supplier_share_per_order.value), ok = Number.isFinite(fee) && Number.isFinite(sup);
-      $('[data-split]').innerHTML = `<div><small>Client pays (inside product cost)</small><b>${Number.isFinite(fee) ? money(fee) : '—'}</b></div><div><small>Supplier gets</small><b>${Number.isFinite(sup) ? money(sup) : '—'}</b></div><div><small>We earn</small><b class="${ok && fee - sup < 0 ? 'neg' : 'pos'}">${ok ? money(fee - sup) : '—'}</b></div>`;
+      const fee = parseFloat(f.commission_per_order.value);
+      $('[data-split]').innerHTML = `<div><small>Client pays (inside product cost)</small><b>${Number.isFinite(fee) ? money(fee) : '—'}</b></div><div><small>We earn</small><b class="pos">${Number.isFinite(fee) ? money(fee) : '—'}</b></div>`;
     };
     f.addEventListener('input', split); split();
     f.addEventListener('submit', async e => {
       e.preventDefault();
       const m = $('[data-settings-msg]');
-      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_share_per_order: f.supplier_share_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg full ok'; await loadAll(); }
+      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg full ok'; await loadAll(); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
     });
     const c = $('[data-calc]'), out = $('[data-calc-out]');
@@ -420,7 +419,6 @@
         ${o.notes ? `<div class="full"><dt>Client’s notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl></section>
       <section class="card card-pad"><h3 class="sec-title">Fee on this order</h3><form class="form-grid" data-fees-form="${o.id}" novalidate>
         <label class="field"><span>Fee <small>kept in the client’s price</small></span><span class="money"><input name="commission" type="number" min="0" step="0.01" inputmode="decimal" value="${Number(o.commission||0).toFixed(2)}"></span></label>
-        <label class="field"><span>Supplier gets</span><span class="money"><input name="supplierShare" type="number" min="0" step="0.01" inputmode="decimal" value="${Number(o.supplierShare||0).toFixed(2)}"></span></label>
         <p class="note full" style="margin:0">Changes only this order. The default fee in Fees &amp; settings and each client’s own fee apply to new orders.</p>
         <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save fee</button><p class="form-msg" data-fees-msg style="margin:0"></p></div></form></section>
       <section class="card card-pad"><h3 class="sec-title">Money</h3><div class="money-rows">
@@ -428,7 +426,7 @@
         <div><span>Product cost <span class="dim">(fee included)</span></span><span>${money(o.productCost)}</span></div><div><span>Shipping fee</span><span>${money(o.shippingFee)}</span></div>
         <div class="total"><span>Client pays</span><span>${money(o.price)}</span></div>
         <div><span>Customer paid client</span><span>${customerPaid(o)}</span></div><div><span>Client’s profit</span><span class="${o.sellingPrice != null && o.profit > 0 ? 'pos' : o.sellingPrice != null && o.profit < 0 ? 'neg' : ''}">${needsCost(o) ? 'Pending costs' : o.sellingPrice == null ? '<span class="dim">Needs the sale price</span>' : money(o.profit)}</span></div></div>
-        <div class="split"><div><small>Fee on this order</small><b>${money(o.commission)}</b></div><div><small>Supplier gets</small><b>${money(o.supplierShare)}</b></div><div><small>We earn</small><b class="pos">${money(o.ourShare)}</b></div></div></section>`;
+        <div class="split"><div><small>Fee on this order</small><b>${money(o.commission)}</b></div><div><small>We earn</small><b class="pos">${money(o.ourShare)}</b></div></div></section>`;
     bindBill(o);
     d.foot.innerHTML = `<button type="button" class="btn" data-edit-order="${o.id}">${ic('edit')}Edit order</button><button type="button" class="btn btn-ghost" data-open-client="${o.clientId}">Open client</button><button type="button" class="btn btn-danger" data-archive-order="${o.id}">Archive order</button>`;
   }
@@ -552,8 +550,6 @@
         : `<section class="card card-pad"><form class="form-grid" data-account-form="${c.id}" novalidate>
             <label class="field full"><span>Name</span><input name="name" maxlength="120" value="${esc(c.name)}"></label>
             <label class="field"><span>Fee per order <small>empty = default</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01" value="${c.commissionPerOrder ?? ''}"></span></label>
-            <label class="field"><span>Supplier’s part <small>empty = default</small></span><span class="money"><input name="supplierSharePerOrder" type="number" min="0" step="0.01" value="${c.supplierSharePerOrder ?? ''}"></span></label>
-            <p class="note full" style="margin:0">Supplier’s part: put 0 when the supplier’s quoted price is already the final price for the client, so the whole fee is ours.</p>
             <label class="check-row full"><input type="checkbox" name="applyFeeToOrders"><span>Also change the fee on all of this client’s existing orders <small>(not cancelled ones)</small></span></label>
             <label class="field"><span>Status</span><select name="active"><option value="true"${c.active ? ' selected' : ''}>Active</option><option value="false"${c.active ? '' : ' selected'}>Disabled (can’t sign in)</option></select></label>
             <div class="field full"><span>Username <small>used to sign in, and as the payment reference</small></span><div style="display:flex;gap:8px;align-items:center"><input name="username" maxlength="60" autocomplete="off" data-no-i18n value="${esc(c.username)}" style="flex:1;min-width:0"><button type="button" class="btn btn-sm" data-copy="${esc(c.username)}">Copy</button></div><p><span>Last login:</span> ${c.lastLogin ? esc(fullDate(c.lastLogin)) : 'Never'}</p><p>${c.termsAccepted ? `<span>Terms accepted:</span> <time data-no-i18n>${esc(fullDate(c.termsAccepted.acceptedAt))} · v${c.termsAccepted.version}</time>` : 'Not accepted yet'}</p>${c.termsAccepted && c.termsRequired ? '<p class="note">Current terms not accepted yet.</p>' : ''}<button type="button" class="btn" data-reset-password="${c.id}">Reset password</button><div data-reset-result role="status"></div></div>
@@ -954,7 +950,7 @@
     if (ff) {
       e.preventDefault();
       const b = $('[type=submit]', ff), m = $('[data-fees-msg]', ff); if (b.disabled) return; b.disabled = true; m.textContent = ''; m.className = 'form-msg';
-      try { await api('/orders/' + ff.dataset.feesForm, { method: 'PUT', body: { commission: ff.commission.value, supplierShare: ff.supplierShare.value } }); document.activeElement?.blur(); await loadAll(); renderKpis(); renderList(); refreshDrawer(); toast('Fee saved for this order.'); }
+      try { await api('/orders/' + ff.dataset.feesForm, { method: 'PUT', body: { commission: ff.commission.value } }); document.activeElement?.blur(); await loadAll(); renderKpis(); renderList(); refreshDrawer(); toast('Fee saved for this order.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
       return;
     }
@@ -998,7 +994,7 @@
     const af = e.target.closest('[data-account-form]');
     if (af) {
       e.preventDefault();
-      const m = $('[data-account-msg]'), body = { name: af.name.value, username: af.username.value.trim(), active: af.active.value === 'true', commissionPerOrder: af.commissionPerOrder.value === '' ? null : af.commissionPerOrder.value, supplierSharePerOrder: af.supplierSharePerOrder.value === '' ? null : af.supplierSharePerOrder.value, applyFeeToOrders: af.applyFeeToOrders.checked };
+      const m = $('[data-account-msg]'), body = { name: af.name.value, username: af.username.value.trim(), active: af.active.value === 'true', commissionPerOrder: af.commissionPerOrder.value === '' ? null : af.commissionPerOrder.value, applyFeeToOrders: af.applyFeeToOrders.checked };
 
       try { const r = await api('/admin/users/' + af.dataset.accountForm, { method: 'POST', body }); document.activeElement?.blur(); tell({ type: 'dl-clients-changed' }); await loadAll(); renderList(); fillClient(clientOf(af.dataset.accountForm)); toast(body.applyFeeToOrders ? `Account saved. Fee updated on ${r.ordersUpdated ?? 0} existing orders.` : 'Account saved.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
