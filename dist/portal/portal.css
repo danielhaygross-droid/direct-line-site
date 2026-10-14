@@ -264,3 +264,12 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .client-support:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
 .dl-drawer-open .client-support,.menu-open .client-support,body:has(.dln-panel.open) .client-support,body:has(dialog[open]) .client-support{display:none}
 @media(max-width:860px){.client-support{inset-inline-end:12px;bottom:calc(88px + env(safe-area-inset-bottom))}}
+
+/* Orders page: the earnings block can be folded away */
+.earn-box{display:grid;gap:14px;margin-bottom:6px}
+.earn-box>summary{cursor:pointer;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;list-style:none;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.earn-box>summary::-webkit-details-marker{display:none}
+.earn-box>summary b{font-size:16px}
+.earn-box>summary small{color:var(--dim);font-size:13px}
+.earn-box>summary::after{content:'▾';margin-inline-start:auto;color:var(--dim);transition:transform .15s}
+.earn-box:not([open])>summary::after{transform:rotate(90deg)}
