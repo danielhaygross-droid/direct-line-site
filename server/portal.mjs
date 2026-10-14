@@ -665,7 +665,7 @@ export async function handlePortal(request, url, ctx) {
     if (!existing || (!who.admin && existing.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
     const body = await readBody(request);
     if (body.status !== undefined) {
-      if (Object.keys(body).length!==1) return json({ok:false,error:'Change status separately from order details.'},400);
+      if (Object.keys(body).some(k=>!['status','fee','reason'].includes(k))) return json({ok:false,error:'Change status separately from order details.'},400);
       try { const row=await changeStatus(DB,existing,'status',body,who.admin);const out=orderOut(row);const sync=syncPortalOrderToGoogleSheet(DB,env,row.id).catch(()=>{});if(waitUntil)waitUntil(sync);return json({ok:true,order:who.admin?out:clientOrder(out)}); }
       catch(e){return json({ok:false,error:e.message},e.status||409);}
     }
@@ -681,8 +681,14 @@ export async function handlePortal(request, url, ctx) {
     }
     let f; try { f = orderFields({ ...orderOut(existing), ...body }); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     const status = existing.status;
-    const commission = who.admin && body.commission != null && body.commission !== '' && isMoney(money(body.commission)) ? money(body.commission) : existing.commission;
-    const supplierShare = who.admin && body.supplierShare != null && body.supplierShare !== '' && isMoney(money(body.supplierShare)) ? money(body.supplierShare) : existing.supplier_share;
+    let commission = existing.commission, supplierShare = existing.supplier_share;
+    if (who.admin) {
+      // The fee on this order and what the supplier gets can be set per order; the rest of the fee is ours.
+      for (const [key, label] of [['commission', 'fee'], ['supplierShare', 'supplier share']]) if (body[key] != null && body[key] !== '' && !isMoney(money(body[key]))) return json({ ok: false, error: `Invalid ${label}` }, 400);
+      if (body.commission != null && body.commission !== '') commission = money(body.commission);
+      if (body.supplierShare != null && body.supplierShare !== '') supplierShare = money(body.supplierShare);
+      if (Number(supplierShare) > Number(commission)) return json({ ok: false, error: "The supplier's share can't be more than the fee on this order" }, 400);
+    }
     if (!who.admin) {
       f.tracking_number = existing.tracking_number; f.category = existing.category; f.weight_kg = existing.weight_kg;
       f.product_cost = existing.product_cost; f.shipping_fee = existing.shipping_fee; f.price = existing.price;
