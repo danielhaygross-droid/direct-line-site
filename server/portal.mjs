@@ -1016,12 +1016,19 @@ export async function handlePortal(request, url, ctx) {
     }
     await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=CASE WHEN ? THEN ? ELSE password_hash END, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=?, password_reset_required=CASE WHEN ? THEN ? ELSE password_reset_required END, session_version=session_version+? WHERE id = ?').bind(name, active, cpo, !!body.password, hash, archived, trialStart, trialEnd, subStatus, lastPay, !!body.password, u.role === 'client', body.password ? 1 : 0, id).run();
     if (username !== u.username) await DB.prepare('UPDATE users SET username=? WHERE id=?').bind(username, id).run();
+    // Bulk: put this client's fee on all their existing orders too (not cancelled ones). The supplier's part never exceeds the fee.
+    let ordersUpdated = 0;
+    if (u.role === 'client' && body.applyFeeToOrders === true) {
+      const settings = await getSettings(DB), fee = cpo ?? Number(settings.commission_per_order), share = Math.min(fee, Number(settings.supplier_share_per_order) || 0);
+      const done = await DB.prepare("UPDATE client_orders SET commission=?, supplier_share=? WHERE client_id=? AND status<>'cancelled' RETURNING id").bind(fee, share, id).all();
+      ordersUpdated = (done.results || []).length;
+    }
     if (u.role === 'client') {
       if (archived !== u.archived) await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE client_id=?").bind(id).run();
       const sheetSync = syncClientToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets client update failed', error));
       if (waitUntil) waitUntil(sheetSync); else await sheetSync;
     }
-    return json({ ok: true });
+    return json({ ok: true, ordersUpdated });
   }
   if (path === '/admin/settings' && method === 'POST') {
     const body = await readBody(request);
