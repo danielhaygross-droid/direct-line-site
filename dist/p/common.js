@@ -49,6 +49,20 @@
   const date = s => (s ? new Date(s * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
   const trackingUrl = n => 'https://t.17track.net/en#nums=' + encodeURIComponent(n);
   // A product link pasted without https:// ("www.etsy.com/listing/…") is completed. Same rule as productLinks() on the server.
+  // address-lines:start
+  // The client types ONE box (street, city, state, postal code, phone), often pasted from Etsy with the customer's name and country inside.
+  // The name and the country are saved separately too, so show/copy them only when the address text does not already have them.
+  const addressLines = (o, country, withName) => {
+    const body = [o.address1, o.address2, o.city, o.region, o.postalCode, o.buyerPhone].flatMap(v => String(v || '').split(/\r?\n/)).map(x => x.trim()).filter(Boolean);
+    const key = x => String(x || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const keys = body.map(key);
+    const aliases = { us: ['usa', 'united states', 'united states of america', 'u s a'], gb: ['uk', 'united kingdom', 'great britain'], uk: ['gb', 'united kingdom'] };
+    const names = [key(country), key(o.destination), ...(aliases[key(o.destination)] || [])].filter(Boolean);
+    const hasCountry = keys.some(k => names.some(n => k === n || k.endsWith(' ' + n)));
+    const hasName = !withName || !o.buyerName || keys.some(k => k === key(o.buyerName));
+    return [withName && o.buyerName && !hasName ? o.buyerName : '', ...body, country && country !== '—' && !hasCountry ? country : ''].filter(Boolean);
+  };
+  // address-lines:end
   const fullLink = v => { const t = String(v || '').trim(); return t && !/^[a-z][a-z0-9+.-]*:/i.test(t) && /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+([/?#]|$)/i.test(t) ? 'https://' + t : t; };
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -276,5 +290,5 @@
       <div class="pm-linkrow">${link}</div>`;
   }
 
-  window.DL = { setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  window.DL = { addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();
