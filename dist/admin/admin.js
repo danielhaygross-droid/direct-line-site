@@ -5,7 +5,7 @@
   const { api, money, esc, trackingUrl, renderLogin, quote, destinationPicker, categoryOptions, countryName, toast, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, $, $$ } = window.DL;
   const UI = window.DLOrderUI;
   const STATUSES = ['pending','processing','shipped','delivered','cancellation_requested','cancelled'];
-  const ADMIN_STATUSES = ['processing','shipped','delivered'];
+  const ADMIN_STATUSES = ['pending','processing','shipped','delivered'];
   const S = { ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
   const embedded = window.top !== window.self;
   const tell = m => { if (embedded) parent.postMessage(m, location.origin); };
@@ -397,12 +397,14 @@
       <section class="card card-pad">${UI.tracker(o, events)}</section>${UI.activity(events)}
       <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o, { removable: true, canAdd: (o.photos || []).length < 8 })}</section>
       <section class="card card-pad"><h3 class="sec-title">Update status</h3>
+        ${o.status==='cancelled' ? '<p class="note">This order is cancelled. Choose a status to reopen it; its cancellation fee is then removed.</p>' : ''}
         <div class="status-btns">${ADMIN_STATUSES.map(s => `<button type="button" class="t-${s}${s === o.status ? ' on' : ''}" data-set-status="${s}" data-id="${o.id}">${UI.LABEL[s]}</button>`).join('')}</div>
         <form class="inline-form" data-track-form="${o.id}" style="margin-top:14px"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(o.trackingNumber)}" placeholder="e.g. LX123456789CN"></label><button class="btn" type="submit">Save tracking</button><button type="button" class="btn btn-sm" data-tracking-update="${o.id}">Tracking update received</button>${o.trackingNumber ? `<a class="btn btn-ghost" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track</a>` : ''}</form>
       </section>
       <section class="card card-pad"><label class="field"><span>Store</span><select data-move-order="${o.id}">${S.stores.filter(s=>s.clientId===o.clientId&&(!s.archived||s.id===o.storeId)).map(s=>`<option value="${s.id}"${s.id===o.storeId?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label></section>
       ${adminClaimCard(S.claims.find(c=>c.orderId===o.id))}
       ${o.status==='cancellation_requested' ? `<section class="card card-pad"><h3 class="sec-title">Cancellation request</h3><p data-no-i18n>${esc(o.cancellationReason)}</p><label class="field"><span>Cancellation fee (USD)</span><input name="cancellationFee" type="number" min="0" step="0.01" placeholder="0.00"></label><button type="button" class="btn btn-sm" data-cancel-four>$4</button><div class="status-btns"><button type="button" class="btn btn-danger" data-cancel-decision="approve" data-id="${o.id}">Approve cancellation</button><button type="button" class="btn" data-cancel-decision="reject" data-id="${o.id}">Reject cancellation</button></div></section>` : ''}
+      ${['cancelled','cancellation_requested'].includes(o.status) ? '' : `<section class="card card-pad"><h3 class="sec-title">Cancel this order</h3><p class="muted" style="margin:0 0 10px;font-size:14px">The client sees it as cancelled. Add a cancellation fee if one applies. You can reopen the order later.</p><label class="field"><span>Cancellation fee (USD) <small>optional</small></span><input name="directCancelFee" type="number" min="0" step="0.01" placeholder="0.00"></label><button type="button" class="btn btn-sm" data-cancel-four-direct>$4</button><div class="status-btns"><button type="button" class="btn btn-danger" data-cancel-direct="${o.id}">Cancel this order</button></div></section>`}
       <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles.filter(f=>f.orderIds.includes(o.id)))}${invoiceForm(o.clientId,o.id)}</section>
       ${o.quotedUnitPrice!=null ? `<section class="card card-pad"><span>Fixed unit quote</span> <b>${money(o.quotedUnitPrice)}</b> × ${o.quantity} = <b>${money(o.price)}</b></section>` : billHTML(o)}
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
@@ -416,6 +418,11 @@
         <div><dt>Google Sheet</dt><dd>${o.sheetSyncStatus === 'synced' ? 'Synced' : o.sheetSyncStatus === 'error' ? 'Needs retry' : 'Waiting to sync'}</dd></div>
         ${o.sheetSyncError ? `<div class="full"><dt>Sheet sync note</dt><dd>${esc(o.sheetSyncError)}</dd></div>` : ''}
         ${o.notes ? `<div class="full"><dt>Client’s notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl></section>
+      <section class="card card-pad"><h3 class="sec-title">Fee on this order</h3><form class="form-grid" data-fees-form="${o.id}" novalidate>
+        <label class="field"><span>Fee <small>kept in the client’s price</small></span><span class="money"><input name="commission" type="number" min="0" step="0.01" inputmode="decimal" value="${Number(o.commission||0).toFixed(2)}"></span></label>
+        <label class="field"><span>Supplier gets</span><span class="money"><input name="supplierShare" type="number" min="0" step="0.01" inputmode="decimal" value="${Number(o.supplierShare||0).toFixed(2)}"></span></label>
+        <p class="note full" style="margin:0">Changes only this order. The default fee in Fees &amp; settings and each client’s own fee apply to new orders.</p>
+        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save fee</button><p class="form-msg" data-fees-msg style="margin:0"></p></div></form></section>
       <section class="card card-pad"><h3 class="sec-title">Money</h3><div class="money-rows">
         ${o.supplierCost != null ? `<div><span>Supplier total <span class="dim">(from supplier sheet)</span></span><span>${money(o.supplierCost)}</span></div>` : ''}
         <div><span>Product cost <span class="dim">(fee included)</span></span><span>${money(o.productCost)}</span></div><div><span>Shipping fee</span><span>${money(o.shippingFee)}</span></div>
@@ -846,6 +853,15 @@
       return;
     }
     if(t.closest('[data-cancel-four]')){$('[name=cancellationFee]').value='4';return;}
+    if(t.closest('[data-cancel-four-direct]')){$('[name=directCancelFee]').value='4';return;}
+    const direct=t.closest('[data-cancel-direct]');
+    if(direct){
+      if(!direct.dataset.armed){direct.dataset.armed='1';direct.textContent='Click again to cancel';setTimeout(()=>{if(direct.isConnected){delete direct.dataset.armed;direct.textContent='Cancel this order';}},4000);return;}
+      if(direct.disabled)return;direct.disabled=true;
+      try{await api('/orders/'+direct.dataset.cancelDirect,{method:'PUT',body:{status:'cancelled',fee:$('[name=directCancelFee]').value}});await loadAll();renderList();refreshDrawer();toast('Order cancelled. The client sees it right away.');}
+      catch(ex){toast(ex.message);direct.disabled=false;}
+      return;
+    }
     const decision=t.closest('[data-cancel-decision]');
     if(decision){decision.disabled=true;try{await api('/orders/'+decision.dataset.id+'/'+decision.dataset.cancelDecision+'-cancellation',{method:'POST',body:{fee:$('[name=cancellationFee]').value}});await loadAll();renderList();refreshDrawer();toast('Cancellation request updated.');}catch(ex){decision.disabled=false;toast(ex.message);}return;}
     const tracking=t.closest('[data-tracking-update]');if(tracking){tracking.disabled=true;try{await api('/admin/orders/'+tracking.dataset.trackingUpdate+'/tracking-update',{method:'POST',body:{}});await loadAll();refreshDrawer();toast('Tracking update recorded.');}catch(ex){tracking.disabled=false;toast(ex.message);}return;}
@@ -884,6 +900,14 @@
     }
   });
   document.addEventListener('submit', async e => {
+    const ff = e.target.closest('[data-fees-form]');
+    if (ff) {
+      e.preventDefault();
+      const b = $('[type=submit]', ff), m = $('[data-fees-msg]', ff); if (b.disabled) return; b.disabled = true; m.textContent = ''; m.className = 'form-msg';
+      try { await api('/orders/' + ff.dataset.feesForm, { method: 'PUT', body: { commission: ff.commission.value, supplierShare: ff.supplierShare.value } }); document.activeElement?.blur(); await loadAll(); renderKpis(); renderList(); refreshDrawer(); toast('Fee saved for this order.'); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
+      return;
+    }
     const tf = e.target.closest('[data-track-form]');
     if (tf) {
       e.preventDefault();
