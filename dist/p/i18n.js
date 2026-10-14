@@ -340,6 +340,7 @@
     'Our earnings': 'הרווח שלנו', 'Needs your attention': 'דורש את תשומת לבך', 'Your clients': 'הלקוחות שלך', 'Client': 'לקוח', 'This month': 'החודש', 'Open': 'פתוחות',
     'We earned': 'הרווחנו', 'Last order': 'הזמנה אחרונה', 'Latest orders': 'הזמנות אחרונות', 'All caught up. Nothing is waiting for you.': 'הכל מטופל. שום דבר לא מחכה לך.',
     'Pending': 'ממתינה', 'Processing': 'בטיפול', 'Shipped': 'נשלחה', 'Delivered': 'נמסרה', 'Cancelled': 'בוטלה', 'All': 'הכל', 'New follow-ups': 'הודעות חדשות', 'Needs cost': 'חסרה עלות',
+    'Price': 'מחיר', 'Cost': 'עלות', 'What your customer paid': 'מה שהלקוח שלכם שילם', 'What you pay Direct Line': 'מה שאתם משלמים ל-Direct Line', 'Price minus cost': 'מחיר פחות עלות',
     'Save payment': 'שמירת התשלום', 'Payment updated.': 'התשלום עודכן.', 'Payment not found': 'התשלום לא נמצא', 'Date: use a valid date': 'תאריך: יש להזין תאריך תקין',
     'Save admin': 'שמירת מנהל', 'Admin saved.': 'המנהל נשמר.', 'leave empty to keep the current one': 'השאירו ריק כדי לשמור את הנוכחית',
     'used to sign in, and as the payment reference': 'משמש להתחברות ואסמכתא לתשלום',

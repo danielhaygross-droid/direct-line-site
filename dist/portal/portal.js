@@ -377,14 +377,15 @@
   const unreadOrderIds=()=>new Set(noteItems().filter(x=>x.unread).map(x=>x.orderId));
   function ordersTable(list, compact) {
     const fresh = unreadOrderIds();
-    return `<table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Store</th><th>Destination</th>${compact ? '' : '<th>Tracking</th>'}<th class="num">Customer paid</th>${compact ? '' : '<th class="num">Profit</th>'}<th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
+    return `<table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Store</th>${compact ? '' : '<th>Destination</th><th>Tracking</th>'}<th class="num" title="What your customer paid">Price</th><th class="num" title="What you pay Direct Line">Cost</th><th class="num" title="Price minus cost">Profit</th><th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
       ${list.map(o => `<tr class="click${fresh.has(o.id) ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
         <td class="wide"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small></span></div></td>
         <td data-label="Customer"><span data-no-i18n>${esc(o.buyerName) || '—'}</span></td>
-        <td data-label="Store">${window.DLClientStoreUI.label(S.stores.find(s=>s.id===o.storeId))}</td><td data-label="Destination">${esc(place(o.destination))}</td>
-        ${compact ? '' : `<td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>` : '<span class="dim">Not yet</span>'}</td>`}
-        <td data-label="Customer paid" class="num">${o.sellingPrice == null ? '<span class="dim">—</span>' : `<b>${esc(customerPaid(o))}</b>`}</td>
-        ${compact ? '' : `<td data-label="Profit" class="num ${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${!o.priced ? '<span class="dim">Pending</span>' : money(o.profit)}</td>`}
+        <td data-label="Store">${window.DLClientStoreUI.label(S.stores.find(s=>s.id===o.storeId))}</td>${compact ? '' : `<td data-label="Destination">${esc(place(o.destination))}</td>
+        <td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>` : '<span class="dim">Not yet</span>'}</td>`}
+        <td data-label="Price" class="num">${o.sellingPrice == null ? '<span class="dim">—</span>' : `<b>${esc(customerPaid(o))}</b>`}</td>
+        <td data-label="Cost" class="num">${o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : `<b>${money(o.price)}</b>`}</td>
+        <td data-label="Profit" class="num ${o.status !== 'cancelled' && o.profit > 0 ? 'pos' : o.status !== 'cancelled' && o.profit < 0 ? 'neg' : ''}">${o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : o.profit == null ? '<span class="dim">—</span>' : `<b>${money(o.profit)}</b>`}</td>
         <td data-label="Status">${UI.pill(o.status)}</td>
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
