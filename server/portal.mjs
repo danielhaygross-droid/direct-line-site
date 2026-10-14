@@ -108,6 +108,7 @@ export const SCHEMA = [
   "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_sync_error TEXT NOT NULL DEFAULT ''",
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_sync_attempts INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_next_try INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS address_changed_at INTEGER',
   // Activity log: what happened to each order and when (powers notifications and the order timeline).
   `CREATE TABLE IF NOT EXISTS order_events (
      id SERIAL PRIMARY KEY,
@@ -238,6 +239,12 @@ export function canEditOrder(order, at = now()) {
   const created = Number(order.created_at ?? order.createdAt);
   return order.status === 'pending' && !order.edit_locked && !order.editLocked && created > 0 && at < created + EDIT_WINDOW_SECONDS;
 }
+// Customer details (name, address, phone, country) stay editable by the client until the parcel ships, even after the
+// 72-hour / Pending window closed. Everything else about the order keeps canEditOrder().
+export const CUSTOMER_BODY_KEYS = ['buyerName', 'buyerPhone', 'address1', 'address2', 'city', 'region', 'postalCode', 'destination'];
+export const CUSTOMER_COLUMNS = ['buyer_name', 'buyer_phone', 'address_line_1', 'address_line_2', 'city', 'region', 'postal_code', 'destination'];
+export function canEditCustomer(order) { return ['pending', 'processing'].includes(order.status) && !order.archived; }
+export const customerOnlyEdit = body => { const keys = Object.keys(body || {}); return keys.length > 0 && keys.every(k => CUSTOMER_BODY_KEYS.includes(k)); };
 export async function clientSession(DB, who) {
   const u = await DB.prepare("SELECT active, archived, password_reset_required, session_version FROM users WHERE id = ? AND role = 'client'").bind(who.clientId).first();
   return u && u.active && !u.archived && (who.preview || Number(u.session_version || 0) === Number(who.sessionVersion || 0)) ? u : null;
@@ -662,7 +669,10 @@ export async function handlePortal(request, url, ctx) {
       try { const row=await changeStatus(DB,existing,'status',body,who.admin);const out=orderOut(row);const sync=syncPortalOrderToGoogleSheet(DB,env,row.id).catch(()=>{});if(waitUntil)waitUntil(sync);return json({ok:true,order:who.admin?out:clientOrder(out)}); }
       catch(e){return json({ok:false,error:e.message},e.status||409);}
     }
-    if (!who.admin && !canEditOrder(existing)) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
+    const customerOnly = !who.admin && !canEditOrder(existing) && customerOnlyEdit(body) && canEditCustomer(existing);
+    if (!who.admin && !canEditOrder(existing) && !customerOnly) {
+      return json({ ok: false, error: customerOnlyEdit(body) ? 'This order has already shipped, so the customer details can no longer be changed. Need help? Send us a message.' : 'This order is already being processed. Need a change? Send us a message.' }, 409);
+    }
     if ((!who.admin || body.destination !== undefined) && (!text(body.destination ?? existing.destination, 60) || text(body.destination ?? existing.destination, 60) === '__other')) return json({ ok: false, error: 'Please choose a country.' }, 400);
     // Partial status/billing updates leave historical addresses untouched. Detail edits need complete shipping fields.
     if ((!who.admin || ['buyerName','address1','address2','city','region','postalCode','buyerPhone','destination'].some(k => body[k] !== undefined))) {
@@ -683,13 +693,19 @@ export async function handlePortal(request, url, ctx) {
       if (f.etsy_url && !f.etsy_url.split('\n').every(validLink)) return json({ ok: false, error: 'Please paste each product link in full, starting with https://' }, 400);
       if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link from your store.' }, 400);
     }
-    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, store_id=?,edit_locked=edit_locked OR ?,last_tracking_update_at=CASE WHEN tracking_number<>? THEN ? ELSE last_tracking_update_at END WHERE id = ? AND status=? AND (? OR (status=\'pending\' AND NOT edit_locked AND created_at > ?)) RETURNING *')
-      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, f.store_id,['processing','shipped','delivered','cancelled'].includes(status),f.tracking_number,now(), id, existing.status, who.admin, now() - EDIT_WINDOW_SECONDS).first();
-    if (!row) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
+    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, store_id=?,edit_locked=edit_locked OR ?,last_tracking_update_at=CASE WHEN tracking_number<>? THEN ? ELSE last_tracking_update_at END WHERE id = ? AND status=? AND (? OR (? AND status IN (\'pending\',\'processing\')) OR (status=\'pending\' AND NOT edit_locked AND created_at > ?)) RETURNING *')
+      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, f.store_id,['processing','shipped','delivered','cancelled'].includes(status),f.tracking_number,now(), id, existing.status, who.admin, customerOnly, now() - EDIT_WINDOW_SECONDS).first();
+    if (!row) return json({ ok: false, error: customerOnlyEdit(body) && !who.admin ? 'This order has already shipped, so the customer details can no longer be changed. Need help? Send us a message.' : 'This order is already being processed. Need a change? Send us a message.' }, 409);
     const actor = who.admin ? 'admin' : 'client';
     if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);
     if (row.tracking_number !== existing.tracking_number && row.tracking_number) await logEvent(DB, id, existing.client_id, 'tracking', actor, row.tracking_number);
-    if (EDIT_FIELDS.some(k => String(row[k] ?? '') !== String(existing[k] ?? ''))) await logEvent(DB, id, existing.client_id, 'edited', actor);
+    const changed = EDIT_FIELDS.filter(k => String(row[k] ?? '') !== String(existing[k] ?? ''));
+    if (changed.length) await logEvent(DB, id, existing.client_id, 'edited', actor, changed.every(k => CUSTOMER_COLUMNS.includes(k)) ? 'customer' : '');
+    // The supplier may already be working on it: flag the Work Queue row until the parcel ships (see websiteCells).
+    if (row.status === 'processing' && changed.some(k => CUSTOMER_COLUMNS.includes(k))) {
+      await DB.prepare('UPDATE client_orders SET address_changed_at=? WHERE id=?').bind(now(), id).run();
+      row.address_changed_at = now();
+    }
     const sheetSync = syncPortalOrderToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets order update failed', error));
     if (waitUntil) waitUntil(sheetSync); else await sheetSync;
     const [out] = await withPhotos(DB, [orderOut(row)]);

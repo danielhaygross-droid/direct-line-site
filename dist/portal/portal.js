@@ -57,6 +57,8 @@
   const divisor = () => Number(S.me?.settings?.volumetric_divisor) || 6000;
   // Today's date on this device (toISOString alone gives the UTC date, which is yesterday after midnight in Israel).
   const localDay = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+  // Customer details can be changed until the parcel ships, also after the full-edit window closed.
+  const canChangeCustomer = o => !S.me?.preview && ['pending', 'processing'].includes(o.status) && !editable(o);
   const customerPaid = o => o.sellingPrice == null ? '' : `${o.currency || 'USD'} ${Number(o.sellingPrice).toFixed(2)}`;
   const inProgress = o => !['delivered', 'cancelled'].includes(o.status);
 
@@ -430,7 +432,7 @@
     if (focus === 'chat') setTimeout(() => { $('[data-d-chat]', d.body)?.scrollIntoView({ block: 'start' }); chatCtl?.focus(); }, 320);
   }
   function fillDrawer(o, keepFoot) {
-    if(keepFoot && $('#claim-form')?.dataset.dirty)return;
+    if(keepFoot && ($('#claim-form')?.dataset.dirty || $('#customer-form')?.dataset.dirty))return;
     const d = UI.getDrawer();
     d.head.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}</div><p>Added ${esc(fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p>`;
     $('[data-d-info]', d.body).innerHTML = `
@@ -454,7 +456,7 @@
         ${o.priced ? `<div><span><span>Per item</span> <small class="dim" data-no-i18n>× ${esc(o.quantity || 1)}</small></span><span>${money(Math.round(o.price / (o.quantity || 1) * 100) / 100)}</span></div>` : ''}
         ${!o.priced ? '' : `<div><span>Your estimated profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}"><b>${money(o.profit)}</b></span></div>`}</div></section>`;
     if (keepFoot && d.foot.dataset.confirm) return;
-    d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>This order is already being processed. Need a change? Send us a message.</a>`}<span class="spacer"></span>${['pending','processing','shipped'].includes(o.status) ? `<div><button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Request cancellation</button><p class="muted" style="font-size:12px">Free before the item reaches our warehouse. $4 after it arrives at the warehouse, or if the parcel is intercepted.</p></div>` : ''}${o.status === 'shipped' ? `<button type="button" class="btn btn-primary" data-delivered="${o.id}">Mark as delivered</button>` : ''}${!S.claims.some(c=>c.orderId===o.id) && (o.claimEligibility?.problem || o.claimEligibility?.lost) ? `<button type="button" class="btn" data-report-claim="${o.id}">${o.claimEligibility.lost ? 'Report lost parcel' : 'Report a problem'}</button>` : ''}`;
+    d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>This order is already being processed. Need a change? Send us a message.</a>`}${canChangeCustomer(o) ? `<button type="button" class="btn" data-change-customer="${o.id}">${ic('edit')}Change customer details</button>` : ''}<span class="spacer"></span>${['pending','processing','shipped'].includes(o.status) ? `<div><button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Request cancellation</button><p class="muted" style="font-size:12px">Free before the item reaches our warehouse. $4 after it arrives at the warehouse, or if the parcel is intercepted.</p></div>` : ''}${o.status === 'shipped' ? `<button type="button" class="btn btn-primary" data-delivered="${o.id}">Mark as delivered</button>` : ''}${!S.claims.some(c=>c.orderId===o.id) && (o.claimEligibility?.problem || o.claimEligibility?.lost) ? `<button type="button" class="btn" data-report-claim="${o.id}">${o.claimEligibility.lost ? 'Report lost parcel' : 'Report a problem'}</button>` : ''}`;
   }
   function refreshDrawer() {
     const d = UI.getDrawer();
@@ -733,6 +735,34 @@
     $('#claim-form')?.remove();const info=$('[data-d-info]',UI.getDrawer().body);info.insertAdjacentHTML('beforeend',`<section class="card card-pad"><form id="claim-form" class="form-grid" data-order-id="${o.id}"><h3 class="full">${lost?'Report lost parcel':'Report a problem'}</h3>${lost?'':`<p class="note full">${refund?`<b data-no-i18n>${o.claimEligibility.daysLeft}</b> <span>days left to choose a full refund or a reshipment</span>`:'Refunds are available within 7 days of delivery.'}</p><label class="field full"><span>Problem type</span><select name="problem"><option value="damaged">Damaged</option><option value="defective">Defective</option><option value="missing_parts">Missing parts</option><option value="wrong_item">Wrong item</option></select></label>`}<label class="field full"><span>Description</span><textarea name="description" maxlength="2000"${lost?'':' required'}></textarea></label><label class="field full"><span>Resolution</span><select name="resolution">${refund?'<option value="refund">Refund</option>':''}<option value="reshipment">Reshipment</option></select></label>${lost?'':`<label class="field full"><span>Photo or video of the problem</span><input name="proof" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required><small>Maximum 2 MB per file; 3 MB total.</small></label><label class="field full"><span>Photo of the shipping label</span><input name="label" type="file" accept="image/jpeg,image/png,image/webp" required></label>`}<button type="submit" class="btn btn-primary">Submit claim</button><p class="form-msg full" data-claim-msg></p></form></section>`);
     const f=$('#claim-form');f.dataset.dirty='1';f.scrollIntoView({block:'start',behavior:'smooth'});f.addEventListener('submit',async e=>{e.preventDefault();const b=$('[type=submit]',f),m=$('[data-claim-msg]',f);b.disabled=true;try{const read=async input=>{const file=input.files[0];if(!file)throw new Error('Add the required evidence files.');if(file.size>2*1024*1024)throw new Error('The file is too large. Maximum 2 MB.');const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});return{filename:file.name,data};};const body={problem:lost?'lost':f.problem.value,description:f.description.value,resolution:f.resolution.value};if(!lost){body.proof=await read(f.proof);body.label=await read(f.label);}await api('/orders/'+o.id+'/claims',{method:'POST',body});f.dataset.dirty='';await refresh();N.popup({icon:'check',title:'Claim submitted.'});}catch(ex){m.textContent=ex.message;b.disabled=false;}});
   }
+  // Customer name, address, phone and country: editable by the client until the parcel ships.
+  function showCustomerForm(o){
+    $('#customer-form')?.closest('section')?.remove();
+    const info=$('[data-d-info]',UI.getDrawer().body),running=o.status==='processing';
+    info.insertAdjacentHTML('afterbegin',`<section class="card card-pad"><form id="customer-form" class="form-grid" novalidate><h3 class="full">Change customer details</h3>
+      <p class="note full"><span>${running?'Your order is already in progress. Direct Line is told about the change and passes it on to the supplier. If the parcel is already packed, we will message you.':'Direct Line is told about the change straight away.'}</span> <span>You can change these until the parcel ships.</span></p>
+      <label class="field full" data-f="buyerName"><span>Customer name</span><input name="buyerName" required maxlength="160" autocomplete="off" value="${esc(o.buyerName)}"></label>
+      <label class="field full" data-f="address1"><span>Full address and phone <small>street, city, state, postal code, phone</small></span><textarea name="address1" required maxlength="2000" rows="4" autocomplete="off">${esc(UI.addressText(o))}</textarea></label>
+      <label class="field full" data-f="destination"><span>Country</span><select name="destination" required autocomplete="off"></select></label>
+      <label class="field full" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" autocomplete="off" placeholder="e.g. Sweden"></label>
+      <div class="full" style="display:flex;gap:10px;flex-wrap:wrap"><button type="submit" class="btn btn-primary">Save customer details</button><button type="button" class="btn" data-customer-cancel>Cancel</button></div>
+      <p class="form-msg full" data-customer-msg role="alert"></p></form></section>`);
+    const f=$('#customer-form'),dest=window.DL.destinationPicker(f.destination,$('[data-other-country]',f));dest.set(o.destination||'');
+    f.dataset.dirty='1';f.scrollIntoView({block:'start',behavior:'smooth'});
+    f.addEventListener('input',e=>{e.target.closest('[data-f]')?.classList.remove('bad');const m=$('[data-customer-msg]',f);if(m.classList.contains('err')){m.textContent='';m.className='form-msg full';}});
+    f.addEventListener('submit',async e=>{
+      e.preventDefault();const b=$('[type=submit]',f),m=$('[data-customer-msg]',f);if(b.disabled)return;
+      const name=f.buyerName.value.trim(),address=f.address1.value.trim(),country=dest.get(),missing=[];
+      for(const [key,ok,label] of [['buyerName',name,'customer name'],['address1',address,'full address'],['destination',country,'country']]){f.querySelector(`[data-f="${key}"]`)?.classList.toggle('bad',!ok);if(!ok)missing.push(label);}
+      if(missing.length){m.textContent='Please fill in: '+missing.join(', ')+'.';m.className='form-msg full err';return;}
+      b.disabled=true;m.textContent='';
+      try{
+        await api('/orders/'+o.id,{method:'PUT',body:{buyerName:name,...UI.addressFields(address,o),destination:country}});
+        f.dataset.dirty='';await refresh();chatCtl?.reload?.();
+        N.popup({icon:'check',title:'Customer details updated',text:running?'Direct Line has been told. If the parcel is already packed, we will message you.':'Direct Line has been told about the change.'},{duration:7000});
+      }catch(ex){m.textContent=ex.message;m.className='form-msg full err';b.disabled=false;}
+    });
+  }
   const productStatus=s=>({awaiting_quote:'Awaiting quote',approved:'Approved',not_available:'Not available'}[s]||s);
   function viewProducts(){return `${S.me.preview?'':`<section class="card card-pad"><h3 class="sec-title">Add product</h3><form id="product-form" class="form-grid"><label class="field"><span>Product name <small>optional</small></span><input name="name" maxlength="160"></label><label class="field"><span>Product link</span><input name="link" type="url" maxlength="1000" required></label><label class="field"><span>Variant notes</span><input name="variant" maxlength="500"></label><label class="field"><span>Expected monthly quantity <small>optional</small></span><input name="expectedQuantity" type="number" min="1" step="1"></label><label class="field full"><span>Product photos <small>one to three</small></span><input name="photos" type="file" accept="image/*" multiple required></label><button type="submit" class="btn btn-primary">Send for quote</button><p class="form-msg" data-product-msg></p></form></section>`}<section class="card card-pad"><h3 class="sec-title">My Products</h3>${S.products.length?S.products.map(p=>`<article class="confirmation-row"><div>${p.photoIds[0]?`<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="72" height="72" style="object-fit:contain" alt="Product photo">`:''}<b data-no-i18n>${esc(p.name)}</b><p><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a></p><p data-no-i18n>${esc(p.variant)}</p>${p.note?`<p data-no-i18n>${esc(p.note)}</p>`:''}</div><div><span>${productStatus(p.status)}</span>${p.unitPrice!=null?`<p><span>Fixed unit quote</span> <b>${money(p.unitPrice)}</b></p>`:''}</div></article>`).join(''):'<p class="muted">No products yet.</p>'}</section>`;}
   function bindProducts(){const f=$('#product-form');if(!f)return;f.addEventListener('input',()=>{f.dataset.dirty='1';});f.addEventListener('change',()=>{f.dataset.dirty='1';});f.addEventListener('submit',async e=>{e.preventDefault();const b=$('[type=submit]',f),m=$('[data-product-msg]',f);b.disabled=true;m.textContent='';try{const files=[...f.photos.files];if(!files.length||files.length>3)throw new Error('Add one to three product photos.');const photos=[];for(const file of files){const p=await shrinkImage(file);photos.push({filename:file.name,data:p.data});}await api('/products',{method:'POST',body:{name:f.name.value,link:f.link.value,variant:f.variant.value,expectedQuantity:f.expectedQuantity.value,photos}});f.dataset.dirty='';await refresh();N.popup({icon:'check',title:'Product sent for quote.'});}catch(ex){m.textContent=ex.message;b.disabled=false;}});}
@@ -816,6 +846,8 @@
       } catch (ex) { /* no clipboard */ }
       return;
     }
+    const changeCustomer=t.closest('[data-change-customer]');if(changeCustomer){const o=S.orders.find(o=>o.id===Number(changeCustomer.dataset.changeCustomer));if(o&&canChangeCustomer(o))showCustomerForm(o);return;}
+    const cancelCustomer=t.closest('[data-customer-cancel]');if(cancelCustomer){$('#customer-form')?.closest('section')?.remove();refreshDrawer();return;}
     const report=t.closest('[data-report-claim]');if(report){const o=S.orders.find(o=>o.id===Number(report.dataset.reportClaim));if(o)showClaimForm(o);return;}
     // Marking delivered starts the claim window, so it is confirmed first (like a cancellation request).
     const delivered=t.closest('[data-delivered]');
