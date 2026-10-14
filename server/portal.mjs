@@ -107,6 +107,7 @@ export const SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_synced_at INTEGER',
   "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_sync_error TEXT NOT NULL DEFAULT ''",
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_sync_attempts INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_next_try INTEGER NOT NULL DEFAULT 0',
   // Activity log: what happened to each order and when (powers notifications and the order timeline).
   `CREATE TABLE IF NOT EXISTS order_events (
      id SERIAL PRIMARY KEY,

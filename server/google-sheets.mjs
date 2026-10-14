@@ -6,6 +6,21 @@ const DEFAULT_SPREADSHEET_ID = '1L_C87W4jrZGIIrT2Fg_cGowNi3R5fTehdDw8d-vpZag';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 let tokenCache = { key: '', value: '', expiresAt: 0 };
 
+// Google allows about 60 write and 60 read requests per minute for this service account. One order sync makes
+// about 4 writes and 3 reads, so retries are throttled: one run at most every RETRY_GAP seconds (however many
+// admin screens are open), RETRY_BATCH orders per run, and everything pauses for RATE_LIMIT_PAUSE seconds when
+// Google says "quota exceeded" (429). Each failing order also backs off on its own (sheet_next_try).
+export const RETRY_GAP = 30, RETRY_BATCH = 4, RATE_LIMIT_PAUSE = 90, MAX_BACKOFF = 1800;
+export const RATE_LIMIT_NOTE = 'Google was busy. This will be retried automatically.';
+const RETRY_KEY = 'sheet_retry_until';
+const isRateLimited = error => /\(429\)/.test(String(error?.message || error));
+const backoff = attempt => Math.min(60 * 2 ** Math.min(Number(attempt) || 1, 5), MAX_BACKOFF);
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+// No sheet retries until `until` (seconds). Used when Google is rate limiting and to space out retry runs.
+export async function pauseSheetRetries(DB, until) {
+  await DB.prepare(`INSERT INTO portal_settings (key, value) VALUES ('${RETRY_KEY}', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(String(until)).run();
+}
+
 const b64url = value => Buffer.from(value).toString('base64url');
 const timestamp = seconds => seconds ? new Date(Number(seconds) * 1000).toISOString() : '';
 
@@ -183,13 +198,23 @@ export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl =
       await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=?").bind(orderId).run();
       return {configured:true,synced:false,rowNumber};
     }
-    await DB.prepare("UPDATE client_orders SET sheet_sync_status='synced', sheet_synced_at=?, sheet_sync_error='' WHERE id=?")
+    await DB.prepare("UPDATE client_orders SET sheet_sync_status='synced', sheet_synced_at=?, sheet_sync_error='', sheet_next_try=0 WHERE id=?")
       .bind(syncedAt, orderId).run();
     try { await appendSyncLog(env, order, 'Synced', attempt, '', fetchImpl); } catch (error) { console.error('Google Sheets sync log failed', error); }
     return { configured: true, synced: true, rowNumber };
   } catch (error) {
-    await DB.prepare("UPDATE client_orders SET sheet_sync_status='error', sheet_sync_error=? WHERE id=?")
-      .bind(String(error.message || error).slice(0, 500), orderId).run();
+    const limited = isRateLimited(error), t = nowSeconds();
+    if (limited) {
+      // Quota exceeded is not a real error: the order stays queued with a friendly note, nothing more is written
+      // to the sheet (the error log row would be one more write), and all retries pause for a while.
+      await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting', sheet_sync_error=?, sheet_next_try=? WHERE id=?")
+        .bind(RATE_LIMIT_NOTE, t + RATE_LIMIT_PAUSE, orderId).run();
+      await pauseSheetRetries(DB, t + RATE_LIMIT_PAUSE).catch(() => {});
+      error.rateLimited = true;
+      throw error;
+    }
+    await DB.prepare("UPDATE client_orders SET sheet_sync_status='error', sheet_sync_error=?, sheet_next_try=? WHERE id=?")
+      .bind(String(error.message || error).slice(0, 500), t + backoff(attempt), orderId).run();
     try { await appendSyncLog(env, order, 'Error', attempt, error.message || error, fetchImpl); } catch (logError) { console.error('Google Sheets error log failed', logError); }
     throw error;
   }
@@ -223,13 +248,23 @@ export async function syncClientToGoogleSheet(DB, env, clientId, fetchImpl = fet
   return { configured: true, synced: true, rowNumber };
 }
 
-export async function retryPendingGoogleSheetOrders(DB, env, fetchImpl = fetch) {
+export async function retryPendingGoogleSheetOrders(DB, env, fetchImpl = fetch, { now = nowSeconds(), limit = RETRY_BATCH } = {}) {
   if (!googleSheetsConfigured(env)) return { configured: false, attempted: 0 };
-  const rows = (await DB.prepare("SELECT id FROM client_orders WHERE sheet_sync_status <> 'synced' ORDER BY updated_at LIMIT 20").all()).results || [];
+  // Claim this run. Only one run per RETRY_GAP seconds gets through, even with several admin screens polling,
+  // and none while Google is rate limiting (pauseSheetRetries moved this time forward).
+  const claim = await DB.prepare(`INSERT INTO portal_settings (key, value) VALUES ('${RETRY_KEY}', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(portal_settings.value AS BIGINT) <= ? RETURNING key`)
+    .bind(String(now + RETRY_GAP), now).first();
+  if (!claim) return { configured: true, attempted: 0, paused: true };
+  const rows = (await DB.prepare("SELECT id FROM client_orders WHERE sheet_sync_status <> 'synced' AND sheet_next_try <= ? ORDER BY sheet_next_try, id LIMIT ?")
+    .bind(now, limit).all()).results || [];
   let synced = 0;
   for (const row of rows) {
     try { await syncPortalOrderToGoogleSheet(DB, env, row.id, fetchImpl); synced++; }
-    catch (error) { console.error('Google Sheets retry failed for order', row.id, error); }
+    catch (error) {
+      if (error.rateLimited) return { configured: true, attempted: synced + 1, synced, rateLimited: true };
+      console.error('Google Sheets retry failed for order', row.id, error);
+    }
   }
   return { configured: true, attempted: rows.length, synced };
 }
