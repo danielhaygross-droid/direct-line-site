@@ -552,6 +552,8 @@
         : `<section class="card card-pad"><form class="form-grid" data-account-form="${c.id}" novalidate>
             <label class="field full"><span>Name</span><input name="name" maxlength="120" value="${esc(c.name)}"></label>
             <label class="field"><span>Fee per order <small>empty = default</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01" value="${c.commissionPerOrder ?? ''}"></span></label>
+            <label class="field"><span>Supplier’s part <small>empty = default</small></span><span class="money"><input name="supplierSharePerOrder" type="number" min="0" step="0.01" value="${c.supplierSharePerOrder ?? ''}"></span></label>
+            <p class="note full" style="margin:0">Supplier’s part: put 0 when the supplier’s quoted price is already the final price for the client, so the whole fee is ours.</p>
             <label class="check-row full"><input type="checkbox" name="applyFeeToOrders"><span>Also change the fee on all of this client’s existing orders <small>(not cancelled ones)</small></span></label>
             <label class="field"><span>Status</span><select name="active"><option value="true"${c.active ? ' selected' : ''}>Active</option><option value="false"${c.active ? '' : ' selected'}>Disabled (can’t sign in)</option></select></label>
             <div class="field full"><span>Username <small>used to sign in, and as the payment reference</small></span><div style="display:flex;gap:8px;align-items:center"><input name="username" maxlength="60" autocomplete="off" data-no-i18n value="${esc(c.username)}" style="flex:1;min-width:0"><button type="button" class="btn btn-sm" data-copy="${esc(c.username)}">Copy</button></div><p><span>Last login:</span> ${c.lastLogin ? esc(fullDate(c.lastLogin)) : 'Never'}</p><p>${c.termsAccepted ? `<span>Terms accepted:</span> <time data-no-i18n>${esc(fullDate(c.termsAccepted.acceptedAt))} · v${c.termsAccepted.version}</time>` : 'Not accepted yet'}</p>${c.termsAccepted && c.termsRequired ? '<p class="note">Current terms not accepted yet.</p>' : ''}<button type="button" class="btn" data-reset-password="${c.id}">Reset password</button><div data-reset-result role="status"></div></div>
@@ -996,7 +998,7 @@
     const af = e.target.closest('[data-account-form]');
     if (af) {
       e.preventDefault();
-      const m = $('[data-account-msg]'), body = { name: af.name.value, username: af.username.value.trim(), active: af.active.value === 'true', commissionPerOrder: af.commissionPerOrder.value === '' ? null : af.commissionPerOrder.value, applyFeeToOrders: af.applyFeeToOrders.checked };
+      const m = $('[data-account-msg]'), body = { name: af.name.value, username: af.username.value.trim(), active: af.active.value === 'true', commissionPerOrder: af.commissionPerOrder.value === '' ? null : af.commissionPerOrder.value, supplierSharePerOrder: af.supplierSharePerOrder.value === '' ? null : af.supplierSharePerOrder.value, applyFeeToOrders: af.applyFeeToOrders.checked };
 
       try { const r = await api('/admin/users/' + af.dataset.accountForm, { method: 'POST', body }); document.activeElement?.blur(); tell({ type: 'dl-clients-changed' }); await loadAll(); renderList(); fillClient(clientOf(af.dataset.accountForm)); toast(body.applyFeeToOrders ? `Account saved. Fee updated on ${r.ordersUpdated ?? 0} existing orders.` : 'Account saved.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }

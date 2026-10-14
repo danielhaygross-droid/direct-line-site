@@ -44,6 +44,7 @@ export const SCHEMA = [
      role TEXT NOT NULL CHECK (role IN ('admin','client')),
      display_name TEXT NOT NULL,
      commission_per_order DOUBLE PRECISION,
+     supplier_share_per_order DOUBLE PRECISION,
      active BOOLEAN NOT NULL DEFAULT TRUE,
      created_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS client_orders (
@@ -84,6 +85,8 @@ export const SCHEMA = [
   'CREATE INDEX IF NOT EXISTS order_messages_order_idx ON order_messages (order_id, created_at)',
   // Fee split: of the per-order fee ("commission"), this part goes to the supplier; the rest is ours.
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS supplier_share DOUBLE PRECISION NOT NULL DEFAULT 1',
+  // A client can have their own supplier share (e.g. 0 when the supplier's quoted price is already the final price). Empty = the default in Fees & settings.
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS supplier_share_per_order DOUBLE PRECISION',
   // What the client sees on each order: product cost (our $2 fee is already inside it) + shipping fee = price.
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS product_cost DOUBLE PRECISION',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS shipping_fee DOUBLE PRECISION',
@@ -469,7 +472,7 @@ function orderFields(body) {
 async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source, settings) {
   const clientId = client.id;
   const commission = client.commission_per_order ?? Number(settings.commission_per_order);
-  const supplierShare = Math.min(commission, Number(settings.supplier_share_per_order) || 0);
+  const supplierShare = Math.min(commission, client.supplier_share_per_order ?? (Number(settings.supplier_share_per_order) || 0));
   const t = now();
   const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at, order_date, currency, buyer_name, buyer_phone, address_line_1, address_line_2, city, region, postal_code, item_title, sku, variant, quantity, etsy_url, source, product_id, quoted_unit_price,store_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
     .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t, f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, source,f.product_id||null,f.quoted_unit_price??null,f.store_id).first();
@@ -599,7 +602,7 @@ export async function handlePortal(request, url, ctx) {
   if (path === '/orders' && method === 'POST') {
     const body = await readBody(request);
     const clientId = who.admin ? Number(body.clientId) : who.clientId;
-    const client = await DB.prepare("SELECT id, commission_per_order, active FROM users WHERE id = ? AND role = 'client'").bind(clientId).first();
+    const client = await DB.prepare("SELECT id, commission_per_order, supplier_share_per_order, active FROM users WHERE id = ? AND role = 'client'").bind(clientId).first();
     if (!client || !client.active) return json({ ok: false, error: 'Unknown client' }, 400);
     if (!text(body.destination, 60) || text(body.destination, 60) === '__other') return json({ ok: false, error: 'Please choose a country.' }, 400);
     const addressProblem = addressError(body);
@@ -833,12 +836,12 @@ export async function handlePortal(request, url, ctx) {
     const termsPolicy = await currentTerms(DB);
     const termsRows = (await DB.prepare('SELECT DISTINCT ON (client_id) client_id,version,accepted_at FROM client_terms_acceptances ORDER BY client_id,version DESC').all()).results || [];
     const acceptedTerms = new Map(termsRows.map(r => [r.client_id, { version: Number(r.version), acceptedAt: Number(r.accepted_at) }]));
-    const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, active, archived, created_at, trial_start, trial_end, sub_status, sub_last_payment, last_login, password_reset_required FROM users ORDER BY role, display_name').all()).results || [];
+    const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, supplier_share_per_order, active, archived, created_at, trial_start, trial_end, sub_status, sub_last_payment, last_login, password_reset_required FROM users ORDER BY role, display_name').all()).results || [];
     const pendingTransfers = new Map(((await DB.prepare("SELECT f.client_id,COUNT(*) AS n FROM portal_files f LEFT JOIN client_payments p ON p.confirmation_id=f.id WHERE f.kind='confirmation' AND NOT f.archived AND p.id IS NULL GROUP BY f.client_id").all()).results || []).map(r=>[r.client_id,Number(r.n)]));
     const clients = [];
     const archived = [];
     for (const u of users.filter(u => u.role === 'client' && u.archived)) archived.push({ id: u.id, username: u.username, name: u.display_name, orders: Number((await DB.prepare('SELECT COUNT(*) AS n FROM client_orders WHERE client_id = ?').bind(u.id).first()).n) });
-    for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, pendingTransfers: pendingTransfers.get(u.id) || 0, termsAccepted: acceptedTerms.get(u.id) || null, termsRequired: acceptedTerms.get(u.id)?.version !== termsPolicy.version, lastLogin: u.last_login == null ? null : Number(u.last_login), passwordResetRequired: !!u.password_reset_required, commissionPerOrder: u.commission_per_order, subscription: subscriptionOut(u, settings), ...(await clientSummary(DB, u.id, settings)) });
+    for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, pendingTransfers: pendingTransfers.get(u.id) || 0, termsAccepted: acceptedTerms.get(u.id) || null, termsRequired: acceptedTerms.get(u.id)?.version !== termsPolicy.version, lastLogin: u.last_login == null ? null : Number(u.last_login), passwordResetRequired: !!u.password_reset_required, commissionPerOrder: u.commission_per_order, supplierSharePerOrder: u.supplier_share_per_order, subscription: subscriptionOut(u, settings), ...(await clientSummary(DB, u.id, settings)) });
     const keys = ['billed', 'paid', 'outstanding', 'commission', 'supplierShare', 'ourShare'];
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
@@ -989,6 +992,8 @@ export async function handlePortal(request, url, ctx) {
     const active = body.active !== undefined ? Boolean(body.active) : u.active;
     let cpo = u.commission_per_order;
     if (body.commissionPerOrder !== undefined) { cpo = money(body.commissionPerOrder); if (!isMoney(cpo)) return json({ ok: false, error: 'Invalid commission' }, 400); }
+    let sps = u.supplier_share_per_order;
+    if (body.supplierSharePerOrder !== undefined) { sps = money(body.supplierSharePerOrder); if (!isMoney(sps)) return json({ ok: false, error: "Invalid supplier's share" }, 400); }
     let hash = u.password_hash;
     if (body.password) { if (String(body.password).length < 8) return json({ ok: false, error: 'Password must be at least 8 characters' }, 400); hash = await hashPassword(String(body.password)); }
     const archived = body.archived !== undefined && u.role === 'client' ? Boolean(body.archived) : u.archived;
@@ -1014,12 +1019,12 @@ export async function handlePortal(request, url, ctx) {
       if (trialStart && trialEnd && trialEnd < trialStart) return json({ ok: false, error: 'Trial end must be after the trial start' }, 400);
       if (!subStatus && trialStart) subStatus = 'trial';
     }
-    await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=CASE WHEN ? THEN ? ELSE password_hash END, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=?, password_reset_required=CASE WHEN ? THEN ? ELSE password_reset_required END, session_version=session_version+? WHERE id = ?').bind(name, active, cpo, !!body.password, hash, archived, trialStart, trialEnd, subStatus, lastPay, !!body.password, u.role === 'client', body.password ? 1 : 0, id).run();
+    await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, supplier_share_per_order=?, password_hash=CASE WHEN ? THEN ? ELSE password_hash END, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=?, password_reset_required=CASE WHEN ? THEN ? ELSE password_reset_required END, session_version=session_version+? WHERE id = ?').bind(name, active, cpo, sps, !!body.password, hash, archived, trialStart, trialEnd, subStatus, lastPay, !!body.password, u.role === 'client', body.password ? 1 : 0, id).run();
     if (username !== u.username) await DB.prepare('UPDATE users SET username=? WHERE id=?').bind(username, id).run();
     // Bulk: put this client's fee on all their existing orders too (not cancelled ones). The supplier's part never exceeds the fee.
     let ordersUpdated = 0;
     if (u.role === 'client' && body.applyFeeToOrders === true) {
-      const settings = await getSettings(DB), fee = cpo ?? Number(settings.commission_per_order), share = Math.min(fee, Number(settings.supplier_share_per_order) || 0);
+      const settings = await getSettings(DB), fee = cpo ?? Number(settings.commission_per_order), share = Math.min(fee, sps ?? (Number(settings.supplier_share_per_order) || 0));
       const done = await DB.prepare("UPDATE client_orders SET commission=?, supplier_share=? WHERE client_id=? AND status<>'cancelled' RETURNING id").bind(fee, share, id).all();
       ordersUpdated = (done.results || []).length;
     }
