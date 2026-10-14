@@ -339,7 +339,8 @@
     'Add client': 'הוספת לקוח', 'New order': 'הזמנה חדשה', 'Active clients': 'לקוחות פעילים', 'Client orders': 'הזמנות לקוחות', 'Outstanding': 'יתרה לגבייה',
     'Our earnings': 'הרווח שלנו', 'Needs your attention': 'דורש את תשומת לבך', 'Your clients': 'הלקוחות שלך', 'Client': 'לקוח', 'This month': 'החודש', 'Open': 'פתוחות',
     'We earned': 'הרווחנו', 'Last order': 'הזמנה אחרונה', 'Latest orders': 'הזמנות אחרונות', 'All caught up. Nothing is waiting for you.': 'הכל מטופל. שום דבר לא מחכה לך.',
-    'Pending': 'ממתינה', 'Processing': 'בטיפול', 'Shipped': 'נשלחה', 'Delivered': 'נמסרה', 'Cancelled': 'בוטלה', 'All': 'הכל', 'New follow-ups': 'הודעות חדשות', 'Needs cost': 'חסרה עלות',
+    'Pending': 'ממתינה', 'Processing': 'בטיפול', 'Shipped': 'נשלחה', 'Delivered': 'נמסרה', 'Cancelled': 'בוטלה', 'All': 'הכל', 'New follow-ups': 'הודעות חדשות', 'Needs cost': 'חסרה עלות', 'Choose…': 'בחירה…',
+    'Tick orders to change several at once: status, courier, fee or archive.': 'סמנו הזמנות כדי לשנות כמה בבת אחת: סטטוס, חברת שילוח, עמלה או העברה לארכיון.', 'Set status': 'עדכון סטטוס', 'Set courier': 'עדכון חברת שילוח', 'Set fee': 'עדכון עמלה', 'Clear selection': 'ניקוי הבחירה', 'Choose a status first.': 'בחרו קודם סטטוס.', 'Type or pick a courier first.': 'הקלידו או בחרו קודם חברת שילוח.', 'Enter the fee first.': 'הזינו קודם את העמלה.', 'Select all orders shown': 'בחירת כל ההזמנות המוצגות',
     'Tax number': 'מספר מס', 'Gift message': 'הודעת מתנה', 'optional · e.g. Etsy’s IOSS number on the order': 'לא חובה · למשל מספר ה-IOSS של Etsy שמופיע בהזמנה', 'optional · the supplier adds it to the parcel': 'לא חובה · הספק מצרף אותה לחבילה',
     'Courier': 'חברת שילוח', 'Couriers': 'חברות שילוח', 'Couriers the supplier can pick': 'חברות השילוח שהספק יכול לבחור', 'one per line': 'אחת בכל שורה', 'Save couriers': 'שמירת חברות שילוח', 'Saved. The supplier sheet dropdown is updated.': 'נשמר. הרשימה בגיליון הספק עודכנה.', 'These show as a dropdown in the Courier column of the supplier sheet. The supplier can also type a name that isn’t listed. Clients see the courier next to the tracking number.': 'הן מופיעות כרשימה בעמודת חברת השילוח בגיליון הספק. הספק יכול גם להקליד שם שלא ברשימה. הלקוחות רואים את חברת השילוח ליד מספר המעקב.', 'Tracking saved. The client can see it now.': 'המעקב נשמר. הלקוח יכול לראות אותו עכשיו.', 'Add at least one courier': 'הוסיפו לפחות חברת שילוח אחת',
     'Supplier’s part': 'חלק הספק', 'Supplier’s part: put 0 when the supplier’s quoted price is already the final price for the client, so the whole fee is ours.': 'חלק הספק: הזינו 0 כשהמחיר שהספק נותן הוא כבר המחיר הסופי ללקוח, כך שכל העמלה שלנו.',
@@ -547,6 +548,11 @@
 
   const tc = s => tr(s); // translate a captured piece (e.g. a country or date)
   const R = [
+    [/^(\d+) selected$/, (_, n) => `${n} נבחרו`],
+    [/^Updated (\d+) orders?\.(?: (\d+) not changed — they stay selected\.)?$/, (_, n, f) => `עודכנו ${n} הזמנות.${f ? ` ${f} לא שונו — הן נשארות מסומנות.` : ''}`],
+    [/^Fees collected (.+)$/, (_, m) => `עמלות שנגבו ${m}`],
+    [/^Updating (\d+) of (\d+)…$/, (_, a, b) => `מעדכן ${a} מתוך ${b}…`],
+    [/^Click again to archive (\d+)$/, (_, n) => `לחצו שוב כדי להעביר ${n} לארכיון`],
     [/^Couldn’t load payments: (.*)$/, (_, m) => `לא ניתן לטעון את התשלומים: ${m}`],
     [/^(\d+) of (\d+) files copied to file storage\.$/, (_, c, t) => `${c} מתוך ${t} קבצים הועתקו לאחסון הקבצים.`],
     [/^(\d+) database copies removed after checking\.$/, (_, n) => `${n} עותקים הוסרו ממסד הנתונים לאחר בדיקה.`],

@@ -6,7 +6,7 @@
   const UI = window.DLOrderUI;
   const STATUSES = ['pending','processing','shipped','delivered','cancellation_requested','cancelled'];
   const ADMIN_STATUSES = ['pending','processing','shipped','delivered'];
-  const S = { ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
+  const S = { picked: new Set(), ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
   const embedded = window.top !== window.self;
   const tell = m => { if (embedded) parent.postMessage(m, location.origin); };
   const P = {
@@ -110,6 +110,43 @@
     renderList();
     if (S.tab === 'settings') bindSettings();
   }
+  // ---------- bulk edit (Orders tab): select orders, then change them all at once ----------
+  function bulkBar(archivedView, allOn) {
+    const n = S.picked.size, all = `<label class="bulk-all"><input type="checkbox" data-pick-all${allOn ? ' checked' : ''}><span>Select all</span></label>`;
+    if (!n) return `<div class="bulk-bar bulk-hint">${all}<span class="dim">Tick orders to change several at once: status, courier, fee or archive.</span></div>`;
+    const couriers = String(S.ov.settings.couriers || '').split('\n').filter(Boolean);
+    return `<div class="bulk-bar" data-bulk-bar>${all}<b>${n} selected</b>
+      ${archivedView ? '<button type="button" class="btn btn-sm" data-bulk="restore">Restore</button>' : `
+      <label class="bulk-f"><span>Status</span><select data-bulk-status><option value="">Choose…</option>${ADMIN_STATUSES.map(s => `<option value="${s}">${UI.LABEL[s]}</option>`).join('')}</select></label><button type="button" class="btn btn-sm" data-bulk="status">Set status</button>
+      <label class="bulk-f"><span>Courier</span><input data-bulk-courier list="dl-bulk-couriers" maxlength="60" placeholder="e.g. Yanwen"><datalist id="dl-bulk-couriers">${couriers.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label><button type="button" class="btn btn-sm" data-bulk="courier">Set courier</button>
+      <label class="bulk-f"><span>Fee</span><span class="money"><input data-bulk-fee type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.50"></span></label><button type="button" class="btn btn-sm" data-bulk="fee">Set fee</button>
+      <button type="button" class="btn btn-sm btn-danger" data-bulk="archive">Archive</button>`}
+      <button type="button" class="btn btn-sm btn-ghost" data-bulk="clear">Clear selection</button>
+      <span class="bulk-msg" data-bulk-msg role="status"></span></div>`;
+  }
+  async function runBulk(kind, btn) {
+    const bar = $('[data-bulk-bar]'), msg = $('[data-bulk-msg]', bar), ids = [...S.picked];
+    if (kind === 'clear') { S.picked.clear(); renderOrders(); return; }
+    let body = null;
+    if (kind === 'status') { const v = $('[data-bulk-status]', bar).value; if (!v) { msg.textContent = 'Choose a status first.'; return; } body = { status: v }; }
+    if (kind === 'courier') { const v = $('[data-bulk-courier]', bar).value.trim(); if (!v) { msg.textContent = 'Type or pick a courier first.'; return; } body = { courier: v }; }
+    if (kind === 'fee') { const v = $('[data-bulk-fee]', bar).value; if (v === '' || !(Number(v) >= 0)) { msg.textContent = 'Enter the fee first.'; return; } body = { commission: v }; }
+    if (kind === 'archive' && !btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = `Click again to archive ${ids.length}`; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Archive'; } }, 4000); return; }
+    $$('button, select, input', bar).forEach(x => { x.disabled = true; });
+    const failed = [], failedIds = [];
+    for (const [i, id] of ids.entries()) {
+      msg.textContent = `Updating ${i + 1} of ${ids.length}…`;
+      try {
+        if (kind === 'archive' || kind === 'restore') await api('/admin/orders/' + id + '/archive', { method: 'POST', body: { archived: kind === 'archive' } });
+        else await api('/orders/' + id, { method: 'PUT', body });
+      } catch (ex) { failedIds.push(id); failed.push(`${orderName(S.orders.find(o => o.id === id) || S.archivedOrders.find(o => o.id === id) || { id })}: ${ex.message}`); }
+    }
+    const done = ids.length - failed.length;
+    S.picked = new Set(failedIds); // what didn't work stays selected, so it can be tried again
+    await loadAll(); renderList(); if (kind === 'archive' || kind === 'restore') tell({ type: 'dl-clients-changed' });
+    toast(`Updated ${done} order${done === 1 ? '' : 's'}.` + (failed.length ? ` ${failed.length} not changed — they stay selected.` : ''));
+    if (failed.length) { const m = $('[data-bulk-msg]'); if (m) m.textContent = failed.slice(0, 3).join(' · '); }
+  }
   function renderList() {
     if(S.tab==='products'||S.tab==='claims')return;
     if (S.tab === 'orders') renderOrders();
@@ -163,8 +200,12 @@
     sel.value = S.client;
     const q = S.q.toLowerCase();
     const rows = inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId), o.itemTitle, o.sku, o.buyerName].join(' ').toLowerCase().includes(q)));
-    $('[data-list]').innerHTML = rows.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th>Order</th><th>Destination</th><th class="num">Total</th><th>Status</th><th>Messages</th><th class="hide-sm"></th></tr></thead><tbody>
-      ${rows.map(o => `<tr class="click${o.unreadMessages ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
+    // Bulk edit: only rows that are on screen can stay selected.
+    const shown = new Set(rows.map(o => o.id)); for (const id of [...S.picked]) if (!shown.has(id)) S.picked.delete(id);
+    const archivedView = S.filter === 'archived', allOn = rows.length > 0 && rows.every(o => S.picked.has(o.id));
+    $('[data-list]').innerHTML = rows.length ? `${bulkBar(archivedView, allOn)}<div class="table-wrap"><table class="tbl stack"><thead><tr><th class="pick"></th><th>Client</th><th>Order</th><th>Destination</th><th class="num">Total</th><th>Status</th><th>Messages</th><th class="hide-sm"></th></tr></thead><tbody>
+      ${rows.map(o => `<tr class="click${o.unreadMessages ? ' is-new' : ''}${S.picked.has(o.id) ? ' picked' : ''}" data-open-order="${o.id}" tabindex="0">
+        <td class="pick"><input type="checkbox" data-pick="${o.id}" aria-label="Select ${esc(orderName(o))}"${S.picked.has(o.id) ? ' checked' : ''}></td>
         <td class="wide"><div class="who"><span class="ava">${esc(initials(clientName(o.clientId)))}</span><div><b>${esc(clientName(o.clientId))}</b><small>${esc(fullDate(o.createdAt))}</small></div></div></td>
         <td data-label="Order"><div class="ord-cell">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : '<span class="ord-thumb none" title="No photo">—</span>'}<span class="t-main"><b>${esc(orderName(o))}</b>${o.itemTitle ? `<small>${esc(o.itemTitle)}</small>` : ''}<small class="mono">${esc(o.trackingNumber) || 'No tracking yet'}</small></span></div></td>
         <td data-label="Destination">${esc(place(o.destination))}</td>
@@ -816,7 +857,8 @@
     const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
     const rs = t.closest('[data-restore]');
     if (rs) { setArchived(Number(rs.dataset.restore), false, rs); return; }
-    if (t.closest('select')) return;
+    const bk = t.closest('[data-bulk]'); if (bk) { runBulk(bk.dataset.bulk, bk); return; }
+    if (t.closest('select') || t.closest('[data-bulk-bar]') || t.closest('td.pick, th.pick')) return;
     const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
     const oo = t.closest('[data-open-order]'); if (oo) openOrder(oo.dataset.openOrder);
   }
@@ -837,6 +879,8 @@
   function onChange(e) {
     if (e.target.matches('[data-client-filter]')) { S.client = e.target.value; renderOrders(); }
     if (e.target.matches('[data-status]')) setStatus(e.target.dataset.status, e.target.value, e.target);
+    if (e.target.matches('[data-pick]')) { const id = Number(e.target.dataset.pick); if (e.target.checked) S.picked.add(id); else S.picked.delete(id); renderOrders(); }
+    if (e.target.matches('[data-pick-all]')) { $$('[data-pick]').forEach(c => { const id = Number(c.dataset.pick); if (e.target.checked) S.picked.add(id); else S.picked.delete(id); }); renderOrders(); }
   }
   document.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
