@@ -23,6 +23,7 @@ import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from
 import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance } from './client-stores.mjs';
 
 import { STORAGE_SCHEMA, photoBytes, syncFileStorage, fileStorageStatus } from './file-storage.mjs';
+import { splitNotes } from './order-notes.mjs';
 import { SUPPLIER_SHEET_SCHEMA, setupSupplierWorkQueue, pollSupplierSheet, supplierSheetStatus, DEFAULT_COURIERS, courierList, updateCourierDropdown } from './supplier-sheet.mjs';
 import { runBackup, listBackups, downloadBackup } from './backup.mjs';
 import { LOGIN_LIMIT_SCHEMA, LOCK_MESSAGE, clientIp, loginKeys, lockedFor, recordFailure, clearFailures } from './login-limit.mjs';
@@ -452,6 +453,13 @@ export function productLinks(value) {
     .map(v => !/^[a-z][a-z0-9+.-]*:/i.test(v) && /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+([/?#]|$)/i.test(v) ? 'https://' + v : v).join('\n');
 }
 
+// A tax number / gift message pasted into the notes is moved to its own field (only into an empty field).
+function moveFromNotes(f) {
+  const s = splitNotes(f.notes);
+  if ((s.taxNumber && f.tax_number) || (s.giftMessage && f.gift_message) || (!s.taxNumber && !s.giftMessage)) return false;
+  f.notes = s.notes; if (s.taxNumber) f.tax_number = s.taxNumber; if (s.giftMessage) f.gift_message = s.giftMessage;
+  return true;
+}
 function orderFields(body) {
   const f = {
     order_ref: text(body.orderRef, 120), tracking_number: text(body.trackingNumber, 120),
@@ -615,6 +623,7 @@ export async function handlePortal(request, url, ctx) {
     const addressProblem = addressError(body);
     if (addressProblem) return json({ ok: false, error: addressProblem }, 400);
     let f; try { f = orderFields(body); } catch (e) { return json({ ok: false, error: e.message }, 400); }
+    moveFromNotes(f);
     if (!who.admin) {
       f.tracking_number = ''; f.category = ''; f.weight_kg = null;
       f.product_cost = null; f.shipping_fee = null; f.price = 0;
@@ -712,6 +721,7 @@ export async function handlePortal(request, url, ctx) {
       if (addressProblem) return json({ ok: false, error: addressProblem }, 400);
     }
     let f; try { f = orderFields({ ...orderOut(existing), ...body }); } catch (e) { return json({ ok: false, error: e.message }, 400); }
+    if (body.notes !== undefined && moveFromNotes(f)) { body.taxNumber = f.tax_number || ''; body.giftMessage = f.gift_message || ''; }
     const status = existing.status;
     let commission = existing.commission; const supplierShare = 0;
     if (who.admin) {
