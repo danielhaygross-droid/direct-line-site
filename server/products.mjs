@@ -17,7 +17,7 @@ export function productInput(body){
 export async function products(DB,clientId=null){
  const where=clientId===null?'NOT u.archived':'p.client_id=?';
  const rows=(await DB.prepare(`SELECT p.*,u.display_name AS client_name,COALESCE(array_agg(ph.id) FILTER(WHERE ph.id IS NOT NULL),ARRAY[]::integer[]) AS photo_ids FROM portal_products p JOIN users u ON u.id=p.client_id LEFT JOIN portal_product_photos ph ON ph.product_id=p.id WHERE ${where} GROUP BY p.id,u.display_name ORDER BY p.created_at,p.id`).bind(...(clientId===null?[]:[clientId])).all()).results||[];
- return rows.map(r=>({id:Number(r.id),clientId:Number(r.client_id),clientName:r.client_name,name:r.name,link:r.link,variant:r.variant,expectedQuantity:r.expected_quantity==null?null:Number(r.expected_quantity),status:r.status,unitPrice:r.unit_price==null?null:Number(r.unit_price),note:r.note,photoIds:r.photo_ids.map(Number),createdAt:Number(r.created_at),updatedAt:Number(r.updated_at)}));
+ return rows.map(r=>({id:Number(r.id),clientId:Number(r.client_id),clientName:r.client_name,name:r.name,link:r.link,variant:r.variant,expectedQuantity:r.expected_quantity==null?null:Number(r.expected_quantity),status:r.status,unitPrice:r.unit_price==null?null:Number(r.unit_price),note:r.note,...(clientId===null?{supplierPrice:r.supplier_price==null?null:Number(r.supplier_price)}:{}),photoIds:r.photo_ids.map(Number),createdAt:Number(r.created_at),updatedAt:Number(r.updated_at)}));
 }
 export async function addProduct(DB,clientId,body){
  const f=productInput(body),t=Math.floor(Date.now()/1000),photos=f.photos.map(p=>({mime:p.mime,data:p.content,bytes:p.bytes}));

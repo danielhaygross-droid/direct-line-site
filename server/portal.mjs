@@ -5,7 +5,8 @@
 //   role "client-<id>"    -> a client account from the users table
 
 import { timingSafeEqual, randomBytes } from 'node:crypto';
-import { serveSheetPhoto } from './sheet-photos.mjs';
+import { serveSheetPhoto, serveSheetProductPhoto } from './sheet-photos.mjs';
+import { QUOTE_SHEET_SCHEMA, syncQuoteRow } from './quote-sheet.mjs';
 import { googleSheetsConfigured, retryPendingGoogleSheetOrders, syncClientToGoogleSheet, syncPortalOrderToGoogleSheet } from './google-sheets.mjs';
 
 import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms } from './terms.mjs';
@@ -182,6 +183,7 @@ export const SCHEMA = [
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
 SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA, ...STORAGE_SCHEMA, ...LOGIN_LIMIT_SCHEMA, ...SUPPLIER_SHEET_SCHEMA);
+SCHEMA.push(...QUOTE_SHEET_SCHEMA);
 // Every change to a recorded payment is kept: what it was, what it became, and when.
 SCHEMA.push(`CREATE TABLE IF NOT EXISTS payment_edits (
   id SERIAL PRIMARY KEY, payment_id INTEGER NOT NULL REFERENCES client_payments(id), field TEXT NOT NULL,
@@ -518,6 +520,8 @@ export async function handlePortal(request, url, ctx) {
 
   const sheetPhoto = /^\/sheet-photos\/([1-9]\d*)\/([1-9]\d*)$/.exec(path);
   if (sheetPhoto && method === 'GET') return serveSheetPhoto(DB,env,url,Number(sheetPhoto[1]),Number(sheetPhoto[2]));
+  const sheetProductPhoto = /^\/sheet-product-photos\/([1-9]\d*)\/([1-9]\d*)$/.exec(path);
+  if (sheetProductPhoto && method === 'GET') return serveSheetProductPhoto(DB,env,url,Number(sheetProductPhoto[1]),Number(sheetProductPhoto[2]));
 
   // Public: login
   if (path === '/login' && method === 'POST') {
@@ -612,7 +616,7 @@ export async function handlePortal(request, url, ctx) {
   if (path==='/invoices/month' && method==='GET' && !who.admin) return monthlyInvoices(DB,who.clientId,url.searchParams.get('month'),env);
   if(path==='/client-stores'&&!who.admin){if(method==='GET')return json({ok:true,stores:await clientStores(DB,who.clientId)});if(method==='POST'){try{const store=await saveStore(DB,who.clientId,null,await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}}
   const storeEdit=/^\/client-stores\/(\d+)$/.exec(path);if(storeEdit&&method==='POST'&&!who.admin){try{const store=await saveStore(DB,who.clientId,Number(storeEdit[1]),await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
-  if(path==='/products' && !who.admin){if(method==='GET')return json({ok:true,products:await products(DB,who.clientId)});if(method==='POST'){try{return json({ok:true,product:await addProduct(DB,who.clientId,await readBody(request))});}catch(e){return json({ok:false,error:e.message},400);}}}
+  if(path==='/products' && !who.admin){if(method==='GET')return json({ok:true,products:await products(DB,who.clientId)});if(method==='POST'){let product;try{product=await addProduct(DB,who.clientId,await readBody(request));}catch(e){return json({ok:false,error:e.message},400);}const qs=syncQuoteRow(DB,env,product.id).catch(e=>console.error('Product Quotes row failed',e));if(waitUntil)waitUntil(qs);else await qs;return json({ok:true,product});}}
   const productImage=/^\/products\/(\d+)\/photos\/(\d+)$/.exec(path);if(productImage&&method==='GET')return productPhoto(DB,Number(productImage[1]),Number(productImage[2]),who,env);
   if (path === '/orders' && method === 'POST') {
     const body = await readBody(request);
@@ -931,7 +935,7 @@ export async function handlePortal(request, url, ctx) {
   const claimDecision=/^\/admin\/claims\/(\d+)$/.exec(path);if(claimDecision&&method==='POST'){try{const claim=await decideClaim(DB,Number(claimDecision[1]),await readBody(request));if(claim.reshipmentOrderId){const sync=syncPortalOrderToGoogleSheet(DB,env,claim.reshipmentOrderId).catch(()=>{});if(waitUntil)waitUntil(sync);}return json({ok:true,claim});}catch(e){return json({ok:false,error:e.message},409);}}
   const trackingUpdate=/^\/admin\/orders\/(\d+)\/tracking-update$/.exec(path);if(trackingUpdate&&method==='POST'){const order=await DB.prepare('UPDATE client_orders SET last_tracking_update_at=?,updated_at=? WHERE id=? AND NOT archived RETURNING *').bind(now(),now(),Number(trackingUpdate[1])).first();if(!order)return json({ok:false,error:'Not found'},404);await logEvent(DB,order.id,order.client_id,'tracking_update','admin');return json({ok:true,order:orderOut(order)});}
   if(path==='/admin/products'&&method==='GET')return json({ok:true,products:await products(DB)});
-  const productQuote=/^\/admin\/products\/(\d+)$/.exec(path);if(productQuote&&method==='POST'){try{const product=await quoteProduct(DB,Number(productQuote[1]),await readBody(request));return product?json({ok:true,product}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
+  const productQuote=/^\/admin\/products\/(\d+)$/.exec(path);if(productQuote&&method==='POST'){try{const product=await quoteProduct(DB,Number(productQuote[1]),await readBody(request));if(!product)return json({ok:false,error:'Not found'},404);const qs=syncQuoteRow(DB,env,product.id).catch(e=>console.error('Product Quotes row failed',e));if(waitUntil)waitUntil(qs);else await qs;return json({ok:true,product});}catch(e){return json({ok:false,error:e.message},400);}}
   if (path==='/admin/invoices' && method==='GET') return json({ok:true,invoices:await invoices(DB,Number(url.searchParams.get('clientId')))});
   if (path==='/admin/invoices' && method==='POST') {try{return json({ok:true,invoice:await saveInvoice(DB,await readBody(request))});}catch(e){return json({ok:false,error:e.message},400);}}
   if (path === '/admin/payments' && method === 'GET') {
