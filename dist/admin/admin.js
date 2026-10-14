@@ -481,7 +481,7 @@
       <section class="card card-pad"><h3 class="sec-title">Money</h3><div class="money-rows">
         ${o.supplierCost != null ? `<div><span>Supplier total <span class="dim">(from supplier sheet)</span></span><span>${money(o.supplierCost)}</span></div>` : ''}
         <div><span>Product cost <span class="dim">(fee included)</span></span><span>${money(o.productCost)}</span></div><div><span>Shipping fee</span><span>${money(o.shippingFee)}</span></div>
-        <div class="total"><span>Client pays</span><span>${money(o.price)}</span></div>
+        <div class="total"><span>Client pays</span><span>${money(o.price)}</span></div>${o.priceSource === 'saved' ? '<p class="note" style="margin:6px 0 0">Priced automatically from an earlier order of this client (same store, product, variation, country and quantity). The supplier can change the total cost in the sheet.</p>' : ''}
         <div><span>Customer paid client</span><span>${customerPaid(o)}</span></div><div><span>Client’s profit</span><span class="${o.sellingPrice != null && o.profit > 0 ? 'pos' : o.sellingPrice != null && o.profit < 0 ? 'neg' : ''}">${needsCost(o) ? 'Pending costs' : o.sellingPrice == null ? '<span class="dim">Needs the sale price</span>' : money(o.profit)}</span></div></div>
         <div class="split"><div><small>Fee on this order</small><b>${money(o.commission)}</b></div><div><small>We earn</small><b class="pos">${money(o.ourShare)}</b></div></div></section>`;
     bindBill(o);
@@ -555,16 +555,34 @@
   }
 
   // ---------- side panel: one client ----------
-  let payments = [], transferProofs = [], invoiceFiles=[], balanceAdjustments=[];
+  let payments = [], transferProofs = [], invoiceFiles=[], balanceAdjustments=[], savedPrices = null;
   async function openClient(id, tab = 'orders') {
     const c = clientOf(id); if (!c) return;
     const d = UI.getDrawer();
-    closeChat(); payments = []; transferProofs = []; invoiceFiles=[];balanceAdjustments=[];
+    closeChat(); payments = []; transferProofs = []; invoiceFiles=[];balanceAdjustments=[]; savedPrices = null;
     S.drawer = { kind: 'client', id: c.id, tab };
     d.onClose = () => { S.drawer = null; };
     d.open('c' + c.id);
     fillClient(c);
     await loadPayments(c.id);
+  }
+  async function loadSavedPrices(id) {
+    try { savedPrices = (await api('/admin/saved-prices?clientId=' + id)).prices; } catch (ex) { savedPrices = []; toast(ex.message); }
+    if (S.drawer?.kind === 'client' && S.drawer.id === id) fillClient(clientOf(id), true);
+  }
+  // Prices the supplier gave before, used automatically for the same order again (same store, product, variation, country, quantity).
+  function savedPricesHTML(c) {
+    const fee = Number(c.commissionPerOrder ?? S.ov.settings.commission_per_order ?? 0);
+    const intro = '<p class="note" style="margin:0 0 12px">When the supplier fills in the total cost of an order, it is saved here. The next order with the same store, product, variation, country and quantity gets that price straight away. The supplier can still change it in the sheet, and the newest cost is kept.</p>';
+    if (savedPrices === null) return `<section class="card card-pad"><h3 class="sec-title">Saved prices</h3>${intro}<p class="muted">Loading…</p></section>`;
+    if (!savedPrices.length) return `<section class="card card-pad"><h3 class="sec-title">Saved prices</h3>${intro}${empty('No saved prices yet', 'They appear after the supplier prices this client’s orders.')}</section>`;
+    return `<section class="card card-pad" style="padding-bottom:6px"><h3 class="sec-title">Saved prices</h3>${intro}</section><section class="card"><div class="table-wrap"><table class="tbl stack"><thead><tr><th>Product</th><th>Country</th><th class="num">Qty</th><th class="num">Supplier cost</th><th class="num">Client pays</th><th>Used</th><th></th></tr></thead><tbody>
+      ${savedPrices.map(p => `<tr><td data-label="Product"><b data-no-i18n>${esc(p.label) || '—'}</b>${p.variant ? `<br><small class="dim" data-no-i18n>${esc(p.variant)}</small>` : ''}${p.storeName ? `<br><small class="dim" data-no-i18n>${esc(p.storeName)}</small>` : ''}${p.link ? `<br><a href="${esc(p.link)}" target="_blank" rel="noopener"><small>Product link</small></a>` : ''}</td>
+        <td data-label="Country">${esc(place(p.destination))}</td><td data-label="Qty" class="num">${p.quantity}</td>
+        <td data-label="Supplier cost" class="num">${money(p.supplierCost)}</td><td data-label="Client pays" class="num"><b>${money(p.supplierCost + fee)}</b></td>
+        <td data-label="Used"><small class="dim">${p.uses ? `${p.uses}×` : 'Not yet'}${p.lastUsedAt ? ` · ${esc(fmtDay(new Date(p.lastUsedAt * 1000).toISOString().slice(0, 10)))}` : ''}</small></td>
+        <td class="num"><button type="button" class="btn btn-sm" data-forget-price="${p.id}">Forget</button></td></tr>`).join('')}
+    </tbody></table></div></section>`;
   }
   async function loadPayments(id) {
     try { const [p,t,f] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id),api('/admin/invoices?clientId='+id)]); payments=p.payments; transferProofs=t.transfers;invoiceFiles=f.invoices;balanceAdjustments=p.adjustments||[]; } catch (e) { payments = []; transferProofs = []; invoiceFiles=[]; toast('Couldn’t load payments: ' + e.message); }
@@ -604,6 +622,7 @@
             <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500"></label>
             ${invoiceFields(c.id)}<div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Record payment</button><p class="form-msg" data-pay-msg></p></div></form></section>
           <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles)}${invoiceForm(c.id)}</section><section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td>${adminInvoiceLinks(invoiceFiles.filter(f=>f.paymentId===p.id))}</td><td class="num"><button type="button" class="btn btn-sm" data-edit-payment="${p.id}">Edit</button> ${p.archived ? `<span class="tag">Archived</span> <button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button>`}</td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
+        : tab === 'prices' ? savedPricesHTML(c)
         : `<section class="card card-pad"><form class="form-grid" data-account-form="${c.id}" novalidate>
             <label class="field full"><span>Name</span><input name="name" maxlength="120" value="${esc(c.name)}"></label>
             <label class="field"><span>Fee per order <small>empty = default</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01" value="${c.commissionPerOrder ?? ''}"></span></label>
@@ -618,7 +637,7 @@
       <section class="card card-pad"><dl class="kv" style="grid-template-columns:repeat(3,minmax(0,1fr))">
         <div><dt>Orders</dt><dd><b>${c.orders}</b></dd></div><div><dt>Billed</dt><dd><b>${money(c.billed)}</b></dd></div><div><dt>Paid</dt><dd><b class="pos">${money(c.paid)}</b></dd></div>
         <div><dt>Outstanding</dt><dd><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b></dd></div><div><dt>Our earnings</dt><dd><b>${money(c.ourShare)}</b></dd></div><div><dt>Client’s profit</dt><dd><b>${money(c.clientProfit)}</b></dd></div></dl></section>
-      <div class="dtabs">${[['orders', `Orders (${orders.length})`], ['payments', `Payments (${payments.length})`], ['account', 'Account']].map(([k, l]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-ctab="${k}">${l}</button>`).join('')}</div>
+      <div class="dtabs">${[['orders', `Orders (${orders.length})`], ['payments', `Payments (${payments.length})`], ['prices', savedPrices ? `Saved prices (${savedPrices.length})` : 'Saved prices'], ['account', 'Account']].map(([k, l]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-ctab="${k}">${l}</button>`).join('')}</div>
       ${pane}`;
     window.DLEnhancePasswords?.(d.body);
     d.foot.innerHTML = `<button type="button" class="btn btn-primary" data-new-order="${c.id}">${ic('plus')}Add order for ${esc(c.name)}</button><a class="btn" href="/portal/?as=${c.id}" target="_blank" rel="noopener">${ic('ext')}See their portal</a>`;
@@ -959,7 +978,15 @@
     const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
     const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
     const oo = t.closest('[data-open-order]'); if (oo) { openOrder(oo.dataset.openOrder, null, oo.dataset.back ? Number(oo.dataset.back) : null); return; }
-    const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; fillClient(clientOf(S.drawer.id)); if (ct.dataset.ctab==='payments') await loadPayments(S.drawer.id); return; }
+    const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; fillClient(clientOf(S.drawer.id)); if (ct.dataset.ctab==='payments') await loadPayments(S.drawer.id); if (ct.dataset.ctab==='prices') await loadSavedPrices(S.drawer.id); return; }
+    const fp = t.closest('[data-forget-price]');
+    if (fp) {
+      if (!fp.dataset.armed) { fp.dataset.armed = '1'; fp.textContent = 'Click again to forget'; setTimeout(() => { if (fp.isConnected) { delete fp.dataset.armed; fp.textContent = 'Forget'; } }, 4000); return; }
+      fp.disabled = true;
+      try { await api('/admin/saved-prices/' + fp.dataset.forgetPrice + '/forget', { method: 'POST', body: {} }); toast('Saved price forgotten. The next order like this is priced by the supplier again.'); await loadSavedPrices(S.drawer.id); }
+      catch (ex) { toast(ex.message); fp.disabled = false; }
+      return;
+    }
     const ao = t.closest('[data-archive-order],[data-restore-order]');
     if (ao) {
       const archived = !!ao.dataset.archiveOrder, id = Number(ao.dataset.archiveOrder || ao.dataset.restoreOrder);

@@ -17,6 +17,7 @@ import { changeStatus } from './order-status.mjs';
 import { sheetPhotoUrl } from './sheet-photos.mjs';
 import { splitOldNotes } from './order-notes.mjs';
 import { pollQuoteTab } from './quote-sheet.mjs';
+import { rememberPrice } from './saved-prices.mjs';
 
 export const SUPPLIER_SHEET_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS supplier_cost DOUBLE PRECISION',
@@ -81,6 +82,11 @@ export function addressFlag(o) {
   return `⚠ ADDRESS CHANGED ${new Date(Number(o.address_changed_at) * 1000).toISOString().slice(0, 10)} — use the address in this row.
 `;
 }
+// The total cost was filled in from an earlier identical order: say so until the supplier changes it or it ships.
+export function savedPriceFlag(o) {
+  if (o.price_source !== 'saved' || !['pending', 'processing'].includes(o.status)) return '';
+  return 'Total cost filled in from an earlier order (same product, variation, country and quantity). Change it if this one is different.\n';
+}
 // Website-owned cells: A–N and S–AB. Column C is the shop the order came from — suppliers don't see who our clients are.
 export function websiteCells(env, o, photos, shopName) {
   const urls = photos.map(p => sheetPhotoUrl(env, o.id, p.id));
@@ -90,7 +96,7 @@ export function websiteCells(env, o, photos, shopName) {
     txt(o.order_date || new Date(Number(o.created_at) * 1000).toISOString().slice(0, 10)), txt(o.order_ref || '#' + o.id), txt(shopName),
     STATUS[o.status] || o.status, urls[0] ? `=IMAGE("${q(urls[0])}&size=thumb",1)` : '', urls[0] ? `=HYPERLINK("${q(urls[0])}","Photo 1")` : '',
     links[0] ? `=HYPERLINK("${q(links[0])}","Open product")` : '', Number(o.quantity || 1), txt(product), txt(o.buyer_name),
-    txt(addressLines(o)), txt(o.tax_number), txt(o.gift_message), txt(addressFlag(o) + (o.notes || '')),
+    txt(addressLines(o)), txt(o.tax_number), txt(o.gift_message), txt(addressFlag(o) + savedPriceFlag(o) + (o.notes || '')),
   ];
   const qz = [...Array.from({ length: 7 }, (_, i) => urls[i + 1] ? `=HYPERLINK("${q(urls[i + 1])}","Photo ${i + 2}")` : ''),
     txt(links.slice(1).join('\n')), String(o.id), String(o.client_id)];
@@ -247,7 +253,9 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
       await DB.prepare('UPDATE client_orders SET supplier_cost=?, sheet_cost=?, updated_at=? WHERE id=?').bind(n, cost, t, order.id).run(); done.push('cost recorded (fixed quote)');
     } else {
       const price = round2(n + Number(order.commission || 0));
-      await DB.prepare('UPDATE client_orders SET supplier_cost=?, product_cost=?, shipping_fee=NULL, price=?, sheet_cost=?, updated_at=? WHERE id=?').bind(n, price, price, cost, t, order.id).run();
+      await DB.prepare('UPDATE client_orders SET supplier_cost=?, product_cost=?, shipping_fee=NULL, price=?, sheet_cost=?, price_source=NULL, updated_at=? WHERE id=?').bind(n, price, price, cost, t, order.id).run();
+      // Remembered for the next identical order (see saved-prices.mjs).
+      await rememberPrice(DB, order, n, t);
       if (price !== round2(order.price || 0) || order.product_cost == null) { await event(DB, order, 'billed', price.toFixed(2), t); done.push('billed ' + price.toFixed(2)); }
     }
   }
