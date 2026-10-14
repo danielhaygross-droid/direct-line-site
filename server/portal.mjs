@@ -174,6 +174,10 @@ export const SCHEMA = [
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
 SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA, ...STORAGE_SCHEMA, ...LOGIN_LIMIT_SCHEMA, ...SUPPLIER_SHEET_SCHEMA);
+// Every change to a recorded payment is kept: what it was, what it became, and when.
+SCHEMA.push(`CREATE TABLE IF NOT EXISTS payment_edits (
+  id SERIAL PRIMARY KEY, payment_id INTEGER NOT NULL REFERENCES client_payments(id), field TEXT NOT NULL,
+  old_value TEXT NOT NULL DEFAULT '', new_value TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -895,6 +899,29 @@ export async function handlePortal(request, url, ctx) {
     const row = await DB.prepare('INSERT INTO client_payments (client_id, amount, method, note, paid_at, created_at) VALUES (?,?,?,?,?,?) RETURNING id').bind(clientId, amount, text(body.method, 60), text(body.note, 500), Number.isFinite(paidAt) ? paidAt : now(), now()).first();
     return json({ ok: true, id: row.id });
   }
+  // Edit a recorded payment (amount, date, method, note). The old values are kept in payment_edits.
+  const payEdit = /^\/admin\/payments\/(\d+)$/.exec(path);
+  if (payEdit && method === 'POST') {
+    const id = Number(payEdit[1]), body = await readBody(request);
+    const old = await DB.prepare('SELECT * FROM client_payments WHERE id = ?').bind(id).first();
+    if (!old) return json({ ok: false, error: 'Payment not found' }, 404);
+    const amount = body.amount === undefined ? Number(old.amount) : money(body.amount);
+    if (!(amount > 0) || !isMoney(amount)) return json({ ok: false, error: 'Amount must be more than 0' }, 400);
+    let paidAt = Number(old.paid_at);
+    if (body.paidAt !== undefined) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.paidAt))) return json({ ok: false, error: 'Date: use a valid date' }, 400);
+      paidAt = Math.floor(new Date(body.paidAt + 'T12:00:00Z').getTime() / 1000);
+      if (!Number.isFinite(paidAt)) return json({ ok: false, error: 'Date: use a valid date' }, 400);
+    }
+    const methodText = body.method === undefined ? old.method : text(body.method, 60), note = body.note === undefined ? old.note : text(body.note, 500);
+    const day = sec => new Date(Number(sec) * 1000).toISOString().slice(0, 10);
+    const changes = [['amount', Number(old.amount), amount], ['date', day(old.paid_at), day(paidAt)], ['method', old.method, methodText], ['note', old.note, note]].filter(([, a, b]) => String(a) !== String(b));
+    if (changes.length) {
+      await DB.prepare('UPDATE client_payments SET amount=?, method=?, note=?, paid_at=? WHERE id=?').bind(amount, methodText, note, paidAt, id).run();
+      for (const [field, a, b] of changes) await DB.prepare('INSERT INTO payment_edits (payment_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?)').bind(id, field, String(a), String(b), now()).run();
+    }
+    return json({ ok: true, changed: changes.map(c => c[0]) });
+  }
   const payDel = /^\/admin\/payments\/(\d+)\/delete$/.exec(path);
   if (payDel && method === 'POST') {
     await DB.prepare('UPDATE client_payments SET archived=TRUE WHERE id = ?').bind(Number(payDel[1])).run();
@@ -946,6 +973,14 @@ export async function handlePortal(request, url, ctx) {
     let hash = u.password_hash;
     if (body.password) { if (String(body.password).length < 8) return json({ ok: false, error: 'Password must be at least 8 characters' }, 400); hash = await hashPassword(String(body.password)); }
     const archived = body.archived !== undefined && u.role === 'client' ? Boolean(body.archived) : u.archived;
+    // A new username: signs the person in from now on (and is a client's payment reference).
+    let username = u.username;
+    if (body.username !== undefined && String(body.username).trim() !== u.username) {
+      username = text(body.username, 60);
+      if (!/^[A-Za-z0-9._@-]{3,60}$/.test(username)) return json({ ok: false, error: 'Username: 3-60 letters, numbers, . _ - @' }, 400);
+      const taken = (env.ADMIN_USERNAME && username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase()) || await DB.prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id <> ?').bind(username, id).first();
+      if (taken) return json({ ok: false, error: 'Username already taken' }, 409);
+    }
     // Subscription fields (clients only). '' clears a date.
     let trialStart = u.trial_start, trialEnd = u.trial_end, subStatus = u.sub_status, lastPay = u.sub_last_payment;
     if (u.role === 'client') {
@@ -961,6 +996,7 @@ export async function handlePortal(request, url, ctx) {
       if (!subStatus && trialStart) subStatus = 'trial';
     }
     await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=CASE WHEN ? THEN ? ELSE password_hash END, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=?, password_reset_required=CASE WHEN ? THEN ? ELSE password_reset_required END, session_version=session_version+? WHERE id = ?').bind(name, active, cpo, !!body.password, hash, archived, trialStart, trialEnd, subStatus, lastPay, !!body.password, u.role === 'client', body.password ? 1 : 0, id).run();
+    if (username !== u.username) await DB.prepare('UPDATE users SET username=? WHERE id=?').bind(username, id).run();
     if (u.role === 'client') {
       if (archived !== u.archived) await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE client_id=?").bind(id).run();
       const sheetSync = syncClientToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets client update failed', error));
