@@ -13,12 +13,13 @@ test('Work Queue cells: website columns only, client text can never run as a for
   const o = { id: 7, client_id: 3, order_ref: '=IMPORTXML("x")', order_date: '2026-10-11', status: 'processing', quantity: 2, item_title: 'Mug', variant: '+Gold',
     buyer_name: '@me', address_line_1: '1030 Winterton St', buyer_phone: '+1 555', destination: 'US', notes: '-note', etsy_url: 'https://a.com/x"y\nhttps://b.com/z' };
   const { am, qz } = websiteCells({ APP_SESSION_SECRET: 's' }, o, [{ id: 9 }], 'Client "A"');
-  assert.equal(am.length + 3 + qz.length, HEADERS.length, 'A–M + 3 supplier columns + Q–Z');
-  assert.equal(am[1], "'=IMPORTXML(\"x\")"); assert.equal(am[8], 'Mug · +Gold'); assert.equal(am[9], "'@me"); assert.equal(am[12], "'-note");
+  assert.equal(am.length + 4 + qz.length, HEADERS.length, 'A–N + 4 supplier columns + S–AB');
+  assert.equal(am[1], "'=IMPORTXML(\"x\")"); assert.equal(am[8], 'Mug · +Gold'); assert.equal(am[9], "'@me"); assert.equal(am[13], "'-note");
   assert.equal(am[0], "'2026-10-11", 'date stays text'); assert.equal(am[3], 'In Progress');
   assert.match(am[6], /^=HYPERLINK\("https:\/\/a\.com\/x""y","Open product"\)$/, 'quotes in links are escaped');
   assert.match(am[4], /^=IMAGE\("https?:/); assert.equal(qz.at(-2), '7'); assert.equal(qz.at(-1), '3'); assert.equal(qz[7], 'https://b.com/z');
-  assert.deepEqual(HEADERS.slice(13, 16), ['Total cost (USD)', 'Tracking number', 'Shipping status']);
+  assert.deepEqual(HEADERS.slice(11, 18), ['Tax number', 'Gift message', 'Notes', 'Total cost (USD)', 'Tracking number', 'Courier', 'Shipping status']);
+  assert.ok(!HEADERS.includes('Country'), 'the country is in the address instead');
 });
 
 test('supplier columns are added after client_orders is created; the cron runs every minute', async () => {
@@ -65,5 +66,5 @@ test('rows grow to fit wrapped text (min 100 px for the photo); widths cover eve
   const notes = [...base]; notes[12] = 'x'.repeat(2000);
   assert.equal(rowPx(notes), 600, 'capped');
   const src = await readFile(new URL('../server/supplier-sheet.mjs', import.meta.url), 'utf8');
-  assert.match(src, /startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 26 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' }/, 'row 5 down: wrapped and centred');
+  assert.match(src, /startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 28 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' }/, 'row 5 down: wrapped and centred');
 });

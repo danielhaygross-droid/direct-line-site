@@ -21,7 +21,7 @@ test('customer details stay editable until shipped; the rest keeps the 72 h / Pe
 });
 
 test('only requests made of customer fields count as customer edits', () => {
-  assert.deepEqual(CUSTOMER_BODY_KEYS, ['buyerName', 'buyerPhone', 'address1', 'address2', 'city', 'region', 'postalCode', 'destination']);
+  assert.deepEqual(CUSTOMER_BODY_KEYS, ['buyerName', 'buyerPhone', 'address1', 'address2', 'city', 'region', 'postalCode', 'destination', 'taxNumber', 'giftMessage']);
   assert.deepEqual(CUSTOMER_COLUMNS, ['buyer_name', 'buyer_phone', 'address_line_1', 'address_line_2', 'city', 'region', 'postal_code', 'destination']);
   assert.equal(customerOnlyEdit({ buyerName: 'A', address1: 'x', destination: 'IL' }), true);
   for (const body of [{}, null, { notes: 'x' }, { buyerName: 'A', quantity: 2 }, { buyerName: 'A', etsyUrl: 'https://x.co' }, { buyerName: 'A', sku: 'S' }, { status: 'cancelled' }])
@@ -33,9 +33,9 @@ test('the supplier sheet warns when the address changed while the order was in p
   assert.match(addressFlag(o), /^⚠ ADDRESS CHANGED 2027-01-15 — use the address in this row\.\n$/);
   assert.equal(addressFlag({ ...o, address_changed_at: null }), '');
   for (const status of ['shipped', 'delivered', 'cancelled']) assert.equal(addressFlag({ ...o, status }), '', status);
-  const notes = websiteCells({ APP_SESSION_SECRET: 'x' }, o, [], 'Shop').am[12];
+  const notes = websiteCells({ APP_SESSION_SECRET: 'x' }, o, [], 'Shop').am[13];
   assert.ok(notes.startsWith('⚠ ADDRESS CHANGED') && notes.endsWith('\nGift note'));
-  assert.equal(websiteCells({ APP_SESSION_SECRET: 'x' }, { ...o, address_changed_at: null }, [], 'Shop').am[12], 'Gift note');
+  assert.equal(websiteCells({ APP_SESSION_SECRET: 'x' }, { ...o, address_changed_at: null }, [], 'Shop').am[13], 'Gift note');
   assert.ok(SCHEMA.some(s => /address_changed_at INTEGER/.test(s)));
 });
 

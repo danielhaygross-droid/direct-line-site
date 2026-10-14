@@ -23,7 +23,7 @@ import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from
 import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance } from './client-stores.mjs';
 
 import { STORAGE_SCHEMA, photoBytes, syncFileStorage, fileStorageStatus } from './file-storage.mjs';
-import { SUPPLIER_SHEET_SCHEMA, setupSupplierWorkQueue, pollSupplierSheet, supplierSheetStatus } from './supplier-sheet.mjs';
+import { SUPPLIER_SHEET_SCHEMA, setupSupplierWorkQueue, pollSupplierSheet, supplierSheetStatus, DEFAULT_COURIERS, courierList, updateCourierDropdown } from './supplier-sheet.mjs';
 import { runBackup, listBackups, downloadBackup } from './backup.mjs';
 import { LOGIN_LIMIT_SCHEMA, LOCK_MESSAGE, clientIp, loginKeys, lockedFor, recordFailure, clearFailures } from './login-limit.mjs';
 
@@ -112,6 +112,9 @@ export const SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_sync_attempts INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_next_try INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS address_changed_at INTEGER',
+  // From the customer's Etsy order, kept apart from the notes: a tax number (e.g. Etsy's IOSS number) and a gift message.
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS tax_number TEXT',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS gift_message TEXT',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS etsy_fee DOUBLE PRECISION',
   // Activity log: what happened to each order and when (powers notifications and the order timeline).
   `CREATE TABLE IF NOT EXISTS order_events (
@@ -220,7 +223,7 @@ const BANK_DEFAULTS = {
   bank_ach: '028000024', bank_wire: '021000021', bank_swift: 'CHASUS33', bank_name: 'JP MORGAN CHASE BANK, N.A.',
   bank_address: '383 MADISON AVENUE, NEW YORK, NY 10179', bank_reference: 'Use your Direct Line username as the reference',
 };
-export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000', subscription_price: '29', ...BANK_DEFAULTS };
+export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000', subscription_price: '29', couriers: DEFAULT_COURIERS, ...BANK_DEFAULTS };
 // ---------- subscription (first month free, then monthly) ----------
 export const SUB_STATUSES = ['trial', 'active', 'overdue', 'cancelled'];
 export const isoDate = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v ? v : null);
@@ -249,7 +252,7 @@ export function canEditOrder(order, at = now()) {
 }
 // Customer details (name, address, phone, country) stay editable by the client until the parcel ships, even after the
 // 72-hour / Pending window closed. Everything else about the order keeps canEditOrder().
-export const CUSTOMER_BODY_KEYS = ['buyerName', 'buyerPhone', 'address1', 'address2', 'city', 'region', 'postalCode', 'destination'];
+export const CUSTOMER_BODY_KEYS = ['buyerName', 'buyerPhone', 'address1', 'address2', 'city', 'region', 'postalCode', 'destination', 'taxNumber', 'giftMessage'];
 export const CUSTOMER_COLUMNS = ['buyer_name', 'buyer_phone', 'address_line_1', 'address_line_2', 'city', 'region', 'postal_code', 'destination'];
 // The client's own accounting (what their customer paid, in which currency, and the Etsy fee) never affects the bill,
 // so it can be entered or corrected at any time, also on shipped orders.
@@ -327,7 +330,7 @@ async function getSettings(DB) {
 function orderOut(r) {
   const price = Number(r.price || 0), sell = r.selling_price === null ? null : Number(r.selling_price);
   return {
-    id: r.id, archived: !!r.archived, archivedAt: r.archived_at == null ? null : Number(r.archived_at), clientId: r.client_id, storeId:r.store_id==null?null:Number(r.store_id),productId:r.product_id==null?null:Number(r.product_id), quotedUnitPrice:r.quoted_unit_price==null?null:Number(r.quoted_unit_price), orderRef: r.order_ref, trackingNumber: r.tracking_number,
+    id: r.id, archived: !!r.archived, archivedAt: r.archived_at == null ? null : Number(r.archived_at), clientId: r.client_id, storeId:r.store_id==null?null:Number(r.store_id),productId:r.product_id==null?null:Number(r.product_id), quotedUnitPrice:r.quoted_unit_price==null?null:Number(r.quoted_unit_price), orderRef: r.order_ref, trackingNumber: r.tracking_number, courier: r.courier || '', taxNumber: r.tax_number || '', giftMessage: r.gift_message || '',
     destination: r.destination, category: r.category, weightKg: r.weight_kg === null ? null : Number(r.weight_kg),
     // price = what the client pays for the order = product cost (incl. our hidden fee) + shipping fee.
     productCost: r.product_cost === null || r.product_cost === undefined ? null : Number(r.product_cost),
@@ -459,7 +462,7 @@ function orderFields(body) {
     buyer_name: text(body.buyerName, 160), buyer_phone: text(body.buyerPhone, 80),
     address_line_1: text(body.address1, 2000), address_line_2: text(body.address2, 200), city: text(body.city, 100), region: text(body.region, 100), postal_code: text(body.postalCode, 40),
     item_title: text(body.itemTitle, 300), sku: text(body.sku, 120), variant: text(body.variant, 500), quantity: Number(body.quantity ?? 1), etsy_url: productLinks(body.etsyUrl),
-    notes: text(body.notes, 2000),
+    notes: text(body.notes, 2000), tax_number: text(body.taxNumber, 300) || null, gift_message: text(body.giftMessage, 1000) || null,
   };
   if (![f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee].every(isMoney)) throw new Error('Numbers must be zero or more');
   if (f.order_date && !/^\d{4}-\d{2}-\d{2}$/.test(f.order_date)) throw new Error('Order date must be a valid date');
@@ -479,6 +482,7 @@ async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source,
   const t = now();
   const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at, order_date, currency, buyer_name, buyer_phone, address_line_1, address_line_2, city, region, postal_code, item_title, sku, variant, quantity, etsy_url, source, product_id, quoted_unit_price,store_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
     .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t, f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, source,f.product_id||null,f.quoted_unit_price??null,f.store_id).first();
+  if (f.tax_number || f.gift_message) { await DB.prepare('UPDATE client_orders SET tax_number=?, gift_message=? WHERE id=?').bind(f.tax_number, f.gift_message, row.id).run(); row.tax_number = f.tax_number; row.gift_message = f.gift_message; }
   const saved = [];
   for (const p of photos) saved.push(await insertPhoto(DB, row.id, clientId, p, actor));
   await logEvent(DB, row.id, clientId, 'created', actor);
@@ -734,6 +738,16 @@ export async function handlePortal(request, url, ctx) {
     const actor = who.admin ? 'admin' : 'client';
     if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);
     if (row.tracking_number !== existing.tracking_number && row.tracking_number) await logEvent(DB, id, existing.client_id, 'tracking', actor, row.tracking_number);
+    if (who.admin && body.courier !== undefined) { const c = text(body.courier, 60) || null; await DB.prepare('UPDATE client_orders SET courier=? WHERE id=?').bind(c, id).run(); row.courier = c; }
+    // Tax number / gift message: saved with the same rights as the rest of this edit (the update above passed).
+    if (body.taxNumber !== undefined || body.giftMessage !== undefined) {
+      const tax = body.taxNumber !== undefined ? f.tax_number : existing.tax_number, gift = body.giftMessage !== undefined ? f.gift_message : existing.gift_message;
+      if ((tax || null) !== (existing.tax_number || null) || (gift || null) !== (existing.gift_message || null)) {
+        await DB.prepare('UPDATE client_orders SET tax_number=?, gift_message=? WHERE id=?').bind(tax, gift, id).run(); row.tax_number = tax; row.gift_message = gift;
+        // one activity line per save: only here when nothing else on the order changed
+        if (!EDIT_FIELDS.some(k => String(row[k] ?? '') !== String(existing[k] ?? ''))) await logEvent(DB, id, existing.client_id, 'edited', who.admin ? 'admin' : 'client', 'customer');
+      }
+    }
     const fee = await saveEtsyFee(DB, id, body); if (fee !== undefined) row.etsy_fee = fee;
     const changed = EDIT_FIELDS.filter(k => String(row[k] ?? '') !== String(existing[k] ?? ''));
     if (changed.length && !accountingOnly) await logEvent(DB, id, existing.client_id, 'edited', actor, changed.every(k => CUSTOMER_COLUMNS.includes(k)) ? 'customer' : '');
@@ -1050,7 +1064,10 @@ export async function handlePortal(request, url, ctx) {
     if (body.subscription_price !== undefined) { const v = money(body.subscription_price); if (v === null || !isMoney(v) || v > 100000) return json({ ok: false, error: 'Invalid subscription price' }, 400); updates.subscription_price = String(v); }
     if (body.volumetric_divisor !== undefined) { const v = Number(body.volumetric_divisor); if (!(v >= 1000 && v <= 10000)) return json({ ok: false, error: 'Divisor must be 1000-10000' }, 400); updates.volumetric_divisor = String(v); }
     for (const k of BANK_FIELDS) if (body[k] !== undefined) updates[k] = text(body[k], 200);
+    // Couriers the supplier can pick in the sheet (one per line). The dropdown in the sheet is updated right away.
+    if (body.couriers !== undefined) { const list = courierList(body.couriers); if (!list.length) return json({ ok: false, error: 'Add at least one courier' }, 400); updates.couriers = list.join('\n'); }
     for (const [k, v] of Object.entries(updates)) await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k, v).run();
+    if (updates.couriers) { const dd = updateCourierDropdown(DB, env).catch(e => console.error('Courier dropdown update failed', e)); if (waitUntil) waitUntil(dd); else await dd; }
     return json({ ok: true, settings: await getSettings(DB) });
   }
 
