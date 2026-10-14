@@ -30,6 +30,9 @@
     edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/>',
     check: '<path d="M5 12l5 5 9-10"/>',
     upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
+    store: '<path d="M4 9l1.5-5h13L20 9"/><path d="M5 9v11h14V9"/><path d="M4 9a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0"/><path d="M10 20v-5h4v5"/>',
+    tag: '<path d="M20 12l-8 8-8-8V4h8z"/><circle cx="8.5" cy="8.5" r="1.5"/>',
+    doc: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>',
   };
   const ic = n => UI.svg(P[n]);
   const ROUTES = {
@@ -43,7 +46,7 @@
     terms: { title: 'Terms of Service', sub: 'Service, fulfillment and after-sales policy' },
     payments: { title: 'Payments', sub: 'What you’ve been billed and paid' },
   };
-  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['stores','My Stores','orders'], ['products','My Products','orders'], ['terms', 'Terms of Service', 'orders']];
+  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['stores','My Stores','store'], ['products','My Products','tag'], ['terms', 'Terms of Service', 'doc']];
   const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
   const place = d => (d ? countryName(d) : '—');
   const ago = sec => N.timeAgo(sec * 1000);
@@ -62,7 +65,7 @@
     try { S.me = await api('/me'); }
     catch (e) {
       if (e.status === 401 || e.status === 403) return renderLogin(document.body, { title: 'Welcome back', subtitle: 'Sign in to add and track your orders.', portal: true });
-      $('#boot').textContent = e.message; return;
+      return bootError(e);
     }
     if (S.me.termsRequired) return termsScreen();
     if (S.me.passwordResetRequired) return passwordScreen();
@@ -101,7 +104,15 @@
       });
       $('[data-terms-lang]').addEventListener('click', () => window.DLi18n.setLang(window.DLi18n.lang === 'he' ? 'en' : 'he'));
       $('[data-terms-logout]').addEventListener('click', logout);
-    } catch (ex) { $('#boot') ? $('#boot').textContent = ex.message : N.popup({ icon: 'alert', title: ex.message }); }
+    } catch (ex) { bootError(ex); }
+  }
+  // Loading failed: say what to do and offer a retry (a dropped connection only gives "Failed to fetch").
+  function bootError(ex) {
+    const msg = ex.status ? ex.message : 'Couldn’t connect. Check your internet connection and try again.', b = $('#boot');
+    if (!b) return N.popup({ icon: 'alert', title: msg });
+    $('[data-boot-error]', b)?.remove(); b.style.alignContent = 'center'; b.style.gap = '8px';
+    b.insertAdjacentHTML('beforeend', `<div data-boot-error style="display:grid;gap:12px;justify-items:center;text-align:center;padding:24px"><p style="margin:0">${esc(msg)}</p><button type="button" class="btn btn-primary" data-boot-retry>Try again</button></div>`);
+    $('[data-boot-retry]', b).addEventListener('click', () => location.reload());
   }
   const viewTerms = () => '<section data-terms-view><p>Loading…</p></section>';
   async function bindTerms() {
@@ -796,7 +807,15 @@
     const t = e.target;
     if (t.closest('[data-close-drawer]')) { UI.getDrawer().close(); return; }
     const cp = t.closest('[data-copy]');
-    if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copy); cp.innerHTML = ic('check') + 'Copied'; } catch (ex) { /* no clipboard */ } return; }
+    if (cp) {
+      try {
+        await navigator.clipboard.writeText(cp.dataset.copy);
+        const before = cp.dataset.copyLabel ?? (cp.dataset.copyLabel = cp.innerHTML);
+        cp.innerHTML = ic('check') + 'Copied';
+        clearTimeout(cp._copyTimer); cp._copyTimer = setTimeout(() => { if (cp.isConnected) cp.innerHTML = before; }, 2000);
+      } catch (ex) { /* no clipboard */ }
+      return;
+    }
     const report=t.closest('[data-report-claim]');if(report){const o=S.orders.find(o=>o.id===Number(report.dataset.reportClaim));if(o)showClaimForm(o);return;}
     // Marking delivered starts the claim window, so it is confirmed first (like a cancellation request).
     const delivered=t.closest('[data-delivered]');

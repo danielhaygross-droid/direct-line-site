@@ -339,7 +339,7 @@
     'Add client': 'הוספת לקוח', 'New order': 'הזמנה חדשה', 'Active clients': 'לקוחות פעילים', 'Client orders': 'הזמנות לקוחות', 'Outstanding': 'יתרה לגבייה',
     'Our earnings': 'הרווח שלנו', 'Needs your attention': 'דורש את תשומת לבך', 'Your clients': 'הלקוחות שלך', 'Client': 'לקוח', 'This month': 'החודש', 'Open': 'פתוחות',
     'We earned': 'הרווחנו', 'Last order': 'הזמנה אחרונה', 'Latest orders': 'הזמנות אחרונות', 'All caught up. Nothing is waiting for you.': 'הכל מטופל. שום דבר לא מחכה לך.',
-    'Pending': 'ממתינה', 'Processing': 'בטיפול', 'Shipped': 'נשלחה', 'Delivered': 'נמסרה', 'Cancelled': 'בוטלה', 'All': 'הכל', 'New follow-ups': 'הודעות חדשות',
+    'Pending': 'ממתינה', 'Processing': 'בטיפול', 'Shipped': 'נשלחה', 'Delivered': 'נמסרה', 'Cancelled': 'בוטלה', 'All': 'הכל', 'New follow-ups': 'הודעות חדשות', 'Needs cost': 'חסרה עלות', 'Try again': 'לנסות שוב', 'Couldn’t connect. Check your internet connection and try again.': 'אין חיבור. בדקו את החיבור לאינטרנט ונסו שוב.', 'Needs the sale price': 'חסר מחיר המכירה',
     'All clients': 'כל הלקוחות', 'Search orders': 'חיפוש הזמנות', 'Order': 'הזמנה', 'Destination': 'יעד', 'Total': 'סה״כ', 'Status': 'סטטוס', 'Messages': 'הודעות',
     'No tracking yet': 'עדיין אין מספר מעקב', 'Search order, tracking, client…': 'חיפוש לפי הזמנה, מעקב, לקוח…', 'Close': 'סגירה', 'Search clients': 'חיפוש לקוחות',
     'Search clients…': 'חיפוש לקוחות…', 'Billed': 'חויב', 'Paid': 'שולם', 'Fee / order': 'עמלה להזמנה', 'Subscription': 'מנוי', 'default': 'ברירת מחדל',
@@ -522,6 +522,7 @@
 
   const tc = s => tr(s); // translate a captured piece (e.g. a country or date)
   const R = [
+    [/^Couldn’t load payments: (.*)$/, (_, m) => `לא ניתן לטעון את התשלומים: ${m}`],
     [/^(\d+) of (\d+) files copied to file storage\.$/, (_, c, t) => `${c} מתוך ${t} קבצים הועתקו לאחסון הקבצים.`],
     [/^(\d+) database copies removed after checking\.$/, (_, n) => `${n} עותקים הוסרו ממסד הנתונים לאחר בדיקה.`],
     [/^Files still in the database: ([\d.]+ [KM]B)$/, (_, s) => `קבצים שעדיין במסד הנתונים: ${s}`],

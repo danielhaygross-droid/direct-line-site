@@ -123,14 +123,14 @@
     const box = $('[data-overview]'); if (!box) return;
     const os = S.orders, cl = S.ov.clients;
     const pending = os.filter(o => o.status === 'pending'), follow = os.filter(o => o.unreadMessages > 0);
-    const noTrack = os.filter(o => o.status === 'processing' && !o.trackingNumber), noCost = os.filter(o => !['cancelled'].includes(o.status) && o.productCost == null && o.shippingFee == null);
+    const noTrack = os.filter(o => o.status === 'processing' && !o.trackingNumber), noCost = os.filter(needsCost);
     const owing = cl.filter(c => c.outstanding > 0);
     const trialSoon = cl.filter(c => c.subscription?.status === 'trial' && c.subscription.trialDaysLeft !== null && c.subscription.trialDaysLeft >= 0 && c.subscription.trialDaysLeft <= 7);
     const subDue = cl.filter(c => (c.subscription?.status === 'trial' && c.subscription.trialEnded) || c.subscription?.status === 'overdue');
     const todo = [
       [pending.length, `order${pending.length === 1 ? '' : 's'} waiting to be processed`, 'data-go-filter="pending"', 'var(--orange)'],
       [follow.length, `order${follow.length === 1 ? '' : 's'} with unread client messages`, 'data-go-filter="followups"', 'var(--red)'],
-      [noCost.length, `order${noCost.length === 1 ? '' : 's'} still need product + shipping cost`, 'data-go-filter="all"', 'var(--gold)'],
+      [noCost.length, `order${noCost.length === 1 ? '' : 's'} still need product + shipping cost`, 'data-go-filter="needscost"', 'var(--gold)'],
       [noTrack.length, `order${noTrack.length === 1 ? '' : 's'} in processing without tracking`, 'data-go-filter="processing"', 'var(--blue)'],
       [trialSoon.length, `client${trialSoon.length === 1 ? '' : 's'} with the free month ending in the next 7 days`, 'data-go-tab="clients"', 'var(--gold)'],
       [subDue.length, `client${subDue.length === 1 ? '' : 's'} with the free month over or the subscription overdue`, 'data-go-tab="clients"', 'var(--red)'],
@@ -146,13 +146,17 @@
   }
 
   // ---------- orders tab ----------
-  const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'followups' ? o.unreadMessages > 0 : o.status === f));
+  // What the client's customer paid; left blank by many clients (it's optional), so never shown as 0.00.
+  const customerPaid = o => o.sellingPrice == null ? '<span class="dim">Not entered</span>' : `${esc(o.currency || 'USD')} ${Number(o.sellingPrice).toFixed(2)}`;
+  // Not billed yet: no product cost or shipping fee, and no fixed unit quote (quoted orders are billed from the quote).
+  const needsCost = o => o.status !== 'cancelled' && o.productCost == null && o.shippingFee == null && o.quotedUnitPrice == null;
+  const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'followups' ? o.unreadMessages > 0 : f === 'needscost' ? needsCost(o) : o.status === f));
   function renderOrders() {
     const all = [...S.orders,...S.archivedOrders];
     const inClient = all.filter(o => !S.client || String(o.clientId) === S.client);
     const count = f => inClient.filter(o => matches(o, f)).length;
-    const label = f => (f === 'archived' ? 'Archived orders' : f === 'all' ? 'All' : f === 'followups' ? 'New follow-ups' : UI.LABEL[f]);
-    $('[data-chips]').innerHTML = ['all', 'followups', ...STATUSES, 'archived'].filter(f => f === 'archived' || f === 'all' || count(f) || f === S.filter)
+    const label = f => (f === 'archived' ? 'Archived orders' : f === 'all' ? 'All' : f === 'followups' ? 'New follow-ups' : f === 'needscost' ? 'Needs cost' : UI.LABEL[f]);
+    $('[data-chips]').innerHTML = ['all', 'followups', 'needscost', ...STATUSES, 'archived'].filter(f => f === 'archived' || f === 'all' || count(f) || f === S.filter)
       .map(f => `<button type="button" class="chip t-${f}${f === 'followups' ? ' alert' : ''}${S.filter === f ? ' on' : ''}" data-filter="${f}">${f !== 'all' && f !== 'followups' ? '<i class="dot"></i>' : ''}${label(f)} <span>${count(f)}</span></button>`).join('');
     const sel = $('[data-client-filter]');
     sel.innerHTML = '<option value="">All clients</option>' + S.ov.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
@@ -403,7 +407,7 @@
       ${o.quotedUnitPrice!=null ? `<section class="card card-pad"><span>Fixed unit quote</span> <b>${money(o.quotedUnitPrice)}</b> × ${o.quantity} = <b>${money(o.price)}</b></section>` : billHTML(o)}
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
         <div><dt>Client</dt><dd><button type="button" class="back" style="margin:0" data-open-client="${o.clientId}">${esc(clientName(o.clientId))}</button></dd></div><div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}${o.source === 'etsy-csv' ? ' <span class="st" style="--tone:var(--blue);text-transform:none">From Etsy file</span>' : ''}</dd></div>
-        <div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div><div><dt>Customer paid</dt><dd>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</dd></div>
+        <div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div><div><dt>Customer paid</dt><dd>${customerPaid(o)}</dd></div>
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
         <div class="full"><dt>Recipient</dt><dd>${esc(o.buyerName) || '—'}</dd></div>
@@ -416,7 +420,7 @@
         ${o.supplierCost != null ? `<div><span>Supplier total <span class="dim">(from supplier sheet)</span></span><span>${money(o.supplierCost)}</span></div>` : ''}
         <div><span>Product cost <span class="dim">(fee included)</span></span><span>${money(o.productCost)}</span></div><div><span>Shipping fee</span><span>${money(o.shippingFee)}</span></div>
         <div class="total"><span>Client pays</span><span>${money(o.price)}</span></div>
-        <div><span>Customer paid client</span><span>${esc(o.currency || 'USD')} ${Number(o.sellingPrice || 0).toFixed(2)}</span></div><div><span>Client’s profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}">${o.productCost == null && o.shippingFee == null ? 'Pending costs' : money(o.profit)}</span></div></div>
+        <div><span>Customer paid client</span><span>${customerPaid(o)}</span></div><div><span>Client’s profit</span><span class="${o.sellingPrice != null && o.profit > 0 ? 'pos' : o.sellingPrice != null && o.profit < 0 ? 'neg' : ''}">${needsCost(o) ? 'Pending costs' : o.sellingPrice == null ? '<span class="dim">Needs the sale price</span>' : money(o.profit)}</span></div></div>
         <div class="split"><div><small>Fee on this order</small><b>${money(o.commission)}</b></div><div><small>Supplier gets</small><b>${money(o.supplierShare)}</b></div><div><small>We earn</small><b class="pos">${money(o.ourShare)}</b></div></div></section>`;
     bindBill(o);
     d.foot.innerHTML = `<button type="button" class="btn" data-edit-order="${o.id}">${ic('edit')}Edit order</button><button type="button" class="btn btn-ghost" data-open-client="${o.clientId}">Open client</button><button type="button" class="btn btn-danger" data-archive-order="${o.id}">Archive order</button>`;
@@ -477,12 +481,13 @@
       if (f.productCost.value === '' && f.shippingFee.value === '') { m.textContent = 'Enter the product cost and shipping fee.'; m.className = 'form-msg err'; return; }
       const body = { category: f.category.value, weightKg: f.weightKg.value === '' ? null : f.weightKg.value,
         productCost: f.productCost.value === '' ? null : f.productCost.value, shippingFee: f.shippingFee.value === '' ? null : f.shippingFee.value };
+      const btn = $('[type=submit]', f); if (btn.disabled) return; btn.disabled = true;
       try {
         await api('/orders/' + o.id, { method: 'PUT', body });
         document.activeElement?.blur(); await loadAll(); renderList(); renderKpis();
         const cur = [...S.orders,...S.archivedOrders].find(x => x.id === o.id); if (cur) fillOrder(cur);
         toast('Bill saved. ' + money(cur?.price) + ' added to what ' + (clientName(o.clientId) || 'the client') + ' owes.');
-      } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+      } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; btn.disabled = false; }
     });
     upd();
   }
@@ -500,7 +505,7 @@
     await loadPayments(c.id);
   }
   async function loadPayments(id) {
-    try { const [p,t,f] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id),api('/admin/invoices?clientId='+id)]); payments=p.payments; transferProofs=t.transfers;invoiceFiles=f.invoices;balanceAdjustments=p.adjustments||[]; } catch (e) { payments = []; transferProofs = []; invoiceFiles=[]; }
+    try { const [p,t,f] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id),api('/admin/invoices?clientId='+id)]); payments=p.payments; transferProofs=t.transfers;invoiceFiles=f.invoices;balanceAdjustments=p.adjustments||[]; } catch (e) { payments = []; transferProofs = []; invoiceFiles=[]; toast('Couldn’t load payments: ' + e.message); }
     if (S.drawer?.kind === 'client' && S.drawer.id === id) fillClient(clientOf(id), true);
   }
   const adminInvoiceLinks=files=>files.length ? files.map(f=>`<p><a href="/api/portal/files/${f.id}" target="_blank" rel="noopener"><span>Download invoice</span> <span data-no-i18n>${esc(f.filename)}</span></a></p>`).join('') : '<span class="muted">Invoice pending</span>';
@@ -532,7 +537,7 @@
         ? `${transferProofHTML()}<section class="card card-pad"><h3 class="sec-title">Record a payment</h3><form class="form-grid" data-pay-form="${c.id}" novalidate>
             <label class="field"><span>Amount received</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal"></span></label>
             <label class="field"><span>Date</span><input name="paidAt" type="date" value="${iso}"></label>
-            <label class="field"><span>Method</span><select name="method"><option>PayPal</option><option>Wise</option><option>Bank transfer</option><option>Other</option></select></label>
+            <label class="field"><span>Method</span><select name="method">${["Bank transfer", "PayPal", "Wise", "Other"].map(m => `<option value="${m}">${m}</option>`).join("")}</select></label>
             <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500"></label>
             ${invoiceFields(c.id)}<div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Record payment</button><p class="form-msg" data-pay-msg></p></div></form></section>
           <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles)}${invoiceForm(c.id)}</section><section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td>${adminInvoiceLinks(invoiceFiles.filter(f=>f.paymentId===p.id))}</td><td class="num">${p.archived ? `<span class="tag">Archived</span> <button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button>`}</td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
@@ -873,16 +878,19 @@
     const dp = t.closest('[data-del-payment]');
     if (dp) {
       if (!dp.dataset.armed) { dp.dataset.armed = '1'; dp.textContent = 'Click again to archive'; setTimeout(() => { if (dp.isConnected) { delete dp.dataset.armed; dp.textContent = 'Archive payment'; } }, 4000); return; }
+      if (dp.disabled) return; dp.disabled = true;
       try { await api('/admin/payments/' + dp.dataset.delPayment + '/delete', { method: 'POST' }); await loadAll(); renderList(); await loadPayments(S.drawer.id); toast('Payment archived.'); }
-      catch (ex) { toast(ex.message); }
+      catch (ex) { toast(ex.message); dp.disabled = false; }
     }
   });
   document.addEventListener('submit', async e => {
     const tf = e.target.closest('[data-track-form]');
     if (tf) {
       e.preventDefault();
+      const b = $('[type=submit]', tf); if (b.disabled) return; b.disabled = true;
       try { await api('/orders/' + tf.dataset.trackForm, { method: 'PUT', body: { trackingNumber: tf.trackingNumber.value } }); document.activeElement?.blur(); await loadAll(); renderList(); refreshDrawer(); toast('Tracking number saved. The client can see it now.'); }
       catch (ex) { toast(ex.message); }
+      finally { b.disabled = false; }
       return;
     }
     const storeForm=e.target.closest('[data-client-store-form]');if(storeForm){e.preventDefault();const sf=storeForm,b=$('[type=submit]',sf),m=$('[data-store-msg]',sf);b.disabled=true;try{await api('/admin/client-stores'+(sf.dataset.clientStoreForm?'/'+sf.dataset.clientStoreForm:''),{method:'POST',body:{clientId:Number(sf.dataset.clientId),name:sf.storeName.value,platform:sf.platform.value,link:sf.link.value,color:sf.dataset.clientStoreForm||sf.dataset.colourEdited?sf.color.value:undefined,archived:!!sf.archived?.checked}});document.activeElement?.blur();await loadAll();refreshDrawer();toast('Store saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
