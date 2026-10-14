@@ -115,7 +115,7 @@
     if (S.tab === 'orders') renderOrders();
     else if (S.tab === 'clients') renderClients();
     else if (S.tab === 'overview') renderOverview();
-    else { const a = $('[data-admins]'); if (a) a.innerHTML = adminsHTML(); }
+    else { const a = $('[data-admins]'); if (a && !a.querySelector('[data-admin-form]')) a.innerHTML = adminsHTML(); }
   }
 
   // ---------- overview tab: what needs doing for clients today ----------
@@ -217,7 +217,7 @@
 
   // ---------- settings tab ----------
   function adminsHTML() {
-    return S.ov.admins.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b><small>@${esc(x.username)}${x.active ? '' : ' · disabled'}</small></span></span></div>`).join('')
+    return S.ov.admins.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b><small>@${esc(x.username)}${x.active ? '' : ' · disabled'}</small></span></span><button type="button" class="btn btn-sm" data-edit-admin="${x.id}" style="margin-inline-start:auto">Edit</button></div>`).join('')
       + '<div><span class="ava">DL</span><span class="who"><span><b>Main admin login</b><small>set in Vercel</small></span></span></div>';
   }
   const BANK_UI = [['bank_currency', 'Currency'], ['bank_holder', 'Account holder name'], ['bank_account', 'Account number'], ['bank_ach', 'ACH routing number'],
@@ -536,6 +536,7 @@
     d.head.innerHTML = `<div class="who"><span class="ava" style="width:44px;height:44px;border-radius:14px;font-size:14px">${esc(initials(c.name))}</span><div><h2 style="font-size:20px">${esc(c.name)}</h2><small>@${esc(c.username)} · ${c.active ? 'active' : 'disabled'}</small></div></div>`;
     if (soft && [...d.body.querySelectorAll('[name=invoiceFile]')].some(f=>f.files.length)) return;
     if (soft && $('[data-reset-result] input', d.body)) return;
+    if (soft && d.body.querySelector('[data-payment-edit-form]')) return;
     if (soft && d.body.contains(document.activeElement) && document.activeElement.matches('input,select,textarea')) return;
     const t = new Date(), iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     const pane = tab === 'orders'
@@ -547,12 +548,12 @@
             <label class="field"><span>Method</span><select name="method">${["Bank transfer", "PayPal", "Wise", "Other"].map(m => `<option value="${m}">${m}</option>`).join("")}</select></label>
             <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500"></label>
             ${invoiceFields(c.id)}<div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Record payment</button><p class="form-msg" data-pay-msg></p></div></form></section>
-          <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles)}${invoiceForm(c.id)}</section><section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td>${adminInvoiceLinks(invoiceFiles.filter(f=>f.paymentId===p.id))}</td><td class="num">${p.archived ? `<span class="tag">Archived</span> <button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button>`}</td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
+          <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles)}${invoiceForm(c.id)}</section><section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td>${adminInvoiceLinks(invoiceFiles.filter(f=>f.paymentId===p.id))}</td><td class="num"><button type="button" class="btn btn-sm" data-edit-payment="${p.id}">Edit</button> ${p.archived ? `<span class="tag">Archived</span> <button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button>`}</td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
         : `<section class="card card-pad"><form class="form-grid" data-account-form="${c.id}" novalidate>
             <label class="field full"><span>Name</span><input name="name" maxlength="120" value="${esc(c.name)}"></label>
             <label class="field"><span>Fee per order <small>empty = default</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01" value="${c.commissionPerOrder ?? ''}"></span></label>
             <label class="field"><span>Status</span><select name="active"><option value="true"${c.active ? ' selected' : ''}>Active</option><option value="false"${c.active ? '' : ' selected'}>Disabled (can’t sign in)</option></select></label>
-            <div class="field full"><span>Username</span><div class="copy-line"><b data-no-i18n>${esc(c.username)}</b><button type="button" class="btn btn-sm" data-copy="${esc(c.username)}">Copy</button></div><p><span>Last login:</span> ${c.lastLogin ? esc(fullDate(c.lastLogin)) : 'Never'}</p><p>${c.termsAccepted ? `<span>Terms accepted:</span> <time data-no-i18n>${esc(fullDate(c.termsAccepted.acceptedAt))} · v${c.termsAccepted.version}</time>` : 'Not accepted yet'}</p>${c.termsAccepted && c.termsRequired ? '<p class="note">Current terms not accepted yet.</p>' : ''}<button type="button" class="btn" data-reset-password="${c.id}">Reset password</button><div data-reset-result role="status"></div></div>
+            <div class="field full"><span>Username <small>used to sign in, and as the payment reference</small></span><div style="display:flex;gap:8px;align-items:center"><input name="username" maxlength="60" autocomplete="off" data-no-i18n value="${esc(c.username)}" style="flex:1;min-width:0"><button type="button" class="btn btn-sm" data-copy="${esc(c.username)}">Copy</button></div><p><span>Last login:</span> ${c.lastLogin ? esc(fullDate(c.lastLogin)) : 'Never'}</p><p>${c.termsAccepted ? `<span>Terms accepted:</span> <time data-no-i18n>${esc(fullDate(c.termsAccepted.acceptedAt))} · v${c.termsAccepted.version}</time>` : 'Not accepted yet'}</p>${c.termsAccepted && c.termsRequired ? '<p class="note">Current terms not accepted yet.</p>' : ''}<button type="button" class="btn" data-reset-password="${c.id}">Reset password</button><div data-reset-result role="status"></div></div>
             <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Save account</button><p class="form-msg" data-account-msg></p></div></form>
             <p class="note" style="margin-top:12px">A new fee only applies to new orders. Existing orders keep the fee they were created with.</p></section>
           ${subscriptionHTML(c)}
@@ -781,6 +782,20 @@
     const gt = t.closest('[data-go-tab]'); if (gt) { S.tab = gt.dataset.goTab; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
     const gf = t.closest('[data-go-filter]'); if (gf) { S.filter = gf.dataset.goFilter; S.tab = 'orders'; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
     const f = t.closest('[data-filter]'); if (f) { S.filter = f.dataset.filter; renderOrders(); return; }
+    const ea=t.closest('[data-edit-admin]');
+    if(ea){
+      const x=S.ov.admins.find(a=>a.id===Number(ea.dataset.editAdmin)),row=ea.parentElement;if(!x)return;
+      if(row.nextElementSibling?.matches('[data-admin-form]')){row.nextElementSibling.remove();return;}
+      row.insertAdjacentHTML('afterend',`<form class="form-grid" data-admin-form="${x.id}" novalidate style="padding:12px;border:1px solid var(--line);border-radius:12px">
+        <label class="field"><span>Name</span><input name="name" maxlength="120" value="${esc(x.name)}"></label>
+        <label class="field"><span>Username</span><input name="username" maxlength="60" autocomplete="off" data-no-i18n value="${esc(x.username)}"></label>
+        <label class="field"><span>Status</span><select name="active"><option value="true"${x.active?' selected':''}>Active</option><option value="false"${x.active?'':' selected'}>Disabled (can’t sign in)</option></select></label>
+        <label class="field"><span>New password <small>leave empty to keep the current one</small></span><input name="password" type="password" maxlength="128" autocomplete="new-password"></label>
+        <p class="note full" style="margin:0">A disabled admin can’t sign in again. If they are signed in right now, they stay signed in until that session ends.</p>
+        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save admin</button><button type="button" class="btn" data-admin-cancel>Cancel</button><p class="form-msg" data-admin-msg style="margin:0"></p></div></form>`);
+      row.nextElementSibling.querySelector('[name=name]').focus();return;
+    }
+    if(t.closest('[data-admin-cancel]')){t.closest('[data-admin-form]').remove();return;}
     const acc = t.closest('[data-add-account]'); if (acc) { openAddAccount(acc.dataset.addAccount); return; }
     const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
     const rs = t.closest('[data-restore]');
@@ -853,6 +868,20 @@
       return;
     }
     if(t.closest('[data-cancel-four]')){$('[name=cancellationFee]').value='4';return;}
+    const ep=t.closest('[data-edit-payment]');
+    if(ep){
+      const p=payments.find(x=>x.id===Number(ep.dataset.editPayment)),row=ep.closest('tr');if(!p)return;
+      if(row.nextElementSibling?.matches('[data-payment-edit-row]')){row.nextElementSibling.remove();return;}
+      const base=['Bank transfer','PayPal','Wise','Other'],list=!p.method||base.includes(p.method)?base:[p.method,...base];
+      row.insertAdjacentHTML('afterend',`<tr data-payment-edit-row="${p.id}"><td colspan="4"><form class="form-grid" data-payment-edit-form="${p.id}" novalidate>
+        <label class="field"><span>Amount received</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" value="${Number(p.amount).toFixed(2)}"></span></label>
+        <label class="field"><span>Date</span><input name="paidAt" type="date" value="${new Date(p.paidAt*1000).toISOString().slice(0,10)}"></label>
+        <label class="field"><span>Method</span><select name="method">${list.map(m=>`<option value="${esc(m)}"${m===p.method?' selected':''}>${esc(m)}</option>`).join('')}</select></label>
+        <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500" value="${esc(p.note)}"></label>
+        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save payment</button><button type="button" class="btn" data-payment-edit-cancel>Cancel</button><p class="form-msg" data-payment-edit-msg style="margin:0"></p></div></form></td></tr>`);
+      row.nextElementSibling.querySelector('[name=amount]').focus();return;
+    }
+    if(t.closest('[data-payment-edit-cancel]')){t.closest('tr').remove();return;}
     if(t.closest('[data-cancel-four-direct]')){$('[name=directCancelFee]').value='4';return;}
     const direct=t.closest('[data-cancel-direct]');
     if(direct){
@@ -900,6 +929,24 @@
     }
   });
   document.addEventListener('submit', async e => {
+    const pe = e.target.closest('[data-payment-edit-form]');
+    if (pe) {
+      e.preventDefault();
+      const b = $('[type=submit]', pe), m = $('[data-payment-edit-msg]', pe); if (b.disabled) return; b.disabled = true; m.textContent = ''; m.className = 'form-msg';
+      try { await api('/admin/payments/' + pe.dataset.paymentEditForm, { method: 'POST', body: { amount: pe.amount.value, paidAt: pe.paidAt.value, method: pe.method.value, note: pe.note.value } }); pe.closest('tr').remove(); document.activeElement?.blur(); await loadAll(); renderList(); await loadPayments(S.drawer.id); toast('Payment updated.'); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
+      return;
+    }
+    const adf = e.target.closest('[data-admin-form]');
+    if (adf) {
+      e.preventDefault();
+      const b = $('[type=submit]', adf), m = $('[data-admin-msg]', adf); if (b.disabled) return; m.textContent = ''; m.className = 'form-msg';
+      if (adf.password.value && adf.password.value.length < 8) { m.textContent = 'Password must be at least 8 characters'; m.className = 'form-msg err'; return; }
+      b.disabled = true;
+      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Admin saved.'); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
+      return;
+    }
     const ff = e.target.closest('[data-fees-form]');
     if (ff) {
       e.preventDefault();
@@ -948,7 +995,7 @@
     const af = e.target.closest('[data-account-form]');
     if (af) {
       e.preventDefault();
-      const m = $('[data-account-msg]'), body = { name: af.name.value, active: af.active.value === 'true', commissionPerOrder: af.commissionPerOrder.value === '' ? null : af.commissionPerOrder.value };
+      const m = $('[data-account-msg]'), body = { name: af.name.value, username: af.username.value.trim(), active: af.active.value === 'true', commissionPerOrder: af.commissionPerOrder.value === '' ? null : af.commissionPerOrder.value };
 
       try { await api('/admin/users/' + af.dataset.accountForm, { method: 'POST', body }); document.activeElement?.blur(); tell({ type: 'dl-clients-changed' }); await loadAll(); renderList(); fillClient(clientOf(af.dataset.accountForm)); toast('Account saved.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
