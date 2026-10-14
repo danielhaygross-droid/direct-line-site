@@ -7,6 +7,7 @@
 import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { serveSheetPhoto, serveSheetProductPhoto } from './sheet-photos.mjs';
 import { QUOTE_SHEET_SCHEMA, syncQuoteRow } from './quote-sheet.mjs';
+import { SAVED_PRICE_SCHEMA, findSavedPrice, markUsed, savedPricesFor, forgetSavedPrice } from './saved-prices.mjs';
 import { googleSheetsConfigured, retryPendingGoogleSheetOrders, syncClientToGoogleSheet, syncPortalOrderToGoogleSheet } from './google-sheets.mjs';
 
 import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms } from './terms.mjs';
@@ -183,7 +184,7 @@ export const SCHEMA = [
 // /admin/overview so the admin pages can work out shipping. Clients never receive them.
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
 SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA, ...STORAGE_SCHEMA, ...LOGIN_LIMIT_SCHEMA, ...SUPPLIER_SHEET_SCHEMA);
-SCHEMA.push(...QUOTE_SHEET_SCHEMA);
+SCHEMA.push(...QUOTE_SHEET_SCHEMA, ...SAVED_PRICE_SCHEMA);
 // Every change to a recorded payment is kept: what it was, what it became, and when.
 SCHEMA.push(`CREATE TABLE IF NOT EXISTS payment_edits (
   id SERIAL PRIMARY KEY, payment_id INTEGER NOT NULL REFERENCES client_payments(id), field TEXT NOT NULL,
@@ -333,7 +334,7 @@ async function getSettings(DB) {
 function orderOut(r) {
   const price = Number(r.price || 0), sell = r.selling_price === null ? null : Number(r.selling_price);
   return {
-    id: r.id, archived: !!r.archived, archivedAt: r.archived_at == null ? null : Number(r.archived_at), clientId: r.client_id, storeId:r.store_id==null?null:Number(r.store_id),productId:r.product_id==null?null:Number(r.product_id), quotedUnitPrice:r.quoted_unit_price==null?null:Number(r.quoted_unit_price), orderRef: r.order_ref, trackingNumber: r.tracking_number, courier: r.courier || '', taxNumber: r.tax_number || '', giftMessage: r.gift_message || '',
+    id: r.id, archived: !!r.archived, archivedAt: r.archived_at == null ? null : Number(r.archived_at), clientId: r.client_id, storeId:r.store_id==null?null:Number(r.store_id),productId:r.product_id==null?null:Number(r.product_id), quotedUnitPrice:r.quoted_unit_price==null?null:Number(r.quoted_unit_price), orderRef: r.order_ref, trackingNumber: r.tracking_number, courier: r.courier || '', priceSource: r.price_source || '', taxNumber: r.tax_number || '', giftMessage: r.gift_message || '',
     destination: r.destination, category: r.category, weightKg: r.weight_kg === null ? null : Number(r.weight_kg),
     // price = what the client pays for the order = product cost (incl. our hidden fee) + shipping fee.
     productCost: r.product_cost === null || r.product_cost === undefined ? null : Number(r.product_cost),
@@ -354,7 +355,7 @@ function orderOut(r) {
   };
 }
 // What a client may see of an order: total only, never the product vs shipping breakdown (item #6).
-const CLIENT_HIDDEN = ['commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost'];
+const CLIENT_HIDDEN = ['commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost', 'priceSource'];
 function clientOrder(o) {
   const out = { ...o, priced: o.productCost != null || o.shippingFee != null || o.quotedUnitPrice != null };
   for (const k of CLIENT_HIDDEN) delete out[k];
@@ -496,6 +497,16 @@ async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source,
   const saved = [];
   for (const p of photos) saved.push(await insertPhoto(DB, row.id, clientId, p, actor));
   await logEvent(DB, row.id, clientId, 'created', actor);
+  // Priced before? Same client, store, product, variation, country and quantity: the supplier's last cost + this order's fee.
+  if (row.product_id == null && row.product_cost == null && row.shipping_fee == null) {
+    const sp = await findSavedPrice(DB, row);
+    if (sp) {
+      const price = round2(Number(sp.supplier_cost) + Number(row.commission || 0));
+      await DB.prepare("UPDATE client_orders SET supplier_cost=?, product_cost=?, shipping_fee=NULL, price=?, price_source='saved' WHERE id=?").bind(sp.supplier_cost, price, price, row.id).run();
+      Object.assign(row, { supplier_cost: sp.supplier_cost, product_cost: price, shipping_fee: null, price, price_source: 'saved' });
+      await markUsed(DB, sp.id, t); await logEvent(DB, row.id, clientId, 'billed', 'admin', price.toFixed(2));
+    }
+  }
   const sheetSync = syncPortalOrderToGoogleSheet(DB, env, row.id).catch(error => console.error('Google Sheets order sync failed', error));
   if (waitUntil) waitUntil(sheetSync); else await sheetSync;
   return { row, saved };
@@ -935,6 +946,10 @@ export async function handlePortal(request, url, ctx) {
   const claimDecision=/^\/admin\/claims\/(\d+)$/.exec(path);if(claimDecision&&method==='POST'){try{const claim=await decideClaim(DB,Number(claimDecision[1]),await readBody(request));if(claim.reshipmentOrderId){const sync=syncPortalOrderToGoogleSheet(DB,env,claim.reshipmentOrderId).catch(()=>{});if(waitUntil)waitUntil(sync);}return json({ok:true,claim});}catch(e){return json({ok:false,error:e.message},409);}}
   const trackingUpdate=/^\/admin\/orders\/(\d+)\/tracking-update$/.exec(path);if(trackingUpdate&&method==='POST'){const order=await DB.prepare('UPDATE client_orders SET last_tracking_update_at=?,updated_at=? WHERE id=? AND NOT archived RETURNING *').bind(now(),now(),Number(trackingUpdate[1])).first();if(!order)return json({ok:false,error:'Not found'},404);await logEvent(DB,order.id,order.client_id,'tracking_update','admin');return json({ok:true,order:orderOut(order)});}
   if(path==='/admin/products'&&method==='GET')return json({ok:true,products:await products(DB)});
+  // Saved prices of one client (admin → client → Saved prices).
+  if (path === '/admin/saved-prices' && method === 'GET') { const cid = Number(url.searchParams.get('clientId')); if (!(cid > 0)) return json({ ok: false, error: 'Choose a client' }, 400); return json({ ok: true, prices: await savedPricesFor(DB, cid) }); }
+  const spForget = /^\/admin\/saved-prices\/(\d+)\/forget$/.exec(path);
+  if (spForget && method === 'POST') return (await forgetSavedPrice(DB, Number(spForget[1]))) ? json({ ok: true }) : json({ ok: false, error: 'Not found' }, 404);
   const productQuote=/^\/admin\/products\/(\d+)$/.exec(path);if(productQuote&&method==='POST'){try{const product=await quoteProduct(DB,Number(productQuote[1]),await readBody(request));if(!product)return json({ok:false,error:'Not found'},404);const qs=syncQuoteRow(DB,env,product.id).catch(e=>console.error('Product Quotes row failed',e));if(waitUntil)waitUntil(qs);else await qs;return json({ok:true,product});}catch(e){return json({ok:false,error:e.message},400);}}
   if (path==='/admin/invoices' && method==='GET') return json({ok:true,invoices:await invoices(DB,Number(url.searchParams.get('clientId')))});
   if (path==='/admin/invoices' && method==='POST') {try{return json({ok:true,invoice:await saveInvoice(DB,await readBody(request))});}catch(e){return json({ok:false,error:e.message},400);}}

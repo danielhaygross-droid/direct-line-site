@@ -19,7 +19,7 @@ test('the client orders tables show Price, Cost and Profit without opening the o
 
 test('the internal parts of the cost never reach the client', async () => {
   const server = await read('server/portal.mjs');
-  assert.ok(server.includes("const CLIENT_HIDDEN = ['commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost'];"));
+  assert.ok(server.includes("const CLIENT_HIDDEN = ['commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost', 'priceSource'];"));
   assert.ok(server.includes('profit: sell === null ? null : round2(sell - price)'));
 });
 
