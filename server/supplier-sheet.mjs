@@ -16,6 +16,7 @@ import { sheetsRequest, googleSheetsConfig, googleSheetsConfigured, syncPortalOr
 import { changeStatus } from './order-status.mjs';
 import { sheetPhotoUrl } from './sheet-photos.mjs';
 import { splitOldNotes } from './order-notes.mjs';
+import { pollQuoteTab } from './quote-sheet.mjs';
 
 export const SUPPLIER_SHEET_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS supplier_cost DOUBLE PRECISION',
@@ -309,6 +310,9 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
         if (waitUntil) waitUntil(sync); else await sync;
       }
     }
+    // Product price checks (Product Quotes tab).
+    const fee = await getSetting(DB, 'commission_per_order');
+    result.quotes = await pollQuoteTab(DB, env, { commission_per_order: fee ?? '2' }, fetchImpl);
   } catch (e) { result.ok = false; result.error = String(e.message || e).slice(0, 300); }
   await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
     .bind(LAST, JSON.stringify({ at: t, ok: result.ok, checked: result.checked, changed: result.changed.length, skipped: result.skipped.slice(0, 20), error: result.error || '' })).run();
