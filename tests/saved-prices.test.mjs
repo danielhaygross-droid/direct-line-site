@@ -26,5 +26,6 @@ test('wired up: table, new orders priced, supplier cost remembered, admin tab', 
   assert.ok(portal.includes('const sp = await findSavedPrice(DB, row);') && portal.includes("price_source='saved'"));
   assert.ok(portal.includes("'/admin/saved-prices'"));
   assert.ok(sheet.includes('await rememberPrice(DB, order, n, t);') && sheet.includes('price_source=NULL'));
+  assert.ok(sheet.includes('result.savedPrices = await backfillSavedPrices(DB);'), 'older priced orders are remembered once');
   assert.ok(admin.includes("['prices', savedPrices ?") && admin.includes('data-forget-price') && admin.includes("o.priceSource === 'saved'"));
 });
