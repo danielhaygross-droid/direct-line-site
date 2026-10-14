@@ -56,6 +56,12 @@ export async function supplierSheetEnabled(DB) {
 function addressLines(o) {
   return [o.address_line_1, o.address_line_2, o.city, o.region, o.postal_code, o.buyer_phone].map(norm).filter(Boolean).join('\n');
 }
+// The customer's details were changed while the supplier already had the order: say so at the top of the notes.
+export function addressFlag(o) {
+  if (!o.address_changed_at || ['shipped', 'delivered', 'cancelled'].includes(o.status)) return '';
+  return `⚠ ADDRESS CHANGED ${new Date(Number(o.address_changed_at) * 1000).toISOString().slice(0, 10)} — use the address in this row.
+`;
+}
 // Website-owned cells: A–M and Q–Z. Column C is the shop the order came from — suppliers don't see who our clients are.
 export function websiteCells(env, o, photos, shopName) {
   const urls = photos.map(p => sheetPhotoUrl(env, o.id, p.id));
@@ -65,7 +71,7 @@ export function websiteCells(env, o, photos, shopName) {
     txt(o.order_date || new Date(Number(o.created_at) * 1000).toISOString().slice(0, 10)), txt(o.order_ref || '#' + o.id), txt(shopName),
     STATUS[o.status] || o.status, urls[0] ? `=IMAGE("${q(urls[0])}&size=thumb",1)` : '', urls[0] ? `=HYPERLINK("${q(urls[0])}","Photo 1")` : '',
     links[0] ? `=HYPERLINK("${q(links[0])}","Open product")` : '', Number(o.quantity || 1), txt(product), txt(o.buyer_name),
-    txt(addressLines(o)), txt(o.destination), txt(o.notes),
+    txt(addressLines(o)), txt(o.destination), txt(addressFlag(o) + (o.notes || '')),
   ];
   const qz = [...Array.from({ length: 7 }, (_, i) => urls[i + 1] ? `=HYPERLINK("${q(urls[i + 1])}","Photo ${i + 2}")` : ''),
     txt(links.slice(1).join('\n')), String(o.id), String(o.client_id)];

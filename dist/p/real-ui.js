@@ -57,6 +57,7 @@
     if (e.kind === 'status') return { ...base, icon: 'status', tone: 'mint', title: L(`${who} changed an order status`, `${who} שינה/תה סטטוס`), text: `${ref} → ${e.detail}` };
     if (e.kind === 'tracking') return { ...base, icon: 'status', tone: 'mint', title: L(`${who} added a tracking number`, `${who} הוסיף/ה מספר מעקב`), text: `${ref} · ${e.detail}` };
     if (e.kind === 'photo') return { ...base, icon: 'edit', tone: 'orange', title: e.detail === 'removed' ? L(`${who} removed a product photo`, `${who} הסיר/ה תמונת מוצר`) : L(`${who} added a product photo`, `${who} הוסיף/ה תמונת מוצר`), text: ref };
+    if (e.kind === 'edited' && e.detail === 'customer') { const running = e.status === 'processing'; return { ...base, icon: 'alert', tone: running ? 'red' : 'orange', title: L(`${who} changed the customer's details`, `${who} שינה/תה פרטי לקוח`), text: running ? L(`${ref} · already in progress: tell the supplier`, `${ref} · כבר בטיפול: עדכנו את הספק`) : ref }; }
     return { ...base, icon: 'edit', tone: 'orange', title: L(`${who} edited an order`, `${who} ערך/ה הזמנה`), text: ref };
   }
 
