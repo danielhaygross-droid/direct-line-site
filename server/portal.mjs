@@ -336,8 +336,8 @@ function orderOut(r) {
     orderDate: r.order_date || '', currency: r.currency || 'USD', buyerName: r.buyer_name || '', buyerPhone: r.buyer_phone || '',
     address1: r.address_line_1 || '', address2: r.address_line_2 || '', city: r.city || '', region: r.region || '', postalCode: r.postal_code || '',
     itemTitle: r.item_title || '', sku: r.sku || '', variant: r.variant || '', quantity: Number(r.quantity || 1), etsyUrl: r.etsy_url || '', productLinks: String(r.etsy_url || '').split(/\s+/).filter(Boolean),
-    commission: Number(r.commission || 0), supplierShare: round2(r.supplier_share),
-    ourShare: round2(Math.max(0, Number(r.commission || 0) - Number(r.supplier_share || 0))),
+    commission: Number(r.commission || 0), supplierShare: 0, // the supplier is paid inside their own price: nothing is taken out of our fee
+    ourShare: round2(Number(r.commission || 0)),
     reshipmentOf:r.reshipment_of==null?null:Number(r.reshipment_of),lastTrackingUpdateAt:r.last_tracking_update_at==null?null:Number(r.last_tracking_update_at),claimEligibility:claimEligibility(r),notes: r.notes, status: r.status, deliveredAt: r.delivered_at == null ? null : Number(r.delivered_at), cancellationReason: r.cancellation_reason || '', cancellationPreviousStatus: r.cancellation_previous_status || '', editLocked: !!r.edit_locked, source: r.source || '',
     sheetSyncStatus: r.sheet_sync_status || 'waiting',
     sheetSyncedAt: r.sheet_synced_at == null ? null : Number(r.sheet_synced_at),
@@ -475,7 +475,7 @@ function orderFields(body) {
 async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source, settings) {
   const clientId = client.id;
   const commission = client.commission_per_order ?? Number(settings.commission_per_order);
-  const supplierShare = Math.min(commission, client.supplier_share_per_order ?? (Number(settings.supplier_share_per_order) || 0));
+  const supplierShare = 0;
   const t = now();
   const row = await DB.prepare('INSERT INTO client_orders (client_id, order_ref, tracking_number, destination, category, weight_kg, price, selling_price, product_cost, shipping_fee, commission, supplier_share, notes, status, created_at, updated_at, order_date, currency, buyer_name, buyer_phone, address_line_1, address_line_2, city, region, postal_code, item_title, sku, variant, quantity, etsy_url, source, product_id, quoted_unit_price,store_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *')
     .bind(clientId, f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, commission, supplierShare, f.notes, 'pending', t, t, f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, source,f.product_id||null,f.quoted_unit_price??null,f.store_id).first();
@@ -492,7 +492,7 @@ async function clientSummary(DB, clientId, settings) {
   const p = await DB.prepare('SELECT COALESCE(SUM(amount),0) AS paid FROM client_payments WHERE client_id = ? AND NOT archived').bind(clientId).first();
   const performance=await clientPerformance(DB,clientId);
   const billed = performance.totals.billed, paid = round2(p.paid);
-  const commission = round2(o.commission), supplierShare = round2(o.supplier);
+  const commission = round2(o.commission), supplierShare = 0;
   return { orders: Number(o.n), billed, paid, outstanding: round2(billed - paid), commission, supplierShare, ourShare: round2(commission - supplierShare), clientProfit: performance.totals.profit };
 }
 
@@ -709,13 +709,11 @@ export async function handlePortal(request, url, ctx) {
     }
     let f; try { f = orderFields({ ...orderOut(existing), ...body }); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     const status = existing.status;
-    let commission = existing.commission, supplierShare = existing.supplier_share;
+    let commission = existing.commission; const supplierShare = 0;
     if (who.admin) {
       // The fee on this order and what the supplier gets can be set per order; the rest of the fee is ours.
-      for (const [key, label] of [['commission', 'fee'], ['supplierShare', 'supplier share']]) if (body[key] != null && body[key] !== '' && !isMoney(money(body[key]))) return json({ ok: false, error: `Invalid ${label}` }, 400);
+      if (body.commission != null && body.commission !== '' && !isMoney(money(body.commission))) return json({ ok: false, error: 'Invalid fee' }, 400);
       if (body.commission != null && body.commission !== '') commission = money(body.commission);
-      if (body.supplierShare != null && body.supplierShare !== '') supplierShare = money(body.supplierShare);
-      if (Number(supplierShare) > Number(commission)) return json({ ok: false, error: "The supplier's share can't be more than the fee on this order" }, 400);
     }
     if (!who.admin) {
       f.tracking_number = existing.tracking_number; f.category = existing.category; f.weight_kg = existing.weight_kg;
@@ -998,8 +996,6 @@ export async function handlePortal(request, url, ctx) {
     const active = body.active !== undefined ? Boolean(body.active) : u.active;
     let cpo = u.commission_per_order;
     if (body.commissionPerOrder !== undefined) { cpo = money(body.commissionPerOrder); if (!isMoney(cpo)) return json({ ok: false, error: 'Invalid commission' }, 400); }
-    let sps = u.supplier_share_per_order;
-    if (body.supplierSharePerOrder !== undefined) { sps = money(body.supplierSharePerOrder); if (!isMoney(sps)) return json({ ok: false, error: "Invalid supplier's share" }, 400); }
     let hash = u.password_hash;
     if (body.password) { if (String(body.password).length < 8) return json({ ok: false, error: 'Password must be at least 8 characters' }, 400); hash = await hashPassword(String(body.password)); }
     const archived = body.archived !== undefined && u.role === 'client' ? Boolean(body.archived) : u.archived;
@@ -1025,12 +1021,12 @@ export async function handlePortal(request, url, ctx) {
       if (trialStart && trialEnd && trialEnd < trialStart) return json({ ok: false, error: 'Trial end must be after the trial start' }, 400);
       if (!subStatus && trialStart) subStatus = 'trial';
     }
-    await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, supplier_share_per_order=?, password_hash=CASE WHEN ? THEN ? ELSE password_hash END, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=?, password_reset_required=CASE WHEN ? THEN ? ELSE password_reset_required END, session_version=session_version+? WHERE id = ?').bind(name, active, cpo, sps, !!body.password, hash, archived, trialStart, trialEnd, subStatus, lastPay, !!body.password, u.role === 'client', body.password ? 1 : 0, id).run();
+    await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=CASE WHEN ? THEN ? ELSE password_hash END, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=?, password_reset_required=CASE WHEN ? THEN ? ELSE password_reset_required END, session_version=session_version+? WHERE id = ?').bind(name, active, cpo, !!body.password, hash, archived, trialStart, trialEnd, subStatus, lastPay, !!body.password, u.role === 'client', body.password ? 1 : 0, id).run();
     if (username !== u.username) await DB.prepare('UPDATE users SET username=? WHERE id=?').bind(username, id).run();
     // Bulk: put this client's fee on all their existing orders too (not cancelled ones). The supplier's part never exceeds the fee.
     let ordersUpdated = 0;
     if (u.role === 'client' && body.applyFeeToOrders === true) {
-      const settings = await getSettings(DB), fee = cpo ?? Number(settings.commission_per_order), share = Math.min(fee, sps ?? (Number(settings.supplier_share_per_order) || 0));
+      const settings = await getSettings(DB), fee = cpo ?? Number(settings.commission_per_order), share = 0;
       const rows = (await DB.prepare("SELECT id, supplier_cost, quoted_unit_price FROM client_orders WHERE client_id=? AND status<>'cancelled'").bind(id).all()).results || [];
       for (const o of rows) {
         await DB.prepare('UPDATE client_orders SET commission=?, supplier_share=? WHERE id=?').bind(fee, share, o.id).run();
@@ -1050,10 +1046,6 @@ export async function handlePortal(request, url, ctx) {
     const body = await readBody(request);
     const updates = {};
     if (body.commission_per_order !== undefined) { const v = money(body.commission_per_order); if (v === null || !isMoney(v)) return json({ ok: false, error: 'Invalid commission' }, 400); updates.commission_per_order = String(v); }
-    if (body.supplier_share_per_order !== undefined) { const v = money(body.supplier_share_per_order); if (v === null || !isMoney(v)) return json({ ok: false, error: "Invalid supplier's share" }, 400); updates.supplier_share_per_order = String(v); }
-    const fee = Number(updates.commission_per_order ?? (await getSettings(DB)).commission_per_order);
-    const sup = Number(updates.supplier_share_per_order ?? (await getSettings(DB)).supplier_share_per_order);
-    if (sup > fee) return json({ ok: false, error: "The supplier's share can't be more than the fee per order" }, 400);
     if (body.monthly_order_goal !== undefined) { const v = Number(body.monthly_order_goal); if (!(Number.isInteger(v) && v >= 0 && v <= 1e6)) return json({ ok: false, error: 'Goal must be a whole number' }, 400); updates.monthly_order_goal = String(v); }
     if (body.subscription_price !== undefined) { const v = money(body.subscription_price); if (v === null || !isMoney(v) || v > 100000) return json({ ok: false, error: 'Invalid subscription price' }, 400); updates.subscription_price = String(v); }
     if (body.volumetric_divisor !== undefined) { const v = Number(body.volumetric_divisor); if (!(v >= 1000 && v <= 10000)) return json({ ok: false, error: 'Divisor must be 1000-10000' }, 400); updates.volumetric_divisor = String(v); }

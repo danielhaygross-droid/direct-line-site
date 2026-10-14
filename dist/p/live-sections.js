@@ -256,13 +256,12 @@
     if (portalOrders === null) return head(L('Value & savings', 'ערך וחיסכון'), L('Loading…', 'טוען…'), '');
     const po = portalOrders.filter(o => o.status !== 'cancelled' && inRange(secIso(o.createdAt)));
     const sum = (os, k) => os.reduce((a, o) => a + Number(o[k] || 0), 0);
-    const t = { ourShare: sum(po, 'ourShare'), commission: sum(po, 'commission'), supplierShare: sum(po, 'supplierShare'), orders: po.length, outstanding: p.totals.outstanding };
+    const t = { ourShare: sum(po, 'ourShare'), commission: sum(po, 'commission'), orders: po.length, outstanding: p.totals.outstanding };
     const per = c => { const os = po.filter(o => o.clientId === c.id); return { n: os.length, billed: sum(os, 'price'), ours: sum(os, 'ourShare'), last: os.reduce((m, o) => Math.max(m, o.createdAt), 0) }; };
-    return head(L('Value & savings', 'ערך וחיסכון'), L('What Direct Line earns and handles', 'מה Direct Line מרוויחה ומטפלת'), L('From the client accounts: the per-order fee, the supplier’s share, and what’s still owed.', 'מחשבונות הלקוחות: העמלה לכל הזמנה, החלק של הספק, ומה שעוד חייבים.'), btn(L('Open Clients & orders', 'פתח לקוחות והזמנות'), 'clients'))
+    return head(L('Value & savings', 'ערך וחיסכון'), L('What Direct Line earns and handles', 'מה Direct Line מרוויחה ומטפלת'), L('From the client accounts: the per-order fee and what’s still owed.', 'מחשבונות הלקוחות: העמלה לכל הזמנה, ומה שעוד חייבים.'), btn(L('Open Clients & orders', 'פתח לקוחות והזמנות'), 'clients'))
       + cards([
         [L('Our earnings', 'ההכנסה שלנו'), money(t.ourShare), L(`${num(t.orders)} client orders, ${rangeLabel()}`, `${num(t.orders)} הזמנות לקוחות, ${rangeLabel()}`), 'accent'],
         [L('Fees collected', 'עמלות שנגבו'), money(t.commission), ''],
-        [L('Supplier’s share', 'החלק של הספק'), money(t.supplierShare), ''],
         [L('Outstanding from clients', 'יתרה לגבייה מלקוחות'), money(t.outstanding), L('balance today (all time)', 'יתרה נכון להיום (כל הזמן)'), t.outstanding > 0 ? 'bad' : ''],
         [L('Supplier orders handled', 'הזמנות ספק שטופלו'), num(list.length), rangeLabel()],
       ])
