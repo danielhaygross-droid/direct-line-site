@@ -15,6 +15,7 @@
 import { sheetsRequest, googleSheetsConfig, googleSheetsConfigured, syncPortalOrderToGoogleSheet } from './google-sheets.mjs';
 import { changeStatus } from './order-status.mjs';
 import { sheetPhotoUrl } from './sheet-photos.mjs';
+import { splitOldNotes } from './order-notes.mjs';
 
 export const SUPPLIER_SHEET_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS supplier_cost DOUBLE PRECISION',
@@ -279,6 +280,8 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
   const t = Math.floor(Date.now() / 1000), result = { ok: true, enabled: true, checked: 0, changed: [], skipped: [] };
   try {
     if (!await ensureLayout(DB, env, fetchImpl)) return { ...result, waiting: 'layout' };
+    // Once: orders whose tax number / gift message were typed into the notes before those fields existed.
+    for (const id of await splitOldNotes(DB)) { const sync = syncPortalOrderToGoogleSheet(DB, env, id, fetchImpl).catch(e => console.error('Sheet refresh after notes split failed', e)); if (waitUntil) waitUntil(sync); else await sync; }
     const ranges = [`${WQ}!O${FIRST_ROW}:R`, `${WQ}!AA${FIRST_ROW}:AA`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
     const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
     const [inputs, ids] = (data.valueRanges || []).map(v => v.values || []);
