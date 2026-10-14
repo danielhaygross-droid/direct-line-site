@@ -312,6 +312,9 @@ export function parseRole(role) {
 }
 
 // ---------- helpers ----------
+// The client's price for an order whose cost came from the supplier's sheet is the supplier's cost + our fee on that order.
+// When the fee changes, that price follows. Orders with a fixed quote or typed-in prices are left alone.
+const followsSupplierCost = o => o.supplier_cost != null && o.quoted_unit_price == null;
 const money = v => (v === null || v === undefined || v === '' ? null : Number(v));
 const isMoney = v => v === null || (Number.isFinite(v) && v >= 0 && v < 1e7);
 const text = (v, max = 500) => String(v ?? '').trim().slice(0, max);
@@ -720,6 +723,9 @@ export async function handlePortal(request, url, ctx) {
     }
     try{f.store_id=await orderStore(DB,existing.client_id,body.storeId,Number(existing.store_id),who.admin);}catch(e){return json({ok:false,error:e.message},400);}
     if(existing.quoted_unit_price!=null){f.price=round2(Number(existing.quoted_unit_price)*f.quantity);if(f.price>=1e7)return json({ok:false,error:'Order total is too large.'},400);f.product_cost=existing.product_cost;f.shipping_fee=existing.shipping_fee;f.etsy_url=existing.etsy_url;f.item_title=existing.item_title;}
+    if (who.admin && followsSupplierCost(existing) && Number(commission) !== Number(existing.commission) && body.productCost == null && body.shippingFee == null) {
+      f.price = round2(Number(existing.supplier_cost) + Number(commission)); f.product_cost = f.price; f.shipping_fee = null;
+    }
     if (body.etsyUrl !== undefined) {
       if (f.etsy_url && !f.etsy_url.split('\n').every(validLink)) return json({ ok: false, error: 'Please paste each product link in full, starting with https://' }, 400);
       if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link from your store.' }, 400);
@@ -1025,8 +1031,13 @@ export async function handlePortal(request, url, ctx) {
     let ordersUpdated = 0;
     if (u.role === 'client' && body.applyFeeToOrders === true) {
       const settings = await getSettings(DB), fee = cpo ?? Number(settings.commission_per_order), share = Math.min(fee, sps ?? (Number(settings.supplier_share_per_order) || 0));
-      const done = await DB.prepare("UPDATE client_orders SET commission=?, supplier_share=? WHERE client_id=? AND status<>'cancelled' RETURNING id").bind(fee, share, id).all();
-      ordersUpdated = (done.results || []).length;
+      const rows = (await DB.prepare("SELECT id, supplier_cost, quoted_unit_price FROM client_orders WHERE client_id=? AND status<>'cancelled'").bind(id).all()).results || [];
+      for (const o of rows) {
+        await DB.prepare('UPDATE client_orders SET commission=?, supplier_share=? WHERE id=?').bind(fee, share, o.id).run();
+        // the client's price follows the new fee (supplier's cost + fee)
+        if (followsSupplierCost(o)) { const price = round2(Number(o.supplier_cost) + fee); await DB.prepare("UPDATE client_orders SET price=?, product_cost=?, shipping_fee=NULL, sheet_sync_status='waiting', updated_at=? WHERE id=?").bind(price, price, now(), o.id).run(); }
+      }
+      ordersUpdated = rows.length;
     }
     if (u.role === 'client') {
       if (archived !== u.archived) await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE client_id=?").bind(id).run();
