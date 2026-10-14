@@ -481,7 +481,7 @@
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
         <div><dt>Customer</dt><dd>${esc(o.buyerName) || '—'}</dd></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
-        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${[o.buyerName, o.address1, o.address2, o.city, o.region, o.postalCode, o.destination ? place(o.destination) : '', o.buyerPhone].filter(Boolean).map(esc).join('\n') || '—'}</dd></div>
+        <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${DL.addressLines(o, o.destination ? place(o.destination) : '', true).map(esc).join('\n') || '—'}</dd></div>
         ${o.notes ? `<div class="full"><dt>Notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl></section>
       <section class="card card-pad"><h3 class="sec-title">Sale &amp; cost</h3><div class="money-rows">
         <div class="total"><span>Customer paid</span><span>${o.sellingPrice == null ? '<span class="dim">Not entered</span>' : esc(customerPaid(o))}</span></div>
