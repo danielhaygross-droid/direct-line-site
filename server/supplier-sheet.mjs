@@ -17,7 +17,7 @@ import { changeStatus } from './order-status.mjs';
 import { sheetPhotoUrl } from './sheet-photos.mjs';
 import { splitOldNotes } from './order-notes.mjs';
 import { pollQuoteTab } from './quote-sheet.mjs';
-import { rememberPrice } from './saved-prices.mjs';
+import { rememberPrice, backfillSavedPrices } from './saved-prices.mjs';
 
 export const SUPPLIER_SHEET_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS supplier_cost DOUBLE PRECISION',
@@ -318,6 +318,8 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
         if (waitUntil) waitUntil(sync); else await sync;
       }
     }
+    // Once: remember the prices the supplier already gave (saved prices).
+    result.savedPrices = await backfillSavedPrices(DB);
     // Product price checks (Product Quotes tab).
     const fee = await getSetting(DB, 'commission_per_order');
     result.quotes = await pollQuoteTab(DB, env, { commission_per_order: fee ?? '2' }, fetchImpl);

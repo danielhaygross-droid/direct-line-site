@@ -61,3 +61,16 @@ export async function savedPricesFor(DB, clientId) {
 }
 // "Forget": no longer used for new orders (kept for the record; pricing it again brings it back).
 export const forgetSavedPrice = (DB, id) => DB.prepare('UPDATE saved_prices SET active=FALSE, updated_at=? WHERE id=? RETURNING id').bind(Math.floor(Date.now() / 1000), id).first();
+
+// Once: orders the supplier priced before saved prices existed (oldest first, so the newest cost is the one kept).
+export async function backfillSavedPrices(DB) {
+  const KEY = 'saved_prices_backfill_v1';
+  if ((await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(KEY).first())?.value === '1') return 0;
+  const rows = (await DB.prepare(`SELECT o.* FROM client_orders o JOIN users u ON u.id=o.client_id
+    WHERE o.supplier_cost IS NOT NULL AND o.supplier_cost > 0 AND o.quoted_unit_price IS NULL AND o.status <> 'cancelled' AND NOT o.archived AND NOT u.archived
+    ORDER BY o.updated_at, o.id`).all()).results || [];
+  let n = 0;
+  for (const o of rows) if (await rememberPrice(DB, o, Number(o.supplier_cost), Number(o.updated_at) || undefined)) n++;
+  await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(KEY, '1').run();
+  return n;
+}
