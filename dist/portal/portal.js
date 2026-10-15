@@ -726,6 +726,9 @@
       setTimeout(() => openOrder(orderId), 200);
     });
     updateSum();
+    // Came from "Order this product": that product is already chosen.
+    if (!ed && S.orderProduct && form.productId && S.products.some(p => p.id === S.orderProduct && p.status === 'approved')) { form.productId.value = String(S.orderProduct); form.productId.dispatchEvent(new Event('change')); }
+    S.orderProduct = null;
     if (!ed) form.orderRef.focus({ preventScroll: true });
   }
 
@@ -854,7 +857,19 @@
   function productRow(p){
     const fresh=S.productsSeenBefore&&p.status!=='awaiting_quote'&&p.updatedAt>S.productsSeenBefore;
     const price=p.status==='not_available'?'':p.priceOptions?`<ul class="price-options">${p.priceOptions.map(o=>`<li><span data-no-i18n>${esc(o.label)}</span> <b>${money(o.unitPrice)}</b></li>`).join('')}</ul><small class="dim">shipping not included</small>`:p.unitPrice!=null?`<b class="mp-price">${money(p.unitPrice)}</b><small class="dim">per item · shipping not included</small>`:'<small class="dim">Our supplier is checking the price.</small>';
-    return `<article class="mp-row${fresh?' is-new':''}">${p.photoIds[0]?`<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="64" height="64" alt="Product photo">`:'<span class="mp-ph"></span>'}<div class="mp-main"><b data-no-i18n>${esc(p.name)}</b>${p.variant?`<small data-no-i18n>${esc(p.variant)}</small>`:''}<small><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a> · <span>Updated</span> <time data-no-i18n datetime="${new Date(p.updatedAt*1000).toISOString()}" title="${esc(fullDate(p.updatedAt))}">${esc(new Date(p.updatedAt*1000).toLocaleDateString('en-GB',{timeZone:window.DL.displayTimeZone()}))}</time></small>${p.note?`<p class="mp-note" data-no-i18n>${esc(p.note)}</p>`:''}</div><div class="mp-side"><span class="chip mp-status ${P_TONE[p.status]||''}"><i class="dot"></i>${productStatus(p.status)}</span>${fresh?`<span class="tag tag-gold">${p.status==='approved'?'New price':'Updated'}</span>`:''}${price}</div></article>`;
+    return `<article class="mp-row${fresh?' is-new':''}" data-open-product="${p.id}">${p.photoIds[0]?`<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="64" height="64" alt="Product photo">`:'<span class="mp-ph"></span>'}<div class="mp-main"><button type="button" class="mp-name" data-open-product="${p.id}" data-no-i18n>${esc(p.name)}</button>${p.variant?`<small data-no-i18n>${esc(p.variant)}</small>`:''}<small><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a> · <span>Updated</span> <time data-no-i18n datetime="${new Date(p.updatedAt*1000).toISOString()}" title="${esc(fullDate(p.updatedAt))}">${esc(new Date(p.updatedAt*1000).toLocaleDateString('en-GB',{timeZone:window.DL.displayTimeZone()}))}</time></small>${p.note?`<p class="mp-note" data-no-i18n>${esc(p.note)}</p>`:''}</div><div class="mp-side"><span class="chip mp-status ${P_TONE[p.status]||''}"><i class="dot"></i>${productStatus(p.status)}</span>${fresh?`<span class="tag tag-gold">${p.status==='approved'?'New price':'Updated'}</span>`:''}${price}</div></article>`;
+  }
+  // Product details in the side panel: all photos, price (or each option), supplier note, dates, and "Order this product".
+  function openProduct(id){
+    const p=S.products.find(x=>x.id===Number(id));if(!p)return;
+    const d=UI.getDrawer();chatCtl?.destroy();chatCtl=null;d.foot.dataset.confirm='';d.onClose=null;d.open('p'+p.id);
+    d.head.innerHTML=`<h2 data-no-i18n>${esc(p.name)}</h2><p><span class="chip mp-status ${P_TONE[p.status]||''}"><i class="dot"></i>${productStatus(p.status)}</span></p>`;
+    const row=(label,value)=>value?`<div><dt>${label}</dt><dd>${value}</dd></div>`:'';
+    const price=p.status==='not_available'?'<span class="dim">—</span>':p.priceOptions?`<ul class="price-options">${p.priceOptions.map(o=>`<li><span data-no-i18n>${esc(o.label)}</span> <b>${money(o.unitPrice)}</b></li>`).join('')}</ul>`:p.unitPrice!=null?`<b>${money(p.unitPrice)}</b>`:'<span class="dim">Our supplier is checking the price.</span>';
+    d.body.innerHTML=`${p.photoIds.length?`<section class="mp-photos">${p.photoIds.map(ph=>`<a href="/api/portal/products/${p.id}/photos/${ph}" target="_blank" rel="noopener"><img src="/api/portal/products/${p.id}/photos/${ph}" alt="Product photo"></a>`).join('')}</section>`:''}
+      <section class="card card-pad"><h3 class="sec-title">Price per item</h3>${price}${p.status!=='not_available'?'<p class="note" style="margin:10px 0 0">Shipping is not included; it is added on each order.</p>':''}${p.note?`<p class="mp-note" data-no-i18n>${esc(p.note)}</p>`:''}</section>
+      <section class="card card-pad"><dl class="kv">${row('Variation',p.variant?`<span data-no-i18n>${esc(p.variant)}</span>`:'')}${row('Expected per month',p.expectedQuantity?String(p.expectedQuantity):'')}${row('Sent for quote',`<time data-no-i18n>${esc(fullDate(p.createdAt))}</time>`)}${row('Updated',`<time data-no-i18n>${esc(fullDate(p.updatedAt))}</time>`)}${row('Product link',`<a href="${esc(p.link)}" target="_blank" rel="noopener" data-no-i18n>${esc(p.link)}</a>`)}</dl></section>`;
+    d.foot.innerHTML=p.status==='approved'&&!S.me.preview?`<a class="btn btn-primary" href="#/new" data-order-product="${p.id}" data-close-drawer>${ic('plus')}Order this product</a><button type="button" class="btn" data-close-drawer>Close</button>`:`<button type="button" class="btn" data-close-drawer>Close</button>`;
   }
   function productListHTML(){
     const f=S.productFilter,q=(S.productQ||'').trim().toLowerCase();
@@ -943,7 +958,9 @@
   // Drawer actions (the drawer lives outside #app).
   document.addEventListener('click', async e => {
     const t = e.target;
+    const orderProduct = t.closest('[data-order-product]'); if (orderProduct) S.orderProduct = Number(orderProduct.dataset.orderProduct);
     if (t.closest('[data-close-drawer]')) { UI.getDrawer().close(); return; }
+    const openP = t.closest('[data-open-product]'); if (openP && !t.closest('a')) { openProduct(openP.dataset.openProduct); return; }
     const cp = t.closest('[data-copy]');
     if (cp) {
       try {

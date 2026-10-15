@@ -15,3 +15,12 @@ test('client My Products: status filter, search, newest change first, marks what
   assert.ok(css.includes('.mp-row{display:grid'));
   for (const s of ['Priced', 'Send a product for a quote', 'Search products…', 'No products match', 'Our supplier is checking the price.', 'New price']) assert.ok(he.includes(`'${s}':`), s);
 });
+
+test('client My Products: a row opens the product details; Order this product pre-picks it', async () => {
+  const js = await read('../dist/portal/portal.js'), he = await read('../dist/p/i18n.js');
+  assert.ok(js.includes('data-open-product="${p.id}">${p.photoIds[0]') && js.includes('class="mp-name" data-open-product'));
+  assert.ok(js.includes('function openProduct(id)') && js.includes("if (openP && !t.closest('a')) { openProduct(openP.dataset.openProduct); return; }"), 'click opens, links still work');
+  assert.ok(js.includes('data-order-product') && js.includes("form.productId.value = String(S.orderProduct)"), 'order this product');
+  assert.ok(js.includes("p.status==='approved'&&!S.me.preview?"), 'only priced products can be ordered, not in view-only preview');
+  for (const s of ['Order this product', 'Sent for quote', 'Expected per month']) assert.ok(he.includes(`'${s}':`), s);
+});
