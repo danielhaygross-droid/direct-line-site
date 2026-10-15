@@ -265,6 +265,13 @@ export function canEditOrder(order, at = now()) {
 // 72-hour / Pending window closed. Everything else about the order keeps canEditOrder().
 export const CUSTOMER_BODY_KEYS = ['buyerName', 'buyerPhone', 'address1', 'address2', 'city', 'region', 'postalCode', 'destination', 'taxNumber', 'giftMessage'];
 export const CUSTOMER_COLUMNS = ['buyer_name', 'buyer_phone', 'address_line_1', 'address_line_2', 'city', 'region', 'postal_code', 'destination'];
+// Same customer and address, written differently? (spaces, line breaks, CRLF, "us"/"US", the address in one box or in parts)
+// Only a real change may rewrite the stored address or put "ADDRESS CHANGED" on the supplier's row.
+const squash = v => String(v ?? '').replace(/\s+/g, ' ').trim();
+export function sameCustomer(a, b) {
+  const where = r => ['address_line_1', 'address_line_2', 'city', 'region', 'postal_code', 'buyer_phone'].map(k => String(r[k] ?? '')).join('\n').split(/\r?\n|\r/).map(squash).filter(Boolean).join(' | ');
+  return squash(a.buyer_name) === squash(b.buyer_name) && squash(a.destination).toUpperCase() === squash(b.destination).toUpperCase() && where(a) === where(b);
+}
 // The client's own accounting (what their customer paid, in which currency, and the Etsy fee) never affects the bill,
 // so it can be entered or corrected at any time, also on shipped orders.
 export const ACCOUNTING_BODY_KEYS = ['sellingPrice', 'currency', 'etsyFee'];
@@ -351,6 +358,7 @@ function orderOut(r) {
     shippingFee: r.shipping_fee === null || r.shipping_fee === undefined ? null : Number(r.shipping_fee),
     price, sellingPrice: sell, etsyFee: r.etsy_fee == null ? null : Number(r.etsy_fee), profit: sell === null ? null : round2(sell - price),
     orderDate: r.order_date || '', currency: r.currency || 'USD', buyerName: r.buyer_name || '', buyerPhone: r.buyer_phone || '',
+    addressChangedAt: r.address_changed_at == null ? null : Number(r.address_changed_at),
     address1: r.address_line_1 || '', address2: r.address_line_2 || '', city: r.city || '', region: r.region || '', postalCode: r.postal_code || '',
     itemTitle: r.item_title || '', sku: r.sku || '', variant: r.variant || '', quantity: Number(r.quantity || 1), etsyUrl: r.etsy_url || '', productLinks: String(r.etsy_url || '').split(/\s+/).filter(Boolean),
     commission: Number(r.commission || 0), supplierShare: 0, // the supplier is paid inside their own price: nothing is taken out of our fee
@@ -365,7 +373,7 @@ function orderOut(r) {
   };
 }
 // What a client may see of an order: total only, never the product vs shipping breakdown (item #6).
-const CLIENT_HIDDEN = ['commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost', 'priceSource'];
+const CLIENT_HIDDEN = ['addressChangedAt', 'commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost', 'priceSource'];
 function clientOrder(o) {
   const out = { ...o, priced: o.productCost != null || o.shippingFee != null || o.quotedUnitPrice != null };
   for (const k of CLIENT_HIDDEN) delete out[k];
@@ -751,6 +759,15 @@ async function routePortal(request, url, ctx, meta) {
     let existing = await DB.prepare('SELECT * FROM client_orders WHERE id = ?').bind(id).first();
     if (!existing || (!who.admin && existing.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
     const body = await readBody(request);
+    // Admin: the supplier has seen the "ADDRESS CHANGED" warning (or it was a false alarm): take it off the row.
+    if (body.clearAddressFlag !== undefined) {
+      if (!who.admin) return json({ ok: false, error: 'Not found' }, 404);
+      if (body.clearAddressFlag !== true || Object.keys(body).length !== 1) return json({ ok: false, error: 'Clear the address warning on its own.' }, 400);
+      const row = await DB.prepare('UPDATE client_orders SET address_changed_at=NULL WHERE id=? RETURNING *').bind(id).first();
+      const sync = syncPortalOrderToGoogleSheet(DB, env, id).catch(() => {}); if (waitUntil) waitUntil(sync); else await sync;
+      const [out] = await withPhotos(DB, [orderOut(row)]);
+      return json({ ok: true, order: out });
+    }
     if (body.status !== undefined) {
       if (Object.keys(body).some(k=>!['status','fee','reason'].includes(k))) return json({ok:false,error:'Change status separately from order details.'},400);
       try { const row=await changeStatus(DB,existing,'status',body,who.admin,actorOf(who));const out=orderOut(row);const sync=syncPortalOrderToGoogleSheet(DB,env,row.id).catch(()=>{});if(waitUntil)waitUntil(sync);return json({ok:true,order:who.admin?out:clientOrder(out)}); }
@@ -771,6 +788,8 @@ async function routePortal(request, url, ctx, meta) {
     }
     let f; try { f = orderFields({ ...orderOut(existing), ...body }); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     if (body.notes !== undefined && moveFromNotes(f)) { body.taxNumber = f.tax_number || ''; body.giftMessage = f.gift_message || ''; }
+    // Nothing really changed in the customer's name / address / country: keep it exactly as stored.
+    if (sameCustomer(existing, f)) for (const k of CUSTOMER_COLUMNS) f[k] = existing[k];
     const status = existing.status;
     let commission = existing.commission; const supplierShare = 0;
     if (who.admin) {
