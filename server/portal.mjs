@@ -185,6 +185,13 @@ export const SCHEMA = [
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
 SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA, ...STORAGE_SCHEMA, ...LOGIN_LIMIT_SCHEMA, ...SUPPLIER_SHEET_SCHEMA);
 SCHEMA.push(...QUOTE_SHEET_SCHEMA, ...SAVED_PRICE_SCHEMA);
+// "Log in as client": every change an admin makes while logged in as a client is kept here (who it was for, what, when).
+SCHEMA.push(`CREATE TABLE IF NOT EXISTS admin_impersonation_log (
+  id SERIAL PRIMARY KEY, client_id INTEGER NOT NULL REFERENCES users(id), method TEXT NOT NULL, path TEXT NOT NULL,
+  status INTEGER NOT NULL, created_at INTEGER NOT NULL)`,
+  'CREATE INDEX IF NOT EXISTS admin_impersonation_log_client_idx ON admin_impersonation_log (client_id, created_at)',
+  // When the client last used the portal (updated at most every 5 minutes; admins viewing it don't count).
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at INTEGER');
 // Every change to a recorded payment is kept: what it was, what it became, and when.
 SCHEMA.push(`CREATE TABLE IF NOT EXISTS payment_edits (
   id SERIAL PRIMARY KEY, payment_id INTEGER NOT NULL REFERENCES client_payments(id), field TEXT NOT NULL,
@@ -274,8 +281,11 @@ export function canEditCustomer(order) { return ['pending', 'processing'].includ
 export const customerOnlyEdit = body => { const keys = Object.keys(body || {}); return keys.length > 0 && keys.every(k => CUSTOMER_BODY_KEYS.includes(k)); };
 export async function clientSession(DB, who) {
   const u = await DB.prepare("SELECT active, archived, password_reset_required, session_version FROM users WHERE id = ? AND role = 'client'").bind(who.clientId).first();
-  return u && u.active && !u.archived && (who.preview || Number(u.session_version || 0) === Number(who.sessionVersion || 0)) ? u : null;
+  return u && u.active && !u.archived && (who.preview || who.acting || Number(u.session_version || 0) === Number(who.sessionVersion || 0)) ? u : null;
 }
+// Who an action is recorded as. An admin logged in as a client works with the client's rights but is recorded as admin.
+export const actorOf = who => (who.admin || who.acting ? 'admin' : 'client');
+export const ACTING_LOG_LIMIT = 20;
 
 // ---------- passwords (PBKDF2-SHA256) ----------
 export async function hashPassword(password, iterations = 210000) {
@@ -524,6 +534,17 @@ async function clientSummary(DB, clientId, settings) {
 // ---------- request handler ----------
 // Returns a Response for /api/portal/* routes, or null if the path isn't ours.
 export async function handlePortal(request, url, ctx) {
+  const meta = {};
+  const res = await routePortal(request, url, ctx, meta);
+  // Log in as client: keep a record of every change the admin made in the client's portal.
+  if (meta.actingFor && request.method !== 'GET' && ctx.DB) {
+    await ctx.DB.prepare('INSERT INTO admin_impersonation_log (client_id, method, path, status, created_at) VALUES (?,?,?,?,?)')
+      .bind(meta.actingFor, request.method, url.pathname.replace(/^\/api\/portal/, '').slice(0, 200), res.status, now()).run()
+      .catch(e => console.error('Impersonation log failed', e));
+  }
+  return res;
+}
+async function routePortal(request, url, ctx, meta) {
   const { DB, env, waitUntil } = ctx;
   const path = url.pathname.replace(/^\/api\/portal/, '') || '/';
   const method = request.method;
@@ -550,22 +571,25 @@ export async function handlePortal(request, url, ctx) {
   let who = parseRole(role);
   if (!who) return json({ ok: false, error: 'Unauthorized' }, 401);
   // Admin preview of a client's portal ("see what the client sees"): read-only.
+  // With x-dl-act: 1 the admin is logged in as the client: same rights as the client, every change logged and recorded as admin.
   const viewAs = request.headers.get('x-dl-view-as');
   if (who.admin && viewAs) {
-    if (method !== 'GET') return json({ ok: false, error: 'Preview is view only. Sign in as the client to make changes.' }, 403);
+    const acting = request.headers.get('x-dl-act') === '1';
+    if (!acting && method !== 'GET') return json({ ok: false, error: 'Preview is view only. Use “Log in as client” to make changes.' }, 403);
     const vid = Number(viewAs);
     const c = Number.isInteger(vid) && vid > 0 ? await DB.prepare("SELECT id FROM users WHERE id = ? AND role = 'client'").bind(vid).first() : null;
     if (!c) return json({ ok: false, error: 'Unknown client' }, 404);
-    who = { admin: false, clientId: c.id, preview: true };
+    who = acting ? { admin: false, clientId: c.id, acting: true } : { admin: false, clientId: c.id, preview: true };
+    if (acting) meta.actingFor = c.id;
   }
   if (!who.admin) {
     const me = await clientSession(DB, who);
     if (!me) return json({ ok: false, error: 'Please sign in again.' }, 401);
-    if (!who.preview && me.password_reset_required) {
+    if (!who.preview && !who.acting && me.password_reset_required) {
       if (path === '/me' && method === 'GET') return json({ ok: true, role: 'client', passwordResetRequired: true });
       if (path !== '/password') return json({ ok: false, error: 'Choose a new password to continue.' }, 423);
     }
-    if (!who.preview) {
+    if (!who.preview && !who.acting) {
       const policy = await currentTerms(DB), accepted = await termsAcceptance(DB,who.clientId,policy.version);
       if (!accepted) {
         if (path === '/me' && method === 'GET') return json({ ok: true, role: 'client', termsRequired: true });
@@ -577,7 +601,7 @@ export async function handlePortal(request, url, ctx) {
     const policy = await currentTerms(DB), accepted = who.admin ? null : await termsAcceptance(DB,who.clientId,policy.version);
     return json({ ok: true, policy, accepted });
   }
-  if (path === '/terms/accept' && method === 'POST' && !who.admin && !who.preview) {
+  if (path === '/terms/accept' && method === 'POST' && !who.admin && !who.preview && !who.acting) {
     const policy = await currentTerms(DB), body = (await readBody(request)) || {};
     if (body.accepted !== true) return json({ ok: false, error: 'Please tick the agreement checkbox.' }, 400);
     if (body.version !== policy.version) return json({ ok: false, error: 'The terms have changed. Please reload and read the current version.' }, 409);
@@ -590,6 +614,7 @@ export async function handlePortal(request, url, ctx) {
     try { return json({ ok:true, transfer:await saveTransfer(DB,who.clientId,await readBody(request)) }); }
     catch(e) { return json({ ok:false,error:e.message },400); }
   }
+  if ((path === '/password' || path === '/terms/accept') && method === 'POST' && who.acting) return json({ ok: false, error: 'Only the client can do this from their own account.' }, 403);
   if (path === '/password' && method === 'POST' && !who.admin && !who.preview) {
     const u = await DB.prepare('SELECT password_hash, password_reset_required, session_version FROM users WHERE id = ?').bind(who.clientId).first();
     const body = await readBody(request), password = String(body.password || '');
@@ -601,12 +626,14 @@ export async function handlePortal(request, url, ctx) {
     return json({ ok: true }, 200, { 'set-cookie': await createSessionCookie('client-' + who.clientId + '-v' + changed.session_version, env.APP_SESSION_SECRET) });
   }
 
+  if (path === '/acting/start' && method === 'POST' && who.acting) return json({ ok: true });
   if (path === '/me' && method === 'GET') {
     const settings = await getSettings(DB);
     if (who.admin) return json({ ok: true, role: 'admin', name: 'Admin', settings });
+    if (!who.preview && !who.acting) await DB.prepare('UPDATE users SET last_seen_at=? WHERE id=? AND COALESCE(last_seen_at,0)<?').bind(now(), who.clientId, now() - 300).run();
     const u = await DB.prepare('SELECT id, username, display_name, active, trial_start, trial_end, sub_status, sub_last_payment FROM users WHERE id = ?').bind(who.clientId).first();
     if (!u || !u.active) return json({ ok: false, error: 'Account disabled' }, 403);
-    return json({ ok: true, role: 'client', preview: !!who.preview, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor, ...Object.fromEntries(BANK_FIELDS.map(k => [k, settings[k] || ''])) }, subscription: subscriptionOut(u, settings), summary: (({ commission, supplierShare, ourShare, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
+    return json({ ok: true, role: 'client', preview: !!who.preview, acting: !!who.acting, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor, ...Object.fromEntries(BANK_FIELDS.map(k => [k, settings[k] || ''])) }, subscription: subscriptionOut(u, settings), summary: (({ commission, supplierShare, ourShare, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
   }
 
   // Archived orders are read-only for admins and unavailable to clients.
@@ -661,7 +688,7 @@ export async function handlePortal(request, url, ctx) {
     if (!who.admin && !photos.length) return json({ ok: false, error: 'Please add at least one photo or screenshot of the product.' }, 400);
     if (etsyFeeProblem(body)) return json({ ok: false, error: etsyFeeProblem(body) }, 400);
     const settings = await getSettings(DB);
-    const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, who.admin ? 'admin' : 'client', '', settings);
+    const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, actorOf(who), '', settings);
     const newFee = await saveEtsyFee(DB, row.id, body); if (newFee !== undefined) row.etsy_fee = newFee;
     const out = { ...orderOut(row), photos: saved };
     return json({ ok: true, order: who.admin ? out : clientOrder(out) });
@@ -674,6 +701,7 @@ export async function handlePortal(request, url, ctx) {
     const u = await DB.prepare('SELECT notif_seen_at FROM users WHERE id = ?').bind(who.clientId).first();
     return json({ ok: true, items: [...rows.map(eventOut),...await productEvents(DB,who.clientId)].sort((a,b)=>b.createdAt-a.createdAt).slice(0,50), seenAt: Number(u?.notif_seen_at || 0), now: now() });
   }
+  if (path === '/notifications/seen' && method === 'POST' && who.acting) return json({ ok: true, seenAt: 0 });
   if (path === '/notifications/seen' && method === 'POST' && !who.admin) {
     await DB.prepare('UPDATE users SET notif_seen_at = ? WHERE id = ?').bind(now(), who.clientId).run();
     return json({ ok: true, seenAt: now() });
@@ -684,6 +712,7 @@ export async function handlePortal(request, url, ctx) {
     const id = Number(msgMatch[1]);
     const order = await DB.prepare('SELECT id, client_id FROM client_orders WHERE id = ?').bind(id).first();
     if (!order || (!who.admin && order.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
+    if (method === 'POST' && who.acting) return json({ ok: false, error: 'Reply from the admin dashboard, so the client sees the message comes from Direct Line.' }, 403);
     if (method === 'POST') {
       const body = await readBody(request);
       const msg = text(body.body, 2000);
@@ -693,7 +722,7 @@ export async function handlePortal(request, url, ctx) {
       await logEvent(DB, id, order.client_id, 'message', who.admin ? 'admin' : 'client', msg);
     } else if (method !== 'GET') return json({ ok: false, error: 'Method not allowed' }, 405);
     // Reading the thread marks the other side's messages as read (not in admin preview).
-    if (!who.preview) await DB.prepare(who.admin ? "UPDATE order_messages SET read_by_admin = TRUE WHERE order_id = ? AND author = 'client'"
+    if (!who.preview && !who.acting) await DB.prepare(who.admin ? "UPDATE order_messages SET read_by_admin = TRUE WHERE order_id = ? AND author = 'client'"
       : "UPDATE order_messages SET read_by_client = TRUE WHERE order_id = ? AND author = 'admin'").bind(id).run();
     const rows = (await DB.prepare('SELECT * FROM order_messages WHERE order_id = ? ORDER BY created_at, id').bind(id).all()).results || [];
     const events = (await DB.prepare("SELECT * FROM order_events WHERE order_id = ? AND kind <> 'message' ORDER BY created_at, id").bind(id).all()).results || [];
@@ -706,7 +735,7 @@ export async function handlePortal(request, url, ctx) {
     const existing = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(Number(statusAction[1])).first();
     if (!existing || !who.admin && Number(existing.client_id)!==Number(who.clientId)) return json({ok:false,error:'Not found'},404);
     try {
-      const row = await changeStatus(DB,existing,statusAction[2],await readBody(request),who.admin);
+      const row = await changeStatus(DB,existing,statusAction[2],await readBody(request),who.admin,actorOf(who));
       const sync = syncPortalOrderToGoogleSheet(DB,env,row.id).catch(()=>{});if(waitUntil)waitUntil(sync);
       const out=orderOut(row);return json({ok:true,order:who.admin?out:clientOrder(out)});
     } catch(e) {return json({ok:false,error:e.message},e.status||409);}
@@ -719,7 +748,7 @@ export async function handlePortal(request, url, ctx) {
     const body = await readBody(request);
     if (body.status !== undefined) {
       if (Object.keys(body).some(k=>!['status','fee','reason'].includes(k))) return json({ok:false,error:'Change status separately from order details.'},400);
-      try { const row=await changeStatus(DB,existing,'status',body,who.admin);const out=orderOut(row);const sync=syncPortalOrderToGoogleSheet(DB,env,row.id).catch(()=>{});if(waitUntil)waitUntil(sync);return json({ok:true,order:who.admin?out:clientOrder(out)}); }
+      try { const row=await changeStatus(DB,existing,'status',body,who.admin,actorOf(who));const out=orderOut(row);const sync=syncPortalOrderToGoogleSheet(DB,env,row.id).catch(()=>{});if(waitUntil)waitUntil(sync);return json({ok:true,order:who.admin?out:clientOrder(out)}); }
       catch(e){return json({ok:false,error:e.message},e.status||409);}
     }
     const locked = !who.admin && !canEditOrder(existing);
@@ -760,7 +789,7 @@ export async function handlePortal(request, url, ctx) {
     const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, store_id=?,edit_locked=edit_locked OR ?,last_tracking_update_at=CASE WHEN tracking_number<>? THEN ? ELSE last_tracking_update_at END WHERE id = ? AND status=? AND (? OR ? OR (? AND status IN (\'pending\',\'processing\')) OR (status=\'pending\' AND NOT edit_locked AND created_at > ?)) RETURNING *')
       .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, f.store_id,['processing','shipped','delivered','cancelled'].includes(status),f.tracking_number,now(), id, existing.status, who.admin, accountingOnly, customerOnly, now() - EDIT_WINDOW_SECONDS).first();
     if (!row) return json({ ok: false, error: customerOnlyEdit(body) && !who.admin ? 'This order has already shipped, so the customer details can no longer be changed. Need help? Send us a message.' : 'This order is already being processed. Need a change? Send us a message.' }, 409);
-    const actor = who.admin ? 'admin' : 'client';
+    const actor = actorOf(who);
     if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);
     if (row.tracking_number !== existing.tracking_number && row.tracking_number) await logEvent(DB, id, existing.client_id, 'tracking', actor, row.tracking_number);
     if (who.admin && body.courier !== undefined) { const c = text(body.courier, 60) || null; await DB.prepare('UPDATE client_orders SET courier=? WHERE id=?').bind(c, id).run(); row.courier = c; }
@@ -770,7 +799,7 @@ export async function handlePortal(request, url, ctx) {
       if ((tax || null) !== (existing.tax_number || null) || (gift || null) !== (existing.gift_message || null)) {
         await DB.prepare('UPDATE client_orders SET tax_number=?, gift_message=? WHERE id=?').bind(tax, gift, id).run(); row.tax_number = tax; row.gift_message = gift;
         // one activity line per save: only here when nothing else on the order changed
-        if (!EDIT_FIELDS.some(k => String(row[k] ?? '') !== String(existing[k] ?? ''))) await logEvent(DB, id, existing.client_id, 'edited', who.admin ? 'admin' : 'client', 'customer');
+        if (!EDIT_FIELDS.some(k => String(row[k] ?? '') !== String(existing[k] ?? ''))) await logEvent(DB, id, existing.client_id, 'edited', actorOf(who), 'customer');
       }
     }
     const fee = await saveEtsyFee(DB, id, body); if (fee !== undefined) row.etsy_fee = fee;
@@ -794,7 +823,7 @@ export async function handlePortal(request, url, ctx) {
     const id = Number((photoAdd || photoOne)[1]);
     const order = await DB.prepare('SELECT id, client_id, status, created_at, edit_locked FROM client_orders WHERE id = ?').bind(id).first();
     if (!order || (!who.admin && order.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
-    const actor = who.admin ? 'admin' : 'client';
+    const actor = actorOf(who);
     if (method === 'POST' && !who.admin && !canEditOrder(order)) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
     if (photoAdd && method === 'POST') {
       if (!who.admin && order.status === 'cancelled') return json({ ok: false, error: 'This order was cancelled.' }, 409);
@@ -947,6 +976,18 @@ export async function handlePortal(request, url, ctx) {
   const trackingUpdate=/^\/admin\/orders\/(\d+)\/tracking-update$/.exec(path);if(trackingUpdate&&method==='POST'){const order=await DB.prepare('UPDATE client_orders SET last_tracking_update_at=?,updated_at=? WHERE id=? AND NOT archived RETURNING *').bind(now(),now(),Number(trackingUpdate[1])).first();if(!order)return json({ok:false,error:'Not found'},404);await logEvent(DB,order.id,order.client_id,'tracking_update','admin');return json({ok:true,order:orderOut(order)});}
   if(path==='/admin/products'&&method==='GET')return json({ok:true,products:await products(DB)});
   // Saved prices of one client (admin → client → Saved prices).
+  // A client's activity: when they last signed in / used the portal, what they did, and what admins did logged in as them.
+  const activity = /^\/admin\/clients\/(\d+)\/activity$/.exec(path);
+  if (activity && method === 'GET') {
+    const cid = Number(activity[1]);
+    const u = await DB.prepare("SELECT id, last_login, last_seen_at FROM users WHERE id = ? AND role = 'client'").bind(cid).first();
+    if (!u) return json({ ok: false, error: 'Not found' }, 404);
+    const events = (await DB.prepare("SELECT e.*, o.order_ref FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND e.actor = 'client' ORDER BY e.created_at DESC, e.id DESC LIMIT 30").bind(cid).all()).results || [];
+    const acted = (await DB.prepare('SELECT method, path, status, created_at FROM admin_impersonation_log WHERE client_id = ? ORDER BY created_at DESC, id DESC LIMIT ?').bind(cid, ACTING_LOG_LIMIT).all()).results || [];
+    return json({ ok: true, lastLogin: u.last_login == null ? null : Number(u.last_login), lastSeen: u.last_seen_at == null ? null : Number(u.last_seen_at),
+      events: [...events.map(e => ({ ...eventOut(e), orderRef: e.order_ref })), ...await productEvents(DB, cid, 'client')].sort((a, b) => b.createdAt - a.createdAt).slice(0, 30),
+      adminActions: acted.map(a => ({ method: a.method, path: a.path, ok: Number(a.status) < 400, createdAt: Number(a.created_at) })) });
+  }
   if (path === '/admin/saved-prices' && method === 'GET') { const cid = Number(url.searchParams.get('clientId')); if (!(cid > 0)) return json({ ok: false, error: 'Choose a client' }, 400); return json({ ok: true, prices: await savedPricesFor(DB, cid) }); }
   const spForget = /^\/admin\/saved-prices\/(\d+)\/forget$/.exec(path);
   if (spForget && method === 'POST') return (await forgetSavedPrice(DB, Number(spForget[1]))) ? json({ ok: true }) : json({ ok: false, error: 'Not found' }, 404);

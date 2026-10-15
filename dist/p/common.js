@@ -70,7 +70,7 @@
   async function api(path, { method = 'GET', body } = {}) {
     const res = await fetch('/api/portal' + path, {
       method, credentials: 'same-origin',
-      headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(window.DL_VIEW_AS ? { 'x-dl-view-as': String(window.DL_VIEW_AS) } : {}) },
+      headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(window.DL_VIEW_AS ? { 'x-dl-view-as': String(window.DL_VIEW_AS) } : {}), ...(window.DL_VIEW_AS && window.DL_ACT ? { 'x-dl-act': '1' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({}));

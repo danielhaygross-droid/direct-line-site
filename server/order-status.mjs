@@ -41,9 +41,10 @@ export function statusChange(order, action, body, admin) {
   if(next!=='delivered') throw new Error('Request cancellation instead.');
   return {status:next,previous:order.cancellation_previous_status,reason:order.cancellation_reason,fee:0};
 }
-export async function changeStatus(DB, order, action, body, admin) {
+// actorName: who is recorded in the activity log (an admin logged in as the client acts with client rights, recorded as admin).
+export async function changeStatus(DB, order, action, body, admin, actorName) {
   const change=statusChange(order,action,body,admin);if(!change)return order;
-  const t=Math.floor(Date.now()/1000),actor=admin?'admin':'client';
+  const t=Math.floor(Date.now()/1000),actor=actorName||(admin?'admin':'client');
   // Status, audit event and fee are one statement: retries/races cannot charge twice or lose the audit entry.
   const row=await DB.prepare(`WITH changed AS (
     UPDATE client_orders SET status=?,cancellation_previous_status=?,cancellation_reason=?,
