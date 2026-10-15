@@ -91,7 +91,7 @@ test('admin panel, portal banner and Hebrew are wired up', () => {
   for (const k of ['Log in as client', 'Switch to view only', 'Activity', 'Last sign-in', 'What the client did', 'Changes made by admins logged in as this client'])
     assert.ok(i18n.includes(`'${k}': '`), 'Hebrew for ' + k);
   assert.ok(i18n.includes('[/^Logged in as (.+)\\.$/'));
-  for (const f of ['dist/admin/index.html', 'dist/portal/index.html']) assert.match(read(f), /\/p\/common\.js\?v=16/);
+  for (const f of ['dist/admin/index.html', 'dist/portal/index.html']) assert.match(read(f), /\/p\/common\.js\?v=(1[6-9]|[2-9]\d)/);
   assert.match(read('dist/portal/index.html'), /portal\.js\?v=(4[7-9]|[5-9]\d)/);
   assert.match(read('dist/admin/index.html'), /admin\.js\?v=(5[6-9]|[6-9]\d)/);
 });

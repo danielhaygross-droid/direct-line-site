@@ -284,11 +284,65 @@
     const ext = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
     const link = links.length ? links.map((u, i) => `<div class="pm-linkline"><a class="btn btn-sm" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${ext}${links.length > 1 ? 'Open product ' + (i + 1) : 'Open product link'}</a><span class="pm-link" title="${esc(u)}">${esc(u.replace(/^https?:\/\/(www\.)?/, ''))}</span></div>`).join('')
       : '<span class="muted">No product link added.</span>';
-    return `<div class="pm-photos">${photos.map(p => `<figure class="pm-photo"><a href="${photoUrl(o.id, p.id)}" target="_blank" rel="noopener" title="Open full size"><img src="${photoUrl(o.id, p.id, true)}" alt="Product photo" loading="lazy"></a>${removable ? `<button type="button" class="pm-remove" data-photo-remove="${p.id}" data-order="${o.id}" aria-label="Remove photo">×</button>` : ''}</figure>`).join('')}
+    return `<div class="pm-photos">${photos.map(p => `<figure class="pm-photo"><a href="${photoUrl(o.id, p.id)}" title="Open full size"><img src="${photoUrl(o.id, p.id, true)}" alt="Product photo" loading="lazy"></a>${removable ? `<button type="button" class="pm-remove" data-photo-remove="${p.id}" data-order="${o.id}" aria-label="Remove photo">×</button>` : ''}</figure>`).join('')}
       ${canAdd ? `<label class="pm-add" title="Add a photo"><input type="file" accept="image/*" multiple hidden data-photo-add="${o.id}"><span>+</span><small>Add photo</small></label>` : ''}
       ${!photos.length && !canAdd ? '<span class="muted">No photos added.</span>' : ''}</div>
       <div class="pm-linkrow">${link}</div>`;
   }
 
-  window.DL = { addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  // ---------- photo viewer ----------
+  // Photos open on top of the page (same tab) instead of a new tab: order photos, product photos and image
+  // confirmations, in the client portal and the admin. Arrows / swipe-free buttons step through the photos next to it.
+  const PHOTO_RE = /\/api\/portal\/(?:orders\/\d+\/photos\/\d+|products\/\d+\/photos\/\d+|sheet-photos\/\d+\/\d+|sheet-product-photos\/\d+\/\d+)/;
+  const fullSize = src => String(src || '').replace(/([?&])size=thumb(&|$)/, (m, a, b) => (b ? a : '')).replace(/[?&]$/, '');
+  const isPhoto = el => {
+    if (!el) return false;
+    if (el.matches('a[data-photo]')) return true;
+    if (el.matches('a[href]')) return PHOTO_RE.test(el.getAttribute('href'));
+    return el.matches('img') && (PHOTO_RE.test(el.getAttribute('src') || '') || el.matches('img[data-photo]'));
+  };
+  const photoSrc = el => fullSize(el.matches('a') ? el.getAttribute('href') : (el.dataset.full || el.getAttribute('src')));
+  let viewer = null, shots = [], at = 0, lastFocus = null;
+  function showShot() {
+    const img = viewer.querySelector('img'), many = shots.length > 1;
+    img.src = shots[at]; viewer.querySelector('[data-pv-count]').textContent = many ? `${at + 1} / ${shots.length}` : '';
+    viewer.querySelectorAll('[data-pv-step]').forEach(b => { b.hidden = !many; });
+  }
+  function openPhoto(list, index) {
+    if (!viewer) {
+      viewer = document.createElement('div'); viewer.className = 'pv'; viewer.setAttribute('role', 'dialog'); viewer.setAttribute('aria-modal', 'true'); viewer.setAttribute('aria-label', 'Photo');
+      viewer.innerHTML = '<button type="button" class="pv-btn pv-close" data-pv-close aria-label="Close photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>'
+        + '<button type="button" class="pv-btn pv-prev" data-pv-step="-1" aria-label="Previous photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>'
+        + '<figure class="pv-fig"><img alt="Photo"><figcaption data-pv-count></figcaption></figure>'
+        + '<button type="button" class="pv-btn pv-next" data-pv-step="1" aria-label="Next photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>';
+      document.body.append(viewer);
+      viewer.addEventListener('click', e => {
+        const step = e.target.closest('[data-pv-step]'); if (step) { at = (at + Number(step.dataset.pvStep) + shots.length) % shots.length; showShot(); return; }
+        if (e.target.closest('[data-pv-close]') || !e.target.closest('img')) closePhoto();
+      });
+    }
+    shots = list; at = index; lastFocus = document.activeElement;
+    showShot(); viewer.classList.add('open'); document.documentElement.classList.add('pv-on');
+    viewer.querySelector('[data-pv-close]').focus();
+  }
+  function closePhoto() { if (!viewer?.classList.contains('open')) return; viewer.classList.remove('open'); document.documentElement.classList.remove('pv-on'); viewer.querySelector('img').removeAttribute('src'); lastFocus?.focus?.(); }
+  // Keys while open: Esc closes the photo only (not the side panel underneath), arrows step.
+  if (typeof window.addEventListener === 'function') window.addEventListener('keydown', e => {
+    if (!viewer?.classList.contains('open')) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closePhoto(); }
+    else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && shots.length > 1) { e.preventDefault(); e.stopImmediatePropagation(); const rtl = document.documentElement.dir === 'rtl'; at = (at + ((e.key === 'ArrowRight') !== rtl ? 1 : -1) + shots.length) % shots.length; showShot(); }
+  }, true);
+  // Clicks on a photo (or a link to one) anywhere: rows that open something else keep doing that.
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') document.addEventListener('click', e => {
+    if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const t = e.target, link = t.closest('a'), el = link && isPhoto(link) ? link : !link && t.matches('img') && isPhoto(t) ? t : null;
+    if (!el || el.closest('.pv, [data-open-order], [data-open-product], [data-open-client], tr.click, summary, label, button')) return;
+    e.preventDefault();
+    const box = el.closest('.pm-photos, .mp-photos, .pick-zone') || el.closest('td, section, form, article') || el.parentElement;
+    const items = [...box.querySelectorAll('a, img')].filter(x => isPhoto(x) && !(x.matches('img') && x.closest('a')) && !x.closest('[data-open-order], [data-open-product], summary, label'));
+    const list = [...new Set(items.map(photoSrc))], index = Math.max(0, list.indexOf(photoSrc(el)));
+    openPhoto(list.length ? list : [photoSrc(el)], list.length ? index : 0);
+  });
+
+  window.DL = { openPhoto, closePhoto, addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();

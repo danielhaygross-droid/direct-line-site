@@ -270,3 +270,15 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 @media(max-width:899px){.drawer-resizer{display:none}.drawer{width:100vw}}
 /* several prices for one product (Product Quotes options) */
 .price-options{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:4px;min-width:180px}.price-options li{display:flex;justify-content:space-between;gap:16px;padding:4px 0;border-bottom:1px dashed var(--line)}.price-options li:last-child{border-bottom:0}
+/* photo viewer (same tab) */
+.pv{position:fixed;inset:0;z-index:3000;display:none;align-items:center;justify-content:center;gap:12px;padding:56px 16px 24px;background:rgba(8,12,10,.86);backdrop-filter:blur(2px)}
+.pv.open{display:flex}html.pv-on{overflow:hidden}
+.pv-fig{margin:0;display:grid;gap:10px;justify-items:center;min-width:0;max-width:min(1100px,100%)}
+.pv-fig img{max-width:100%;max-height:calc(100vh - 120px);object-fit:contain;border-radius:12px;background:#fff;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+.pv-fig figcaption{color:#e9ece9;font-size:13px;font-family:var(--mono,monospace);min-height:16px}
+.pv-btn{display:grid;place-items:center;width:46px;height:46px;flex:none;border:1px solid rgba(255,255,255,.25);border-radius:50%;background:rgba(255,255,255,.12);color:#fff;cursor:pointer}
+.pv-btn:hover,.pv-btn:focus-visible{background:rgba(255,255,255,.24);outline:none}
+.pv-btn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.pv-close{position:absolute;top:12px;inset-inline-end:12px}
+[dir=rtl] .pv-prev svg,[dir=rtl] .pv-next svg{transform:scaleX(-1)}
+@media(max-width:560px){.pv{padding:60px 8px 16px;gap:4px}.pv-btn{width:44px;height:44px}.pv-prev,.pv-next{position:absolute;bottom:18px}.pv-prev{inset-inline-start:calc(50% - 56px)}.pv-next{inset-inline-end:calc(50% - 56px)}.pv-fig img{max-height:calc(100vh - 170px)}}
