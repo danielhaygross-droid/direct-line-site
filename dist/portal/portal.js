@@ -85,13 +85,15 @@
     if (S.me.passwordResetRequired) return passwordScreen();
     if (S.me.role === 'admin') {
       // Admins don't get bounced to the dashboard any more: they pick a client and preview their portal (view only).
-      const as = Number(new URLSearchParams(location.search).get('as'));
+      // ?act=1: "Log in as client" — the admin uses the portal with the client's rights (changes are real, logged, recorded as Direct Line).
+      const params = new URLSearchParams(location.search), as = Number(params.get('as'));
       if (!as) return adminScreen();
-      window.DL_VIEW_AS = as;
+      window.DL_VIEW_AS = as; window.DL_ACT = params.get('act') === '1';
       try { S.me = await api('/me'); } catch (e) { return adminScreen(e.message); }
     }
     shell();
     if (S.me.preview) previewBanner();
+    if (S.me.acting) actingBanner();
     $('#boot').remove(); $('#app').hidden = false;
     if (await refresh(true) === false) return;
     route();
@@ -157,21 +159,33 @@
     const app = $('#app'); app.hidden = false; app.className = 'admin-pick';
     app.innerHTML = `<div class="pick-card card">
       <a class="brand" href="/portal/" style="color:var(--text)"><span>direct<b>↗</b>line.</span><small>CLIENT PORTAL</small></a>
-      <div><h1>You’re signed in as the Direct Line admin</h1><p class="muted">This page is the client portal, what your clients see. Pick a client to see their portal exactly as they do (view only), or go back to the admin dashboard.</p></div>
+      <div><h1>You’re signed in as the Direct Line admin</h1><p class="muted">This page is the client portal, what your clients see. Pick a client to see their portal exactly as they do, or go back to the admin dashboard.</p></div>
       ${err ? `<p class="form-msg err">${esc(err)}</p>` : ''}
       <div class="pick-list">${clients.length ? clients.map(c => `<a class="pick-row" href="/portal/?as=${c.id}"><span class="avatar">${esc((c.name || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase())}</span><span><b>${esc(c.name)}</b><small>@${esc(c.username)} · ${c.orders} order${c.orders === 1 ? '' : 's'}${c.active ? '' : ' · disabled'}</small></span><em>See their portal →</em></a>`).join('')
         : '<p class="muted">No client accounts yet. Add one in the admin dashboard → Clients & orders.</p>'}</div>
       <div class="pick-actions"><a class="btn btn-primary" href="/en/#client-orders">Go to admin dashboard</a><button type="button" class="btn" data-pick-logout>Sign out (to log in as a client)</button></div>
-      <p class="note">To test as a client (add orders, send messages), open this page in an incognito window and sign in with the client’s username and password.</p>
+      <p class="note">Their portal opens view only. To add orders, photos, products or stores for them, press “Log in as client” at the top of their portal.</p>
     </div>`;
     $('[data-pick-logout]').addEventListener('click', logout);
   }
   function previewBanner() {
     const bar = document.createElement('div');
     bar.className = 'preview-bar';
-    bar.innerHTML = `<span><b>Preview:</b> you’re seeing ${esc(S.me.name)}’s portal as admin. View only, nothing you click here changes their account.</span><a href="/portal/">Pick another client</a><a href="${window.DLi18n?.lang === 'he' ? '/' : '/en/'}#client-orders">Back to admin dashboard</a>`;
+    bar.innerHTML = `<span><b>Preview:</b> you’re seeing ${esc(S.me.name)}’s portal as admin. View only, nothing you click here changes their account.</span><a href="/portal/?as=${S.me.id}&act=1">Log in as client</a><a href="/portal/">Pick another client</a><a href="${window.DLi18n?.lang === 'he' ? '/' : '/en/'}#client-orders">Back to admin dashboard</a>`;
     document.body.prepend(bar);
     document.body.classList.add('is-preview');
+  }
+  // Logged in as the client: everything works as for the client (except messages, password and terms), so say clearly that changes are real.
+  function actingBanner() {
+    const bar = document.createElement('div');
+    bar.className = 'preview-bar acting-bar';
+    bar.innerHTML = `<span><b>Logged in as ${esc(S.me.name)}.</b> Changes you make here are real and saved to their account. They are recorded as Direct Line.</span><a href="/portal/?as=${S.me.id}">Switch to view only</a><a href="${window.DLi18n?.lang === 'he' ? '/' : '/en/'}#client-orders">Back to admin dashboard</a>`;
+    document.body.prepend(bar);
+    document.body.classList.add('is-acting');
+    // One "logged in" line in the client's activity per tab, not one per reload.
+    const key = 'dl-acting-' + S.me.id;
+    let logged = false; try { logged = sessionStorage.getItem(key) === '1'; sessionStorage.setItem(key, '1'); } catch (e) { /* private mode */ }
+    if (!logged) api('/acting/start', { method: 'POST', body: {} }).catch(() => {});
   }
 
   // ---------- data ----------
@@ -255,7 +269,7 @@
         <a href="#/new" data-tab="new" class="fab" aria-label="New order"><span>${ic('plus')}</span>New order</a>
         <a href="#/messages" data-tab="messages">${ic('chat')}Messages<em data-tab-badge></em></a>
         <a href="#/payments" data-tab="payments">${ic('wallet')}Payments</a>
-      </nav>${S.me.preview ? '' : `<a class="client-support" data-client-support href="https://wa.me/972553031093" target="_blank" rel="noopener" aria-label="Contact Direct Line on WhatsApp" title="Contact Direct Line on WhatsApp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.6A8 8 0 0 1 8.1 18.5L4 20l1.4-4A8 8 0 1 1 20 11.6Z"/><path d="M9 8.5c.5 2 2 3.5 4 4l1-1c.4-.4.8-.2 1.1 0l1.5.7c.4.2.5.5.4.9-.4 1.2-1.5 1.9-2.7 1.7-3.6-.5-6.8-3.7-7.3-7.3-.2-1.2.5-2.3 1.7-2.7.4-.1.7 0 .9.4l.7 1.5c.2.3.4.7 0 1.1l-1.3.7Z"/></svg></a>`}`;
+      </nav>${S.me.preview || S.me.acting ? '' : `<a class="client-support" data-client-support href="https://wa.me/972553031093" target="_blank" rel="noopener" aria-label="Contact Direct Line on WhatsApp" title="Contact Direct Line on WhatsApp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.6A8 8 0 0 1 8.1 18.5L4 20l1.4-4A8 8 0 1 1 20 11.6Z"/><path d="M9 8.5c.5 2 2 3.5 4 4l1-1c.4-.4.8-.2 1.1 0l1.5.7c.4.2.5.5.4.9-.4 1.2-1.5 1.9-2.7 1.7-3.6-.5-6.8-3.7-7.3-7.3-.2-1.2.5-2.3 1.7-2.7.4-.1.7 0 .9.4l.7 1.5c.2.3.4.7 0 1.1l-1.3.7Z"/></svg></a>`}`;
     const bell = $('[data-bell]');
     panel = N.panel({
       anchor: bell,
@@ -450,7 +464,7 @@
     d.open(o.id);
     d.body.innerHTML = '<div data-d-info style="display:grid;gap:16px"></div><section><h3 class="sec-title">Messages with Direct Line</h3><div data-d-chat></div></section>';
     fillDrawer(o);
-    chatCtl = UI.chat($('[data-d-chat]', d.body), { orderId: o.id, role: 'client', readOnly:!!S.me.preview, onLoad: data => {
+    chatCtl = UI.chat($('[data-d-chat]', d.body), { orderId: o.id, role: 'client', readOnly:!!(S.me.preview || S.me.acting), onLoad: data => {
       drawerEvents = data.events || [];
       const cur = S.orders.find(x => x.id === o.id);
       const hadUnread=cur?.unreadMessages,oldCount=cur?.messages;UI.syncConversation(cur,data);

@@ -173,7 +173,11 @@
 .preview-bar{position:relative;z-index:60;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 20px;background:#b98a3e;color:#fff;font-size:14px}
 .preview-bar span{flex:1;min-width:220px}
 .preview-bar a{color:#fff;font-weight:700;text-decoration:underline;white-space:nowrap}
-.is-preview .side{top:0}
+.is-preview .side,.is-acting .side{top:0}
+/* Logged in as the client: a different colour from the view-only preview, because changes are real. */
+.acting-bar{background:#a8442f}
+/* Messages are sent from the admin dashboard, so the client sees they come from Direct Line. */
+.is-acting :is(.composer,.quick,.ask,[data-ask-go]){display:none!important}
 @media(max-width:560px){.pick-row{grid-template-columns:40px 1fr}.pick-row em{grid-column:2}.pick-card{padding:20px}}
 
 /* Subscription banner (first month free, then monthly) */

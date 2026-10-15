@@ -555,11 +555,11 @@
   }
 
   // ---------- side panel: one client ----------
-  let payments = [], transferProofs = [], invoiceFiles=[], balanceAdjustments=[], savedPrices = null;
+  let payments = [], transferProofs = [], invoiceFiles=[], balanceAdjustments=[], savedPrices = null, clientActivity = null;
   async function openClient(id, tab = 'orders') {
     const c = clientOf(id); if (!c) return;
     const d = UI.getDrawer();
-    closeChat(); payments = []; transferProofs = []; invoiceFiles=[];balanceAdjustments=[]; savedPrices = null;
+    closeChat(); payments = []; transferProofs = []; invoiceFiles=[];balanceAdjustments=[]; savedPrices = null; clientActivity = null;
     S.drawer = { kind: 'client', id: c.id, tab };
     d.onClose = () => { S.drawer = null; };
     d.open('c' + c.id);
@@ -583,6 +583,34 @@
         <td data-label="Used"><small class="dim">${p.uses ? `${p.uses}×` : 'Not yet'}${p.lastUsedAt ? ` · ${esc(fmtDay(new Date(p.lastUsedAt * 1000).toISOString().slice(0, 10)))}` : ''}</small></td>
         <td class="num"><button type="button" class="btn btn-sm" data-forget-price="${p.id}">Forget</button></td></tr>`).join('')}
     </tbody></table></div></section>`;
+  }
+  // Client activity: last sign-in / last time in the portal, what the client did, and what admins changed logged in as them.
+  async function loadActivity(id) {
+    try { clientActivity = await api('/admin/clients/' + id + '/activity'); } catch (ex) { clientActivity = { lastLogin: null, lastSeen: null, events: [], adminActions: [] }; toast(ex.message); }
+    if (S.drawer?.kind === 'client' && S.drawer.id === id) fillClient(clientOf(id), true);
+  }
+  const CLIENT_DID = { created: 'Added an order', edited: 'Edited an order', status: 'Changed an order status', cancellation: 'Asked to cancel an order', photo: 'Added a product photo', claim: 'Opened a claim', message: 'Sent a message', product: 'Sent a product for a quote' };
+  const clientDid = e => e.kind === 'edited' && e.detail === 'customer' ? 'Changed customer details' : e.kind === 'photo' && e.detail === 'removed' ? 'Removed a product photo' : CLIENT_DID[e.kind] || e.kind;
+  function adminDid(a) {
+    const p = a.path, m = /^\/orders\/(\d+)/.exec(p);
+    const label = p === '/acting/start' ? 'Logged in as this client'
+      : p === '/orders' ? 'Added an order' : /\/photos\/\d+\/delete$/.test(p) ? 'Removed a product photo' : /\/photos$/.test(p) ? 'Added a product photo'
+      : /\/request-cancellation$/.test(p) ? 'Asked to cancel an order' : /\/mark-delivered$/.test(p) ? 'Marked an order delivered' : /\/claims$/.test(p) ? 'Opened a claim'
+      : /^\/orders\/\d+$/.test(p) ? 'Edited an order' : p.startsWith('/products') ? 'Sent a product for a quote' : p.startsWith('/client-stores') ? 'Saved a store'
+      : p.startsWith('/transfers') ? 'Uploaded a transfer confirmation' : /\/messages$/.test(p) ? 'Sent a message' : p === '/password' ? 'Changed the password'
+      : p === '/terms/accept' ? 'Accepted the terms' : 'Other change';
+    const order = m ? S.orders.find(o => o.id === Number(m[1])) : null;
+    return { label, ref: order ? orderName(order) : m ? '#' + m[1] : '' };
+  }
+  const actRow = (label, ref, at, extra = '') => `<li><b>${esc(label)}</b>${ref ? ` <span class="dim" data-no-i18n>${esc(ref)}</span>` : ''}${extra}<time datetime="${new Date(at * 1000).toISOString()}">${esc(fullDate(at))}</time></li>`;
+  function activityHTML(c) {
+    const a = clientActivity;
+    const login = `<section class="card card-pad"><h3 class="sec-title">Log in as client</h3><p class="note" style="margin:0 0 12px">Open ${esc(c.name)}’s portal and use it as they would: add orders, upload photos, send products for a quote, add stores or transfer confirmations. Everything you change is saved to their account, recorded as Direct Line and listed below. To only look, use “See their portal”.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-primary" href="/portal/?as=${c.id}&act=1" target="_blank" rel="noopener">${ic('ext')}Log in as client</a><a class="btn" href="/portal/?as=${c.id}" target="_blank" rel="noopener">See their portal <small>(view only)</small></a></div></section>`;
+    if (!a) return `${login}<section class="card card-pad"><p class="muted">Loading…</p></section>`;
+    const when = s => s ? `<time datetime="${new Date(s * 1000).toISOString()}">${esc(fullDate(s))}</time>` : '<span class="dim">Never</span>';
+    return `${login}<section class="card card-pad"><dl class="kv" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><dt>Last sign-in</dt><dd>${when(a.lastLogin)}</dd></div><div><dt>Last active in the portal</dt><dd>${when(a.lastSeen)}</dd></div></dl></section>
+      <section class="card card-pad"><h3 class="sec-title">What the client did</h3>${a.events.length ? `<ol class="order-activity">${a.events.map(e => actRow(clientDid(e), e.orderRef || e.productName || (e.orderId ? '#' + e.orderId : ''), e.createdAt)).join('')}</ol>` : '<p class="muted">Nothing yet.</p>'}</section>
+      <section class="card card-pad"><h3 class="sec-title">Changes made by admins logged in as this client</h3>${a.adminActions.length ? `<ol class="order-activity">${a.adminActions.map(x => { const d = adminDid(x); return actRow(d.label, d.ref, x.createdAt, x.ok ? '' : ' <span class="neg">Didn’t go through</span>'); }).join('')}</ol>` : '<p class="muted">None yet.</p>'}</section>`;
   }
   async function loadPayments(id) {
     try { const [p,t,f] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id),api('/admin/invoices?clientId='+id)]); payments=p.payments; transferProofs=t.transfers;invoiceFiles=f.invoices;balanceAdjustments=p.adjustments||[]; } catch (e) { payments = []; transferProofs = []; invoiceFiles=[]; toast('Couldn’t load payments: ' + e.message); }
@@ -623,6 +651,7 @@
             ${invoiceFields(c.id)}<div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Record payment</button><p class="form-msg" data-pay-msg></p></div></form></section>
           <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles)}${invoiceForm(c.id)}</section><section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td>${adminInvoiceLinks(invoiceFiles.filter(f=>f.paymentId===p.id))}</td><td class="num"><button type="button" class="btn btn-sm" data-edit-payment="${p.id}">Edit</button> ${p.archived ? `<span class="tag">Archived</span> <button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button>`}</td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
         : tab === 'prices' ? savedPricesHTML(c)
+        : tab === 'activity' ? activityHTML(c)
         : `<section class="card card-pad"><form class="form-grid" data-account-form="${c.id}" novalidate>
             <label class="field full"><span>Name</span><input name="name" maxlength="120" value="${esc(c.name)}"></label>
             <label class="field"><span>Fee per order <small>empty = default</small></span><span class="money"><input name="commissionPerOrder" type="number" min="0" step="0.01" value="${c.commissionPerOrder ?? ''}"></span></label>
@@ -637,10 +666,10 @@
       <section class="card card-pad"><dl class="kv" style="grid-template-columns:repeat(3,minmax(0,1fr))">
         <div><dt>Orders</dt><dd><b>${c.orders}</b></dd></div><div><dt>Billed</dt><dd><b>${money(c.billed)}</b></dd></div><div><dt>Paid</dt><dd><b class="pos">${money(c.paid)}</b></dd></div>
         <div><dt>Outstanding</dt><dd><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b></dd></div><div><dt>Our earnings</dt><dd><b>${money(c.ourShare)}</b></dd></div><div><dt>Client’s profit</dt><dd><b>${money(c.clientProfit)}</b></dd></div></dl></section>
-      <div class="dtabs">${[['orders', `Orders (${orders.length})`], ['payments', `Payments (${payments.length})`], ['prices', savedPrices ? `Saved prices (${savedPrices.length})` : 'Saved prices'], ['account', 'Account']].map(([k, l]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-ctab="${k}">${l}</button>`).join('')}</div>
+      <div class="dtabs">${[['orders', `Orders (${orders.length})`], ['payments', `Payments (${payments.length})`], ['prices', savedPrices ? `Saved prices (${savedPrices.length})` : 'Saved prices'], ['activity', 'Activity'], ['account', 'Account']].map(([k, l]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-ctab="${k}">${l}</button>`).join('')}</div>
       ${pane}`;
     window.DLEnhancePasswords?.(d.body);
-    d.foot.innerHTML = `<button type="button" class="btn btn-primary" data-new-order="${c.id}">${ic('plus')}Add order for ${esc(c.name)}</button><a class="btn" href="/portal/?as=${c.id}" target="_blank" rel="noopener">${ic('ext')}See their portal</a>`;
+    d.foot.innerHTML = `<button type="button" class="btn btn-primary" data-new-order="${c.id}">${ic('plus')}Add order for ${esc(c.name)}</button><a class="btn" href="/portal/?as=${c.id}&act=1" target="_blank" rel="noopener" data-login-as="${c.id}">${ic('ext')}Log in as client</a><a class="btn" href="/portal/?as=${c.id}" target="_blank" rel="noopener">See their portal</a>`;
   }
 
   // ---------- side panel: new / edit order ----------
@@ -978,7 +1007,7 @@
     const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
     const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
     const oo = t.closest('[data-open-order]'); if (oo) { openOrder(oo.dataset.openOrder, null, oo.dataset.back ? Number(oo.dataset.back) : null); return; }
-    const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; fillClient(clientOf(S.drawer.id)); if (ct.dataset.ctab==='payments') await loadPayments(S.drawer.id); if (ct.dataset.ctab==='prices') await loadSavedPrices(S.drawer.id); return; }
+    const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; fillClient(clientOf(S.drawer.id)); if (ct.dataset.ctab==='payments') await loadPayments(S.drawer.id); if (ct.dataset.ctab==='prices') await loadSavedPrices(S.drawer.id); if (ct.dataset.ctab==='activity') await loadActivity(S.drawer.id); return; }
     const fp = t.closest('[data-forget-price]');
     if (fp) {
       if (!fp.dataset.armed) { fp.dataset.armed = '1'; fp.textContent = 'Click again to forget'; setTimeout(() => { if (fp.isConnected) { delete fp.dataset.armed; fp.textContent = 'Forget'; } }, 4000); return; }
