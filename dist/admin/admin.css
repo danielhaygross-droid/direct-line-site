@@ -127,3 +127,16 @@ details.fold>summary small{margin-inline-start:auto}
 .ord-main{display:grid;gap:2px;min-width:0}.ord-main small{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ord-side{display:flex;align-items:center;gap:10px;flex:none}
 @media(max-width:560px){.ord-row{padding:10px 14px;align-items:flex-start}.ord-side{flex-direction:column;align-items:flex-end;gap:4px}}
+/* client panel v2: summary row, 4 grouped tabs, sub-tabs, store filter */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.kpis>div{display:grid;gap:2px;align-content:start;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;min-width:0}
+.kpis span{font-size:12px;color:var(--muted)}.kpis b{font-size:17px}.kpis small{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gtabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:5px;border-radius:14px;background:var(--surface-3)}
+.gtabs button{min-height:44px;border:0;border-radius:10px;background:none;color:var(--muted);font:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;padding:0 6px}
+.gtabs button small{font-weight:500;opacity:.8}
+.gtabs button.on{background:var(--surface);color:var(--text);font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.subtabs{display:flex;gap:6px;flex-wrap:wrap}
+.subtabs button{min-height:36px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:none;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.subtabs button.on{border-color:var(--gold);color:var(--text);background:color-mix(in srgb,var(--gold) 12%,transparent)}
+.store-pick{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted)}.store-pick select{flex:1;max-width:320px;min-height:42px;padding:0 12px;border:1px solid var(--line-2);border-radius:11px;background:var(--surface);color:var(--text);font:inherit;font-size:14px}
+@media(max-width:560px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.gtabs button{font-size:13px}.store-pick select{max-width:none}}

@@ -603,6 +603,10 @@
     return { label, ref: order ? orderName(order) : m ? '#' + m[1] : '' };
   }
   const actRow = (label, ref, at, extra = '') => `<li><b>${esc(label)}</b>${ref ? ` <span class="dim" data-no-i18n>${esc(ref)}</span>` : ''}${extra}<time datetime="${new Date(at * 1000).toISOString()}">${esc(fullDate(at))}</time></li>`;
+  // Client panel: 4 tabs, each with its own sections (sub-tabs) — Orders · Shop · Money · Account.
+  const CLIENT_GROUPS = [['orders', 'Orders', ['orders']], ['shop', 'Shop', ['stores', 'products']], ['money', 'Money', ['payments', 'prices']], ['account', 'Account', ['account', 'activity']]];
+  const groupOf = sec => (CLIENT_GROUPS.find(x => x[2].includes(sec)) || CLIENT_GROUPS[0])[0];
+  document.addEventListener('change', e => { const sel = e.target.closest?.('[data-client-store]'); if (sel && S.drawer?.kind === 'client') { S.drawer.storeId = Number(sel.value); fillClient(clientOf(S.drawer.id)); } });
   // Long lists: the newest 8, the rest behind "Show all".
   const foldList = rows => `<ol class="order-activity">${rows.slice(0, 8).join('')}</ol>` + (rows.length > 8 ? `<details class="fold-more" data-keep="more${rows.length}"><summary>Show all (${rows.length})</summary><ol class="order-activity">${rows.slice(8).join('')}</ol></details>` : '');
   // Folded sections remember whether they were open (this browser only).
@@ -654,8 +658,8 @@
     const t = new Date(), iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     const pane = tab === 'orders'
       // Orders tab: the order list, with the store performance folded away (one line until opened).
-      ? `<details class="card card-pad fold" data-fold="perf"${foldOpen('perf') ? ' open' : ''}><summary><h3 class="sec-title">Performance by store</h3><small class="dim">${S.drawer.storeId ? 'One store shown' : 'All stores'}</small></summary>${window.DLClientStoreUI.periodFields(S.period,S.from,S.to)}${window.DLClientStoreUI.table(stats,'data-admin-select-store')}</details>`
-        + (S.drawer.storeId ? `<p class="store-filter"><span>Showing one store:</span> ${window.DLClientStoreUI.label(stores.find(s=>s.id===S.drawer.storeId))} <button class="btn btn-sm" type="button" data-admin-select-store="0">All stores</button></p>` : '')
+      ? (stores.length > 1 ? `<label class="store-pick"><span>Store</span><select data-client-store>${[`<option value="0">All stores (${stores.length})</option>`, ...stores.map(s => `<option value="${s.id}"${S.drawer.storeId === s.id ? ' selected' : ''} data-no-i18n>${esc(s.name)}</option>`)].join('')}</select></label>` : '')
+        + `<details class="card card-pad fold" data-fold="perf"${foldOpen('perf') ? ' open' : ''}><summary><h3 class="sec-title">Performance by store</h3><small class="dim">${S.drawer.storeId ? 'One store shown' : 'All stores'}</small></summary>${window.DLClientStoreUI.periodFields(S.period,S.from,S.to)}${window.DLClientStoreUI.table(stats,'data-admin-select-store')}</details>`
         // One compact row per order (order number, customer and store; total and status on the right).
         + (orders.length ? `<section class="card ord-list">${orders.map(o=>`<button type="button" class="ord-row" data-open-order="${o.id}" data-back="${c.id}"><span class="ord-main"><b>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(o.buyerName) || '—'}</span> · ${window.DLClientStoreUI.label(stores.find(s=>s.id===o.storeId))}</small></span><span class="ord-side"><b>${money(o.price)}</b>${UI.pill(o.status)}</span></button>`).join('')}</section>` : empty('No orders yet', 'Orders this client adds show up here.'))
       : tab === 'stores'
@@ -681,13 +685,18 @@
             <p class="note" style="margin-top:12px">A new fee applies to new orders. To change the orders already in the system, tick the box above before saving; prices that come from the supplier’s cost (cost + fee) follow the new fee.</p></section>
           ${subscriptionHTML(c)}
           <details class="card card-pad fold" data-keep="archive"><summary><h3 class="sec-title">Archive</h3></summary><p class="muted" style="margin:0 0 12px;font-size:14px">For test accounts or clients you no longer work with. It hides this client, their orders and payments from every list and total, and stops them signing in. Nothing is deleted, and you can restore them any time from the Clients tab.</p><button type="button" class="btn btn-danger" data-archive="${c.id}">Archive client</button></details>`;
+    const group = groupOf(tab), subs = CLIENT_GROUPS.find(x => x[0] === group)[2], waiting = products.some(p => p.status === 'awaiting_quote');
+    const subLabel = Object.fromEntries([['stores', `Stores (${stores.length})`], ['products', `Products (${products.length})`], ['payments', `Payments (${payments.length})`], ['prices', savedPrices ? `Saved prices (${savedPrices.length})` : 'Saved prices'], ['account', 'Details'], ['activity', 'Activity']]);
     // The 20-second refresh redraws the panel: keep open rows open.
     const keep = soft ? [...d.body.querySelectorAll('details[open][data-keep]')].map(x => x.dataset.keep) : [];
     d.body.innerHTML = `
-      <section class="card card-pad"><dl class="kv" style="grid-template-columns:repeat(3,minmax(0,1fr))">
-        <div><dt>Orders</dt><dd><b>${c.orders}</b></dd></div><div><dt>Billed</dt><dd><b>${money(c.billed)}</b></dd></div><div><dt>Paid</dt><dd><b class="pos">${money(c.paid)}</b></dd></div>
-        <div><dt>Outstanding</dt><dd><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b></dd></div><div><dt>Our earnings</dt><dd><b>${money(c.ourShare)}</b></dd></div><div><dt>Client’s profit</dt><dd><b>${money(c.clientProfit)}</b></dd></div></dl></section>
-      <div class="dtabs">${[['orders', `Orders (${orders.length})`], ['stores', `Stores (${stores.length})`], ['products', `Products (${products.length})`], ['payments', `Payments (${payments.length})`], ['prices', savedPrices ? `Saved prices (${savedPrices.length})` : 'Saved prices'], ['activity', 'Activity'], ['account', 'Account']].map(([k, l]) => `<button type="button" class="${tab === k ? 'on' : ''}" data-ctab="${k}">${l}${k === 'products' && products.some(p => p.status === 'awaiting_quote') ? `<i class="tab-dot" title="Waiting for a price"></i>` : ''}</button>`).join('')}</div>
+      <div class="kpis">
+        <div><span>Orders</span><b>${c.orders}</b></div>
+        <div><span>Outstanding</span><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b><small><span>Billed</span> ${money(c.billed)}</small></div>
+        <div><span>Paid</span><b class="pos">${money(c.paid)}</b></div>
+        <div><span>Our earnings</span><b>${money(c.ourShare)}</b><small><span>Client’s profit</span> ${money(c.clientProfit)}</small></div></div>
+      <div class="gtabs" role="tablist">${CLIENT_GROUPS.map(([g, label, secs]) => `<button type="button" role="tab" aria-selected="${group === g}" class="${group === g ? 'on' : ''}" data-ctab="${S.drawer.last?.[g] || secs[0]}">${label}${g === 'orders' ? ` <small>${orders.length}</small>` : ''}${g === 'shop' && waiting ? '<i class="tab-dot" title="Waiting for a price"></i>' : ''}</button>`).join('')}</div>
+      ${subs.length > 1 ? `<div class="subtabs">${subs.map(k => `<button type="button" class="${tab === k ? 'on' : ''}" data-ctab="${k}">${subLabel[k]}${k === 'products' && waiting ? '<i class="tab-dot" title="Waiting for a price"></i>' : ''}</button>`).join('')}</div>` : ''}
       ${pane}`;
     keep.forEach(k => { const x = d.body.querySelector(`details[data-keep="${k}"]`); if (x) x.open = true; });
     window.DLEnhancePasswords?.(d.body);
@@ -1029,7 +1038,7 @@
     const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
     const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
     const oo = t.closest('[data-open-order]'); if (oo) { openOrder(oo.dataset.openOrder, null, oo.dataset.back ? Number(oo.dataset.back) : null); return; }
-    const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; fillClient(clientOf(S.drawer.id)); if (ct.dataset.ctab==='payments') await loadPayments(S.drawer.id); if (ct.dataset.ctab==='prices') await loadSavedPrices(S.drawer.id); if (ct.dataset.ctab==='activity') await loadActivity(S.drawer.id); return; }
+    const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; S.drawer.last = { ...S.drawer.last, [groupOf(ct.dataset.ctab)]: ct.dataset.ctab }; fillClient(clientOf(S.drawer.id)); if (ct.dataset.ctab==='payments') await loadPayments(S.drawer.id); if (ct.dataset.ctab==='prices') await loadSavedPrices(S.drawer.id); if (ct.dataset.ctab==='activity') await loadActivity(S.drawer.id); return; }
     const fp = t.closest('[data-forget-price]');
     if (fp) {
       if (!fp.dataset.armed) { fp.dataset.armed = '1'; fp.textContent = 'Click again to forget'; setTimeout(() => { if (fp.isConnected) { delete fp.dataset.armed; fp.textContent = 'Forget'; } }, 4000); return; }
