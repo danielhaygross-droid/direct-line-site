@@ -97,3 +97,33 @@ html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 
 /* bulk edit on the Orders tab */
 .tbl th.pick,.tbl td.pick{width:36px;padding-inline-end:0}.tbl td.pick input,.tbl th.pick input{width:18px;height:18px;accent-color:var(--gold);cursor:pointer;margin:0}@media (min-width:721px){.tbl tr.picked td{background:color-mix(in srgb,var(--gold) 10%,transparent)}}@media (max-width:720px){.tbl.stack tr.picked{background:color-mix(in srgb,var(--gold) 10%,var(--card,#fff));box-shadow:inset 3px 0 0 var(--gold)}.tbl.stack tr.picked td{background:transparent}}.bulk-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:2}.bulk-bar.bulk-hint{font-size:13px;padding:10px 16px}.bulk-f{display:inline-flex;align-items:center;gap:6px;font-size:13px}.bulk-f>span:first-child{color:var(--dim)}.bulk-f select,.bulk-f input{height:34px;min-height:0;padding:0 10px;font-size:14px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff)}.bulk-f input{width:120px}.bulk-f .money input{width:90px}.bulk-msg{font-size:13px;color:var(--dim)}.bulk-all{display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;white-space:nowrap}.bulk-all input{width:18px;height:18px;accent-color:var(--gold);margin:0}@media (max-width:720px){.tbl.stack td.pick{position:absolute;inset-inline-end:12px;top:12px;width:auto;padding:0}.tbl.stack tr{position:relative}.bulk-f{width:100%}.bulk-f input,.bulk-f select{flex:1}}
+/* client panel: folded sections, product rows, scrollable tabs */
+.dtabs{overflow-x:auto;overflow-y:hidden;scrollbar-width:none;flex:none;min-height:44px}.dtabs::-webkit-scrollbar{display:none}
+.dtabs button{white-space:nowrap;flex:none;position:relative}
+.tab-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--gold);margin-inline-start:6px;vertical-align:middle}
+details.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary .sec-title{margin:0}
+details.fold>summary::after{content:'';width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin-inline-start:auto;flex:none;transition:transform .15s}
+details.fold[open]>summary::after{transform:rotate(225deg)}
+details.fold[open]>summary{margin-bottom:14px}
+details.fold>summary small{margin-inline-start:auto}
+.store-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;font-size:14px}
+.fold-row{border-top:1px solid var(--line);padding:10px 0}.fold-row:first-of-type{border-top:0}
+.fold-row>summary{cursor:pointer}
+.fold-more>summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:8px}
+.prod-row{border-top:1px solid var(--line)}.prod-row:first-of-type{border-top:0}
+.prod-row>summary{display:grid;grid-template-columns:44px minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:10px 0;cursor:pointer;list-style:none}
+.prod-row>summary::-webkit-details-marker{display:none}
+.prod-row>summary img,.prod-ph{width:44px;height:44px;border-radius:10px;object-fit:cover;background:var(--line)}
+.prod-name{display:grid;min-width:0}.prod-name b,.prod-name small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prod-price{text-align:end;white-space:nowrap}
+.prod-row[open]>summary{border-bottom:1px dashed var(--line);margin-bottom:12px}
+.prod-row>form{padding-bottom:16px}
+@media(max-width:560px){.prod-row>summary{grid-template-columns:44px minmax(0,1fr) auto}.prod-row>summary .tag{grid-column:2;justify-self:start}.prod-price{grid-column:3;grid-row:1}}
+.ord-list{padding:4px 0}
+.ord-row{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:11px 20px;border:0;border-top:1px solid var(--line);background:none;color:inherit;font:inherit;text-align:start;cursor:pointer}
+.ord-row:first-child{border-top:0}.ord-row:hover,.ord-row:focus-visible{background:var(--surface-2,rgba(0,0,0,.03))}
+.ord-main{display:grid;gap:2px;min-width:0}.ord-main small{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ord-side{display:flex;align-items:center;gap:10px;flex:none}
+@media(max-width:560px){.ord-row{padding:10px 14px;align-items:flex-start}.ord-side{flex-direction:column;align-items:flex-end;gap:4px}}
