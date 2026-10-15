@@ -34,6 +34,6 @@ test('wired up: schema, signed photo route, sync on new product and admin quote,
   const products = await readFile(new URL('../server/products.mjs', import.meta.url), 'utf8');
   assert.ok(products.includes('...(clientId===null?{supplierPrice:'), 'only admins get the supplier price');
   const client = await readFile(new URL('../dist/portal/portal.js', import.meta.url), 'utf8'), admin = await readFile(new URL('../dist/admin/admin.js', import.meta.url), 'utf8');
-  assert.ok(client.includes('<span>Price per item</span>') && client.includes('shipping not included'));
+  assert.ok(client.includes('per item · shipping not included') && client.includes('shipping not included'), 'client sees the price per item');
   assert.ok(admin.includes('Supplier price from the sheet:'));
 });
