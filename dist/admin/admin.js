@@ -120,6 +120,7 @@
       <label class="bulk-f"><span>Status</span><select data-bulk-status><option value="">Choose…</option>${ADMIN_STATUSES.map(s => `<option value="${s}">${UI.LABEL[s]}</option>`).join('')}</select></label><button type="button" class="btn btn-sm" data-bulk="status">Set status</button>
       <label class="bulk-f"><span>Courier</span><input data-bulk-courier list="dl-bulk-couriers" maxlength="60" placeholder="e.g. Yanwen"><datalist id="dl-bulk-couriers">${couriers.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label><button type="button" class="btn btn-sm" data-bulk="courier">Set courier</button>
       <label class="bulk-f"><span>Fee</span><span class="money"><input data-bulk-fee type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.50"></span></label><button type="button" class="btn btn-sm" data-bulk="fee">Set fee</button>
+      <button type="button" class="btn btn-sm" data-bulk="addrflag">Clear address warning</button>
       <button type="button" class="btn btn-sm btn-danger" data-bulk="archive">Archive</button>`}
       <button type="button" class="btn btn-sm btn-ghost" data-bulk="clear">Clear selection</button>
       <span class="bulk-msg" data-bulk-msg role="status"></span></div>`;
@@ -130,6 +131,7 @@
     let body = null;
     if (kind === 'status') { const v = $('[data-bulk-status]', bar).value; if (!v) { msg.textContent = 'Choose a status first.'; return; } body = { status: v }; }
     if (kind === 'courier') { const v = $('[data-bulk-courier]', bar).value.trim(); if (!v) { msg.textContent = 'Type or pick a courier first.'; return; } body = { courier: v }; }
+    if (kind === 'addrflag') body = { clearAddressFlag: true };
     if (kind === 'fee') { const v = $('[data-bulk-fee]', bar).value; if (v === '' || !(Number(v) >= 0)) { msg.textContent = 'Enter the fee first.'; return; } body = { commission: v }; }
     if (kind === 'archive' && !btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = `Click again to archive ${ids.length}`; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Archive'; } }, 4000); return; }
     $$('button, select, input', bar).forEach(x => { x.disabled = true; });
@@ -467,6 +469,7 @@
         <div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div><div><dt>Customer paid</dt><dd>${customerPaid(o)}</dd></div>
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
+        ${o.addressChangedAt && !['shipped', 'delivered', 'cancelled'].includes(o.status) ? `<div class="full addr-flag"><dt>Supplier sheet</dt><dd><span>⚠ The supplier sees “Address changed” on this order</span> <small class="dim" data-no-i18n>${esc(fullDate(o.addressChangedAt))}</small></dd><button type="button" class="btn btn-sm" data-clear-addr-flag="${o.id}">Clear warning</button></div>` : ''}
         <div class="full"><dt>Recipient</dt><dd>${esc(o.buyerName) || '—'}</dd></div>
         <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${DL.addressLines(o, o.destination ? place(o.destination) : '', false).map(esc).join('\n') || '—'}</dd><button type="button" class="btn btn-sm" data-copy="${esc(DL.addressLines(o, o.destination ? place(o.destination) : '', true).join('\n'))}">Copy full address</button></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
         <div><dt>Product type</dt><dd>${esc(shortCat(o.category))}</dd></div><div><dt>Weight</dt><dd>${o.weightKg != null ? esc(o.weightKg) + ' kg' : 'Not entered yet'}</dd></div><div><dt>Last update</dt><dd>${esc(fullDate(o.updatedAt))}</dd></div>
@@ -1045,6 +1048,13 @@
       ao.disabled=true;
       try { await api('/admin/orders/'+id+'/archive',{method:'POST',body:{archived}});UI.getDrawer().close();await loadAll();renderList();tell({type:'dl-clients-changed'});toast(archived ? 'Order archived. Billing history is preserved.' : 'Order restored.'); }
       catch(ex){toast(ex.message);ao.disabled=false;}
+      return;
+    }
+    const caf = t.closest('[data-clear-addr-flag]');
+    if (caf) {
+      caf.disabled = true;
+      try { await api('/orders/' + caf.dataset.clearAddrFlag, { method: 'PUT', body: { clearAddressFlag: true } }); await loadAll(); refreshDrawer(); toast('Address warning cleared.'); }
+      catch (ex) { toast(ex.message); caf.disabled = false; }
       return;
     }
     const ar = t.closest('[data-archive]');
