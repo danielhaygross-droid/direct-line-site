@@ -268,3 +268,5 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .drawer-resizer:hover::before,.drawer-resizer:focus-visible::before{background:var(--gold)}.drawer-resizer:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
 .drawer.resizing{transition:none;user-select:none}
 @media(max-width:899px){.drawer-resizer{display:none}.drawer{width:100vw}}
+/* several prices for one product (Product Quotes options) */
+.price-options{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:4px;min-width:180px}.price-options li{display:flex;justify-content:space-between;gap:16px;padding:4px 0;border-bottom:1px dashed var(--line)}.price-options li:last-child{border-bottom:0}

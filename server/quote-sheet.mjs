@@ -2,6 +2,7 @@
 // The website writes one row per product; the supplier fills in the yellow columns and the website reads them
 // every minute (from the supplier-sheet cron):
 //   J  Price per item (USD) — product only, no shipping. The client sees it + their fee per order.
+//      A product with several prices (sizes, colours…) gets one option per line: "Small: 3.20" / "Large: 4.50".
 //   K  Available?           — "Not available" (with a reason in L) instead of a price.
 //   L  Supplier note        — optional, shown to the client.
 // The supplier never sees who the client is. Admins can still set or change a quote in admin → Products.
@@ -19,9 +20,14 @@ export const QUOTE_SHEET_SCHEMA = [
   'ALTER TABLE portal_products ADD COLUMN IF NOT EXISTS sheet_price TEXT',
   'ALTER TABLE portal_products ADD COLUMN IF NOT EXISTS sheet_status TEXT',
   'ALTER TABLE portal_products ADD COLUMN IF NOT EXISTS sheet_note TEXT',
+  // Several prices for one product: JSON [{ label, supplier, unit }] (unit = supplier + the client's fee). NULL = one price.
+  'ALTER TABLE portal_products ADD COLUMN IF NOT EXISTS price_options TEXT',
 ];
 const STATUS = { awaiting_quote: 'Waiting for price', approved: 'Quoted', not_available: 'Not available' };
-const TAB = 'quote_tab';
+const TAB = 'quote_tab', OPTIONS_FORMAT = 'quote_tab_options_v1';
+export const QUOTE_HELP = 'Supplier: these are price checks from our clients before they sell a product. Fill in the yellow columns — Price per item (USD, product only, no shipping), or set Available? to Not available and add a note. Several prices (sizes, colours…)? Put one option per line in the price cell, like:  Small: 3.20  (new line)  Large: 4.50. The website updates within a minute.';
+export const PRICE_HELP = 'Price for one item in USD, product only (no shipping). Several prices? One option per line, e.g.\nSmall: 3.20\nLarge: 4.50\n(Ctrl+Enter or Alt+Enter starts a new line in the cell; ; also works.)';
+export const PRICE_UNCLEAR = 'Price not clear: write Name: price, one per line';
 
 const norm = v => (v === null || v === undefined ? '' : String(v).trim());
 const txt = v => { const s = norm(v); return /^[=+\-@0-9]/.test(s) ? "'" + s : s; };
@@ -39,6 +45,26 @@ export function parsePrice(value) {
   if (!s) return null;
   s = /^\d+,\d{1,2}$/.test(s) ? s.replace(',', '.') : s.replace(/,/g, '');
   return /^\d+(\.\d+)?$/.test(s) && Number(s) < 1e7 ? round2(Number(s)) : null;
+}
+
+// The price cell: one price ("3.20") or several options, one per line / separated by ";" or "|"
+// ("Small: 3.20", "Large 4.50", "Blue - $5"). Returns { price } or { options: [{ label, price }] }, or null if unclear.
+export function parsePriceOptions(value) {
+  if (typeof value === 'number') { const price = parsePrice(value); return price === null ? null : { price }; }
+  const parts = norm(value).split(/\r?\n|;|\|/).map(x => x.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  if (parts.length === 1 && parsePrice(parts[0]) !== null) return { price: parsePrice(parts[0]) };
+  if (parts.length > 20) return null;
+  const options = [];
+  for (const part of parts) {
+    const m = /^(.*?)[\s:=\-–—]*((?:\$|USD)?\s*\d[\d,]*(?:\.\d+)?\s*(?:\$|USD)?)$/i.exec(part);
+    const price = m ? parsePrice(m[2]) : null;
+    if (price === null || (!m[1].trim() && part.trim().startsWith('-'))) return null;
+    const label = m[1].replace(/[\s:=\-–—]+$/, '').trim().slice(0, 80) || 'Option ' + (options.length + 1);
+    if (options.some(o => o.label.toLowerCase() === label.toLowerCase())) return null;
+    options.push({ label, price });
+  }
+  return options.length === 1 ? { price: options[0].price } : { options };
 }
 
 // Website-owned cells of one product row: A–I and M–N.
@@ -77,7 +103,7 @@ export async function ensureQuoteTab(DB, env, fetchImpl = fetch) {
     const { email } = googleSheetsConfig(env), cols = (a, b) => ({ sheetId, startColumnIndex: a, endColumnIndex: b });
     const yellow = { red: 1, green: 0.95, blue: 0.7 };
     await batchValues(env, [
-      { range: `${QT}!A1:A2`, values: [['Direct Line — Product Quotes'], ['Supplier: these are price checks from our clients before they sell a product. Fill in the yellow columns — Price per item (USD, product only, no shipping), or set Available? to Not available and add a note. The website updates within a minute.']] },
+      { range: `${QT}!A1:A2`, values: [['Direct Line — Product Quotes'], [QUOTE_HELP]] },
       { range: `${QT}!A4:N4`, values: [QUOTE_HEADERS] },
     ], fetchImpl);
     await batch(env, [
@@ -87,7 +113,7 @@ export async function ensureQuoteTab(DB, env, fetchImpl = fetch) {
       { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 9, endColumnIndex: 12 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
       { repeatCell: { range: { sheetId, startRowIndex: 4, startColumnIndex: 9, endColumnIndex: 12 }, cell: { userEnteredFormat: { backgroundColor: yellow } }, fields: 'userEnteredFormat.backgroundColor' } },
       { repeatCell: { range: { sheetId, startRowIndex: 4, startColumnIndex: 9, endColumnIndex: 10 }, cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
-      { setDataValidation: { range: { sheetId, startRowIndex: 4, startColumnIndex: 9, endColumnIndex: 10 }, rule: { condition: { type: 'NUMBER_GREATER_THAN_EQ', values: [{ userEnteredValue: '0' }] }, inputMessage: 'Price for one item in USD, product only (no shipping).', strict: true, showCustomUi: true } } },
+      ...priceCellFormat(sheetId),
       { setDataValidation: { range: { sheetId, startRowIndex: 4, startColumnIndex: 10, endColumnIndex: 11 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: AVAILABLE }, { userEnteredValue: NOT_AVAILABLE }] }, strict: true, showCustomUi: true } } },
       ...QUOTE_WIDTHS.map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
       { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 13, endIndex: 14 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
@@ -109,11 +135,31 @@ export async function ensureQuoteTab(DB, env, fetchImpl = fetch) {
     }
     if (rows.length) await batchValues(env, [{ range: `${QT}!A${QUOTE_FIRST_ROW + have.size}:N${QUOTE_FIRST_ROW + have.size + rows.length - 1}`, values: rows }], fetchImpl);
     await putSetting(DB, TAB, '1');
+    await putSetting(DB, OPTIONS_FORMAT, '1');
     return true;
   } catch (e) {
     await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(TAB, 'creating:' + t).run();
     throw e;
   }
+}
+
+// The price cell takes text too (several options), so it has no strict number rule: a help message instead.
+function priceCellFormat(sheetId) {
+  return [
+    { setDataValidation: { range: { sheetId, startRowIndex: 4, startColumnIndex: 9, endColumnIndex: 10 }, rule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: '=TRUE' }] }, inputMessage: PRICE_HELP, strict: false, showCustomUi: false } } },
+    { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 9, endColumnIndex: 10 }, cell: { note: PRICE_HELP }, fields: 'note' } },
+  ];
+}
+// One-time switch for the tab that was made before price options existed (only the price cell's rule and the help text change;
+// no columns move).
+export async function ensureQuoteOptionsFormat(DB, env, fetchImpl = fetch) {
+  if (await setting(DB, OPTIONS_FORMAT) === '1') return false;
+  const sheetId = await tabId(env, fetchImpl);
+  if (sheetId == null) return false;
+  await batch(env, priceCellFormat(sheetId), fetchImpl);
+  await batchValues(env, [{ range: `${QT}!A2`, values: [[QUOTE_HELP]] }], fetchImpl);
+  await putSetting(DB, OPTIONS_FORMAT, '1');
+  return true;
 }
 
 // Adds or refreshes one product's row (website columns only; the supplier's columns are never overwritten).
@@ -139,13 +185,17 @@ export async function applyQuoteRow(DB, p, cells, settings, t = Math.floor(Date.
   let next = null;
   if (/^not available$/i.test(status)) next = { status: 'not_available', unit: null, supplier: null, note: note || 'Not available from the supplier.' };
   else {
-    const price = parsePrice(cells.price);
-    if (price === null) return priceText ? 'price not a number: ' + priceText : null;
+    const parsed = priceText ? parsePriceOptions(cells.price) : null;
+    if (!parsed) return priceText ? 'price not clear: ' + priceText : null;
     const fee = Number(p.commission_per_order ?? settings.commission_per_order ?? 0);
-    next = { status: 'approved', unit: round2(price + fee), supplier: price, note };
+    // With options the product's own price is the cheapest one ("from"); each option keeps its own price.
+    const options = parsed.options ? parsed.options.map(o => ({ label: o.label, supplier: o.price, unit: round2(o.price + fee) })) : null;
+    const supplier = options ? Math.min(...options.map(o => o.supplier)) : parsed.price;
+    next = { status: 'approved', unit: round2(supplier + fee), supplier, note, options: options ? JSON.stringify(options) : null };
   }
-  if (next.status === p.status && Number(next.unit) === Number(p.unit_price) && next.note === norm(p.note) && Number(next.supplier) === Number(p.supplier_price)) return null;
-  await DB.prepare('UPDATE portal_products SET status=?, unit_price=?, supplier_price=?, note=?, updated_at=? WHERE id=?').bind(next.status, next.unit, next.supplier, next.note, t, p.id).run();
+  next.options = next.options ?? null;
+  if (next.status === p.status && Number(next.unit) === Number(p.unit_price) && next.note === norm(p.note) && Number(next.supplier) === Number(p.supplier_price) && next.options === (p.price_options ?? null)) return null;
+  await DB.prepare('UPDATE portal_products SET status=?, unit_price=?, supplier_price=?, note=?, price_options=?, updated_at=? WHERE id=?').bind(next.status, next.unit, next.supplier, next.note, next.options, t, p.id).run();
   await DB.prepare("INSERT INTO portal_product_events(product_id, client_id, actor, detail, created_at) VALUES (?,?,'admin',?,?)").bind(p.id, p.client_id, next.status, t).run();
   return next.status;
 }
@@ -153,6 +203,7 @@ export async function applyQuoteRow(DB, p, cells, settings, t = Math.floor(Date.
 // Cron: read the supplier's columns and apply changes.
 export async function pollQuoteTab(DB, env, settings, fetchImpl = fetch) {
   if (!await ensureQuoteTab(DB, env, fetchImpl)) return { waiting: true, changed: 0 };
+  await ensureQuoteOptionsFormat(DB, env, fetchImpl);
   const ranges = [`${QT}!J${QUOTE_FIRST_ROW}:L`, `${QT}!N${QUOTE_FIRST_ROW}:N`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
   const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
   const [inputs, ids] = (data.valueRanges || []).map(v => v.values || []);
@@ -163,7 +214,12 @@ export async function pollQuoteTab(DB, env, settings, fetchImpl = fetch) {
     if (!p) continue;
     const out = await applyQuoteRow(DB, p, { price: inputs?.[i]?.[0] ?? '', status: inputs?.[i]?.[1] ?? '', note: inputs?.[i]?.[2] ?? '' }, settings);
     if (out === 'approved' || out === 'not_available') { changed++; await syncQuoteRow(DB, env, id, fetchImpl); }
-    else if (out) skipped.push({ productId: id, why: out });
+    else if (out) {
+      skipped.push({ productId: id, why: out });
+      // Tell the supplier in the Status column (the website's own column) that the price wasn't understood.
+      const row = QUOTE_FIRST_ROW + i;
+      await batchValues(env, [{ range: `${QT}!M${row}`, values: [[PRICE_UNCLEAR]] }], fetchImpl);
+    }
   }
   return { changed, skipped };
 }

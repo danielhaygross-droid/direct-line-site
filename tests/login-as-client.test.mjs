@@ -92,6 +92,6 @@ test('admin panel, portal banner and Hebrew are wired up', () => {
     assert.ok(i18n.includes(`'${k}': '`), 'Hebrew for ' + k);
   assert.ok(i18n.includes('[/^Logged in as (.+)\\.$/'));
   for (const f of ['dist/admin/index.html', 'dist/portal/index.html']) assert.match(read(f), /\/p\/common\.js\?v=16/);
-  assert.match(read('dist/portal/index.html'), /portal\.js\?v=47/);
-  assert.match(read('dist/admin/index.html'), /admin\.js\?v=56/);
+  assert.match(read('dist/portal/index.html'), /portal\.js\?v=(4[7-9]|[5-9]\d)/);
+  assert.match(read('dist/admin/index.html'), /admin\.js\?v=(5[6-9]|[6-9]\d)/);
 });

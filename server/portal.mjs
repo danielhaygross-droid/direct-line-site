@@ -18,7 +18,7 @@ import { STATUS_SCHEMA, changeStatus, balanceAdjustments } from './order-status.
 
 import { INVOICE_SCHEMA, invoices, saveInvoice, monthlyInvoices } from './invoices.mjs';
 
-import { PRODUCT_SCHEMA, products, addProduct, quoteProduct, productPhoto, productEvents } from './products.mjs';
+import { PRODUCT_SCHEMA, products, addProduct, quoteProduct, productPhoto, productEvents, priceOptions } from './products.mjs';
 
 import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from './claims.mjs';
 
@@ -675,8 +675,13 @@ async function routePortal(request, url, ctx, meta) {
     if(body.productId){
       savedProduct=await DB.prepare("SELECT * FROM portal_products WHERE id=? AND client_id=? AND status='approved'").bind(Number(body.productId),clientId).first();
       if(!savedProduct)return json({ok:false,error:'Choose an approved product belonging to your account.'},400);
-      if(body.quotedUnitPrice!==undefined && Number(body.quotedUnitPrice)!==Number(savedProduct.unit_price))return json({ok:false,error:'The product quote changed. Refresh and review the price before sending.'},409);
-      f.product_id=savedProduct.id;f.quoted_unit_price=Number(savedProduct.unit_price);f.price=round2(f.quoted_unit_price*f.quantity);if(f.price>=1e7)return json({ok:false,error:'Order total is too large.'},400);f.product_cost=null;f.shipping_fee=null;f.etsy_url=savedProduct.link;f.item_title=savedProduct.name;
+      // A product with several prices: the client picks one option; its price is the fixed price per item.
+      const options=priceOptions(savedProduct.price_options),option=options?options.find(o=>o.label===String(body.productOption||'')):null;
+      if(options&&!option)return json({ok:false,error:'Choose which option of this product the customer bought.'},400);
+      const unit=option?option.unitPrice:Number(savedProduct.unit_price);
+      if(body.quotedUnitPrice!==undefined && Number(body.quotedUnitPrice)!==unit)return json({ok:false,error:'The product quote changed. Refresh and review the price before sending.'},409);
+      if(option)f.variant=text(option.label+(f.variant&&f.variant!==option.label?' · '+f.variant:''),500);
+      f.product_id=savedProduct.id;f.quoted_unit_price=unit;f.price=round2(f.quoted_unit_price*f.quantity);if(f.price>=1e7)return json({ok:false,error:'Order total is too large.'},400);f.product_cost=null;f.shipping_fee=null;f.etsy_url=savedProduct.link;f.item_title=savedProduct.name;
       productPhotos=(await DB.prepare('SELECT * FROM portal_product_photos WHERE product_id=? ORDER BY id').bind(savedProduct.id).all()).results||[];
     }
     // Clients must show us what was ordered: the product link plus at least one photo / screenshot.

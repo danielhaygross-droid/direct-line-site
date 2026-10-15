@@ -552,7 +552,7 @@
           <label class="field" data-f="orderDate"><span>Order date</span><input name="orderDate" required type="date" value="${esc(ed?.orderDate || today)}"></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>2</i>What did the customer buy?</h3><div class="form-grid">
-          ${!ed ? `<label class="field full"><span>Choose from My Products</span><select name="productId"><option value="">Free-form order</option>${S.products.filter(p=>p.status==='approved').map(p=>`<option value="${p.id}">${esc(p.name)} · ${money(p.unitPrice)} / unit</option>`).join('')}</select><small data-product-price></small></label>` : ed.quotedUnitPrice!=null ? `<p class="note full"><span>Fixed unit quote</span> <b>${money(ed.quotedUnitPrice)}</b></p>` : ''}
+          ${!ed ? `<label class="field full"><span>Choose from My Products</span><select name="productId"><option value="">Free-form order</option>${S.products.filter(p=>p.status==='approved').map(p=>`<option value="${p.id}">${esc(p.name)} · ${p.priceOptions?'from '+money(p.unitPrice):money(p.unitPrice)} / unit</option>`).join('')}</select><small data-product-price></small></label><label class="field full" data-f="productOption" hidden><span>Which option did the customer buy?</span><select name="productOption"></select></label>` : ed.quotedUnitPrice!=null ? `<p class="note full"><span>Fixed unit quote</span> <b>${money(ed.quotedUnitPrice)}</b></p>` : ''}
           <div class="field full" data-f="links"><span>Product link <small>Copy from your store</small></span><div class="link-list" data-links></div>
             <button type="button" class="btn btn-sm link-add" data-link-add>+ Add another product</button></div>
           <div class="field full photo-field" data-f="photos"><span>Photo or screenshot of the product <small data-pick-count></small></span>
@@ -648,9 +648,15 @@
       linkBox.innerHTML=linkRow(selectedProduct?.link||'');syncLinks();
       picks=selectedProduct ? selectedProduct.photoIds.map(id=>({key:'product-'+id,productFrom:true,thumb:'/api/portal/products/'+selectedProduct.id+'/photos/'+id})) : [];
       if(selectedProduct)form.variant.value=selectedProduct.variant;
-      $('[data-product-price]',form).innerHTML=selectedProduct ? `<span>Fixed unit quote</span> <b>${money(selectedProduct.unitPrice)}</b>` : '';
-      renderPicks();updateSum();
+      const opts=selectedProduct?.priceOptions||null,optBox=$('[data-f="productOption"]',form);
+      optBox.hidden=!opts;form.productOption.innerHTML=opts?`<option value="">Choose an option…</option>`+opts.map(o=>`<option value="${esc(o.label)}">${esc(o.label)} · ${money(o.unitPrice)}</option>`).join(''):'';
+      showUnit();renderPicks();updateSum();
     });
+    // The fixed price per item: the chosen option's price when the product has several.
+    function chosenOption(){return selectedProduct?.priceOptions?.find(o=>o.label===form.productOption.value)||null;}
+    function unitPrice(){return selectedProduct ? (selectedProduct.priceOptions ? chosenOption()?.unitPrice ?? null : selectedProduct.unitPrice) : ed?.quotedUnitPrice ?? null;}
+    function showUnit(){const box=$('[data-product-price]',form);if(!box)return;const u=unitPrice();box.innerHTML=selectedProduct&&u!=null?`<span>Fixed unit quote</span> <b>${money(u)}</b>`:'';}
+    form.productOption?.addEventListener('change',()=>{showUnit();updateSum();});
     // ----- check everything at once, mark what's missing -----
     const mark = (key, bad) => { const f = form.querySelector(`[data-f="${key}"]`); if (f) f.classList.toggle('bad', !!bad); };
     form.addEventListener('input', e => { const f = e.target.closest('[data-f]'); if (f) f.classList.remove('bad'); });
@@ -659,7 +665,7 @@
       const where = [form.buyerName.value.trim(), dest.label()].filter(Boolean).join(' · ');
       const row = (label, value) => `<div><span>${label}</span><b>${value ? esc(value) : '<em class="miss">not filled in yet</em>'}</b></div>`;
       $('[data-sum]').innerHTML = row('Order number', form.orderRef.value.trim()) + row('Product', links ? `${links} link${links > 1 ? 's' : ''} · ${qty} item${qty > 1 ? 's' : ''}` : '')
-        + ((selectedProduct?.unitPrice ?? ed?.quotedUnitPrice)!=null ? row('Order total',money((selectedProduct?.unitPrice ?? ed.quotedUnitPrice)*qty)) : '') + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
+        + (unitPrice()!=null ? row('Order total',money(unitPrice()*qty)) : '') + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
     }
     form.addEventListener('input', updateSum);
     form.addEventListener('change', updateSum);
@@ -672,6 +678,7 @@
       const missing = [];
       const check = (key, ok, label) => { mark(key, !ok); if (!ok) missing.push([key, label]); };
       check('storeId',form.storeId.value,'store');
+      if(selectedProduct?.priceOptions)check('productOption',chosenOption(),'product option');
       check('orderRef', form.orderRef.value.trim(), 'order number');
       check('orderDate', form.orderDate.value, 'order date');
       check('links', links.length && !badLink, badLink ? 'a full product link (starting with https://)' : 'product link');
@@ -695,7 +702,7 @@
         buyerName: form.buyerName.value, ...UI.addressFields(form.address1.value,ed), destination: dest.get(), notes: form.notes.value, taxNumber: form.taxNumber.value, giftMessage: form.giftMessage.value,
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');
-      if(selectedProduct){body.productId=selectedProduct.id;body.quotedUnitPrice=selectedProduct.unitPrice;}
+      if(selectedProduct){body.productId=selectedProduct.id;body.quotedUnitPrice=unitPrice();if(selectedProduct.priceOptions)body.productOption=chosenOption().label;}
       const fresh = picks.filter(p => !p.id && !p.productFrom), photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
       let r;
       try {
@@ -839,7 +846,7 @@
     });
   }
   const productStatus=s=>({awaiting_quote:'Awaiting quote',approved:'Approved',not_available:'Not available'}[s]||s);
-  function viewProducts(){return `${S.me.preview?'':`<section class="card card-pad"><h3 class="sec-title">Add product</h3><form id="product-form" class="form-grid"><label class="field"><span>Product name <small>optional</small></span><input name="name" maxlength="160"></label><label class="field"><span>Product link</span><input name="link" type="url" maxlength="1000" required></label><label class="field"><span>Variant notes</span><input name="variant" maxlength="500"></label><label class="field"><span>Expected monthly quantity <small>optional</small></span><input name="expectedQuantity" type="number" min="1" step="1"></label><label class="field full"><span>Product photos <small>one to three</small></span><input name="photos" type="file" accept="image/*" multiple required></label><button type="submit" class="btn btn-primary">Send for quote</button><p class="form-msg" data-product-msg></p><p class="note full" style="margin:0">Our supplier checks the product price. You’ll see it here as the price per item; shipping is added on each order.</p></form></section>`}<section class="card card-pad"><h3 class="sec-title">My Products</h3>${S.products.length?S.products.map(p=>`<article class="confirmation-row"><div>${p.photoIds[0]?`<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="72" height="72" style="object-fit:contain" alt="Product photo">`:''}<b data-no-i18n>${esc(p.name)}</b><p><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a></p><p data-no-i18n>${esc(p.variant)}</p>${p.note?`<p data-no-i18n>${esc(p.note)}</p>`:''}</div><div><span>${productStatus(p.status)}</span>${p.unitPrice!=null?`<p><span>Price per item</span> <b>${money(p.unitPrice)}</b> <small class="dim">shipping not included</small></p>`:''}</div></article>`).join(''):'<p class="muted">No products yet.</p>'}</section>`;}
+  function viewProducts(){return `${S.me.preview?'':`<section class="card card-pad"><h3 class="sec-title">Add product</h3><form id="product-form" class="form-grid"><label class="field"><span>Product name <small>optional</small></span><input name="name" maxlength="160"></label><label class="field"><span>Product link</span><input name="link" type="url" maxlength="1000" required></label><label class="field"><span>Variant notes</span><input name="variant" maxlength="500"></label><label class="field"><span>Expected monthly quantity <small>optional</small></span><input name="expectedQuantity" type="number" min="1" step="1"></label><label class="field full"><span>Product photos <small>one to three</small></span><input name="photos" type="file" accept="image/*" multiple required></label><button type="submit" class="btn btn-primary">Send for quote</button><p class="form-msg" data-product-msg></p><p class="note full" style="margin:0">Our supplier checks the product price. You’ll see it here as the price per item; shipping is added on each order.</p></form></section>`}<section class="card card-pad"><h3 class="sec-title">My Products</h3>${S.products.length?S.products.map(p=>`<article class="confirmation-row"><div>${p.photoIds[0]?`<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="72" height="72" style="object-fit:contain" alt="Product photo">`:''}<b data-no-i18n>${esc(p.name)}</b><p><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a></p><p data-no-i18n>${esc(p.variant)}</p>${p.note?`<p data-no-i18n>${esc(p.note)}</p>`:''}</div><div><span>${productStatus(p.status)}</span>${p.priceOptions?`<p><span>Price per item</span> <small class="dim">shipping not included</small></p><ul class="price-options">${p.priceOptions.map(o=>`<li><span data-no-i18n>${esc(o.label)}</span> <b>${money(o.unitPrice)}</b></li>`).join('')}</ul>`:p.unitPrice!=null?`<p><span>Price per item</span> <b>${money(p.unitPrice)}</b> <small class="dim">shipping not included</small></p>`:''}</div></article>`).join(''):'<p class="muted">No products yet.</p>'}</section>`;}
   function bindProducts(){const f=$('#product-form');if(!f)return;f.addEventListener('input',()=>{f.dataset.dirty='1';});f.addEventListener('change',()=>{f.dataset.dirty='1';});f.addEventListener('submit',async e=>{e.preventDefault();const b=$('[type=submit]',f),m=$('[data-product-msg]',f);b.disabled=true;m.textContent='';try{const files=[...f.photos.files];if(!files.length||files.length>3)throw new Error('Add one to three product photos.');const photos=[];for(const file of files){const p=await shrinkImage(file);photos.push({filename:file.name,data:p.data});}await api('/products',{method:'POST',body:{name:f.name.value,link:f.link.value,variant:f.variant.value,expectedQuantity:f.expectedQuantity.value,photos}});f.dataset.dirty='';await refresh();N.popup({icon:'check',title:'Product sent for quote.'});}catch(ex){m.textContent=ex.message;b.disabled=false;}});}
   function invoiceLinks(files) {
     return files.length ? files.map(f=>`<p><a class="btn btn-sm" href="/api/portal/files/${f.id}" target="_blank" rel="noopener"><span>Download invoice</span> <small data-no-i18n>${esc(f.filename)}</small></a></p>`).join('') : '<span class="muted">Invoice pending</span>';
