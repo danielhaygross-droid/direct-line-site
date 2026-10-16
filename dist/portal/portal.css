@@ -299,3 +299,4 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .mp-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .mp-photos img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:14px;border:1px solid var(--line);background:var(--surface-3);display:block}
 .kv dd a{overflow-wrap:anywhere}
+.mp-ship{font-size:13px;color:var(--muted)}.mp-ship b{color:var(--text)}

@@ -499,7 +499,7 @@
         <div><span>Etsy fee</span><span>${o.etsyFee == null ? '<span class="dim">Not entered</span>' : `-${esc(o.currency || 'USD')} ${Number(o.etsyFee).toFixed(2)}`}</span></div>
         <div class="total"><span>You earned <small class="dim">after Etsy fees</small></span><span>${earnedOf(o) == null ? '<span class="dim">Not entered</span>' : esc(money2(earnedOf(o), o))}</span></div>
         <div><span>Total you pay</span><span>${!o.priced ? 'Pending Direct Line' : money(o.price)}</span></div>
-        ${o.priced ? `<div><span><span>Per item</span> <small class="dim" data-no-i18n>× ${esc(o.quantity || 1)}</small></span><span>${money(Math.round(o.price / (o.quantity || 1) * 100) / 100)}</span></div>` : ''}
+        ${o.priced && o.quotedUnitPrice != null ? `<div><span><span>Per item</span> <small class="dim" data-no-i18n>× ${esc(o.quantity || 1)}</small></span><span>${money(o.quotedUnitPrice)}</span></div>${o.quotedShipping != null ? `<div><span>Shipping per order</span><span>${money(o.quotedShipping)}</span></div>` : ''}` : o.priced ? `<div><span><span>Per item</span> <small class="dim" data-no-i18n>× ${esc(o.quantity || 1)}</small></span><span>${money(Math.round(o.price / (o.quantity || 1) * 100) / 100)}</span></div>` : ''}
         ${profitOf(o) == null ? '' : `<div><span>Your profit</span><span class="${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}"><b>${money(profitOf(o))}</b></span></div>`}</div>
         ${o.priced && earnedOf(o) == null && o.status !== 'cancelled' ? '<p class="note" style="margin:10px 0 0">Add the Etsy fee, or what Etsy says you earned, to see your profit.</p>' : ''}</section>
       ${S.me.preview || o.status === 'cancelled' ? '' : `<section class="card card-pad"><h3 class="sec-title">Your numbers</h3><p class="note">Copy these from your Etsy order screen: what the buyer paid and the Etsy fee, or just what Etsy says you earned (Earnings tab). They only change your profit figures, never your bill.</p>
@@ -653,7 +653,8 @@
     // The fixed price per item: the chosen option's price when the product has several.
     function chosenOption(){return selectedProduct?.priceOptions?.find(o=>o.label===form.productOption.value)||null;}
     function unitPrice(){return selectedProduct ? (selectedProduct.priceOptions ? chosenOption()?.unitPrice ?? null : selectedProduct.unitPrice) : ed?.quotedUnitPrice ?? null;}
-    function showUnit(){const box=$('[data-product-price]',form);if(!box)return;const u=unitPrice();box.innerHTML=selectedProduct&&u!=null?`<span>Fixed unit quote</span> <b>${money(u)}</b>`:'';}
+    function shippingNow(){return selectedProduct ? selectedProduct.shipping ?? null : ed?.quotedShipping ?? null;}
+    function showUnit(){const box=$('[data-product-price]',form);if(!box)return;const u=unitPrice();box.innerHTML=selectedProduct&&u!=null?`<span>Fixed unit quote</span> <b>${money(u)}</b>${shippingNow()!=null?` · <span>Shipping per order</span> <b>${money(shippingNow())}</b>`:''}`:'';}
     form.productOption?.addEventListener('change',()=>{showUnit();updateSum();});
     // ----- check everything at once, mark what's missing -----
     const mark = (key, bad) => { const f = form.querySelector(`[data-f="${key}"]`); if (f) f.classList.toggle('bad', !!bad); };
@@ -663,7 +664,7 @@
       const where = [form.buyerName.value.trim(), dest.label()].filter(Boolean).join(' · ');
       const row = (label, value) => `<div><span>${label}</span><b>${value ? esc(value) : '<em class="miss">not filled in yet</em>'}</b></div>`;
       $('[data-sum]').innerHTML = row('Order number', form.orderRef.value.trim()) + row('Product', links ? `${links} link${links > 1 ? 's' : ''} · ${qty} item${qty > 1 ? 's' : ''}` : '')
-        + (unitPrice()!=null ? row('Order total',money(unitPrice()*qty)) : '') + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
+        + (unitPrice()!=null ? row('Order total',money(Math.round((unitPrice()*qty+(shippingNow()||0))*100)/100)) : '') + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
     }
     form.addEventListener('input', updateSum);
     form.addEventListener('change', updateSum);
@@ -700,7 +701,7 @@
         buyerName: form.buyerName.value, ...UI.addressFields(form.address1.value,ed), destination: dest.get(), notes: form.notes.value, taxNumber: form.taxNumber.value, giftMessage: form.giftMessage.value,
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');
-      if(selectedProduct){body.productId=selectedProduct.id;body.quotedUnitPrice=unitPrice();if(selectedProduct.priceOptions)body.productOption=chosenOption().label;}
+      if(selectedProduct){body.productId=selectedProduct.id;body.quotedUnitPrice=unitPrice();body.quotedShipping=selectedProduct.shipping??null;if(selectedProduct.priceOptions)body.productOption=chosenOption().label;}
       const fresh = picks.filter(p => !p.id && !p.productFrom), photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
       let r;
       try {
@@ -851,9 +852,11 @@
   const P_TONE={awaiting_quote:'t-pending',approved:'t-delivered',not_available:'t-cancelled'};
   const productStatus=s=>({awaiting_quote:'Waiting for price',approved:'Priced',not_available:'Not available'}[s]||s);
   const productsSeenKey=()=>'dl-products-seen-'+S.me.id;
+  // Shipping per order (one parcel) from the supplier, added once to an order of this product.
+  const shipLine=p=>p.shipping!=null?`<small class="mp-ship"><span>Shipping per order</span> <b>${money(p.shipping)}</b></small>`:'<small class="dim">Shipping not added yet</small>';
   function productRow(p){
     const fresh=S.productsSeenBefore&&p.status!=='awaiting_quote'&&p.updatedAt>S.productsSeenBefore;
-    const price=p.status==='not_available'?'':p.priceOptions?`<ul class="price-options">${p.priceOptions.map(o=>`<li><span data-no-i18n>${esc(o.label)}</span> <b>${money(o.unitPrice)}</b></li>`).join('')}</ul><small class="dim">shipping not included</small>`:p.unitPrice!=null?`<b class="mp-price">${money(p.unitPrice)}</b><small class="dim">per item · shipping not included</small>`:'<small class="dim">Our supplier is checking the price.</small>';
+    const price=p.status==='not_available'?'':p.priceOptions?`<ul class="price-options">${p.priceOptions.map(o=>`<li><span data-no-i18n>${esc(o.label)}</span> <b>${money(o.unitPrice)}</b></li>`).join('')}</ul>${shipLine(p)}`:p.unitPrice!=null?`<b class="mp-price">${money(p.unitPrice)}</b><small class="dim">per item</small>${shipLine(p)}`:'<small class="dim">Our supplier is checking the price.</small>';
     return `<article class="mp-row${fresh?' is-new':''}" data-open-product="${p.id}">${p.photoIds[0]?`<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="64" height="64" alt="Product photo">`:'<span class="mp-ph"></span>'}<div class="mp-main"><button type="button" class="mp-name" data-open-product="${p.id}" data-no-i18n>${esc(p.name)}</button>${p.variant?`<small data-no-i18n>${esc(p.variant)}</small>`:''}<small><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a> · <span>Updated</span> <time data-no-i18n datetime="${new Date(p.updatedAt*1000).toISOString()}" title="${esc(fullDate(p.updatedAt))}">${esc(new Date(p.updatedAt*1000).toLocaleDateString('en-GB',{timeZone:window.DL.displayTimeZone()}))}</time></small>${p.note?`<p class="mp-note" data-no-i18n>${esc(p.note)}</p>`:''}</div><div class="mp-side"><span class="chip mp-status ${P_TONE[p.status]||''}"><i class="dot"></i>${productStatus(p.status)}</span>${fresh?`<span class="tag tag-gold">${p.status==='approved'?'New price':'Updated'}</span>`:''}${price}</div></article>`;
   }
   // Product details in the side panel: all photos, price (or each option), supplier note, dates, and "Order this product".
@@ -864,7 +867,7 @@
     const row=(label,value)=>value?`<div><dt>${label}</dt><dd>${value}</dd></div>`:'';
     const price=p.status==='not_available'?'<span class="dim">—</span>':p.priceOptions?`<ul class="price-options">${p.priceOptions.map(o=>`<li><span data-no-i18n>${esc(o.label)}</span> <b>${money(o.unitPrice)}</b></li>`).join('')}</ul>`:p.unitPrice!=null?`<b>${money(p.unitPrice)}</b>`:'<span class="dim">Our supplier is checking the price.</span>';
     d.body.innerHTML=`${p.photoIds.length?`<section class="mp-photos">${p.photoIds.map(ph=>`<a href="/api/portal/products/${p.id}/photos/${ph}" title="Open full size"><img src="/api/portal/products/${p.id}/photos/${ph}" alt="Product photo"></a>`).join('')}</section>`:''}
-      <section class="card card-pad"><h3 class="sec-title">Price per item</h3>${price}${p.status!=='not_available'?'<p class="note" style="margin:10px 0 0">Shipping is not included; it is added on each order.</p>':''}${p.note?`<p class="mp-note" data-no-i18n>${esc(p.note)}</p>`:''}</section>
+      <section class="card card-pad"><h3 class="sec-title">Price per item</h3>${price}${p.status==='approved'?`<div class="money-rows" style="margin-top:10px"><div><span>Shipping per order</span><span>${p.shipping!=null?`<b>${money(p.shipping)}</b>`:'<span class="dim">Not added yet</span>'}</span></div></div><p class="note" style="margin:10px 0 0">Shipping is added once to each order, whatever the quantity.</p>`:''}${p.note?`<p class="mp-note" data-no-i18n>${esc(p.note)}</p>`:''}</section>
       <section class="card card-pad"><dl class="kv">${row('Variation',p.variant?`<span data-no-i18n>${esc(p.variant)}</span>`:'')}${row('Expected per month',p.expectedQuantity?String(p.expectedQuantity):'')}${row('Sent for quote',`<time data-no-i18n>${esc(fullDate(p.createdAt))}</time>`)}${row('Updated',`<time data-no-i18n>${esc(fullDate(p.updatedAt))}</time>`)}${row('Product link',`<a href="${esc(p.link)}" target="_blank" rel="noopener" data-no-i18n>${esc(p.link)}</a>`)}</dl></section>`;
     d.foot.innerHTML=p.status==='approved'&&!S.me.preview?`<a class="btn btn-primary" href="#/new" data-order-product="${p.id}" data-close-drawer>${ic('plus')}Order this product</a><button type="button" class="btn" data-close-drawer>Close</button>`:`<button type="button" class="btn" data-close-drawer>Close</button>`;
   }

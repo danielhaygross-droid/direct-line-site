@@ -367,7 +367,7 @@ async function getSettings(DB) {
 function orderOut(r) {
   const price = Number(r.price || 0), sell = r.selling_price === null ? null : Number(r.selling_price);
   return {
-    id: r.id, archived: !!r.archived, archivedAt: r.archived_at == null ? null : Number(r.archived_at), clientId: r.client_id, storeId:r.store_id==null?null:Number(r.store_id),productId:r.product_id==null?null:Number(r.product_id), quotedUnitPrice:r.quoted_unit_price==null?null:Number(r.quoted_unit_price), orderRef: r.order_ref, trackingNumber: r.tracking_number, courier: r.courier || '', priceSource: r.price_source || '', taxNumber: r.tax_number || '', giftMessage: r.gift_message || '',
+    id: r.id, archived: !!r.archived, archivedAt: r.archived_at == null ? null : Number(r.archived_at), clientId: r.client_id, storeId:r.store_id==null?null:Number(r.store_id),productId:r.product_id==null?null:Number(r.product_id), quotedUnitPrice:r.quoted_unit_price==null?null:Number(r.quoted_unit_price), quotedShipping:r.quoted_shipping==null?null:Number(r.quoted_shipping), orderRef: r.order_ref, trackingNumber: r.tracking_number, courier: r.courier || '', priceSource: r.price_source || '', taxNumber: r.tax_number || '', giftMessage: r.gift_message || '',
     destination: r.destination, category: r.category, weightKg: r.weight_kg === null ? null : Number(r.weight_kg),
     // price = what the client pays for the order = product cost (incl. our hidden fee) + shipping fee.
     productCost: r.product_cost === null || r.product_cost === undefined ? null : Number(r.product_cost),
@@ -705,9 +705,11 @@ async function routePortal(request, url, ctx, meta) {
       const options=priceOptions(savedProduct.price_options),option=options?options.find(o=>o.label===String(body.productOption||'')):null;
       if(options&&!option)return json({ok:false,error:'Choose which option of this product the customer bought.'},400);
       const unit=option?option.unitPrice:Number(savedProduct.unit_price);
-      if(body.quotedUnitPrice!==undefined && Number(body.quotedUnitPrice)!==unit)return json({ok:false,error:'The product quote changed. Refresh and review the price before sending.'},409);
+      // Shipping per order from the supplier (one parcel): added once, whatever the quantity.
+      const ship=savedProduct.supplier_shipping==null?null:Number(savedProduct.supplier_shipping);
+      if((body.quotedUnitPrice!==undefined && Number(body.quotedUnitPrice)!==unit)||(body.quotedShipping!==undefined && (body.quotedShipping==null?null:Number(body.quotedShipping))!==ship))return json({ok:false,error:'The product quote changed. Refresh and review the price before sending.'},409);
       if(option)f.variant=text(option.label+(f.variant&&f.variant!==option.label?' · '+f.variant:''),500);
-      f.product_id=savedProduct.id;f.quoted_unit_price=unit;f.price=round2(f.quoted_unit_price*f.quantity);if(f.price>=1e7)return json({ok:false,error:'Order total is too large.'},400);f.product_cost=null;f.shipping_fee=null;f.etsy_url=savedProduct.link;f.item_title=savedProduct.name;
+      f.product_id=savedProduct.id;f.quoted_unit_price=unit;f.quoted_shipping=ship;f.price=round2(f.quoted_unit_price*f.quantity+(ship||0));if(f.price>=1e7)return json({ok:false,error:'Order total is too large.'},400);f.product_cost=null;f.shipping_fee=null;f.etsy_url=savedProduct.link;f.item_title=savedProduct.name;
       productPhotos=(await DB.prepare('SELECT * FROM portal_product_photos WHERE product_id=? ORDER BY id').bind(savedProduct.id).all()).results||[];
     }
     // Clients must show us what was ordered: the product link plus at least one photo / screenshot.
@@ -720,6 +722,7 @@ async function routePortal(request, url, ctx, meta) {
     if (etsyFeeProblem(body)) return json({ ok: false, error: etsyFeeProblem(body) }, 400);
     const settings = await getSettings(DB);
     const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, actorOf(who), '', settings);
+    if (f.quoted_shipping != null) { await DB.prepare('UPDATE client_orders SET quoted_shipping=? WHERE id=?').bind(f.quoted_shipping, row.id).run(); row.quoted_shipping = f.quoted_shipping; }
     const newFee = await saveEtsyFee(DB, row.id, body); if (newFee !== undefined) row.etsy_fee = newFee;
     const newEarned = await saveEtsyEarned(DB, row.id, body); if (newEarned !== undefined) row.etsy_earned = newEarned;
     const out = { ...orderOut(row), photos: saved };
@@ -821,7 +824,7 @@ async function routePortal(request, url, ctx, meta) {
       f.product_cost = existing.product_cost; f.shipping_fee = existing.shipping_fee; f.price = existing.price;
     }
     try{f.store_id=await orderStore(DB,existing.client_id,body.storeId,Number(existing.store_id),who.admin);}catch(e){return json({ok:false,error:e.message},400);}
-    if(existing.quoted_unit_price!=null){f.price=round2(Number(existing.quoted_unit_price)*f.quantity);if(f.price>=1e7)return json({ok:false,error:'Order total is too large.'},400);f.product_cost=existing.product_cost;f.shipping_fee=existing.shipping_fee;f.etsy_url=existing.etsy_url;f.item_title=existing.item_title;}
+    if(existing.quoted_unit_price!=null){f.price=round2(Number(existing.quoted_unit_price)*f.quantity+Number(existing.quoted_shipping||0));if(f.price>=1e7)return json({ok:false,error:'Order total is too large.'},400);f.product_cost=existing.product_cost;f.shipping_fee=existing.shipping_fee;f.etsy_url=existing.etsy_url;f.item_title=existing.item_title;}
     if (who.admin && followsSupplierCost(existing) && Number(commission) !== Number(existing.commission) && body.productCost == null && body.shippingFee == null) {
       f.price = round2(Number(existing.supplier_cost) + Number(commission)); f.product_cost = f.price; f.shipping_fee = null;
     }
