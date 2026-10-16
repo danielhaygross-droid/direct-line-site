@@ -852,11 +852,6 @@ async function routePortal(request, url, ctx, meta) {
     const earnedNow = await saveEtsyEarned(DB, id, body); if (earnedNow !== undefined) row.etsy_earned = earnedNow;
     const changed = EDIT_FIELDS.filter(k => String(row[k] ?? '') !== String(existing[k] ?? ''));
     if (changed.length && !accountingOnly) await logEvent(DB, id, existing.client_id, 'edited', actor, changed.every(k => CUSTOMER_COLUMNS.includes(k)) ? 'customer' : '');
-    // The supplier may already be working on it: flag the Work Queue row until the parcel ships (see websiteCells).
-    if (row.status === 'processing' && changed.some(k => CUSTOMER_COLUMNS.includes(k))) {
-      await DB.prepare('UPDATE client_orders SET address_changed_at=? WHERE id=?').bind(now(), id).run();
-      row.address_changed_at = now();
-    }
     const sheetSync = syncPortalOrderToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets order update failed', error));
     if (waitUntil) waitUntil(sheetSync); else await sheetSync;
     const [out] = await withPhotos(DB, [orderOut(row)]);

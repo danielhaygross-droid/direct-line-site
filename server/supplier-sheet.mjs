@@ -76,12 +76,7 @@ export function addressLines(o) {
   if (name && !keys.some(k => names.some(n => k === n || k.endsWith(' ' + n)))) lines.push(name);
   return lines.join('\n');
 }
-// The customer's details were changed while the supplier already had the order: say so at the top of the notes.
-export function addressFlag(o) {
-  if (!o.address_changed_at || ['shipped', 'delivered', 'cancelled'].includes(o.status)) return '';
-  return `⚠ ADDRESS CHANGED ${new Date(Number(o.address_changed_at) * 1000).toISOString().slice(0, 10)} — use the address in this row.
-`;
-}
+// No "ADDRESS CHANGED" warning in the supplier's notes any more (Erwin, 16 Oct 2026): the row always shows the current address.
 // The total cost was filled in from an earlier identical order: say so until the supplier changes it or it ships.
 export function savedPriceFlag(o) {
   if (o.price_source !== 'saved' || !['pending', 'processing'].includes(o.status)) return '';
@@ -96,7 +91,7 @@ export function websiteCells(env, o, photos, shopName) {
     txt(o.order_date || new Date(Number(o.created_at) * 1000).toISOString().slice(0, 10)), txt(o.order_ref || '#' + o.id), txt(shopName),
     STATUS[o.status] || o.status, urls[0] ? `=IMAGE("${q(urls[0])}&size=thumb",1)` : '', urls[0] ? `=HYPERLINK("${q(urls[0])}","Photo 1")` : '',
     links[0] ? `=HYPERLINK("${q(links[0])}","Open product")` : '', Number(o.quantity || 1), txt(product), txt(o.buyer_name),
-    txt(addressLines(o)), txt(o.tax_number), txt(o.gift_message), txt(addressFlag(o) + savedPriceFlag(o) + (o.notes || '')),
+    txt(addressLines(o)), txt(o.tax_number), txt(o.gift_message), txt(savedPriceFlag(o) + (o.notes || '')),
   ];
   const qz = [...Array.from({ length: 7 }, (_, i) => urls[i + 1] ? `=HYPERLINK("${q(urls[i + 1])}","Photo ${i + 2}")` : ''),
     txt(links.slice(1).join('\n')), String(o.id), String(o.client_id)];
@@ -289,6 +284,11 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
   const t = Math.floor(Date.now() / 1000), result = { ok: true, enabled: true, checked: 0, changed: [], skipped: [] };
   try {
     if (!await ensureLayout(DB, env, fetchImpl)) return { ...result, waiting: 'layout' };
+    // Old "ADDRESS CHANGED" warnings: take them off, a few rows a minute (Google's write limit), until none are left.
+    for (const r of (await DB.prepare('SELECT id FROM client_orders WHERE address_changed_at IS NOT NULL ORDER BY id LIMIT 5').all()).results || []) {
+      await DB.prepare('UPDATE client_orders SET address_changed_at=NULL WHERE id=?').bind(r.id).run();
+      try { await syncPortalOrderToGoogleSheet(DB, env, r.id, fetchImpl); } catch (e) { console.error('Sheet refresh after clearing the address warning failed', e); }
+    }
     // Once: orders whose tax number / gift message were typed into the notes before those fields existed.
     for (const id of await splitOldNotes(DB)) { const sync = syncPortalOrderToGoogleSheet(DB, env, id, fetchImpl).catch(e => console.error('Sheet refresh after notes split failed', e)); if (waitUntil) waitUntil(sync); else await sync; }
     const ranges = [`${WQ}!O${FIRST_ROW}:R`, `${WQ}!AA${FIRST_ROW}:AA`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');

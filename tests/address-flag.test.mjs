@@ -20,12 +20,13 @@ test('a real change still counts', () => {
   assert.ok(!sameCustomer(row(), row({ address_line_1: '231 fafnir dr\nKimberly, ID 83341\nUnited States' })), 'a spelling fix (letter case) is still saved');
 });
 
-test('wired up: kept as stored when the same, admins can clear the warning (one order or in bulk)', async () => {
+test('no "ADDRESS CHANGED" warning any more: never set, never in the notes, old ones cleared a few a minute', async () => {
   const read = f => readFile(new URL(f, import.meta.url), 'utf8');
-  const portal = await read('../server/portal.mjs'), admin = await read('../dist/admin/admin.js'), he = await read('../dist/p/i18n.js');
-  assert.ok(portal.includes('if (sameCustomer(existing, f)) for (const k of CUSTOMER_COLUMNS) f[k] = existing[k];'));
-  assert.ok(portal.includes("UPDATE client_orders SET address_changed_at=NULL WHERE id=?") && portal.includes("if (!who.admin) return json({ ok: false, error: 'Not found' }, 404);"));
-  assert.ok(portal.includes("const CLIENT_HIDDEN = ['addressChangedAt',"), 'clients never see the flag');
-  assert.ok(admin.includes('data-clear-addr-flag="${o.id}"') && admin.includes('data-bulk="addrflag"') && admin.includes("body = { clearAddressFlag: true }"));
-  for (const s of ['Clear warning', 'Clear address warning', 'Address warning cleared.']) assert.ok(he.includes(`'${s}':`), s);
+  const portal = await read('../server/portal.mjs'), sheet = await read('../server/supplier-sheet.mjs'), admin = await read('../dist/admin/admin.js');
+  assert.ok(portal.includes('if (sameCustomer(existing, f)) for (const k of CUSTOMER_COLUMNS) f[k] = existing[k];'), 'an unchanged address is kept as stored');
+  assert.ok(!portal.includes('SET address_changed_at=? WHERE id=?'), 'the flag is never set');
+  assert.ok(!sheet.includes('ADDRESS CHANGED') || sheet.includes('No "ADDRESS CHANGED" warning'), 'no warning text written');
+  assert.ok(sheet.includes("txt(savedPriceFlag(o) + (o.notes || ''))"));
+  assert.ok(sheet.includes("SELECT id FROM client_orders WHERE address_changed_at IS NOT NULL ORDER BY id LIMIT 5"), 'old warnings cleared, 5 rows per run');
+  assert.ok(!admin.includes('data-bulk="addrflag"') && !admin.includes('class="full addr-flag"'), 'no warning box or bulk button in admin');
 });

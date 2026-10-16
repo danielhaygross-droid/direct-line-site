@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { canEditOrder, canEditCustomer, customerOnlyEdit, CUSTOMER_BODY_KEYS, CUSTOMER_COLUMNS, SCHEMA } from '../server/portal.mjs';
-import { addressFlag, websiteCells } from '../server/supplier-sheet.mjs';
+import { websiteCells } from '../server/supplier-sheet.mjs';
 
 const read = p => readFile(new URL('../' + p, import.meta.url), 'utf8');
 const T = 1_800_000_000;
@@ -28,13 +28,9 @@ test('only requests made of customer fields count as customer edits', () => {
     assert.equal(customerOnlyEdit(body), false, JSON.stringify(body));
 });
 
-test('the supplier sheet warns when the address changed while the order was in progress', () => {
+test('the supplier notes never carry an "ADDRESS CHANGED" warning (the row always has the current address)', () => {
   const o = { id: 5, client_id: 1, status: 'processing', created_at: T, address_changed_at: T, order_ref: 'E-1', quantity: 1, buyer_name: 'A', address_line_1: '9 Road', destination: 'DE', notes: 'Gift note', etsy_url: '' };
-  assert.match(addressFlag(o), /^⚠ ADDRESS CHANGED 2027-01-15 — use the address in this row\.\n$/);
-  assert.equal(addressFlag({ ...o, address_changed_at: null }), '');
-  for (const status of ['shipped', 'delivered', 'cancelled']) assert.equal(addressFlag({ ...o, status }), '', status);
-  const notes = websiteCells({ APP_SESSION_SECRET: 'x' }, o, [], 'Shop').am[13];
-  assert.ok(notes.startsWith('⚠ ADDRESS CHANGED') && notes.endsWith('\nGift note'));
+  assert.equal(websiteCells({ APP_SESSION_SECRET: 'x' }, o, [], 'Shop').am[13], 'Gift note');
   assert.equal(websiteCells({ APP_SESSION_SECRET: 'x' }, { ...o, address_changed_at: null }, [], 'Shop').am[13], 'Gift note');
   assert.ok(SCHEMA.some(s => /address_changed_at INTEGER/.test(s)));
 });
