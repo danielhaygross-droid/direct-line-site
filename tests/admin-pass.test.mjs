@@ -15,7 +15,7 @@ test('admin: fixed-quote orders are billed, and the needs-cost alert opens those
 test('admin: blank customer paid is not 0.00 and is not shown as a loss', async () => {
   const admin = await read('admin/admin.js');
   assert.ok(!/Number\(o\.sellingPrice \|\| 0\)/.test(admin), 'no "|| 0" customer-paid display left');
-  assert.ok(admin.includes("o.sellingPrice == null ? '<span class=\"dim\">Needs the sale price</span>'"));
+  assert.ok(admin.includes("o.profit == null ? '<span class=\"dim\">Needs the Etsy earnings</span>'"), 'profit after the Etsy fee, or a hint');
 });
 
 test('admin: saves are guarded against double clicks, payments default to bank transfer with fixed values', async () => {

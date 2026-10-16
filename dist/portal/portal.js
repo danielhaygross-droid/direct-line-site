@@ -59,18 +59,14 @@
   const localDay = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
   // Customer details can be changed until the parcel ships, also after the full-edit window closed.
   const canChangeCustomer = o => !S.me?.preview && ['pending', 'processing'].includes(o.status) && !editable(o);
-  // Net profit = what the customer paid - the Etsy fee the client copies from their Etsy order - what the client pays Direct Line.
-  // (Same method as our own profit tracker: Buyer Paid - Etsy Fee - Product Cost.) Only for USD orders, and only with a real fee: nothing is estimated.
-  const cents = n => Math.round(Number(n) * 100);
-  const isUsd = o => (o.currency || 'USD') === 'USD';
-  const netProfit = o => o.status === 'cancelled' || !o.priced || o.sellingPrice == null || o.etsyFee == null || !isUsd(o) ? null : (cents(o.sellingPrice) - cents(o.etsyFee) - cents(o.price)) / 100;
-  const netCell = o => {
-    if (o.status === 'cancelled') return '<span class="dim">—</span>';
-    if (!o.priced) return '<span class="dim">Pending</span>';
-    const net = netProfit(o);
-    if (net != null) return `<b>${money(net)}</b>`;
-    return o.sellingPrice != null && o.etsyFee == null && isUsd(o) ? '<span class="dim">Add Etsy fee</span>' : '<span class="dim">—</span>';
-  };
+  // Earned = what the client earned on Etsy after Etsy’s fees: Etsy's own "You earned", or customer paid - the Etsy fee.
+  // Profit = earned - what the client pays Direct Line. (Same as our own profit tracker: Buyer Paid - Etsy Fee - Product Cost.)
+  // Nothing is estimated: without the Etsy fee (or "You earned") there is no profit figure.
+  const earnedOf = o => o.earned ?? null;
+  const profitOf = o => o.status === 'cancelled' || !o.priced || earnedOf(o) == null ? null : o.profit;
+  const money2 = (v, o) => (o.currency || 'USD') === 'USD' ? money(v) : `${o.currency} ${Number(v).toFixed(2)}`;
+  const earnedCell = o => earnedOf(o) != null ? `<b>${esc(money2(earnedOf(o), o))}</b>` : o.sellingPrice != null && o.status !== 'cancelled' ? '<span class="dim">Add Etsy fee</span>' : '<span class="dim">—</span>';
+  const profitCell = o => o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : profitOf(o) == null ? '<span class="dim">—</span>' : `<b>${money(profitOf(o))}</b>`;
   const customerPaid = o => o.sellingPrice == null ? '' : `${o.currency || 'USD'} ${Number(o.sellingPrice).toFixed(2)}`;
   const inProgress = o => !['delivered', 'cancelled'].includes(o.status);
 
@@ -399,7 +395,7 @@
     return `<section class="stats stats-3">
         <div class="stat hero"><span class="stat-ic">${ic('wallet')}</span><small>${S.storeId?'Billed for this store':'Billed in selected period'}</small><strong>${money(s.billed)}</strong><em><span>Overall account balance</span>: ${money(me.summary.outstanding)}</em></div>
         <div class="stat" style="--tone:var(--blue)"><span class="stat-ic">${ic('orders')}</span><small>Orders in progress</small><strong>${active}</strong><em>${s.orders} order${s.orders === 1 ? '' : 's'} in total</em></div>
-        <div class="stat" style="--tone:var(--gold)"><span class="stat-ic">${ic('chart')}</span><small>Your profit</small><strong class="${s.clientProfit < 0 ? 'neg' : ''}">${money(s.clientProfit)}</strong><em>What your customers paid, minus our bill</em>${selected?.missingSalePrice ? `<small><b data-no-i18n>${selected.missingSalePrice}</b> <span>orders missing sale price</span></small>` : ''}</div>
+        <div class="stat" style="--tone:var(--gold)"><span class="stat-ic">${ic('chart')}</span><small>Your profit</small><strong class="${s.clientProfit < 0 ? 'neg' : ''}">${money(s.clientProfit)}</strong><em>What you earned after Etsy fees, minus our bill</em>${selected?.missingSalePrice ? `<small><b data-no-i18n>${selected.missingSalePrice}</b> <span>orders missing Etsy earnings</span></small>` : ''}</div>
       </section>`;
   }
   // Orders page: period picker on top, then (refreshed on its own) the per-store table, the cards and the chart.
@@ -423,16 +419,15 @@
   const unreadOrderIds=()=>new Set(noteItems().filter(x=>x.unread).map(x=>x.orderId));
   function ordersTable(list, compact) {
     const fresh = unreadOrderIds();
-    return `<table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Store</th>${compact ? '' : '<th>Destination</th><th>Tracking</th>'}<th class="num" title="What your customer paid">Price</th><th class="num" title="What you pay Direct Line">Cost</th><th class="num" title="Price minus cost">Profit</th>${compact ? '' : '<th class="num" title="Price minus the Etsy fee you entered minus cost">Net profit</th>'}<th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
+    return `<table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Store</th>${compact ? '' : '<th>Destination</th><th>Tracking</th>'}<th class="num" title="What you earned on Etsy after Etsy’s fees">Earned</th><th class="num" title="What you pay Direct Line">Cost</th><th class="num" title="Earned minus cost">Profit</th><th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
       ${list.map(o => `<tr class="click${fresh.has(o.id) ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
         <td class="wide"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small></span></div></td>
         <td data-label="Customer"><span data-no-i18n>${esc(o.buyerName) || '—'}</span></td>
         <td data-label="Store">${window.DLClientStoreUI.label(S.stores.find(s=>s.id===o.storeId))}</td>${compact ? '' : `<td data-label="Destination">${esc(place(o.destination))}</td>
         <td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>${o.courier ? `<br><small class="dim" data-no-i18n>${esc(o.courier)}</small>` : ''}` : '<span class="dim">Not yet</span>'}</td>`}
-        <td data-label="Price" class="num">${o.sellingPrice == null ? '<span class="dim">—</span>' : `<b>${esc(customerPaid(o))}</b>`}</td>
+        <td data-label="Earned" class="num">${earnedCell(o)}</td>
         <td data-label="Cost" class="num">${o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : `<b>${money(o.price)}</b>`}</td>
-        <td data-label="Profit" class="num ${o.status !== 'cancelled' && o.profit > 0 ? 'pos' : o.status !== 'cancelled' && o.profit < 0 ? 'neg' : ''}">${o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : o.profit == null ? '<span class="dim">—</span>' : `<b>${money(o.profit)}</b>`}</td>
-        ${compact ? '' : `<td data-label="Net profit" class="num ${netProfit(o) > 0 ? 'pos' : netProfit(o) < 0 ? 'neg' : ''}">${netCell(o)}</td>`}
+        <td data-label="Profit" class="num ${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}">${profitCell(o)}</td>
         <td data-label="Status">${UI.pill(o.status)}</td>
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
@@ -502,16 +497,17 @@
       <section class="card card-pad"><h3 class="sec-title">Sale &amp; cost</h3><div class="money-rows">
         <div class="total"><span>Customer paid</span><span>${o.sellingPrice == null ? '<span class="dim">Not entered</span>' : esc(customerPaid(o))}</span></div>
         <div><span>Etsy fee</span><span>${o.etsyFee == null ? '<span class="dim">Not entered</span>' : `-${esc(o.currency || 'USD')} ${Number(o.etsyFee).toFixed(2)}`}</span></div>
+        <div class="total"><span>You earned <small class="dim">after Etsy fees</small></span><span>${earnedOf(o) == null ? '<span class="dim">Not entered</span>' : esc(money2(earnedOf(o), o))}</span></div>
         <div><span>Total you pay</span><span>${!o.priced ? 'Pending Direct Line' : money(o.price)}</span></div>
         ${o.priced ? `<div><span><span>Per item</span> <small class="dim" data-no-i18n>× ${esc(o.quantity || 1)}</small></span><span>${money(Math.round(o.price / (o.quantity || 1) * 100) / 100)}</span></div>` : ''}
-        ${!o.priced ? '' : `<div><span>Your estimated profit</span><span class="${o.profit > 0 ? 'pos' : o.profit < 0 ? 'neg' : ''}"><b>${money(o.profit)}</b></span></div>`}
-        ${netProfit(o) == null ? '' : `<div><span>Your net profit</span><span class="${netProfit(o) > 0 ? 'pos' : netProfit(o) < 0 ? 'neg' : ''}"><b>${money(netProfit(o))}</b></span></div>`}</div>
-        ${o.priced && o.sellingPrice != null && o.etsyFee != null && !isUsd(o) ? '<p class="note" style="margin:10px 0 0">Net profit is shown for orders in USD.</p>' : ''}</section>
-      ${S.me.preview || o.status === 'cancelled' ? '' : `<section class="card card-pad"><h3 class="sec-title">Your numbers</h3><p class="note">Copy these from your Etsy order screen. They only change your profit figures, never your bill.</p>
+        ${profitOf(o) == null ? '' : `<div><span>Your profit</span><span class="${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}"><b>${money(profitOf(o))}</b></span></div>`}</div>
+        ${o.priced && earnedOf(o) == null && o.status !== 'cancelled' ? '<p class="note" style="margin:10px 0 0">Add the Etsy fee, or what Etsy says you earned, to see your profit.</p>' : ''}</section>
+      ${S.me.preview || o.status === 'cancelled' ? '' : `<section class="card card-pad"><h3 class="sec-title">Your numbers</h3><p class="note">Copy these from your Etsy order screen: what the buyer paid and the Etsy fee, or just what Etsy says you earned (Earnings tab). They only change your profit figures, never your bill.</p>
         <form id="numbers-form" class="form-grid" novalidate>
           <label class="field"><span>Customer paid <small>what the buyer paid</small></span><input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal" value="${o.sellingPrice == null ? '' : Number(o.sellingPrice).toFixed(2)}"></label>
           <label class="field"><span>Currency</span><select name="currency">${['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD'].map(c => `<option${c === (o.currency || 'USD') ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
           <label class="field"><span>Etsy fee <small>fees Etsy took from this order</small></span><input name="etsyFee" type="number" min="0" step="0.01" inputmode="decimal" value="${o.etsyFee == null ? '' : Number(o.etsyFee).toFixed(2)}"></label>
+          <label class="field"><span>Or: You earned <small>Etsy › order › Earnings</small></span><input name="etsyEarned" type="number" min="0" step="0.01" inputmode="decimal" value="${o.etsyEarned == null ? '' : Number(o.etsyEarned).toFixed(2)}"></label>
           <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="submit" class="btn btn-primary">Save numbers</button><p class="form-msg" data-numbers-msg style="margin:0" role="status"></p></div>
         </form></section>`}`;
     bindNumbers(o);
@@ -526,7 +522,7 @@
       e.preventDefault(); const b = $('[type=submit]', f), m = $('[data-numbers-msg]', f); if (b.disabled) return;
       b.disabled = true; m.textContent = ''; m.className = 'form-msg';
       try {
-        await api('/orders/' + o.id, { method: 'PUT', body: { sellingPrice: f.sellingPrice.value, currency: f.currency.value, etsyFee: f.etsyFee.value } });
+        await api('/orders/' + o.id, { method: 'PUT', body: { sellingPrice: f.sellingPrice.value, currency: f.currency.value, etsyFee: f.etsyFee.value, etsyEarned: f.etsyEarned.value } });
         f.dataset.dirty = ''; await refresh(); N.popup({ icon: 'check', title: 'Numbers saved' }, { duration: 4000 });
       } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
     });
@@ -543,7 +539,7 @@
     const ed = S.route === 'edit' ? S.orders.find(o => o.id === S.id) : null;
     const today = localDay();
     const currencies = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD'];
-    const extra = !!(ed && (ed.sellingPrice != null || ed.etsyFee != null || ed.sku || ed.notes || (ed.currency && ed.currency !== 'USD')));
+    const extra = !!(ed && (ed.sellingPrice != null || ed.etsyFee != null || ed.etsyEarned != null || ed.sku || ed.notes || (ed.currency && ed.currency !== 'USD')));
     return `<form class="form-layout" id="order-form" novalidate>
       <div class="form-main">
         <section class="card card-pad"><h3 class="form-sec"><i>1</i>Store order number</h3><div class="form-grid">
@@ -572,7 +568,8 @@
         <details class="card card-pad more"${extra ? ' open' : ''}><summary><span class="form-sec"><i>+</i>More details <small>optional</small></span></summary><div class="form-grid">
           <label class="field"><span>Customer paid <small>for your profit numbers</small></span><span class="money"><input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal" value="${ed?.sellingPrice == null ? '' : Number(ed.sellingPrice).toFixed(2)}"></span></label>
           <label class="field"><span>Currency</span><select name="currency">${currencies.map(c => `<option${c === (ed?.currency || 'USD') ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
-          <label class="field"><span>Etsy fee <small>for your net profit</small></span><input name="etsyFee" type="number" min="0" step="0.01" inputmode="decimal" value="${ed?.etsyFee == null ? '' : Number(ed.etsyFee).toFixed(2)}"></label>
+          <label class="field"><span>Etsy fee <small>for your profit</small></span><input name="etsyFee" type="number" min="0" step="0.01" inputmode="decimal" value="${ed?.etsyFee == null ? '' : Number(ed.etsyFee).toFixed(2)}"></label>
+          <label class="field"><span>Or: You earned <small>Etsy › order › Earnings</small></span><input name="etsyEarned" type="number" min="0" step="0.01" inputmode="decimal" value="${ed?.etsyEarned == null ? '' : Number(ed.etsyEarned).toFixed(2)}"></label>
           <label class="field full"><span>SKU or listing ID</span><input name="sku" maxlength="120" placeholder="e.g. LIGHTER-01" value="${esc(ed?.sku)}"></label>
           <label class="field full"><span>Note for Direct Line</span><textarea name="notes" maxlength="2000" placeholder="Deadline, gift wrap, special packaging…">${esc(ed?.notes)}</textarea></label>
         </div></details>
@@ -698,7 +695,7 @@
         return;
       }
       const body = {
-        storeId:Number(form.storeId.value),orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value, etsyFee: form.etsyFee.value,
+        storeId:Number(form.storeId.value),orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value, etsyFee: form.etsyFee.value, etsyEarned: form.etsyEarned.value,
         sku: form.sku.value, quantity: form.quantity.value, variant: form.variant.value, etsyUrl: links.join('\n'),
         buyerName: form.buyerName.value, ...UI.addressFields(form.address1.value,ed), destination: dest.get(), notes: form.notes.value, taxNumber: form.taxNumber.value, giftMessage: form.giftMessage.value,
       };
