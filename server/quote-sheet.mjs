@@ -175,7 +175,8 @@ export async function ensureQuoteLayout(DB, env, fetchImpl = fetch) {
   const sheetId = await tabId(env, fetchImpl);
   if (sheetId == null) return false;
   const head = await sheetsRequest(env, '/values/' + encodeURIComponent(`${QT}!J4:L4`) + '?majorDimension=ROWS', {}, fetchImpl);
-  const k4 = norm(head.values?.[0]?.[1]), l4 = norm(head.values?.[0]?.[2]);
+  const j4 = norm(head.values?.[0]?.[0]), k4 = norm(head.values?.[0]?.[1]), l4 = norm(head.values?.[0]?.[2]);
+  if (!j4 && !k4 && !l4) return false; // headers not written yet (tab still being made): nothing to switch
   // Already inserted (maybe by a run that stopped before writing the header): K is the shipping column or empty with Available? in L.
   const inserted = k4 === QUOTE_HEADERS[10] || (k4 === '' && l4 === 'Available?');
   if (!inserted) {
