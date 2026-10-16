@@ -4,9 +4,9 @@ import '../dist/p/client-store-math.js';
 import {storeInput} from '../server/client-stores.mjs';
 const {performance,periodRange}=globalThis.DLClientStoreMath;
 test('store sums include missing sales, cancellation fees and refund credits exactly',()=>{
- const stores=[{id:1},{id:2},{id:3}],orders=[{id:1,storeId:1,status:'pending',price:10.1,sellingPrice:25.2,orderDate:'2026-10-12'},{id:2,storeId:1,status:'pending',price:5,sellingPrice:null,orderDate:'2026-10-12'},{id:3,storeId:2,status:'cancelled',price:20,sellingPrice:45,orderDate:'2026-10-12'},{id:4,storeId:3,status:'delivered',price:30,sellingPrice:60,orderDate:'2026-10-12'}];
- const stats=performance(stores,orders,[{orderId:3,amount:4},{orderId:4,amount:-30}]);assert.equal(stats.totals.billed,19.1);assert.equal(stats.totals.customersPaid,85.2);assert.equal(stats.totals.profit,66.1);assert.equal(stats.totals.missingSalePrice,1);assert.equal(stats.totals.orders,3);
- for(const key of ['billed','customersPaid','profit'])assert.equal(Math.round(stats.rows.reduce((n,r)=>n+r[key]*100,0)),Math.round(stats.totals[key]*100));
+ const stores=[{id:1},{id:2},{id:3}],orders=[{id:1,storeId:1,status:'pending',price:10.1,sellingPrice:25.2,etsyFee:2.2,orderDate:'2026-10-12'},{id:2,storeId:1,status:'pending',price:5,sellingPrice:null,orderDate:'2026-10-12'},{id:3,storeId:2,status:'cancelled',price:20,sellingPrice:45,orderDate:'2026-10-12'},{id:4,storeId:3,status:'delivered',price:30,sellingPrice:60,etsyEarned:52.4,orderDate:'2026-10-12'}];
+ const stats=performance(stores,orders,[{orderId:3,amount:4},{orderId:4,amount:-30}]);assert.equal(stats.totals.billed,19.1);assert.equal(stats.totals.customersPaid,85.2);assert.equal(stats.totals.earned,75.4);assert.equal(stats.totals.profit,61.3,'only orders with earnings: (23-10.1)+(52.4-30), minus the 4 fee, plus the 30 credit');assert.equal(stats.totals.missingSalePrice,1);assert.equal(stats.totals.orders,3);
+ for(const key of ['billed','customersPaid','earned','profit'])assert.equal(Math.round(stats.rows.reduce((n,r)=>n+r[key]*100,0)),Math.round(stats.totals[key]*100));
 });
 test('periods use calendar ranges including leap years and reject impossible custom dates',()=>{
  const now=new Date(2024,2,15);assert.deepEqual(periodRange('last_month','','',now),{from:'2024-02-01',to:'2024-02-29'});assert.deepEqual(periodRange('30','','',now),{from:'2024-02-15',to:'2024-03-15'});assert.equal(periodRange('custom','2026-02-30','2026-03-02'),null);assert.equal(periodRange('custom','2026-03-02','2026-03-01'),null);

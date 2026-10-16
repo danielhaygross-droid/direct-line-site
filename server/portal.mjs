@@ -119,6 +119,9 @@ export const SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS tax_number TEXT',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS gift_message TEXT',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS etsy_fee DOUBLE PRECISION',
+  // What Etsy says the client earned on the order (Etsy's Earnings tab, after Etsy's fees). Another way to enter
+  // the numbers: when set it is used instead of customer paid - Etsy fee.
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS etsy_earned DOUBLE PRECISION',
   // Activity log: what happened to each order and when (powers notifications and the order timeline).
   `CREATE TABLE IF NOT EXISTS order_events (
      id SERIAL PRIMARY KEY,
@@ -274,7 +277,7 @@ export function sameCustomer(a, b) {
 }
 // The client's own accounting (what their customer paid, in which currency, and the Etsy fee) never affects the bill,
 // so it can be entered or corrected at any time, also on shipped orders.
-export const ACCOUNTING_BODY_KEYS = ['sellingPrice', 'currency', 'etsyFee'];
+export const ACCOUNTING_BODY_KEYS = ['sellingPrice', 'currency', 'etsyFee', 'etsyEarned'];
 export const accountingOnlyEdit = body => { const keys = Object.keys(body || {}); return keys.length > 0 && keys.every(k => ACCOUNTING_BODY_KEYS.includes(k)); };
 // The Etsy fee is stored on its own (the long order INSERT/UPDATE stay as they are). Empty clears it.
 async function saveEtsyFee(DB, id, body) {
@@ -283,7 +286,20 @@ async function saveEtsyFee(DB, id, body) {
   await DB.prepare('UPDATE client_orders SET etsy_fee=? WHERE id=?').bind(fee, id).run();
   return fee;
 }
-const etsyFeeProblem = body => (body.etsyFee !== undefined && !isMoney(money(body.etsyFee)) ? 'The Etsy fee must be zero or more' : '');
+// "You earned" from Etsy, stored on its own like the fee. Empty clears it.
+async function saveEtsyEarned(DB, id, body) {
+  if (body.etsyEarned === undefined) return undefined;
+  const earned = money(body.etsyEarned);
+  await DB.prepare('UPDATE client_orders SET etsy_earned=? WHERE id=?').bind(earned, id).run();
+  return earned;
+}
+const etsyFeeProblem = body => (body.etsyFee !== undefined && !isMoney(money(body.etsyFee)) ? 'The Etsy fee must be zero or more'
+  : body.etsyEarned !== undefined && !isMoney(money(body.etsyEarned)) ? 'What you earned must be zero or more' : '');
+// What the client earned on an order after Etsy's fees: Etsy's own "You earned", else customer paid - Etsy fee.
+export function earnedAfterFee(r) {
+  if (r.etsy_earned != null) return round2(Number(r.etsy_earned));
+  return r.selling_price != null && r.etsy_fee != null ? round2(Number(r.selling_price) - Number(r.etsy_fee)) : null;
+}
 export function canEditCustomer(order) { return ['pending', 'processing'].includes(order.status) && !order.archived; }
 export const customerOnlyEdit = body => { const keys = Object.keys(body || {}); return keys.length > 0 && keys.every(k => CUSTOMER_BODY_KEYS.includes(k)); };
 export async function clientSession(DB, who) {
@@ -356,7 +372,9 @@ function orderOut(r) {
     // price = what the client pays for the order = product cost (incl. our hidden fee) + shipping fee.
     productCost: r.product_cost === null || r.product_cost === undefined ? null : Number(r.product_cost),
     shippingFee: r.shipping_fee === null || r.shipping_fee === undefined ? null : Number(r.shipping_fee),
-    price, sellingPrice: sell, etsyFee: r.etsy_fee == null ? null : Number(r.etsy_fee), profit: sell === null ? null : round2(sell - price),
+    price, sellingPrice: sell, etsyFee: r.etsy_fee == null ? null : Number(r.etsy_fee), etsyEarned: r.etsy_earned == null ? null : Number(r.etsy_earned),
+    // Profit = what the client earned after Etsy's fees - what they pay Direct Line.
+    earned: earnedAfterFee(r), profit: earnedAfterFee(r) === null ? null : round2(earnedAfterFee(r) - price),
     orderDate: r.order_date || '', currency: r.currency || 'USD', buyerName: r.buyer_name || '', buyerPhone: r.buyer_phone || '',
     addressChangedAt: r.address_changed_at == null ? null : Number(r.address_changed_at),
     address1: r.address_line_1 || '', address2: r.address_line_2 || '', city: r.city || '', region: r.region || '', postalCode: r.postal_code || '',
@@ -703,6 +721,7 @@ async function routePortal(request, url, ctx, meta) {
     const settings = await getSettings(DB);
     const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, actorOf(who), '', settings);
     const newFee = await saveEtsyFee(DB, row.id, body); if (newFee !== undefined) row.etsy_fee = newFee;
+    const newEarned = await saveEtsyEarned(DB, row.id, body); if (newEarned !== undefined) row.etsy_earned = newEarned;
     const out = { ...orderOut(row), photos: saved };
     return json({ ok: true, order: who.admin ? out : clientOrder(out) });
   }
@@ -827,6 +846,7 @@ async function routePortal(request, url, ctx, meta) {
       }
     }
     const fee = await saveEtsyFee(DB, id, body); if (fee !== undefined) row.etsy_fee = fee;
+    const earnedNow = await saveEtsyEarned(DB, id, body); if (earnedNow !== undefined) row.etsy_earned = earnedNow;
     const changed = EDIT_FIELDS.filter(k => String(row[k] ?? '') !== String(existing[k] ?? ''));
     if (changed.length && !accountingOnly) await logEvent(DB, id, existing.client_id, 'edited', actor, changed.every(k => CUSTOMER_COLUMNS.includes(k)) ? 'customer' : '');
     // The supplier may already be working on it: flag the Work Queue row until the parcel ships (see websiteCells).
