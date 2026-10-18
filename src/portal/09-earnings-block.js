@@ -1,0 +1,64 @@
+  // ---------- earnings block: the same cards and profit chart on Home and on Orders ----------
+  function earnedNumbers() {
+    const range = homeRange(), stats = window.DLClientStoreMath.performance(S.stores, S.orders, S.adjustments, range);
+    const selected = S.storeId ? stats.rows.find(x => x.id === S.storeId) : stats.totals;
+    return { range, stats, selected, s: { ...S.me.summary, orders: selected?.orders || 0, billed: selected?.billed || 0, clientProfit: selected?.profit || 0 } };
+  }
+  function statCardsHTML() {
+    const me = S.me, { selected, s } = earnedNumbers(), active = storeOrders().filter(inProgress).length;
+    return `<section class="stats stats-3">
+        <div class="stat hero"><span class="stat-ic">${ic('wallet')}</span><small>${S.storeId?'Billed for this store':'Billed in selected period'}</small><strong>${money(s.billed)}</strong><em><span>Overall account balance</span>: ${money(me.summary.outstanding)}</em></div>
+        <div class="stat" style="--tone:var(--blue)"><span class="stat-ic">${ic('orders')}</span><small>Orders in progress</small><strong>${active}</strong><em>${s.orders} order${s.orders === 1 ? '' : 's'} in total</em></div>
+        <div class="stat" style="--tone:var(--gold)"><span class="stat-ic">${ic('chart')}</span><small>Your profit</small><strong class="${s.clientProfit < 0 ? 'neg' : ''}">${money(s.clientProfit)}</strong><em>What you earned after Etsy fees, minus our bill</em>${selected?.missingSalePrice ? `<small><b data-no-i18n>${selected.missingSalePrice}</b> <span>orders missing Etsy earnings</span></small>` : ''}${selected?.otherCurrency ? `<small><b data-no-i18n>${selected.otherCurrency}</b> <span>orders in other currencies not counted</span></small>` : ''}</div>
+      </section>`;
+  }
+  // Orders page: period picker on top, then (refreshed on its own) the per-store table, the cards and the chart.
+  const earningsTop = () => `<div data-earnings-top>${window.DLClientStoreUI.periodFields(S.period, S.from, S.to)}</div>`;
+  function earningsInner() {
+    const { stats } = earnedNumbers();
+    return `${!S.storeId && S.stores.length > 1 ? `<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>` : ''}
+      ${statCardsHTML()}
+      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>`;
+  }
+
+  function profitChart(){
+    const range=homeRange(),[fy,fm]=range.from.split('-').map(Number),[ty,tm]=range.to.split('-').map(Number),span=(ty-fy)*12+tm-fm+1,buckets=[];
+    if(span<=24){for(let n=0;n<span;n++){const date=new Date(fy,fm-1+n,1),y=date.getFullYear(),m=date.getMonth()+1,key=y+'-'+String(m).padStart(2,'0');buckets.push({from:key+'-01',to:key+'-31',label:date.toLocaleDateString(undefined,{month:'short',year:fy!==ty?'2-digit':undefined})});}}
+    else {for(const year of [...new Set(storeOrders().filter(o=>inRange(o,range)).map(o=>window.DLClientStoreMath.dateKey(o).slice(0,4)))].sort())buckets.push({from:year+'-01-01',to:year+'-12-31',label:year});}
+    for(const b of buckets){const r={from:b.from<range.from?range.from:b.from,to:b.to>range.to?range.to:b.to},tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,r).totals;b.profit=tot.profit;b.orders=tot.orders;}
+    const max=Math.max(1,...buckets.map(b=>Math.abs(b.profit))),tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,range).totals;
+    return `<div class="bars" role="img" aria-label="Profit over selected period">${buckets.map(b=>`<div class="bar-col" title="${money(b.profit)}"><span class="bar-val">${b.orders||b.profit?money(b.profit):''}</span><i class="${b.profit<0?'neg':''}" style="height:${b.orders||b.profit?Math.max(4,Math.abs(b.profit)/max*100):0}%"></i><small data-no-i18n>${esc(b.label)}</small></div>`).join('')}</div><div class="chart-legend"><span>Profit</span><b>${money(tot.profit)}</b></div>`;
+  }
+
+  const unreadOrderIds=()=>new Set(noteItems().filter(x=>x.unread).map(x=>x.orderId));
+  function ordersTable(list, compact) {
+    const fresh = unreadOrderIds();
+    return `<table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Store</th>${compact ? '' : '<th>Destination</th><th>Tracking</th>'}<th class="num" title="What you earned on Etsy after Etsy’s fees">Earned</th><th class="num" title="What you pay Direct Line">Cost</th><th class="num" title="Earned minus cost">Profit</th><th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
+      ${list.map(o => `<tr class="click${fresh.has(o.id) ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
+        <td class="wide"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small></span></div></td>
+        <td data-label="Customer"><span data-no-i18n>${esc(o.buyerName) || '—'}</span></td>
+        <td data-label="Store">${window.DLClientStoreUI.label(S.stores.find(s=>s.id===o.storeId))}</td>${compact ? '' : `<td data-label="Destination">${esc(place(o.destination))}</td>
+        <td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>${o.courier ? `<br><small class="dim" data-no-i18n>${esc(o.courier)}</small>` : ''}` : '<span class="dim">Not yet</span>'}</td>`}
+        <td data-label="Earned" class="num">${earnedCell(o)}</td>
+        <td data-label="Cost" class="num">${o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : `<b>${money(o.price)}</b>`}</td>
+        <td data-label="Profit" class="num ${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}">${profitCell(o)}</td>
+        <td data-label="Status">${UI.pill(o.status)}</td>
+        <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+  const viewOrders = () => `<details class="earn-box" data-earn${store.get('dl-earn-open', true) ? ' open' : ''}><summary><b>Your earnings</b><small>profit, billing and the chart for the selected period</small></summary>${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details><div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label></div>
+      <section class="card" data-orders-list></section>`;
+  function renderChips() {
+    const c = st => storeOrders().filter(o => st === 'all' || o.status === st).length;
+    $('[data-chips]').innerHTML = ['all', ...STATUSES].filter(st => st === 'all' || c(st) || st === S.filter)
+      .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
+  }
+  function renderOrdersList() {
+    const q = S.q.toLowerCase();
+    const list = storeOrders().filter(o => (S.filter === 'all' || o.status === S.filter)
+      && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination),S.stores.find(s=>s.id===o.storeId)?.name].join(' ').toLowerCase().includes(q)));
+    $('[data-orders-list]').innerHTML = list.length ? `<div class="table-wrap">${ordersTable(list)}</div>`
+      : S.orders.length ? empty('search', 'No orders match', 'Try another search or status.') : empty('orders', 'No orders yet', 'Add your first order and we’ll take it from there.', '<a class="btn btn-primary" href="#/new">New order</a>');
+  }
+  function bindOrders() { renderChips(); renderOrdersList(); }
+

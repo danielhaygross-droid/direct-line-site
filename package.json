@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node scripts/build-worker.mjs"
+    "build": "node scripts/build-screens.mjs && node scripts/build-worker.mjs",
+    "build:screens": "node scripts/build-screens.mjs",
+    "test": "node scripts/build-screens.mjs --check && node --test tests/*.test.mjs"
   },
   "engines": {
     "node": ">=20"
