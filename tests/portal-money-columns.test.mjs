@@ -20,7 +20,7 @@ test('the client orders tables show Earned (after Etsy fee), Cost and Profit wit
 test('the internal parts of the cost never reach the client', async () => {
   const server = await read('server/portal.mjs');
   assert.ok(server.includes("const CLIENT_HIDDEN = ['addressChangedAt', 'commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost', 'priceSource'];"));
-  assert.ok(server.includes('profit: earnedAfterFee(r) === null ? null : round2(earnedAfterFee(r) - price)'));
+  assert.ok(server.includes("profit: earnedAfterFee(r) === null || (r.currency || 'USD') !== 'USD' ? null : round2(earnedAfterFee(r) - price)"));
 });
 
 test('Hebrew exists for the new headers and tooltips', async () => {

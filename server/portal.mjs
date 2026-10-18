@@ -374,7 +374,8 @@ function orderOut(r) {
     shippingFee: r.shipping_fee === null || r.shipping_fee === undefined ? null : Number(r.shipping_fee),
     price, sellingPrice: sell, etsyFee: r.etsy_fee == null ? null : Number(r.etsy_fee), etsyEarned: r.etsy_earned == null ? null : Number(r.etsy_earned),
     // Profit = what the client earned after Etsy's fees - what they pay Direct Line.
-    earned: earnedAfterFee(r), profit: earnedAfterFee(r) === null ? null : round2(earnedAfterFee(r) - price),
+    // Profit only for USD orders: an EUR/GBP… earning is not compared with a USD bill (no exchange rate is guessed).
+    earned: earnedAfterFee(r), profit: earnedAfterFee(r) === null || (r.currency || 'USD') !== 'USD' ? null : round2(earnedAfterFee(r) - price),
     orderDate: r.order_date || '', currency: r.currency || 'USD', buyerName: r.buyer_name || '', buyerPhone: r.buyer_phone || '',
     addressChangedAt: r.address_changed_at == null ? null : Number(r.address_changed_at),
     address1: r.address_line_1 || '', address2: r.address_line_2 || '', city: r.city || '', region: r.region || '', postalCode: r.postal_code || '',

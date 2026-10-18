@@ -38,7 +38,7 @@ test('the Etsy fee and "You earned" are stored and editable at any time, while o
   for (const body of [{}, null, { etsyFee: 1, notes: 'x' }, { quantity: 2 }, { etsyEarned: 1, buyerName: 'A' }]) assert.equal(accountingOnlyEdit(body), false, JSON.stringify(body));
   assert.equal(customerOnlyEdit({ etsyFee: 1 }), false);
   const server = await read('server/portal.mjs');
-  assert.ok(server.includes('earned: earnedAfterFee(r), profit: earnedAfterFee(r) === null ? null : round2(earnedAfterFee(r) - price)'));
+  assert.ok(server.includes("earned: earnedAfterFee(r), profit: earnedAfterFee(r) === null || (r.currency || 'USD') !== 'USD' ? null : round2(earnedAfterFee(r) - price)"));
   assert.ok(server.includes('AND (? OR ? OR (? AND status IN') && server.includes('id, existing.status, who.admin, accountingOnly, customerOnly,'), 'the UPDATE itself allows accounting edits in any state');
   assert.ok(server.includes('if (changed.length && !accountingOnly) await logEvent('), 'a numbers change does not notify the admin');
   assert.ok(server.includes("'The Etsy fee must be zero or more'") && server.includes("'What you earned must be zero or more'"));
@@ -53,4 +53,13 @@ test('portal: Earned / Cost / Profit, panel lines, "Your numbers" form with "You
   assert.ok(portal.includes('S.me.preview || o.status === \'cancelled\' ? \'\' : `<section class="card card-pad"><h3 class="sec-title">Your numbers</h3>'), 'no form in the admin preview or on cancelled orders');
   assert.ok(!/etsy_fee_percent|feeRates|etsyFeePercent|6\.5%|9\.5%|3%/.test(portal), 'no invented fee rates anywhere');
   for (const s of ['Earned', 'You earned', 'Or: You earned', 'Add Etsy fee', 'Etsy fee', 'Your profit', 'Your numbers', 'Save numbers', 'Numbers saved', 'The Etsy fee must be zero or more', 'What you earned must be zero or more', 'orders missing Etsy earnings']) assert.ok(i18n.includes(`'${s}':`), s);
+});
+
+test('profit only for USD orders: other currencies are not mixed into the USD totals, and are counted', () => {
+  const stats = performance([{ id: 1 }], [
+    { id: 1, storeId: 1, status: 'processing', price: 20, sellingPrice: 50, etsyFee: 5, currency: 'USD', orderDate: '2026-10-10' },
+    { id: 2, storeId: 1, status: 'processing', price: 20, sellingPrice: 40, etsyFee: 5, currency: 'EUR', orderDate: '2026-10-10' },
+  ]);
+  assert.equal(stats.totals.profit, 25, 'only the USD order (50 - 5 - 20)');
+  assert.equal(stats.totals.earned, 45); assert.equal(stats.totals.otherCurrency, 1); assert.equal(stats.totals.missingSalePrice, 0);
 });
