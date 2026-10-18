@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import { DB,pg,env,call,seed } from './lib.mjs';
+import { handlePortal } from '../server/portal.mjs';
+const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6kQQAAAAASUVORK5CYII=';
+try {
+  const {admin,client,id}=await seed();
+  const body={amount:23.5,date:'2026-10-12',file:{filename:'receipt.png',data:'data:image/png;base64,'+png}};
+  const before=(await call('/me','GET',null,client)).data.summary;
+  const sent=await call('/transfers','POST',body,client);assert.equal(sent.status,200);
+  const fid=sent.data.transfer.id;assert.equal(sent.data.transfer.status,'pending');
+  assert.equal((await call('/me','GET',null,client)).data.summary.paid,before.paid);
+  assert.equal((await call('/transfers','POST',body,client)).data.transfer.id,fid);
+  assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM portal_files').first()).n,1);
+  assert.equal((await call('/admin/transfers/'+fid+'/record','POST',{},client)).status,403);
+  assert.equal((await call('/transfers','POST',body,admin,{'x-dl-view-as':String(id)})).status,403);
+  const overview=(await call('/admin/overview','GET',null,admin)).data;assert.equal(overview.clients[0].pendingTransfers,1);
+  await call('/admin/users','POST',{username:'otherclient',password:'other-pass-123',role:'client'},admin);
+  const other=(await call('/login','POST',{username:'otherclient',password:'other-pass-123'})).cookie;
+  await call('/terms/accept','POST',{version:1,accepted:true},other);
+  const get=async(cookie)=>{const r=new Request('http://localhost/api/portal/files/'+fid,{headers:{cookie}});return handlePortal(r,new URL(r.url),{DB,env});};
+  assert.equal((await get(other)).status,404);
+  const downloaded=await get(client);assert.equal(downloaded.status,200);assert.equal(downloaded.headers.get('content-type'),'image/png');assert.equal(Buffer.from(await downloaded.arrayBuffer()).toString('base64'),png);
+  await Promise.all(Array.from({length:8},()=>call('/admin/transfers/'+fid+'/record','POST',{},admin)));
+  assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM client_payments WHERE confirmation_id=?').bind(fid).first()).n,1);
+  assert.equal((await call('/me','GET',null,client)).data.summary.paid,23.5);
+  const transfer=(await call('/transfers','GET',null,client)).data.transfers[0];assert.equal(transfer.status,'recorded');
+  await call('/admin/payments/'+transfer.paymentId+'/delete','POST',{},admin);
+  assert.equal((await call('/me','GET',null,client)).data.summary.paid,0);
+  assert.equal((await DB.prepare('SELECT COUNT(*) AS n FROM client_payments WHERE id=?').bind(transfer.paymentId).first()).n,1);
+  await call('/admin/transfers/'+fid+'/record','POST',{},admin);
+  assert.equal((await call('/me','GET',null,client)).data.summary.paid,0);
+  await call('/admin/payments/'+transfer.paymentId+'/restore','POST',{},admin);
+  assert.equal((await call('/me','GET',null,client)).data.summary.paid,23.5);
+  console.log('PASS upload pending, duplicate-proof dedupe, private file access, preview/client permissions, 8 concurrent record requests credit once, balance/archive/restore and preserved proof.');
+} finally { await pg.close(); }

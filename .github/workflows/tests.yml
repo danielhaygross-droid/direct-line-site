@@ -1,0 +1,56 @@
+name: Tests
+
+# Runs on every pull request and on every push to main.
+#   unit:   the screen files are built into dist/, and the unit tests (tests/*.test.mjs) pass
+#   checks: the behaviour checks (checks/*.mjs): real database code on an in-memory Postgres, a fake Google Sheet,
+#           and the real admin / client screens in Chrome, in English and Hebrew, desktop and phone
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TZ: Asia/Jerusalem
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Chromium for the screen checks
+        run: npx playwright-core install --with-deps chromium
+      - name: Behaviour checks (no browser)
+        run: node scripts/run-checks.mjs --api
+      - name: Screen checks (Chrome)
+        run: node scripts/run-checks.mjs --ui
+        env:
+          CHECKS_OUT: ${{ runner.temp }}/checks
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-screenshots
+          path: ${{ runner.temp }}/checks
+          if-no-files-found: ignore
+          retention-days: 7

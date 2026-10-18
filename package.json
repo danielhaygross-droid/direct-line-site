@@ -5,7 +5,9 @@
   "scripts": {
     "build": "node scripts/build-screens.mjs && node scripts/build-worker.mjs",
     "build:screens": "node scripts/build-screens.mjs",
-    "test": "node scripts/build-screens.mjs --check && node --test tests/*.test.mjs"
+    "test": "node scripts/build-screens.mjs --check && node --test tests/*.test.mjs",
+    "checks": "node scripts/run-checks.mjs",
+    "checks:api": "node scripts/run-checks.mjs --api"
   },
   "engines": {
     "node": ">=20"
@@ -14,5 +16,9 @@
     "@neondatabase/serverless": "^1.0.0",
     "@vercel/blob": "2.8.0",
     "@vercel/functions": "^2.0.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "playwright-core": "1.62.1"
   }
 }

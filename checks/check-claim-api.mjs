@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {pg,DB,call,seed} from './lib.mjs';
+try{
+ const {admin,client,id}=await seed(),t=Math.floor(Date.now()/1000);const bytes=await readFile(new URL('./fixtures/en-1440-light-agreement.png',import.meta.url));const file={filename:'proof.png',data:'data:image/png;base64,'+bytes.toString('base64')};
+ const make=async(ref)=>{const r=await call('/orders','POST',{clientId:id,orderRef:ref,buyerName:'Demo',address1:'12 Main St',city:'Sample City',postalCode:'00123',destination:'IL',productCost:35,shippingFee:10,photos:[file]},admin);assert.equal(r.status,200);return r.data.order.id;};
+ const oid=await make('CLAIM-REFUND');await call('/orders/'+oid,'PUT',{status:'delivered'},admin);await DB.prepare('UPDATE client_orders SET delivered_at=? WHERE id=?').bind(t-3*86400,oid).run();
+ const input={problem:'damaged',description:'Broken item',resolution:'refund',proof:file,label:file};
+ assert.equal((await call('/orders/'+oid+'/claims','POST',{...input,label:null},client)).status,409);
+ const submitted=await call('/orders/'+oid+'/claims','POST',input,client);assert.equal(submitted.status,200);const claim=submitted.data.claim;assert.equal(claim.fileIds.length,2);assert.equal(claim.refundAmount,45);
+ assert.equal((await call('/orders/'+oid+'/claims','POST',input,client)).status,409);
+ assert.equal((await call('/admin/claims/'+claim.id,'POST',{status:'approved'},client)).status,403);
+ const approved=await Promise.all(Array.from({length:8},()=>call('/admin/claims/'+claim.id,'POST',{status:'approved',reply:'Refund approved'},admin)));assert.equal(approved.filter(r=>r.status===200).length,1);
+ assert.equal((await call('/payments','GET',null,client)).data.adjustments.find(a=>a.kind==='claim_refund').amount,-45);
+ assert.equal((await call('/me','GET',null,client)).data.summary.outstanding,0);
+ assert.equal((await call('/admin/claims/'+claim.id,'POST',{status:'resolved',reply:'Refund complete'},admin)).status,200);
+ const oid2=await make('CLAIM-RESHIP');await call('/orders/'+oid2,'PUT',{status:'delivered'},admin);await DB.prepare('UPDATE client_orders SET delivered_at=? WHERE id=?').bind(t-8*86400,oid2).run();
+ assert.equal((await call('/orders/'+oid2+'/claims','POST',input,client)).status,409);
+ const reshipClaim=(await call('/orders/'+oid2+'/claims','POST',{...input,resolution:'reshipment'},client)).data.claim;
+ const decision=await call('/admin/claims/'+reshipClaim.id,'POST',{status:'approved'},admin);assert.equal(decision.status,200);const rid=decision.data.claim.reshipmentOrderId;assert.ok(rid);
+ assert.equal((await call('/admin/claims/'+reshipClaim.id,'POST',{status:'approved'},admin)).status,409);
+ const reship=(await call('/orders','GET',null,client)).data.orders.find(o=>o.id===rid);assert.equal(reship.price,0);assert.equal(reship.quotedUnitPrice,0);assert.equal(reship.reshipmentOf,oid2);assert.equal(reship.photos.length,1);
+ assert.equal((await call('/orders/'+rid,'PUT',{shippingFee:99,productCost:99},admin)).data.order.price,0);
+ const oid3=await make('CLAIM-LOST');await call('/orders/'+oid3,'PUT',{status:'shipped'},admin);
+ assert.equal((await call('/orders/'+oid3+'/claims','POST',{problem:'lost',resolution:'refund'},client)).status,409);
+ await DB.prepare('UPDATE client_orders SET last_tracking_update_at=? WHERE id=?').bind(t-20*86400,oid3).run();
+ const lost=await call('/orders/'+oid3+'/claims','POST',{problem:'lost',resolution:'refund'},client);assert.equal(lost.status,200);assert.equal(lost.data.claim.fileIds.length,0);
+ const oid4=await make('CLAIM-TRACK');await call('/orders/'+oid4,'PUT',{status:'shipped'},admin);await DB.prepare('UPDATE client_orders SET last_tracking_update_at=? WHERE id=?').bind(t-30*86400,oid4).run();await call('/admin/orders/'+oid4+'/tracking-update','POST',{},admin);
+ assert.equal((await call('/orders/'+oid4+'/claims','POST',{problem:'lost',resolution:'refund'},client)).status,409);
+ await DB.prepare('UPDATE portal_claims SET created_at=? WHERE id=?').bind(t-14*86400,lost.data.claim.id).run();assert.equal((await call('/admin/claims','GET',null,admin)).data.claims.find(c=>c.id===lost.data.claim.id).overdue,true);
+ console.log('PASS proof+label, seven-day refund boundary, one claim/order, admin permissions, concurrent credit once, linked zero-cost reshipment/photos, lost tracking threshold/reset and overdue flag');
+}finally{await pg.close();}
