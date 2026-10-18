@@ -295,6 +295,8 @@ async function saveEtsyEarned(DB, id, body) {
 }
 const etsyFeeProblem = body => (body.etsyFee !== undefined && !isMoney(money(body.etsyFee)) ? 'The Etsy fee must be zero or more'
   : body.etsyEarned !== undefined && !isMoney(money(body.etsyEarned)) ? 'What you earned must be zero or more' : '');
+// Which existing orders get a client's new fee (client account form): status lists; [] = every status except cancelled.
+export const FEE_SCOPES = { new: null, pending: ['pending'], processing: ['processing'], open: ['pending', 'processing'], all: [] };
 // What the client earned on an order after Etsy's fees: Etsy's own "You earned", else customer paid - Etsy fee.
 export function earnedAfterFee(r) {
   if (r.etsy_earned != null) return round2(Number(r.etsy_earned));
@@ -1150,11 +1152,15 @@ async function routePortal(request, url, ctx, meta) {
     }
     await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=CASE WHEN ? THEN ? ELSE password_hash END, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=?, password_reset_required=CASE WHEN ? THEN ? ELSE password_reset_required END, session_version=session_version+? WHERE id = ?').bind(name, active, cpo, !!body.password, hash, archived, trialStart, trialEnd, subStatus, lastPay, !!body.password, u.role === 'client', body.password ? 1 : 0, id).run();
     if (username !== u.username) await DB.prepare('UPDATE users SET username=? WHERE id=?').bind(username, id).run();
-    // Bulk: put this client's fee on all their existing orders too (not cancelled ones). The supplier's part never exceeds the fee.
+    // Bulk: put this client's fee on existing orders too, by status (Erwin): "new" = only new orders (nothing changes now),
+    // "pending", "processing" (In progress), "open" (Pending + In progress) or "all" (every order except cancelled ones).
     let ordersUpdated = 0;
-    if (u.role === 'client' && body.applyFeeToOrders === true) {
+    const applyTo = body.applyFeeToOrders === true ? 'all' : String(body.applyFeeTo || 'new');
+    if (!Object.hasOwn(FEE_SCOPES, applyTo)) return json({ ok: false, error: 'Choose which orders get the new fee.' }, 400);
+    if (u.role === 'client' && applyTo !== 'new') {
       const settings = await getSettings(DB), fee = cpo ?? Number(settings.commission_per_order), share = 0;
-      const rows = (await DB.prepare("SELECT id, supplier_cost, quoted_unit_price FROM client_orders WHERE client_id=? AND status<>'cancelled'").bind(id).all()).results || [];
+      const statuses = FEE_SCOPES[applyTo];
+      const rows = (await DB.prepare(`SELECT id, supplier_cost, quoted_unit_price FROM client_orders WHERE client_id=? AND status<>'cancelled' AND NOT archived${statuses.length ? ` AND status IN (${statuses.map(() => '?').join(',')})` : ''}`).bind(id, ...statuses).all()).results || [];
       for (const o of rows) {
         await DB.prepare('UPDATE client_orders SET commission=?, supplier_share=? WHERE id=?').bind(fee, share, o.id).run();
         // the client's price follows the new fee (supplier's cost + fee)

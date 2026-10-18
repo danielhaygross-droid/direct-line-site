@@ -70,6 +70,10 @@ try {
       heights[name] = await height();
       await page.screenshot({ path: path.join(out, `${tag}-${name}.png`) });
     }
+    // Account: which existing orders get a new fee (new only / pending / in progress / both / all), with counts.
+    await group(3).click(); await page.waitForTimeout(200); await sub('account').click(); await page.waitForTimeout(200);
+    assert.deepEqual(await ui.locator('[name=applyFeeTo] option').evaluateAll(o => o.map(x => x.value)), ['new', 'pending', 'processing', 'open', 'all']);
+    await ui.locator('[name=applyFeeTo]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, tag + '-fee-choice.png') });
     // The Shop tab reopens on the sub-tab used last.
     await group(1).click(); await page.waitForTimeout(200); await sub('products').click(); await group(0).click(); await group(1).click(); await page.waitForTimeout(200);
     assert.equal(await ui.locator('.subtabs .on').getAttribute('data-ctab'), 'products');
