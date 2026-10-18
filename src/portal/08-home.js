@@ -11,7 +11,7 @@
     return `
       <section class="hello"><div><h2>${hello}, <span>${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p>${all.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Send us your first order to get started.'}</p></div>
         <div class="hello-actions"><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a></div></section>
-      ${window.DLClientStoreUI.periodFields(S.period,S.from,S.to)}
+      ${window.DLClientStoreUI.periodFields(S.period,S.from,S.to,window.DLClientStoreMath.monthsOf(S.orders))}
       ${!S.storeId&&S.stores.length>1?`<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>`:''}
       ${subBanner(me.subscription)}
       ${newbie ? `<section class="card card-pad how"><h3>How it works</h3>

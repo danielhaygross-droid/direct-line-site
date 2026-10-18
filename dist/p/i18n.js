@@ -340,6 +340,7 @@
     'Our earnings': 'הרווח שלנו', 'Needs your attention': 'דורש את תשומת לבך', 'Your clients': 'הלקוחות שלך', 'Client': 'לקוח', 'This month': 'החודש', 'Open': 'פתוחות',
     'We earned': 'הרווחנו', 'Last order': 'הזמנה אחרונה', 'Latest orders': 'הזמנות אחרונות', 'All caught up. Nothing is waiting for you.': 'הכל מטופל. שום דבר לא מחכה לך.',
     'Pending': 'ממתינה', 'Processing': 'בטיפול', 'Shipped': 'נשלחה', 'Delivered': 'נמסרה', 'Cancelled': 'בוטלה', 'All': 'הכל', 'New follow-ups': 'הודעות חדשות', 'Needs cost': 'חסרה עלות',
+    'One month': 'חודש אחד', 'Show': 'הצגה', 'All time': 'כל הזמן', 'Billed': 'חויב',
     'Use this fee for': 'להחיל את העמלה על', 'when you save': 'בזמן השמירה', 'New orders only': 'הזמנות חדשות בלבד', 'Choose which orders get the new fee.': 'בחרו על אילו הזמנות להחיל את העמלה החדשה.', 'New orders always get this client’s fee. To change orders already in the system, choose which ones above before saving: prices that come from the supplier’s cost (cost + fee) follow the new fee. Cancelled and archived orders never change.': 'הזמנות חדשות תמיד מקבלות את העמלה של הלקוח. כדי לשנות הזמנות שכבר במערכת, בחרו למעלה אילו לפני השמירה: מחירים שמבוססים על עלות הספק (עלות + עמלה) מתעדכנים לפי העמלה החדשה. הזמנות שבוטלו או הועברו לארכיון לא משתנות.',
     'Not in USD': 'לא בדולר', 'Profit is only worked out for orders in USD': 'הרווח מחושב רק להזמנות בדולר', 'orders in other currencies not counted': 'הזמנות במטבע אחר לא נספרו', 'Profit is only worked out for orders in USD, so this order is not in your profit totals.': 'הרווח מחושב רק להזמנות בדולר, ולכן ההזמנה הזו לא נכללת בסך הרווח שלך.',
     'Shipping per order': 'משלוח להזמנה', 'Shipping not added yet': 'המשלוח עוד לא נוסף', 'Not added yet': 'עוד לא נוסף', 'Shipping is added once to each order, whatever the quantity.': 'המשלוח נוסף פעם אחת לכל הזמנה, בלי קשר לכמות.', 'per item': 'לפריט', 'shipping': 'משלוח', 'Enter the shipping per order with up to two decimal places.': 'הזינו משלוח להזמנה עם עד שתי ספרות אחרי הנקודה.', 'one parcel, optional': 'חבילה אחת, לא חובה', 'Shipping per order (USD)': 'משלוח להזמנה (דולר)',
@@ -561,6 +562,7 @@
 
   const tc = s => tr(s); // translate a captured piece (e.g. a country or date)
   const R = [
+    [/^with orders in (.+)$/, (_, m) => `עם הזמנות ב${m}`], [/^Outstanding overall (.+)$/, (_, v) => `יתרה כוללת ${v}`], [/^Fees on (\d+) orders? in (.+)$/, (_, n, m) => `עמלות על ${n} הזמנות ב${m}`],
     [/^New \+ Pending orders(?: \((\d+)\))?$/, (_, n) => `חדשות + ממתינות${n ? ` (${n})` : ''}`], [/^New \+ In progress orders(?: \((\d+)\))?$/, (_, n) => `חדשות + בטיפול${n ? ` (${n})` : ''}`], [/^New \+ Pending \+ In progress orders(?: \((\d+)\))?$/, (_, n) => `חדשות + ממתינות + בטיפול${n ? ` (${n})` : ''}`], [/^All orders \(also shipped and delivered\)(?: \((\d+)\))?$/, (_, n) => `כל ההזמנות (גם שנשלחו ונמסרו)${n ? ` (${n})` : ''}`],
     [/^All stores \((\d+)\)$/, (_, n) => `כל החנויות (${n})`],
     [/^Stores \((\d+)\)$/, (_, n) => `חנויות (${n})`], [/^Products \((\d+)\)$/, (_, n) => `מוצרים (${n})`], [/^Show all \((\d+)\)$/, (_, n) => `הצגת הכל (${n})`],

@@ -76,6 +76,7 @@
     $('#app').innerHTML = `
       <section class="adm-head"><div><p class="eyebrow">Direct Line clients</p><h1>Clients <span>&amp;</span> orders</h1><p>Every order your clients send in, what they owe, and what we earn.</p></div>
         <div class="adm-actions"><button type="button" class="btn" data-add-account="client">${ic('users')}Add client</button><button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button></div></section>
+      <div class="kpi-bar"><label class="kpi-month"><span>Show</span><select data-kpi-month aria-label="Month"></select></label></div>
       <section class="kpis" data-kpis></section>
       <div class="seg" role="tablist">${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['claims','Claims'], ['products','Products'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
       <section data-tab-body style="display:grid;gap:14px"></section>`;
@@ -83,8 +84,26 @@
     $('#app').addEventListener('input', onInput);
     $('#app').addEventListener('change', onChange);
   }
+  // The month picker above the cards: All time, or one calendar month (orders by order date).
+  const kpiMonthKey = 'dl-admin-kpi-month';
+  function kpiMonth() { try { return localStorage.getItem(kpiMonthKey) || 'all'; } catch (e) { return 'all'; } }
+  document.addEventListener('change', e => { if (!e.target.matches?.('[data-kpi-month]')) return; try { localStorage.setItem(kpiMonthKey, e.target.value); } catch (x) { /* private mode */ } renderKpis(); });
   function renderKpis() {
-    const t = S.ov.totals, cl = S.ov.clients;
+    const t = S.ov.totals, cl = S.ov.clients, M = window.DLClientStoreMath, UIS = window.DLClientStoreUI;
+    const months = M.monthsOf(S.orders), month = months.includes(kpiMonth()) ? kpiMonth() : 'all', sel = $('[data-kpi-month]');
+    if (sel) sel.innerHTML = `<option value="all">All time</option>` + months.map(k => `<option value="${k}"${k === month ? ' selected' : ''} data-no-i18n>${esc(UIS.monthName(k))}</option>`).join('');
+    if (month !== 'all') {
+      const os = S.orders.filter(o => M.dateKey(o).slice(0, 7) === month && o.status !== 'cancelled'), cents = n => Math.round(Number(n || 0) * 100);
+      const billed = os.reduce((n, o) => n + cents(o.price), 0) / 100, fees = os.reduce((n, o) => n + cents(o.commission), 0) / 100, name = UIS.monthName(month);
+      $('[data-kpis]').innerHTML = [
+        ['Active clients', new Set(os.map(o => o.clientId)).size, `with orders in ${name}`, 'users', 'var(--blue)'],
+        ['Client orders', os.length, `${os.filter(o => o.status === 'pending').length} waiting to be processed`, 'orders', 'var(--orange)'],
+        ['Billed', money(billed), `Outstanding overall ${money(t.outstanding)}`, 'money', 'var(--blue)'],
+        ['Our earnings', money(fees), `Fees on ${os.length} order${os.length === 1 ? '' : 's'} in ${name}`, 'check', 'var(--gold)'],
+      ].map(([k, v, sub, icon, tone], i) => `<div class="stat${i === 3 ? ' hero' : ''}" style="--tone:${tone}"><span class="stat-ic">${ic(icon)}</span><small>${k}</small><strong>${v}</strong><em>${esc(sub)}</em></div>`).join('');
+      const unread0 = S.orders.filter(o => o.unreadMessages).length, b0 = $('[data-tab-badge="orders"]'); if (b0) b0.innerHTML = unread0 ? `<span class="badge-new">${unread0}</span>` : '';
+      return;
+    }
     $('[data-kpis]').innerHTML = [
       ['Active clients', cl.filter(c => c.active).length, `${cl.length} account${cl.length === 1 ? '' : 's'}`, 'users', 'var(--blue)'],
       ['Client orders', S.orders.filter(o=>o.status!=='cancelled').length, `${S.orders.filter(o => o.status === 'pending').length} waiting to be processed`, 'orders', 'var(--orange)'],
@@ -667,7 +686,7 @@
     const pane = tab === 'orders'
       // Orders tab: the order list, with the store performance folded away (one line until opened).
       ? (stores.length > 1 ? `<label class="store-pick"><span>Store</span><select data-client-store>${[`<option value="0">All stores (${stores.length})</option>`, ...stores.map(s => `<option value="${s.id}"${S.drawer.storeId === s.id ? ' selected' : ''} data-no-i18n>${esc(s.name)}</option>`)].join('')}</select></label>` : '')
-        + `<details class="card card-pad fold" data-fold="perf"${foldOpen('perf') ? ' open' : ''}><summary><h3 class="sec-title">Performance by store</h3><small class="dim">${S.drawer.storeId ? 'One store shown' : 'All stores'}</small></summary>${window.DLClientStoreUI.periodFields(S.period,S.from,S.to)}${window.DLClientStoreUI.table(stats,'data-admin-select-store')}</details>`
+        + `<details class="card card-pad fold" data-fold="perf"${foldOpen('perf') ? ' open' : ''}><summary><h3 class="sec-title">Performance by store</h3><small class="dim">${S.drawer.storeId ? 'One store shown' : 'All stores'}</small></summary>${window.DLClientStoreUI.periodFields(S.period,S.from,S.to,window.DLClientStoreMath.monthsOf(allOrders))}${window.DLClientStoreUI.table(stats,'data-admin-select-store')}</details>`
         // One compact row per order (order number, customer and store; total and status on the right).
         + (orders.length ? `<section class="card ord-list">${orders.map(o=>`<button type="button" class="ord-row" data-open-order="${o.id}" data-back="${c.id}"><span class="ord-main"><b>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(o.buyerName) || '—'}</span> · ${window.DLClientStoreUI.label(stores.find(s=>s.id===o.storeId))}</small></span><span class="ord-side"><b>${money(o.price)}</b>${UI.pill(o.status)}</span></button>`).join('')}</section>` : empty('No orders yet', 'Orders this client adds show up here.'))
       : tab === 'stores'
