@@ -48,3 +48,15 @@ test('wired up: order needs an option, sheet switch runs once, screens show opti
   assert.ok(client.includes('name="productOption"') && client.includes('class="price-options"') && admin.includes('Several prices from the sheet'));
   for (const s of ['Which option did the customer buy?', 'Choose an option…', 'Saving a price here replaces the options with one price.']) assert.ok(he.includes(`'${s}':`), s);
 });
+
+test('the supplier can mark a product not available with X / No / N/A (as Ada did for P-8); waiting rows are re-read once', async () => {
+  const { notAvailable, applyQuoteRow } = await import('../server/quote-sheet.mjs');
+  for (const [status, price] of [['X', 'X'], ['', 'X'], ['No', ''], ['N/A', ''], ['Not available', '']]) assert.equal(notAvailable(status, price), true, status + '/' + price);
+  for (const [status, price] of [['', '4.9'], ['Available', 'X'], ['', '']]) assert.equal(notAvailable(status, price), false, status + '/' + price);
+  const runs = [], DB = { prepare: sql => ({ bind: (...a) => ({ run: async () => { runs.push([sql, a]); return {}; } }) }) };
+  const p = { id: 8, client_id: 2, status: 'awaiting_quote', unit_price: null, supplier_price: null, supplier_shipping: null, note: '', sheet_price: 'X', sheet_shipping: '', sheet_status: null, sheet_note: 'The product has been removed.', price_options: null };
+  assert.equal(await applyQuoteRow(DB, p, { price: 'X', shipping: '', status: 'X', note: 'The product has been removed.' }, {}), 'not_available');
+  assert.equal(runs.find(([q]) => /SET status=\?, unit_price=/.test(q))[1][3], 'The product has been removed.', "the supplier's note is kept");
+  const sheet = await readFile(new URL('../server/quote-sheet.mjs', import.meta.url), 'utf8');
+  assert.ok(sheet.includes("UPDATE portal_products SET sheet_status=NULL WHERE status='awaiting_quote'") && sheet.includes("'quote_reread_v1'"));
+});

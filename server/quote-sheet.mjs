@@ -18,6 +18,9 @@ export const QUOTE_HEADERS = ['Requested', 'Request', 'Photo preview', 'Photo 2'
   'Price per item (USD)', 'Shipping per order (USD)', 'Available?', 'Supplier note', 'Status', 'Product ID'];
 export const QUOTE_WIDTHS = [95, 80, 130, 80, 80, 115, 180, 220, 95, 120, 120, 125, 220, 120, 60];
 export const AVAILABLE = 'Available', NOT_AVAILABLE = 'Not available';
+// What the supplier may type for "not available": the dropdown value, or a short X / No / N/A (in Available? or in the price cell).
+const NO_WORDS = /^(not available|unavailable|no|n\/?a|x|✗|✕|×|-|—)$/i;
+export const notAvailable = (status, priceText) => NO_WORDS.test(norm(status)) || (/^(x|✗|✕|×|n\/?a)$/i.test(norm(priceText)) && !/^available$/i.test(norm(status)));
 export const QUOTE_SHEET_SCHEMA = [
   'ALTER TABLE portal_products ADD COLUMN IF NOT EXISTS supplier_price DOUBLE PRECISION',
   'ALTER TABLE portal_products ADD COLUMN IF NOT EXISTS sheet_price TEXT',
@@ -226,8 +229,9 @@ export async function applyQuoteRow(DB, p, cells, settings, t = Math.floor(Date.
   let next = null;
   // Shipping per order: a number, or empty (not given yet). It is passed on as is (the fee is in the price per item).
   const shipping = shipText ? parsePrice(cells.shipping) : null;
-  if (shipText && shipping === null && !/^not available$/i.test(status)) return 'shipping not clear: ' + shipText;
-  if (/^not available$/i.test(status)) next = { status: 'not_available', unit: null, supplier: null, note: note || 'Not available from the supplier.' };
+  const isNo = notAvailable(status, priceText);
+  if (shipText && shipping === null && !isNo) return 'shipping not clear: ' + shipText;
+  if (isNo) next = { status: 'not_available', unit: null, supplier: null, note: note || 'Not available from the supplier.' };
   else {
     const parsed = priceText ? parsePriceOptions(cells.price) : null;
     if (!parsed) return priceText ? 'price not clear: ' + priceText : null;
@@ -250,6 +254,10 @@ export async function pollQuoteTab(DB, env, settings, fetchImpl = fetch) {
   if (!await ensureQuoteTab(DB, env, fetchImpl)) return { waiting: true, changed: 0 };
   await ensureQuoteOptionsFormat(DB, env, fetchImpl);
   await ensureQuoteLayout(DB, env, fetchImpl);
+  if (await setting(DB, 'quote_reread_v1') !== '1') {
+    await DB.prepare("UPDATE portal_products SET sheet_status=NULL WHERE status='awaiting_quote'").run();
+    await putSetting(DB, 'quote_reread_v1', '1');
+  }
   const ranges = [`${QT}!J${QUOTE_FIRST_ROW}:M`, `${QT}!O${QUOTE_FIRST_ROW}:O`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
   const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
   const [inputs, ids] = (data.valueRanges || []).map(v => v.values || []);
