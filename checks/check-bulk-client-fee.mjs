@@ -30,4 +30,20 @@ const price = async oid => (await DB.prepare('SELECT price, product_cost FROM cl
 await call('/admin/users/' + id, 'POST', { commissionPerOrder: '0.5', applyFeeToOrders: true }, admin);
 assert.equal(Number((await price(a.id)).price), 28.4, 'bulk: 27.90 + 0.50'); assert.equal(Number((await price(a.id)).product_cost), 28.4); assert.equal(Number((await price(b.id)).price), 40, 'typed-in price untouched');
 r = await call('/orders/' + a.id, 'PUT', { commission: '1' }, admin); assert.equal(r.status, 200); assert.equal(Number((await price(a.id)).price), 28.9, 'per order fee edit re-prices too');
-console.log('PASS bulk client fee'); await pg.close();
+// The choice of orders (Erwin): pending only, in progress only, both, all; "new" changes nothing now.
+const p1 = await mk('P1'), p2 = await mk('P2'), ip = await mk('IP'), sh = await mk('SH');
+await call('/orders/' + ip.id, 'PUT', { status: 'processing' }, admin); await call('/orders/' + sh.id, 'PUT', { status: 'shipped' }, admin);
+const fees = async () => Object.fromEntries(await Promise.all([['p1', p1], ['p2', p2], ['ip', ip], ['sh', sh]].map(async ([k, o]) => [k, Number((await fee(o.id)).commission)])));
+await call('/admin/users/' + id, 'POST', { commissionPerOrder: '0.5', applyFeeTo: 'all' }, admin);
+r = await call('/admin/users/' + id, 'POST', { commissionPerOrder: '2', applyFeeTo: 'new' }, admin); assert.equal(r.data.ordersUpdated, 0);
+assert.deepEqual(await fees(), { p1: 0.5, p2: 0.5, ip: 0.5, sh: 0.5 }, 'new orders only: nothing changes now');
+assert.equal(Number((await mk('NEW')).commission), 2, 'a new order gets the new fee');
+r = await call('/admin/users/' + id, 'POST', { commissionPerOrder: '2', applyFeeTo: 'pending' }, admin);
+assert.deepEqual(await fees(), { p1: 2, p2: 2, ip: 0.5, sh: 0.5 }, 'pending only');
+r = await call('/admin/users/' + id, 'POST', { commissionPerOrder: '1', applyFeeTo: 'processing' }, admin);
+assert.deepEqual(await fees(), { p1: 2, p2: 2, ip: 1, sh: 0.5 }, 'in progress only');
+r = await call('/admin/users/' + id, 'POST', { commissionPerOrder: '1.5', applyFeeTo: 'open' }, admin);
+assert.deepEqual(await fees(), { p1: 1.5, p2: 1.5, ip: 1.5, sh: 0.5 }, 'pending + in progress; shipped untouched');
+assert.equal(Number((await fee(c.id)).commission), 2, 'cancelled order still untouched');
+assert.equal((await call('/admin/users/' + id, 'POST', { commissionPerOrder: '1', applyFeeTo: 'shipped' }, admin)).status, 400, 'unknown choice refused');
+console.log('PASS bulk client fee, by status (new / pending / in progress / both / all)'); await pg.close();

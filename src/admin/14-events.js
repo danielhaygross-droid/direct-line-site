@@ -243,9 +243,9 @@
     const af = e.target.closest('[data-account-form]');
     if (af) {
       e.preventDefault();
-      const m = $('[data-account-msg]'), body = { name: af.name.value, username: af.username.value.trim(), active: af.active.value === 'true', commissionPerOrder: af.commissionPerOrder.value === '' ? null : af.commissionPerOrder.value, applyFeeToOrders: af.applyFeeToOrders.checked };
+      const m = $('[data-account-msg]'), body = { name: af.name.value, username: af.username.value.trim(), active: af.active.value === 'true', commissionPerOrder: af.commissionPerOrder.value === '' ? null : af.commissionPerOrder.value, applyFeeTo: af.applyFeeTo.value };
 
-      try { const r = await api('/admin/users/' + af.dataset.accountForm, { method: 'POST', body }); document.activeElement?.blur(); tell({ type: 'dl-clients-changed' }); await loadAll(); renderList(); fillClient(clientOf(af.dataset.accountForm)); toast(body.applyFeeToOrders ? `Account saved. Fee updated on ${r.ordersUpdated ?? 0} existing orders.` : 'Account saved.'); }
+      try { const r = await api('/admin/users/' + af.dataset.accountForm, { method: 'POST', body }); document.activeElement?.blur(); tell({ type: 'dl-clients-changed' }); await loadAll(); renderList(); fillClient(clientOf(af.dataset.accountForm)); toast(body.applyFeeTo !== 'new' ? `Account saved. Fee updated on ${r.ordersUpdated ?? 0} existing orders.` : 'Account saved.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
     }
   });
