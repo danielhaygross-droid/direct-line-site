@@ -5,6 +5,7 @@
  const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
  function periodRange(period='month',from='',to='',now=new Date()){
   const y=now.getFullYear(),m=now.getMonth(),d=now.getDate();
+  const one=/^m:(\d{4})-(\d{2})$/.exec(period||'');if(one){const yy=Number(one[1]),mm=Number(one[2]);if(mm<1||mm>12)return null;return{from:iso(new Date(yy,mm-1,1)),to:iso(new Date(yy,mm,0))};}
   if(period==='all')return{from:'0000-01-01',to:'9999-12-31'};
   if(period==='custom'){if(![from,to].every(s=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s+'T12:00:00Z'))&&new Date(s+'T12:00:00Z').toISOString().slice(0,10)===s)||from>to)return null;return{from,to};}
   if(period==='last_month')return{from:iso(new Date(y,m-1,1)),to:iso(new Date(y,m,0))};
@@ -24,5 +25,7 @@
   for(const r of rows)r.share=totals.profit?Math.round(r.profit/totals.profit*1000)/10:0;
   return{rows,totals};
  }
- root.DLClientStoreMath={periodRange,performance,dateKey,earnedCents};
+ // Months that have orders, newest first; this month is always there. ['2026-10','2026-09',...]
+ function monthsOf(orders,now=new Date()){const set=new Set([iso(now).slice(0,7)]);for(const o of orders||[])set.add(dateKey(o).slice(0,7));return[...set].filter(k=>/^\d{4}-\d{2}$/.test(k)).sort().reverse();}
+ root.DLClientStoreMath={periodRange,performance,dateKey,earnedCents,monthsOf};
 })(globalThis);
