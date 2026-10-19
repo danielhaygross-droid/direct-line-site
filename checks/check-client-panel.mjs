@@ -83,6 +83,10 @@ try {
     await ui.locator('.prod-row summary').nth(3).click(); await page.waitForTimeout(300);
     await ui.evaluate(() => document.querySelector('.prod-row[open]').scrollIntoView({ block: 'start' }));
     await page.screenshot({ path: path.join(out, `${tag}-products-open.png`) });
+    // Product photos: bigger row thumbnails, and big photos in the price form that open full size.
+    assert.ok((await ui.locator('.prod-row summary img').first().boundingBox()).width >= 56, 'row thumbnail at least 56 px');
+    assert.ok((await ui.locator('.prod-row[open] .qf-photo').first().boundingBox()).width >= 100, 'form photo at least 100 px');
+    await ui.locator('.prod-row[open] .qf-photo').first().click(); await ui.waitForSelector('.pv'); await page.screenshot({ path: path.join(out, `${tag}-product-photo-full.png`) }); await page.keyboard.press('Escape'); await page.waitForTimeout(300);
     // Orders: store filter, folded store table, one row per order, back from an order.
     await group(0).click(); await page.waitForTimeout(200);
     assert.equal(await ui.locator('[data-fold=perf][open]').count(), 0);
