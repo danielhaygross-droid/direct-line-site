@@ -1,9 +1,22 @@
 /* Direct Line client portal: Home, Orders (with order details + chat), New order, Messages, Payments. */
 (function () {
-  const { api, money, esc, trackingUrl, fullLink, logout, renderLogin, quote, destinationPicker, hasRate, categoryOptions, countryName, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, $, $$ } = window.DL;
+  const { api, money, esc, trackingUrl, fullLink, logout, renderLogin, quote, destinationPicker, hasRate, categoryOptions, countryName, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, sortPick, sortList, setSort, bySort, $, $$ } = window.DL;
   const MAX_PHOTOS = 8;
   const UI = window.DLOrderUI, N = window.DLNotify;
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancellation_requested', 'cancelled'];
+  // "Sort" dropdowns for Orders and My Products (remembered in this browser). The first one is the default.
+  const rank = (list, k) => { const i = list.indexOf(k); return i < 0 ? list.length : i; };
+  const ORDER_SORTS = {
+    newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
+    total_desc: ['Total: high to low', bySort.num(o => o.price, true)], total_asc: ['Total: low to high', bySort.num(o => o.price)],
+    status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
+  };
+  const PRODUCT_SORTS = {
+    updated: ['Recently updated', (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || (b.id || 0) - (a.id || 0)],
+    newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
+    name: ['Name A–Z', (a, b) => bySort.text(p => p.name)(a, b) || bySort.newest(a, b)],
+    price_asc: ['Price: low to high', bySort.num(p => p.unitPrice)], price_desc: ['Price: high to low', bySort.num(p => p.unitPrice, true)],
+  };
   const S = { me: null, orders: [], payments: [], transfers: [], adjustments: [], invoices: [], products: [], claims: [], stores: [], storeId:0, period:'month', from:'', to:'', notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -436,7 +449,7 @@
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
   }
-  const viewOrders = () => `<details class="earn-box" data-earn${store.get('dl-earn-open', true) ? ' open' : ''}><summary><b>Your earnings</b><small>profit, billing and the chart for the selected period</small></summary>${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details><div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label></div>
+  const viewOrders = () => `<details class="earn-box" data-earn${store.get('dl-earn-open', true) ? ' open' : ''}><summary><b>Your earnings</b><small>profit, billing and the chart for the selected period</small></summary>${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details><div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders', ORDER_SORTS)}</div>
       <section class="card" data-orders-list></section>`;
   function renderChips() {
     const c = st => storeOrders().filter(o => st === 'all' || o.status === st).length;
@@ -445,8 +458,8 @@
   }
   function renderOrdersList() {
     const q = S.q.toLowerCase();
-    const list = storeOrders().filter(o => (S.filter === 'all' || o.status === S.filter)
-      && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination),S.stores.find(s=>s.id===o.storeId)?.name].join(' ').toLowerCase().includes(q)));
+    const list = sortList(storeOrders().filter(o => (S.filter === 'all' || o.status === S.filter)
+      && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination),S.stores.find(s=>s.id===o.storeId)?.name].join(' ').toLowerCase().includes(q))), 'portal-orders', ORDER_SORTS);
     $('[data-orders-list]').innerHTML = list.length ? `<div class="table-wrap">${ordersTable(list)}</div>`
       : S.orders.length ? empty('search', 'No orders match', 'Try another search or status.') : empty('orders', 'No orders yet', 'Add your first order and we’ll take it from there.', '<a class="btn btn-primary" href="#/new">New order</a>');
   }
@@ -877,14 +890,15 @@
   }
   function productListHTML(){
     const f=S.productFilter,q=(S.productQ||'').trim().toLowerCase();
-    const shown=S.products.filter(p=>(f==='all'||p.status===f)&&(!q||[p.name,p.variant,p.link].join(' ').toLowerCase().includes(q))).sort((a,b)=>b.updatedAt-a.updatedAt||b.id-a.id);
-    return shown.length?shown.map(productRow).join(''):empty('tag',S.products.length?'No products match':'No products yet',S.products.length?'Try another filter or search.':'Send a product for a quote and its price shows up here.');
+    const shown=S.products.filter(p=>(f==='all'||p.status===f)&&(!q||[p.name,p.variant,p.link].join(' ').toLowerCase().includes(q)));
+    const sorted=sortList(shown,'portal-products',PRODUCT_SORTS);
+    return sorted.length?sorted.map(productRow).join(''):empty('tag',S.products.length?'No products match':'No products yet',S.products.length?'Try another filter or search.':'Send a product for a quote and its price shows up here.');
   }
   function productChips(){const n=k=>k==='all'?S.products.length:S.products.filter(p=>p.status===k).length;return P_FILTERS.map(([k,l])=>`<button type="button" class="chip${S.productFilter===k?' on':''} ${P_TONE[k]||''}" data-pfilter="${k}" aria-pressed="${S.productFilter===k}">${k!=='all'?'<i class="dot"></i>':''}${l} <span>${n(k)}</span></button>`).join('');}
   function viewProducts(){
     if(!S.productFilter)S.productFilter=store.get('dl-products-filter','all');
     const add=S.me.preview?'':`<details class="card card-pad add-product" data-add-product${S.addProductOpen||!S.products.length?' open':''}><summary><span><b>Send a product for a quote</b><small class="dim">Check product prices before you sell them</small></span><span class="btn btn-primary btn-sm">${ic('plus')}Add product</span></summary><form id="product-form" class="form-grid"><label class="field"><span>Product name <small>optional</small></span><input name="name" maxlength="160"></label><label class="field"><span>Product link</span><input name="link" type="url" maxlength="1000" required></label><label class="field"><span>Variant notes</span><input name="variant" maxlength="500"></label><label class="field"><span>Expected monthly quantity <small>optional</small></span><input name="expectedQuantity" type="number" min="1" step="1"></label><label class="field full"><span>Product photos <small>one to three</small></span><input name="photos" type="file" accept="image/*" multiple required></label><button type="submit" class="btn btn-primary">Send for quote</button><p class="form-msg" data-product-msg></p><p class="note full" style="margin:0">Our supplier checks the product price. You’ll see it here as the price per item; shipping is added on each order.</p></form></details>`;
-    return `${add}<section class="card card-pad"><h3 class="sec-title">My Products</h3><div class="toolbar mp-toolbar"><div class="chips" data-pchips>${productChips()}</div><label class="search"><span class="sr">Search products</span>${ic('search')}<input type="search" placeholder="Search products…" value="${esc(S.productQ||'')}" data-pq></label></div><div data-plist>${productListHTML()}</div></section>`;
+    return `${add}<section class="card card-pad"><h3 class="sec-title">My Products</h3><div class="toolbar mp-toolbar"><div class="chips" data-pchips>${productChips()}</div><label class="search"><span class="sr">Search products</span>${ic('search')}<input type="search" placeholder="Search products…" value="${esc(S.productQ||'')}" data-pq></label>${sortPick('portal-products',PRODUCT_SORTS)}</div><div data-plist>${productListHTML()}</div></section>`;
   }
   function bindProducts(){
     $('[data-pchips]')?.addEventListener('click',e=>{const b=e.target.closest('[data-pfilter]');if(!b)return;S.productFilter=b.dataset.pfilter;store.set('dl-products-filter',S.productFilter);$('[data-pchips]').innerHTML=productChips();$('[data-plist]').innerHTML=productListHTML();});
@@ -945,6 +959,8 @@
   }
   // The earnings block on Orders can be folded away; the choice is remembered on this device.
   document.addEventListener('toggle', e => { if (e.target.matches?.('[data-earn]')) store.set('dl-earn-open', e.target.open); }, true);
+  // A "Sort" dropdown changed: remember it and redraw that list.
+  document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
   document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
   function onInput(e) { if (e.target.matches('[data-q]')) { S.q = e.target.value; renderOrdersList(); } }

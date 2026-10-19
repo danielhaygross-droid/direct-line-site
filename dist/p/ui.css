@@ -282,3 +282,12 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .pv-close{position:absolute;top:12px;inset-inline-end:12px}
 [dir=rtl] .pv-prev svg,[dir=rtl] .pv-next svg{transform:scaleX(-1)}
 @media(max-width:560px){.pv{padding:60px 8px 16px;gap:4px}.pv-btn{width:44px;height:44px}.pv-prev,.pv-next{position:absolute;bottom:18px}.pv-prev{inset-inline-start:calc(50% - 56px)}.pv-next{inset-inline-end:calc(50% - 56px)}.pv-fig img{max-height:calc(100vh - 170px)}}
+/* "Sort" dropdown next to a list (DL.sortPick) */
+.sort-pick{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);white-space:nowrap}
+.sort-pick select{min-height:40px;padding:0 30px 0 12px;border:1px solid var(--line-2,var(--line));border-radius:11px;background:var(--surface);color:var(--text);font:inherit;font-size:14px;max-width:220px}
+.sec-head,.list-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.sec-head .sec-title{margin:0}.sec-head{margin-bottom:10px}
+.list-head p{margin:4px 0 0}
+.list-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.list-tools .store-pick{flex:1;min-width:0}
+@media(max-width:560px){.sort-pick{width:100%}.sort-pick select{flex:1;max-width:none}.list-tools{flex-direction:column;align-items:stretch}}

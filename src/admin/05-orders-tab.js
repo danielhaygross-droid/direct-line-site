@@ -15,7 +15,7 @@
     sel.innerHTML = '<option value="">All clients</option>' + S.ov.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
     sel.value = S.client;
     const q = S.q.toLowerCase();
-    const rows = inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId), o.itemTitle, o.sku, o.buyerName].join(' ').toLowerCase().includes(q)));
+    const rows = sortList(inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId), o.itemTitle, o.sku, o.buyerName].join(' ').toLowerCase().includes(q))), 'admin-orders', ADMIN_ORDER_SORTS);
     // Bulk edit: only rows that are on screen can stay selected.
     const shown = new Set(rows.map(o => o.id)); for (const id of [...S.picked]) if (!shown.has(id)) S.picked.delete(id);
     const archivedView = S.filter === 'archived', allOn = rows.length > 0 && rows.every(o => S.picked.has(o.id));

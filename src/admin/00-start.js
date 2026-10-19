@@ -2,10 +2,33 @@
    Runs inside the store dashboard (iframe). Order and client details open in a side panel. */
 (function () {
   const MAX_PICKS = 8;
-  const { api, money, esc, trackingUrl, renderLogin, quote, destinationPicker, categoryOptions, countryName, toast, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, $, $$ } = window.DL;
+  const { api, money, esc, trackingUrl, renderLogin, quote, destinationPicker, categoryOptions, countryName, toast, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, sortPick, sortList, setSort, bySort, $, $$ } = window.DL;
   const UI = window.DLOrderUI;
   const STATUSES = ['pending','processing','shipped','delivered','cancellation_requested','cancelled'];
   const ADMIN_STATUSES = ['pending','processing','shipped','delivered'];
+  // Sorting for the long lists ("Sort" dropdown, remembered in this browser). The first one is the default.
+  const rank = (list, k) => { const i = list.indexOf(k); return i < 0 ? list.length : i; };
+  const ORDER_SORTS = {
+    newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
+    total_desc: ['Total: high to low', bySort.num(o => o.price, true)], total_asc: ['Total: low to high', bySort.num(o => o.price)],
+    status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
+  };
+  const ADMIN_ORDER_SORTS = { ...ORDER_SORTS, client: ['Client A–Z', (a, b) => bySort.text(o => clientName(o.clientId))(a, b) || bySort.newest(a, b)] };
+  const P_STATUS = ['awaiting_quote', 'approved', 'not_available'];
+  const PRODUCT_SORTS = {
+    waiting: ['Waiting for price first', (a, b) => rank(P_STATUS, a.status) - rank(P_STATUS, b.status) || bySort.newest(a, b)],
+    newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
+    name: ['Name A–Z', (a, b) => bySort.text(p => p.name)(a, b) || bySort.newest(a, b)],
+    price_asc: ['Price: low to high', bySort.num(p => p.unitPrice)], price_desc: ['Price: high to low', bySort.num(p => p.unitPrice, true)],
+  };
+  const ADMIN_PRODUCT_SORTS = { ...PRODUCT_SORTS, client: ['Client A–Z', (a, b) => bySort.text(p => p.clientName)(a, b) || bySort.newest(a, b)] };
+  const CLIENT_SORTS = {
+    name: ['Name A–Z', bySort.text(c => c.name)],
+    outstanding: ['Outstanding: high to low', bySort.num(c => c.outstanding, true)],
+    orders: ['Most orders', bySort.num(c => c.orders, true)],
+    billed: ['Billed: high to low', bySort.num(c => c.billed, true)],
+    login: ['Last sign-in', bySort.num(c => c.lastLogin, true)],
+  };
   const S = { picked: new Set(), ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
   const embedded = window.top !== window.self;
   const tell = m => { if (embedded) parent.postMessage(m, location.origin); };

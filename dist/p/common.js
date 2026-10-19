@@ -344,5 +344,22 @@
     openPhoto(list.length ? list : [photoSrc(el)], list.length ? index : 0);
   });
 
-  window.DL = { openPhoto, closePhoto, addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  // ---------- sorting: a small "Sort" dropdown per list, remembered in this browser ----------
+  // sorts = { key: [label, compare] }; the first one is the default.
+  function sortKey(list, sorts) { let v = null; try { v = localStorage.getItem('dl-sort-' + list); } catch (e) { /* private mode */ } return sorts[v] ? v : Object.keys(sorts)[0]; }
+  function setSort(list, v) { try { localStorage.setItem('dl-sort-' + list, v); } catch (e) { /* private mode */ } }
+  function sortPick(list, sorts) {
+    const v = sortKey(list, sorts);
+    return `<label class="sort-pick"><span>Sort</span><select data-sort="${list}" aria-label="Sort">${Object.entries(sorts).map(([k, [label]]) => `<option value="${k}"${k === v ? ' selected' : ''}>${label}</option>`).join('')}</select></label>`;
+  }
+  const sortList = (items, list, sorts) => [...items].sort(sorts[sortKey(list, sorts)][1]);
+  // Building blocks for the compare functions: newest / oldest first, by number (missing values last), by text.
+  const bySort = {
+    newest: (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0) || (b.id || 0) - (a.id || 0),
+    oldest: (a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0) || (a.id || 0) - (b.id || 0),
+    num: (get, desc) => (a, b) => { const x = get(a), y = get(b), nx = x == null || x === '' || Number.isNaN(Number(x)), ny = y == null || y === '' || Number.isNaN(Number(y)); return nx !== ny ? (nx ? 1 : -1) : nx ? 0 : desc ? Number(y) - Number(x) : Number(x) - Number(y); },
+    text: get => (a, b) => String(get(a) || '').localeCompare(String(get(b) || ''), undefined, { sensitivity: 'base', numeric: true }),
+  };
+
+  window.DL = { sortPick, sortList, setSort, sortKey, bySort, openPhoto, closePhoto, addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();
