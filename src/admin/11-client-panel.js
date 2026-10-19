@@ -50,6 +50,12 @@
   // Client panel: 4 tabs, each with its own sections (sub-tabs) — Orders · Shop · Money · Account.
   const CLIENT_GROUPS = [['orders', 'Orders', ['orders']], ['shop', 'Shop', ['stores', 'products']], ['money', 'Money', ['payments', 'prices']], ['account', 'Account', ['account', 'activity']]];
   const groupOf = sec => (CLIENT_GROUPS.find(x => x[2].includes(sec)) || CLIENT_GROUPS[0])[0];
+  // A "Sort" dropdown changed: remember it and redraw that list (client panel, Products tab, or the Orders / Clients list).
+  document.addEventListener('change', e => {
+    const s = e.target.closest?.('[data-sort]'); if (!s) return;
+    setSort(s.dataset.sort, s.value);
+    if (s.closest('.drawer') && S.drawer?.kind === 'client') fillClient(clientOf(S.drawer.id)); else if (S.tab === 'products') renderProducts(); else renderList();
+  });
   document.addEventListener('change', e => { const sel = e.target.closest?.('[data-client-store]'); if (sel && S.drawer?.kind === 'client') { S.drawer.storeId = Number(sel.value); fillClient(clientOf(S.drawer.id)); } });
   // Long lists: the newest 8, the rest behind "Show all".
   const foldList = rows => `<ol class="order-activity">${rows.slice(0, 8).join('')}</ol>` + (rows.length > 8 ? `<details class="fold-more" data-keep="more${rows.length}"><summary>Show all (${rows.length})</summary><ol class="order-activity">${rows.slice(8).join('')}</ol></details>` : '');
@@ -59,10 +65,10 @@
   // Client panel → Products: one short row per product; the price form opens on click. Waiting ones first.
   function productsPane(list) {
     if (!list.length) return `<section class="card card-pad"><h3 class="sec-title">My Products</h3><p class="muted">No products yet.</p></section>`;
-    const sorted = [...list].sort((a, b) => (a.status === 'awaiting_quote' ? 0 : 1) - (b.status === 'awaiting_quote' ? 0 : 1) || b.createdAt - a.createdAt);
+    const sorted = sortList(list, 'client-products', PRODUCT_SORTS);
     const price = p => (p.status === 'not_available' ? '<span class="dim">—</span>' : p.unitPrice == null ? '<span class="dim">No price yet</span>' : p.priceOptions ? `<span>from</span> <b>${money(p.unitPrice)}</b>` : `<b>${money(p.unitPrice)}</b>`) + (p.status === 'approved' && p.shipping != null ? `<small class="dim" style="display:block">+ ${money(p.shipping)} <span>shipping</span></small>` : '');
     const status = p => p.status === 'awaiting_quote' ? '<span class="tag tag-gold">Waiting for price</span>' : p.status === 'approved' ? '<span class="tag">Approved</span>' : '<span class="tag">Not available</span>';
-    return `<section class="card card-pad"><h3 class="sec-title">My Products</h3>${sorted.map(p => `<details class="prod-row" data-keep="p${p.id}"><summary>${p.photoIds[0] ? `<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="44" height="44" alt="">` : '<span class="prod-ph"></span>'}<span class="prod-name"><b data-no-i18n>${esc(p.name)}</b>${p.variant ? `<small class="dim" data-no-i18n>${esc(p.variant)}</small>` : ''}</span>${status(p)}<span class="prod-price">${price(p)}</span></summary>${productQuoteForm(p)}</details>`).join('')}</section>`;
+    return `<section class="card card-pad"><div class="sec-head"><h3 class="sec-title">My Products</h3>${sortPick('client-products', PRODUCT_SORTS)}</div>${sorted.map(p => `<details class="prod-row" data-keep="p${p.id}"><summary>${p.photoIds[0] ? `<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="44" height="44" alt="">` : '<span class="prod-ph"></span>'}<span class="prod-name"><b data-no-i18n>${esc(p.name)}</b>${p.variant ? `<small class="dim" data-no-i18n>${esc(p.variant)}</small>` : ''}</span>${status(p)}<span class="prod-price">${price(p)}</span></summary>${productQuoteForm(p)}</details>`).join('')}</section>`;
   }
   function activityHTML(c) {
     const a = clientActivity;
@@ -108,10 +114,10 @@
     const t = new Date(), iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     const pane = tab === 'orders'
       // Orders tab: the order list, with the store performance folded away (one line until opened).
-      ? (stores.length > 1 ? `<label class="store-pick"><span>Store</span><select data-client-store>${[`<option value="0">All stores (${stores.length})</option>`, ...stores.map(s => `<option value="${s.id}"${S.drawer.storeId === s.id ? ' selected' : ''} data-no-i18n>${esc(s.name)}</option>`)].join('')}</select></label>` : '')
+      ? `<div class="list-tools">${stores.length > 1 ? `<label class="store-pick"><span>Store</span><select data-client-store>${[`<option value="0">All stores (${stores.length})</option>`, ...stores.map(s => `<option value="${s.id}"${S.drawer.storeId === s.id ? ' selected' : ''} data-no-i18n>${esc(s.name)}</option>`)].join('')}</select></label>` : ''}${orders.length > 1 ? sortPick('client-orders', ORDER_SORTS) : ''}</div>`
         + `<details class="card card-pad fold" data-fold="perf"${foldOpen('perf') ? ' open' : ''}><summary><h3 class="sec-title">Performance by store</h3><small class="dim">${S.drawer.storeId ? 'One store shown' : 'All stores'}</small></summary>${window.DLClientStoreUI.periodFields(S.period,S.from,S.to,window.DLClientStoreMath.monthsOf(allOrders))}${window.DLClientStoreUI.table(stats,'data-admin-select-store')}</details>`
         // One compact row per order (order number, customer and store; total and status on the right).
-        + (orders.length ? `<section class="card ord-list">${orders.map(o=>`<button type="button" class="ord-row" data-open-order="${o.id}" data-back="${c.id}"><span class="ord-main"><b>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(o.buyerName) || '—'}</span> · ${window.DLClientStoreUI.label(stores.find(s=>s.id===o.storeId))}</small></span><span class="ord-side"><b>${money(o.price)}</b>${UI.pill(o.status)}</span></button>`).join('')}</section>` : empty('No orders yet', 'Orders this client adds show up here.'))
+        + (orders.length ? `<section class="card ord-list">${sortList(orders, 'client-orders', ORDER_SORTS).map(o=>`<button type="button" class="ord-row" data-open-order="${o.id}" data-back="${c.id}"><span class="ord-main"><b>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(o.buyerName) || '—'}</span> · ${window.DLClientStoreUI.label(stores.find(s=>s.id===o.storeId))}</small></span><span class="ord-side"><b>${money(o.price)}</b>${UI.pill(o.status)}</span></button>`).join('')}</section>` : empty('No orders yet', 'Orders this client adds show up here.'))
       : tab === 'stores'
         ? `<section class="card card-pad"><h3 class="sec-title">My Stores</h3>${stores.length ? stores.map(s=>`<details class="fold-row" data-keep="s${s.id}"><summary>${window.DLClientStoreUI.label(s)}</summary>${window.DLClientStoreUI.form(s,c.id)}</details>`).join('') : '<p class="muted">No stores yet.</p>'}<details class="fold-row" data-keep="s-new"><summary><b>+ Add store</b></summary>${window.DLClientStoreUI.form(null,c.id)}</details></section>`
       : tab === 'products' ? productsPane(products)

@@ -2,10 +2,33 @@
    Runs inside the store dashboard (iframe). Order and client details open in a side panel. */
 (function () {
   const MAX_PICKS = 8;
-  const { api, money, esc, trackingUrl, renderLogin, quote, destinationPicker, categoryOptions, countryName, toast, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, $, $$ } = window.DL;
+  const { api, money, esc, trackingUrl, renderLogin, quote, destinationPicker, categoryOptions, countryName, toast, shrinkImage, photoUrl, productMedia, RATES, COUNTRIES, sortPick, sortList, setSort, bySort, $, $$ } = window.DL;
   const UI = window.DLOrderUI;
   const STATUSES = ['pending','processing','shipped','delivered','cancellation_requested','cancelled'];
   const ADMIN_STATUSES = ['pending','processing','shipped','delivered'];
+  // Sorting for the long lists ("Sort" dropdown, remembered in this browser). The first one is the default.
+  const rank = (list, k) => { const i = list.indexOf(k); return i < 0 ? list.length : i; };
+  const ORDER_SORTS = {
+    newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
+    total_desc: ['Total: high to low', bySort.num(o => o.price, true)], total_asc: ['Total: low to high', bySort.num(o => o.price)],
+    status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
+  };
+  const ADMIN_ORDER_SORTS = { ...ORDER_SORTS, client: ['Client A–Z', (a, b) => bySort.text(o => clientName(o.clientId))(a, b) || bySort.newest(a, b)] };
+  const P_STATUS = ['awaiting_quote', 'approved', 'not_available'];
+  const PRODUCT_SORTS = {
+    waiting: ['Waiting for price first', (a, b) => rank(P_STATUS, a.status) - rank(P_STATUS, b.status) || bySort.newest(a, b)],
+    newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
+    name: ['Name A–Z', (a, b) => bySort.text(p => p.name)(a, b) || bySort.newest(a, b)],
+    price_asc: ['Price: low to high', bySort.num(p => p.unitPrice)], price_desc: ['Price: high to low', bySort.num(p => p.unitPrice, true)],
+  };
+  const ADMIN_PRODUCT_SORTS = { ...PRODUCT_SORTS, client: ['Client A–Z', (a, b) => bySort.text(p => p.clientName)(a, b) || bySort.newest(a, b)] };
+  const CLIENT_SORTS = {
+    name: ['Name A–Z', bySort.text(c => c.name)],
+    outstanding: ['Outstanding: high to low', bySort.num(c => c.outstanding, true)],
+    orders: ['Most orders', bySort.num(c => c.orders, true)],
+    billed: ['Billed: high to low', bySort.num(c => c.billed, true)],
+    login: ['Last sign-in', bySort.num(c => c.lastLogin, true)],
+  };
   const S = { picked: new Set(), ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
   const embedded = window.top !== window.self;
   const tell = m => { if (embedded) parent.postMessage(m, location.origin); };
@@ -119,10 +142,10 @@
     if(S.tab==='products'){renderProducts();return;}
     const body = $('[data-tab-body]');
     if (S.tab === 'orders') {
-      body.innerHTML = `<div class="bar"><div class="chips" data-chips></div><div class="bar-r"><select data-client-filter aria-label="Client"></select><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, tracking, client…" value="${esc(S.q)}" data-q></label></div></div>
+      body.innerHTML = `<div class="bar"><div class="chips" data-chips></div><div class="bar-r">${sortPick('admin-orders', ADMIN_ORDER_SORTS)}<select data-client-filter aria-label="Client"></select><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, tracking, client…" value="${esc(S.q)}" data-q></label></div></div>
         <section class="card" data-list></section>`;
     } else if (S.tab === 'clients') {
-      body.innerHTML = `<div class="bar"><label class="search"><span class="sr">Search clients</span>${ic('search')}<input type="search" placeholder="Search clients…" value="${esc(S.cq)}" data-cq></label><button type="button" class="btn btn-primary" data-add-account="client">${ic('plus')}Add client</button></div>
+      body.innerHTML = `<div class="bar"><label class="search"><span class="sr">Search clients</span>${ic('search')}<input type="search" placeholder="Search clients…" value="${esc(S.cq)}" data-cq></label>${sortPick('admin-clients', CLIENT_SORTS)}<button type="button" class="btn btn-primary" data-add-account="client">${ic('plus')}Add client</button></div>
         <section class="card" data-list></section>`;
     } else if (S.tab === 'overview') body.innerHTML = '<div class="ovw" data-overview></div>';
     else body.innerHTML = settingsHTML();
@@ -219,7 +242,7 @@
     sel.innerHTML = '<option value="">All clients</option>' + S.ov.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
     sel.value = S.client;
     const q = S.q.toLowerCase();
-    const rows = inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId), o.itemTitle, o.sku, o.buyerName].join(' ').toLowerCase().includes(q)));
+    const rows = sortList(inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId), o.itemTitle, o.sku, o.buyerName].join(' ').toLowerCase().includes(q))), 'admin-orders', ADMIN_ORDER_SORTS);
     // Bulk edit: only rows that are on screen can stay selected.
     const shown = new Set(rows.map(o => o.id)); for (const id of [...S.picked]) if (!shown.has(id)) S.picked.delete(id);
     const archivedView = S.filter === 'archived', allOn = rows.length > 0 && rows.every(o => S.picked.has(o.id));
@@ -255,7 +278,7 @@
   function adminClaimCard(c){return c?`<section class="card card-pad${c.overdue?' claim-overdue':''}"><h3 data-no-i18n>${esc(c.orderRef||'#'+c.orderId)} · ${esc(c.clientName)}</h3><p><span>${c.status==='open'?'Open':c.status==='approved'?'Approved':c.status==='rejected'?'Rejected':'Resolved'}</span> · <span>${c.resolution==='refund'?'Refund':'Reshipment'}</span></p><p><b data-no-i18n>${c.businessDays}</b> <span>business days (Mon–Fri)</span></p>${c.overdue?'<p class="err-text">Overdue: more than 3 business days</p>':''}<p data-no-i18n>${esc(c.problem)}: ${esc(c.description)}</p>${c.fileIds.map(id=>`<a class="btn btn-sm" href="/api/portal/files/${id}" target="_blank" rel="noopener">Open evidence</a>`).join('')}${c.reshipmentOrderId?`<button class="btn btn-sm" type="button" data-open-order="${c.reshipmentOrderId}">Open reshipment</button>`:''}${['open','approved'].includes(c.status)?`<form class="form-grid" data-claim-decision="${c.id}"><label class="field full"><span>Admin reply</span><textarea name="reply" maxlength="2000">${esc(c.reply)}</textarea></label><label class="field"><span>Decision</span><select name="status">${c.status==='open'?'<option value="approved">Approved</option><option value="rejected">Rejected</option>':'<option value="resolved">Resolved</option>'}</select></label><button class="btn btn-primary" type="submit">Save claim decision</button><p class="form-msg" data-claim-msg></p></form>`:`<p data-no-i18n>${esc(c.reply)}</p>`}</section>`:'';}
   function renderClaims(){$('[data-tab-body]').innerHTML=`<div class="chips">${['all','open','approved','rejected','resolved'].map(s=>`<button class="chip${S.claimFilter===s?' on':''}" type="button" data-claim-filter="${s}">${s==='all'?'All':s==='open'?'Open':s==='approved'?'Approved':s==='rejected'?'Rejected':'Resolved'}</button>`).join('')}</div>${S.claims.filter(c=>S.claimFilter==='all'||c.status===S.claimFilter).map(adminClaimCard).join('')||'<p>No claims yet.</p>'}`;}
   function productQuoteForm(p){return `<form class="form-grid" data-product-quote="${p.id}"><h3 class="full" data-no-i18n>${esc(p.name)} · ${esc(p.clientName)}</h3><div class="full">${p.photoIds.map(id=>`<img src="/api/portal/products/${p.id}/photos/${id}" width="80" height="80" style="object-fit:contain" alt="Product photo">`).join('')}<p><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a></p><p data-no-i18n>${esc(p.variant)}${p.expectedQuantity?' · '+p.expectedQuantity:''}</p></div><label class="field"><span>Status</span><select name="status"><option value="approved"${p.status==='approved'?' selected':''}>Approved</option><option value="not_available"${p.status==='not_available'?' selected':''}>Not available</option></select></label><label class="field"><span>Client price per item (USD) <small>product only</small></span><input name="unitPrice" type="number" min="0" step="0.01" value="${p.unitPrice??''}"></label><label class="field"><span>Shipping per order (USD) <small>one parcel, optional</small></span><input name="shipping" type="number" min="0" step="0.01" value="${p.shipping??''}"></label>${p.priceOptions?`<div class="note full" style="margin:0"><p style="margin:0"><span>Several prices from the sheet (supplier → client):</span></p><ul class="price-options">${p.priceOptions.map(o=>`<li><span data-no-i18n>${esc(o.label)}</span> <b data-no-i18n dir="ltr">${money(o.supplierPrice)} → ${money(o.unitPrice)}</b></li>`).join('')}</ul><p style="margin:0"><span>Saving a price here replaces the options with one price.</span></p></div>`:p.supplierPrice!=null?`<p class="note full" style="margin:0"><span>Supplier price from the sheet:</span> <b data-no-i18n>${money(p.supplierPrice)}</b> <span>(the client price adds the client’s fee per order)</span></p>`:''}<label class="field full"><span>Note</span><textarea name="note" maxlength="1000">${esc(p.note)}</textarea></label><button type="submit" class="btn btn-primary">Save quote</button><p class="form-msg" data-quote-msg></p></form>`;}
-  function renderProducts(){const products=[...S.products].sort((a,b)=>(a.status==='awaiting_quote'?0:1)-(b.status==='awaiting_quote'?0:1)||a.createdAt-b.createdAt);$('[data-tab-body]').innerHTML=`<section class="card card-pad"><h3 class="sec-title">Products awaiting quote</h3><p>${products.filter(p=>p.status==='awaiting_quote').length}</p></section>${products.map(p=>`<section class="card card-pad"><span>${p.status==='awaiting_quote'?'Awaiting quote':p.status==='approved'?'Approved':'Not available'}</span>${productQuoteForm(p)}</section>`).join('')}`;}
+  function renderProducts(){const products=sortList(S.products,'admin-products',ADMIN_PRODUCT_SORTS);$('[data-tab-body]').innerHTML=`<section class="card card-pad list-head"><div><h3 class="sec-title">Products awaiting quote</h3><p>${products.filter(p=>p.status==='awaiting_quote').length}</p></div>${sortPick('admin-products',ADMIN_PRODUCT_SORTS)}</section>${products.map(p=>`<section class="card card-pad"><span>${p.status==='awaiting_quote'?'Awaiting quote':p.status==='approved'?'Approved':'Not available'}</span>${productQuoteForm(p)}</section>`).join('')}`;}
   // ---------- clients tab ----------
   function archivedHTML() {
     const a = S.ov.archived || [];
@@ -264,7 +287,7 @@
   }
   function renderClients() {
     const q = S.cq.toLowerCase(), def = Number(S.ov.settings.commission_per_order);
-    const list = S.ov.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q));
+    const list = sortList(S.ov.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q)), 'admin-clients', CLIENT_SORTS);
     $('[data-list]').innerHTML = list.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Orders</th><th class="num">Billed</th><th class="num">Paid</th><th class="num">Outstanding</th><th class="num">Our earnings</th><th class="num">Fee / order</th><th>Subscription</th><th>Status</th></tr></thead><tbody>
       ${list.map(c => `<tr class="click" data-open-client="${c.id}" tabindex="0">
         <td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small>${c.pendingTransfers ? `<small>${c.pendingTransfers} transfer confirmation${c.pendingTransfers === 1 ? '' : 's'} waiting</small>` : ''}</div></div></td>
@@ -627,6 +650,12 @@
   // Client panel: 4 tabs, each with its own sections (sub-tabs) — Orders · Shop · Money · Account.
   const CLIENT_GROUPS = [['orders', 'Orders', ['orders']], ['shop', 'Shop', ['stores', 'products']], ['money', 'Money', ['payments', 'prices']], ['account', 'Account', ['account', 'activity']]];
   const groupOf = sec => (CLIENT_GROUPS.find(x => x[2].includes(sec)) || CLIENT_GROUPS[0])[0];
+  // A "Sort" dropdown changed: remember it and redraw that list (client panel, Products tab, or the Orders / Clients list).
+  document.addEventListener('change', e => {
+    const s = e.target.closest?.('[data-sort]'); if (!s) return;
+    setSort(s.dataset.sort, s.value);
+    if (s.closest('.drawer') && S.drawer?.kind === 'client') fillClient(clientOf(S.drawer.id)); else if (S.tab === 'products') renderProducts(); else renderList();
+  });
   document.addEventListener('change', e => { const sel = e.target.closest?.('[data-client-store]'); if (sel && S.drawer?.kind === 'client') { S.drawer.storeId = Number(sel.value); fillClient(clientOf(S.drawer.id)); } });
   // Long lists: the newest 8, the rest behind "Show all".
   const foldList = rows => `<ol class="order-activity">${rows.slice(0, 8).join('')}</ol>` + (rows.length > 8 ? `<details class="fold-more" data-keep="more${rows.length}"><summary>Show all (${rows.length})</summary><ol class="order-activity">${rows.slice(8).join('')}</ol></details>` : '');
@@ -636,10 +665,10 @@
   // Client panel → Products: one short row per product; the price form opens on click. Waiting ones first.
   function productsPane(list) {
     if (!list.length) return `<section class="card card-pad"><h3 class="sec-title">My Products</h3><p class="muted">No products yet.</p></section>`;
-    const sorted = [...list].sort((a, b) => (a.status === 'awaiting_quote' ? 0 : 1) - (b.status === 'awaiting_quote' ? 0 : 1) || b.createdAt - a.createdAt);
+    const sorted = sortList(list, 'client-products', PRODUCT_SORTS);
     const price = p => (p.status === 'not_available' ? '<span class="dim">—</span>' : p.unitPrice == null ? '<span class="dim">No price yet</span>' : p.priceOptions ? `<span>from</span> <b>${money(p.unitPrice)}</b>` : `<b>${money(p.unitPrice)}</b>`) + (p.status === 'approved' && p.shipping != null ? `<small class="dim" style="display:block">+ ${money(p.shipping)} <span>shipping</span></small>` : '');
     const status = p => p.status === 'awaiting_quote' ? '<span class="tag tag-gold">Waiting for price</span>' : p.status === 'approved' ? '<span class="tag">Approved</span>' : '<span class="tag">Not available</span>';
-    return `<section class="card card-pad"><h3 class="sec-title">My Products</h3>${sorted.map(p => `<details class="prod-row" data-keep="p${p.id}"><summary>${p.photoIds[0] ? `<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="44" height="44" alt="">` : '<span class="prod-ph"></span>'}<span class="prod-name"><b data-no-i18n>${esc(p.name)}</b>${p.variant ? `<small class="dim" data-no-i18n>${esc(p.variant)}</small>` : ''}</span>${status(p)}<span class="prod-price">${price(p)}</span></summary>${productQuoteForm(p)}</details>`).join('')}</section>`;
+    return `<section class="card card-pad"><div class="sec-head"><h3 class="sec-title">My Products</h3>${sortPick('client-products', PRODUCT_SORTS)}</div>${sorted.map(p => `<details class="prod-row" data-keep="p${p.id}"><summary>${p.photoIds[0] ? `<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="44" height="44" alt="">` : '<span class="prod-ph"></span>'}<span class="prod-name"><b data-no-i18n>${esc(p.name)}</b>${p.variant ? `<small class="dim" data-no-i18n>${esc(p.variant)}</small>` : ''}</span>${status(p)}<span class="prod-price">${price(p)}</span></summary>${productQuoteForm(p)}</details>`).join('')}</section>`;
   }
   function activityHTML(c) {
     const a = clientActivity;
@@ -685,10 +714,10 @@
     const t = new Date(), iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     const pane = tab === 'orders'
       // Orders tab: the order list, with the store performance folded away (one line until opened).
-      ? (stores.length > 1 ? `<label class="store-pick"><span>Store</span><select data-client-store>${[`<option value="0">All stores (${stores.length})</option>`, ...stores.map(s => `<option value="${s.id}"${S.drawer.storeId === s.id ? ' selected' : ''} data-no-i18n>${esc(s.name)}</option>`)].join('')}</select></label>` : '')
+      ? `<div class="list-tools">${stores.length > 1 ? `<label class="store-pick"><span>Store</span><select data-client-store>${[`<option value="0">All stores (${stores.length})</option>`, ...stores.map(s => `<option value="${s.id}"${S.drawer.storeId === s.id ? ' selected' : ''} data-no-i18n>${esc(s.name)}</option>`)].join('')}</select></label>` : ''}${orders.length > 1 ? sortPick('client-orders', ORDER_SORTS) : ''}</div>`
         + `<details class="card card-pad fold" data-fold="perf"${foldOpen('perf') ? ' open' : ''}><summary><h3 class="sec-title">Performance by store</h3><small class="dim">${S.drawer.storeId ? 'One store shown' : 'All stores'}</small></summary>${window.DLClientStoreUI.periodFields(S.period,S.from,S.to,window.DLClientStoreMath.monthsOf(allOrders))}${window.DLClientStoreUI.table(stats,'data-admin-select-store')}</details>`
         // One compact row per order (order number, customer and store; total and status on the right).
-        + (orders.length ? `<section class="card ord-list">${orders.map(o=>`<button type="button" class="ord-row" data-open-order="${o.id}" data-back="${c.id}"><span class="ord-main"><b>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(o.buyerName) || '—'}</span> · ${window.DLClientStoreUI.label(stores.find(s=>s.id===o.storeId))}</small></span><span class="ord-side"><b>${money(o.price)}</b>${UI.pill(o.status)}</span></button>`).join('')}</section>` : empty('No orders yet', 'Orders this client adds show up here.'))
+        + (orders.length ? `<section class="card ord-list">${sortList(orders, 'client-orders', ORDER_SORTS).map(o=>`<button type="button" class="ord-row" data-open-order="${o.id}" data-back="${c.id}"><span class="ord-main"><b>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(o.buyerName) || '—'}</span> · ${window.DLClientStoreUI.label(stores.find(s=>s.id===o.storeId))}</small></span><span class="ord-side"><b>${money(o.price)}</b>${UI.pill(o.status)}</span></button>`).join('')}</section>` : empty('No orders yet', 'Orders this client adds show up here.'))
       : tab === 'stores'
         ? `<section class="card card-pad"><h3 class="sec-title">My Stores</h3>${stores.length ? stores.map(s=>`<details class="fold-row" data-keep="s${s.id}"><summary>${window.DLClientStoreUI.label(s)}</summary>${window.DLClientStoreUI.form(s,c.id)}</details>`).join('') : '<p class="muted">No stores yet.</p>'}<details class="fold-row" data-keep="s-new"><summary><b>+ Add store</b></summary>${window.DLClientStoreUI.form(null,c.id)}</details></section>`
       : tab === 'products' ? productsPane(products)

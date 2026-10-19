@@ -49,7 +49,7 @@
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
   }
-  const viewOrders = () => `<details class="earn-box" data-earn${store.get('dl-earn-open', true) ? ' open' : ''}><summary><b>Your earnings</b><small>profit, billing and the chart for the selected period</small></summary>${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details><div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label></div>
+  const viewOrders = () => `<details class="earn-box" data-earn${store.get('dl-earn-open', true) ? ' open' : ''}><summary><b>Your earnings</b><small>profit, billing and the chart for the selected period</small></summary>${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details><div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders', ORDER_SORTS)}</div>
       <section class="card" data-orders-list></section>`;
   function renderChips() {
     const c = st => storeOrders().filter(o => st === 'all' || o.status === st).length;
@@ -58,8 +58,8 @@
   }
   function renderOrdersList() {
     const q = S.q.toLowerCase();
-    const list = storeOrders().filter(o => (S.filter === 'all' || o.status === S.filter)
-      && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination),S.stores.find(s=>s.id===o.storeId)?.name].join(' ').toLowerCase().includes(q)));
+    const list = sortList(storeOrders().filter(o => (S.filter === 'all' || o.status === S.filter)
+      && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination),S.stores.find(s=>s.id===o.storeId)?.name].join(' ').toLowerCase().includes(q))), 'portal-orders', ORDER_SORTS);
     $('[data-orders-list]').innerHTML = list.length ? `<div class="table-wrap">${ordersTable(list)}</div>`
       : S.orders.length ? empty('search', 'No orders match', 'Try another search or status.') : empty('orders', 'No orders yet', 'Add your first order and we’ll take it from there.', '<a class="btn btn-primary" href="#/new">New order</a>');
   }
