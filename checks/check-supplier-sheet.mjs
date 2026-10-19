@@ -77,10 +77,10 @@ Object.assign(env, {
 });
 const settle = () => new Promise(r => setTimeout(r, 300)); // background sheet syncs (waitUntil absent → awaited, but be safe)
 const cron = async () => (await route(new Request('http://x/api/cron/supplier-sheet', { headers: { authorization: 'Bearer cron-test' } }), { db: DB, env })).json();
-const wq = () => { const g = sheets.get(WQ).grid; const ids = {}; for (let r = FIRST_ROW - 1; r < g.length; r++) if (g[r]?.[26]) ids[Number(g[r][26])] = r; return ids; };
+const wq = () => { const g = sheets.get(WQ).grid; const ids = {}; for (let r = FIRST_ROW - 1; r < g.length; r++) if (g[r]?.[27]) ids[Number(g[r][27])] = r; return ids; };
 const cell = (orderId, c) => sheets.get(WQ).grid[wq()[orderId]][c];
 const supplierTypes = (orderId, c, v) => { sheets.get(WQ).grid[wq()[orderId]][c] = v; };
-const N = 14, O = 15, P = 17, D = 3; // layout 2: O Total cost, P Tracking, R Shipping status (AA = order id)
+const N = 15, O = 16, P = 18, D = 3; // layout 3: O Competitor price, P Total cost, Q Tracking, S Shipping status (AB = order id)
 const order = async id => (await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(id).first());
 const events = async (id, kind) => (await DB.prepare('SELECT * FROM order_events WHERE order_id=? AND kind=? ORDER BY id').bind(id, kind).all()).results;
 
@@ -104,7 +104,8 @@ assert.deepEqual(Object.keys(wq()).map(Number).sort((a, b) => a - b), [A.id, B.i
 assert.equal(cell(A.id, P), NOT_SHIPPED); assert.equal(cell(A.id, N) ?? '', '');
 assert.equal(cell(A.id, 13), '=HYPERLINK("http://evil","x")', 'client text is stored as text, never run as a formula');
 assert.match(String(cell(A.id, 6)), /^=HYPERLINK\("https:\/\/example.com\/a","Open product"\)$/);
-assert.equal(cell(A.id, 25), 'https://example.com/b');
+assert.equal(cell(A.id, 26), 'https://example.com/b');
+assert.equal(cell(A.id, 14) ?? '', '', 'Competitor price starts empty');
 const shopName = (await DB.prepare('SELECT s.name FROM client_stores s JOIN client_orders o ON o.store_id=s.id WHERE o.id=?').bind(A.id).first()).name;
 assert.equal(cell(A.id, 2), shopName, 'column C shows the shop, not the client');
 assert.equal(HEADERS[2], 'Shop');
@@ -183,12 +184,19 @@ await call('/admin/orders/' + D2.id + '/archive', 'POST', { archived: true }, ad
 assert.equal(wq()[D2.id], undefined, 'archived order row removed');
 console.log('PASS new order appended; archived order removed');
 
+// ---------- Competitor price (O): typed by Direct Line, never touched by the website ----------
+supplierTypes(A.id, 14, '$24.90 on Etsy shop X');
+await call('/orders/' + A.id, 'PUT', { notes: 'resync me' }, admin); await settle();
+assert.equal(cell(A.id, 13), 'resync me', 'row was rewritten'); assert.equal(cell(A.id, 14), '$24.90 on Etsy shop X', 'competitor price kept');
+console.log('PASS competitor price kept when the website rewrites the row');
+
 // ---------- setup again keeps supplier data ----------
 supplierTypes(A.id, N, 25);
 const again = await call('/admin/supplier-sheet/setup', 'POST', {}, admin);
 assert.equal(again.status, 200, JSON.stringify(again.data));
 assert.equal(Number((await order(A.id)).price), 27, 'pending supplier change applied before rebuilding');
 assert.equal(cell(A.id, N), 25); assert.equal(cell(B.id, O), '9400111899223197428490'); assert.equal(cell(B.id, P), SHIPPED);
+assert.equal(cell(A.id, 14), '$24.90 on Etsy shop X', 'competitor price kept through a rebuild');
 assert.ok(sheets.get('Work Queue (old formulas)').grid[6][0].startsWith('=IF('), 'original backup kept, not replaced');
 assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t), [WQ], 'rebuild works; besides the supplier Product Quotes tab only the Work Queue is visible');
 assert.equal(sheets.get(WQ).sheetId, 2026101301);

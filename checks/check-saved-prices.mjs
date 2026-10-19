@@ -59,7 +59,7 @@ const wq = grid('Work Queue'); wq[4] = ['Date'];
 const store = (await call('/client-stores', 'GET', null, client)).data.stores[0];
 const other = (await call('/client-stores', 'POST', { name: 'Second shop', platform: 'Etsy', link: 'https://example.com/s2' }, client)).data.store;
 const mk = async (ref, extra = {}) => { const r = await call('/orders', 'POST', { clientId: id, storeId: store.id, orderRef: ref, buyerName: 'B', destination: 'US', address1: '1 Main St', etsyUrl: 'https://www.etsy.com/listing/111222333/black-bag?ref=shop_home', variant: 'Black', quantity: 1, ...extra }, admin); assert.equal(r.status, 200, JSON.stringify(r.data)); await settle(); return r.data.order; };
-const row = oid => wq.findIndex(x => x && x[26] === String(oid));
+const row = oid => wq.findIndex(x => x && x[27] === String(oid));
 const db = oid => DB.prepare('SELECT price, product_cost, supplier_cost, price_source FROM client_orders WHERE id=?').bind(oid).first();
 const poll = async () => { const p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p)); await settle(); return p; };
 
@@ -76,7 +76,7 @@ const ca = await mk('CA-NEW', { destination: 'CA' }); assert.equal(Number((await
 console.log('PASS orders priced before the feature are remembered (once, newest cost)');
 // 1) first order: the supplier prices it in the sheet (whole order 20) -> billed 22 (fee 2) and remembered
 const a = await mk('A'); assert.equal(Number((await db(a.id)).price), 0);
-wq[row(a.id)][14] = 20; await poll();
+wq[row(a.id)][15] = 20; await poll();
 assert.equal(Number((await db(a.id)).price), 22);
 let sp = (await call('/admin/saved-prices?clientId=' + id, 'GET', null, admin)).data.prices.filter(p => p.destination === 'US'); assert.equal(sp.length, 1); assert.equal(sp[0].supplierCost, 20); assert.equal(sp[0].destination, 'US');
 console.log('PASS the supplier prices an order once: it is saved');
@@ -84,18 +84,18 @@ console.log('PASS the supplier prices an order once: it is saved');
 // 2) the same order again (other tracking link, other letter case): priced straight away; the supplier sees the cost and a note
 const b = await mk('B', { etsyUrl: 'https://www.etsy.com/il-en/listing/111222333/black-bag?utm_source=x', variant: ' black ' });
 let bb = await db(b.id); assert.deepEqual([Number(bb.price), Number(bb.supplier_cost), bb.price_source], [22, 20, 'saved']);
-assert.equal(wq[row(b.id)][14], 20, 'Total cost filled in the sheet'); assert.match(wq[row(b.id)][13], /^Total cost filled in from an earlier order/);
+assert.equal(wq[row(b.id)][15], 20, 'Total cost filled in the sheet'); assert.match(wq[row(b.id)][13], /^Total cost filled in from an earlier order/);
 const seen = (await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === b.id); assert.equal(seen.price, 22); assert.equal(seen.priceSource, undefined, 'internal');
 console.log('PASS same store + product + variation + country + quantity: priced automatically, shown to the supplier');
 
 // 3) not the same: another country, another quantity, another store, another variation
 for (const [ref, extra] of [['C', { destination: 'FR' }], ['D', { quantity: 2 }], ['E', { storeId: other.id }], ['F', { variant: 'Brown' }]]) {
-  const o = await mk(ref, extra); assert.equal(Number((await db(o.id)).price), 0, ref + ' is priced by the supplier'); assert.equal(wq[row(o.id)][14], '', ref);
+  const o = await mk(ref, extra); assert.equal(Number((await db(o.id)).price), 0, ref + ' is priced by the supplier'); assert.equal(wq[row(o.id)][15], '', ref);
 }
 console.log('PASS different country / quantity / store / variation: left for the supplier');
 
 // 4) the supplier corrects the auto price: re-billed, note gone, the newer cost is remembered
-wq[row(b.id)][14] = 21; await poll();
+wq[row(b.id)][15] = 21; await poll();
 bb = await db(b.id); assert.deepEqual([Number(bb.price), bb.price_source], [23, null]);
 await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.ok(!String(wq[row(b.id)][13]).startsWith('Total cost filled'), 'note removed');
 sp = (await call('/admin/saved-prices?clientId=' + id, 'GET', null, admin)).data.prices.find(p => p.destination === 'US' && p.quantity === 1 && !p.storeName.includes('Second'));

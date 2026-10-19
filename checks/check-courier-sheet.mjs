@@ -68,18 +68,18 @@ await DB.prepare('UPDATE client_orders SET notes=? WHERE id=?').bind(FR_NOTES, a
 let p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
 assert.ok(p.ok, JSON.stringify(p));
 assert.deepEqual(wq[4].slice(0, HEADERS.length), HEADERS, 'header is the new layout');
-assert.equal(wq[4].length, 28);
-assert.deepEqual(calls.filter(c => c.startsWith('insert')), ['insert 12', 'insert 16'], 'one column for the gift message, one for the courier');
+assert.equal(wq[4].length, 29);
+assert.deepEqual(calls.filter(c => c.startsWith('insert')), ['insert 12', 'insert 16', 'insert 14'], 'gift message, courier, then competitor price');
 assert.equal(wq[6][11], '', 'old country code cleared from Tax number'); assert.equal(wq[6][12], ''); assert.equal(wq[6][13], 'old note');
 // the old notes were split: own columns in the sheet, notes cleaned
 assert.equal(wq[5][11], "Etsy's IOSS number: IM3720000224 EUR 72.37"); assert.match(wq[5][12], /^Un petit cadeau.*Clara$/s); assert.equal(wq[5][13], '', 'notes no longer repeat them');
 const fr = await DB.prepare('SELECT notes, tax_number, gift_message FROM client_orders WHERE id=?').bind(a.id).first();
 assert.equal(fr.notes, ''); assert.equal(fr.tax_number, "Etsy's IOSS number: IM3720000224 EUR 72.37");
 console.log('PASS old notes split into Tax number / Gift message');
-assert.equal(wq[5][14], 55.9, 'cost moved to O'); assert.equal(wq[5][15], 'UL602450763YP', 'tracking moved to P');
-assert.equal(wq[5][16], '', 'empty courier'); assert.equal(wq[5][17], 'Not shipped', 'status moved to R');
-assert.equal(wq[5][26], String(a.id), 'order id in AA'); assert.equal(wq[5][27], String(id), 'client id in AB');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '2');
+assert.equal(wq[5][15], 55.9, 'cost moved to P'); assert.equal(wq[5][16], 'UL602450763YP', 'tracking moved to Q'); assert.equal(wq[5][14], '', 'competitor price O empty');
+assert.equal(wq[5][17], '', 'empty courier'); assert.equal(wq[5][18], 'Not shipped', 'status moved to S');
+assert.equal(wq[5][27], String(a.id), 'order id in AB'); assert.equal(wq[5][28], String(id), 'client id in AC');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '3');
 const o1 = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(a.id).first();
 assert.equal(o1.tracking_number, '', 'nothing applied from the wrong columns'); assert.equal(o1.courier, null);
 console.log('PASS switch: header, columns moved, old country cleared, ids found, nothing misapplied');
@@ -89,7 +89,7 @@ calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch })
 assert.equal(calls.filter(c => c.startsWith('insert')).length, 0, 'switch runs once');
 
 // 3) The supplier picks a courier and types tracking for the second order: the website takes both.
-wq[5][16] = 'Yanwen'; wq[6][15] = 'UL602451830YP'; wq[6][16] = 'China Post';
+wq[5][17] = 'Yanwen'; wq[6][16] = 'UL602451830YP'; wq[6][17] = 'China Post';
 p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
 const ca = await DB.prepare('SELECT courier, sheet_courier FROM client_orders WHERE id=?').bind(a.id).first();
 assert.equal(ca.courier, 'Yanwen'); assert.equal(ca.sheet_courier, 'Yanwen');
@@ -105,7 +105,7 @@ assert.equal(r.status, 200, JSON.stringify(r.data));
 await syncPortalOrderToGoogleSheet(DB, env, a.id, fakeFetch);
 assert.equal(wq[5][11], "Etsy's IOSS number: IM3720000224 EUR 72.37"); assert.equal(wq[5][12], 'Un petit cadeau\n-- Jamel, Driss et Clara');
 assert.ok(String(wq[5][10]).endsWith('France'), 'the country is at the end of the address: ' + JSON.stringify(wq[5][10]));
-assert.equal(wq[5][16], 'Yanwen', 'courier kept'); assert.equal(wq[5][14], 55.9, 'cost kept');
+assert.equal(wq[5][17], 'Yanwen', 'courier kept'); assert.equal(wq[5][15], 55.9, 'cost kept');
 const mine = (await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === a.id);
 assert.equal(mine.taxNumber, "Etsy's IOSS number: IM3720000224 EUR 72.37"); assert.match(mine.giftMessage, /Jamel/);
 console.log('PASS tax number and gift message in their own columns, country at the end of the address');
@@ -113,7 +113,7 @@ console.log('PASS tax number and gift message in their own columns, country at t
 // 5) Admin changes the courier on the website: written to the sheet.
 r = await call('/orders/' + b.id, 'PUT', { trackingNumber: 'UL602451830YP', courier: 'Yanwen' }, admin); assert.equal(r.status, 200);
 await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch);
-assert.equal(wq[6][16], 'Yanwen');
+assert.equal(wq[6][17], 'Yanwen');
 p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(p.changed.length, 0, 'the website does not re-apply its own write');
 // a client cannot set the courier
 await call('/orders/' + b.id, 'PUT', { courier: 'Fake' }, client);
