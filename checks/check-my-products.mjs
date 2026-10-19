@@ -62,6 +62,7 @@ try {
     assert.equal(await page.locator('.mp-row').count(), 6);
     assert.equal(await page.locator('.mp-row.is-new').count(), 3, 'priced or turned down since the last visit');
     await page.screenshot({ path: path.join(out, `${tag}-all.png`), fullPage: true });
+    assert.ok((await page.locator('.mp-row img').first().boundingBox()).width >= (width < 600 ? 80 : 110), 'product photos are big enough to see');
     await page.locator('[data-pfilter=awaiting_quote]').click(); await page.waitForTimeout(200);
     assert.equal(await page.locator('.mp-row').count(), 2);
     await page.locator('[data-pfilter=approved]').click(); await page.waitForTimeout(200);
