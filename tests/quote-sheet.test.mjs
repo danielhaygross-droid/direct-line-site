@@ -5,8 +5,8 @@ import { QUOTE_HEADERS, QUOTE_WIDTHS, quoteCells, parsePrice, applyQuoteRow, QUO
 import { SCHEMA } from '../server/portal.mjs';
 
 test('Product Quotes tab: website columns, supplier columns, no client name, text never runs as a formula', () => {
-  assert.equal(QUOTE_HEADERS.length, 15); assert.equal(QUOTE_WIDTHS.length, 15);
-  assert.deepEqual(QUOTE_HEADERS.slice(9, 13), ['Price per item (USD)', 'Shipping per order (USD)', 'Available?', 'Supplier note']);
+  assert.equal(QUOTE_HEADERS.length, 16); assert.equal(QUOTE_WIDTHS.length, 16);
+  assert.deepEqual(QUOTE_HEADERS.slice(9, 16), ['Price per item (USD)', 'Shipping per order (USD)', 'Available?', 'Supplier note', 'Competitor price', 'Status', 'Product ID']);
   const { ai, no } = quoteCells({ APP_SESSION_SECRET: 's' }, { id: 7, created_at: 1800000000, name: '=cmd', variant: '+x', link: 'https://e.com/a"b', expected_quantity: 3, status: 'awaiting_quote' }, [4, 5]);
   assert.equal(ai.length, 9); assert.equal(ai[1], 'P-7'); assert.equal(ai[6], "'=cmd"); assert.equal(ai[7], "'+x");
   assert.match(ai[2], /^=IMAGE\("https:\/\/.+\/sheet-product-photos\/7\/4\?key=/); assert.match(ai[5], /a""b/);

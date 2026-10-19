@@ -67,12 +67,12 @@ await DB.prepare("UPDATE portal_products SET status='not_available', note='Out o
 await DB.prepare("INSERT INTO portal_settings (key, value) VALUES ('supplier_sheet','1'),('supplier_sheet_layout','2'),('quote_tab','1'),('quote_tab_options_v1','1') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run();
 grid('Work Queue')[4] = ['Date'];
 let poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(poll.ok, JSON.stringify(poll));
-assert.deepEqual(qt[3].slice(9, 15), ['Price per item (USD)', 'Shipping per order (USD)', 'Available?', 'Supplier note', 'Status', 'Product ID']);
-assert.deepEqual(qt[4].slice(9, 15), [4.9, '', '', 'ships in 3 days', 'Quoted', String(a.id)], 'supplier values moved one column right');
-assert.deepEqual(qt[5].slice(9, 15), ['', '', 'Not available', 'Out of stock', 'Not available', String(b.id)]);
+assert.deepEqual(qt[3].slice(9, 16), ['Price per item (USD)', 'Shipping per order (USD)', 'Available?', 'Supplier note', 'Competitor price', 'Status', 'Product ID']);
+assert.deepEqual(qt[4].slice(9, 16), [4.9, '', '', 'ships in 3 days', '', 'Quoted', String(a.id)], 'supplier values moved right; Competitor price added before Status');
+assert.deepEqual(qt[5].slice(9, 16), ['', '', 'Not available', 'Out of stock', '', 'Not available', String(b.id)]);
 assert.equal(poll.quotes.changed, 0, 'nothing re-priced by the switch'); assert.match(String(qt[1][0]), /Shipping per order/);
 const inserts = calls.filter(c => c.startsWith('insert')).length;
-assert.equal(inserts, 1);
+assert.deepEqual(calls.filter(c => c.startsWith('insert')), ['insert 10', 'insert 13'], 'Shipping (K), then Competitor price (N)');
 poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(calls.filter(c => c.startsWith('insert')).length, inserts, 'switched once');
 console.log('PASS live layout switched once: column K inserted, values moved right, nothing re-priced');
 // Ada types the shipping: the client sees it as is; an order adds it once.
@@ -85,6 +85,6 @@ assert.equal(o.status, 200, JSON.stringify(o.data)); assert.equal(o.data.order.p
 const stale = await call('/orders', 'POST', { storeId: store.id, productId: a.id, quotedUnitPrice: 5.4, quotedShipping: 2, orderRef: 'SHIP-2', buyerName: 'Sample', address1: '1 Main St', destination: 'US' }, client);
 assert.equal(stale.status, 409, 'old shipping refused');
 const ed = await call(`/orders/${o.data.order.id}`, 'PUT', { quantity: 2 }, client); assert.equal(ed.status, 200, JSON.stringify(ed.data)); assert.equal(ed.data.order.price, 14.05, '2 x 5.40 + 3.25 after an edit');
-qt[4][10] = 'ask'; poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(poll.quotes.skipped.length, 1); assert.match(String(qt[4][13]), /Shipping not clear/);
+qt[4][10] = 'ask'; poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(poll.quotes.skipped.length, 1); assert.match(String(qt[4][14]), /Shipping not clear/);
 console.log('PASS shipping per order: passed on as is, added once to orders (also after edits), stale and unclear values refused');
 await pg.close();

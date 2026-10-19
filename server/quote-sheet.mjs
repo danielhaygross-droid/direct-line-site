@@ -6,8 +6,10 @@
 //   K  Shipping per order (USD) — one parcel; added once to an order made from this product.
 //   L  Available?           — "Not available" (with a reason in M) instead of a price.
 //   M  Supplier note        — optional, shown to the client.
-//   N  Status, O Product ID (hidden) — website columns.
-// Layout 2 (16 Oct 2026) added K; the live tab is switched once by ensureQuoteLayout() (a column is inserted, nothing moves by hand).
+//   N  Competitor price     — free text for Direct Line (or the supplier); the website never reads or writes it.
+//   O  Status, P Product ID (hidden) — website columns.
+// Layout 2 (16 Oct 2026) added K, layout 3 (19 Oct 2026) added N; the live tab is switched once by ensureQuoteLayout()
+// (a column is inserted, nothing moves by hand).
 // The supplier never sees who the client is. Admins can still set or change a quote in admin → Products.
 import { sheetsRequest, googleSheetsConfig, googleSheetsConfigured } from './google-sheets.mjs';
 import { sheetProductPhotoUrl } from './sheet-photos.mjs';
@@ -15,8 +17,8 @@ import { sheetProductPhotoUrl } from './sheet-photos.mjs';
 export const QT = 'Product Quotes';
 export const QUOTE_FIRST_ROW = 5;
 export const QUOTE_HEADERS = ['Requested', 'Request', 'Photo preview', 'Photo 2', 'Photo 3', 'Product link', 'Product name', 'Variation / notes', 'Expected per month',
-  'Price per item (USD)', 'Shipping per order (USD)', 'Available?', 'Supplier note', 'Status', 'Product ID'];
-export const QUOTE_WIDTHS = [95, 80, 130, 80, 80, 115, 180, 220, 95, 120, 120, 125, 220, 120, 60];
+  'Price per item (USD)', 'Shipping per order (USD)', 'Available?', 'Supplier note', 'Competitor price', 'Status', 'Product ID'];
+export const QUOTE_WIDTHS = [95, 80, 130, 80, 80, 115, 180, 220, 95, 120, 120, 125, 220, 150, 120, 60];
 export const AVAILABLE = 'Available', NOT_AVAILABLE = 'Not available';
 // What the supplier may type for "not available": the dropdown value, or a short X / No / N/A (in Available? or in the price cell).
 const NO_WORDS = /^(not available|unavailable|no|n\/?a|x|✗|✕|×|-|—)$/i;
@@ -34,8 +36,15 @@ export const QUOTE_SHEET_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS quoted_shipping DOUBLE PRECISION',
 ];
 const STATUS = { awaiting_quote: 'Waiting for price', approved: 'Quoted', not_available: 'Not available' };
-const TAB = 'quote_tab', OPTIONS_FORMAT = 'quote_tab_options_v1', LAYOUT = 'quote_tab_layout', LAYOUT_NOW = '2';
-export const QUOTE_HELP = 'Supplier: these are price checks from our clients before they sell a product. Fill in the yellow columns — Price per item (USD, product only) and Shipping per order (USD, one parcel), or set Available? to Not available and add a note. Several prices (sizes, colours…)? Put one option per line in the price cell, like:  Small: 3.20  (new line)  Large: 4.50. The website updates within a minute.';
+const TAB = 'quote_tab', OPTIONS_FORMAT = 'quote_tab_options_v1', LAYOUT = 'quote_tab_layout', LAYOUT_NOW = '3';
+// Competitor price (N): light blue, open for anyone with the sheet to type in.
+const COMP = 13;
+const competitorFormat = sheetId => [
+  { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 0.62, green: 0.79, blue: 0.97 }, textFormat: { bold: true } }, note: 'What competitors charge for this product (e.g. "$24.90 on Etsy shop X"). Filled in by Direct Line; the website never changes it.' }, fields: 'userEnteredFormat(backgroundColor,textFormat),note' } },
+  { repeatCell: { range: { sheetId, startRowIndex: QUOTE_FIRST_ROW - 1, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 0.85, green: 0.92, blue: 1 }, numberFormat: { type: 'TEXT' }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,numberFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
+  { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: COMP, endIndex: COMP + 1 }, properties: { pixelSize: QUOTE_WIDTHS[COMP] }, fields: 'pixelSize' } },
+];
+export const QUOTE_HELP = 'Supplier: these are price checks from our clients before they sell a product. Fill in the yellow columns — Price per item (USD, product only) and Shipping per order (USD, one parcel), or set Available? to Not available and add a note. Several prices (sizes, colours…)? Put one option per line in the price cell, like:  Small: 3.20  (new line)  Large: 4.50. Competitor price (blue) is where Direct Line writes what competitors charge. The website updates within a minute.';
 export const PRICE_HELP = 'Price for one item in USD, product only (no shipping). Several prices? One option per line, e.g.\nSmall: 3.20\nLarge: 4.50\n(Ctrl+Enter or Alt+Enter starts a new line in the cell; ; also works.)';
 export const PRICE_UNCLEAR = 'Price not clear: write Name: price, one per line';
 export const SHIPPING_HELP = 'Shipping for one order (one parcel) in USD. Added once to the order, whatever the quantity.';
@@ -93,7 +102,7 @@ async function tabId(env, f) {
   return (meta.sheets || []).map(s => s.properties).find(p => p.title === QT)?.sheetId ?? null;
 }
 async function rowsById(env, f) {
-  const data = await sheetsRequest(env, '/values/' + encodeURIComponent(`${QT}!O${QUOTE_FIRST_ROW}:O`) + '?majorDimension=ROWS', {}, f);
+  const data = await sheetsRequest(env, '/values/' + encodeURIComponent(`${QT}!P${QUOTE_FIRST_ROW}:P`) + '?majorDimension=ROWS', {}, f);
   return new Map((data.values || []).map((r, i) => [Number(r?.[0]), QUOTE_FIRST_ROW + i]).filter(([id]) => id > 0));
 }
 
@@ -109,19 +118,19 @@ export async function ensureQuoteTab(DB, env, fetchImpl = fetch) {
   try {
     let sheetId = await tabId(env, fetchImpl);
     if (sheetId == null) {
-      const made = await batch(env, [{ addSheet: { properties: { title: QT, index: 1, gridProperties: { rowCount: 500, columnCount: 15, frozenRowCount: 4 } } } }], fetchImpl);
+      const made = await batch(env, [{ addSheet: { properties: { title: QT, index: 1, gridProperties: { rowCount: 500, columnCount: 16, frozenRowCount: 4 } } } }], fetchImpl);
       sheetId = made?.replies?.[0]?.addSheet?.properties?.sheetId ?? await tabId(env, fetchImpl);
     }
     const { email } = googleSheetsConfig(env), cols = (a, b) => ({ sheetId, startColumnIndex: a, endColumnIndex: b });
     const yellow = { red: 1, green: 0.95, blue: 0.7 };
     await batchValues(env, [
       { range: `${QT}!A1:A2`, values: [['Direct Line — Product Quotes'], [QUOTE_HELP]] },
-      { range: `${QT}!A4:O4`, values: [QUOTE_HEADERS] },
+      { range: `${QT}!A4:P4`, values: [QUOTE_HEADERS] },
     ], fetchImpl);
     await batch(env, [
       { repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 16 } } }, fields: 'userEnteredFormat.textFormat' } },
-      { repeatCell: { range: { sheetId, startRowIndex: 3, startColumnIndex: 0, endColumnIndex: 15 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment)' } },
-      { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 15 }, cell: { userEnteredFormat: { backgroundColor: { red: 0.93, green: 0.93, blue: 0.93 }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
+      { repeatCell: { range: { sheetId, startRowIndex: 3, startColumnIndex: 0, endColumnIndex: 16 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment)' } },
+      { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 16 }, cell: { userEnteredFormat: { backgroundColor: { red: 0.93, green: 0.93, blue: 0.93 }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
       { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 9, endColumnIndex: 13 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
       { repeatCell: { range: { sheetId, startRowIndex: 4, startColumnIndex: 9, endColumnIndex: 13 }, cell: { userEnteredFormat: { backgroundColor: yellow } }, fields: 'userEnteredFormat.backgroundColor' } },
       { repeatCell: { range: { sheetId, startRowIndex: 4, startColumnIndex: 9, endColumnIndex: 11 }, cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
@@ -129,12 +138,13 @@ export async function ensureQuoteTab(DB, env, fetchImpl = fetch) {
       ...shippingCellFormat(sheetId),
       { setDataValidation: { range: { sheetId, startRowIndex: 4, startColumnIndex: 11, endColumnIndex: 12 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: AVAILABLE }, { userEnteredValue: NOT_AVAILABLE }] }, strict: true, showCustomUi: true } } },
       ...QUOTE_WIDTHS.map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
-      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 14, endIndex: 15 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
+      ...competitorFormat(sheetId),
+      { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 15, endIndex: 16 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
       { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 3, endIndex: 4 }, properties: { pixelSize: 44 }, fields: 'pixelSize' } },
       { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: QUOTE_FIRST_ROW - 1, endIndex: 500 }, properties: { pixelSize: 100 }, fields: 'pixelSize' } },
       { addProtectedRange: { protectedRange: { range: cols(0, 9), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
-      { addProtectedRange: { protectedRange: { range: cols(13, 15), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
-      { addProtectedRange: { protectedRange: { range: { sheetId, startRowIndex: 0, endRowIndex: 4, startColumnIndex: 9, endColumnIndex: 13 }, description: 'Column headers', editors: { users: [email] } } } },
+      { addProtectedRange: { protectedRange: { range: cols(14, 16), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
+      { addProtectedRange: { protectedRange: { range: { sheetId, startRowIndex: 0, endRowIndex: 4, startColumnIndex: 9, endColumnIndex: 14 }, description: 'Column headers', editors: { users: [email] } } } },
     ], fetchImpl);
     // Every product so far gets its row (oldest first).
     const all = (await DB.prepare('SELECT p.* FROM portal_products p JOIN users u ON u.id=p.client_id WHERE NOT u.archived ORDER BY p.created_at, p.id').all()).results || [];
@@ -143,10 +153,10 @@ export async function ensureQuoteTab(DB, env, fetchImpl = fetch) {
       if (have.has(Number(p.id))) continue;
       const photos = ((await DB.prepare('SELECT id FROM portal_product_photos WHERE product_id=? ORDER BY id LIMIT 3').bind(p.id).all()).results || []).map(r => Number(r.id));
       const { ai, no } = quoteCells(env, p, photos), price = p.supplier_price == null ? '' : Number(p.supplier_price), ship = p.supplier_shipping == null ? '' : Number(p.supplier_shipping), avail = p.status === 'not_available' ? NOT_AVAILABLE : '';
-      rows.push([...ai, price, ship, avail, txt(p.status === 'not_available' ? p.note : ''), ...no]);
+      rows.push([...ai, price, ship, avail, txt(p.status === 'not_available' ? p.note : ''), '', ...no]);
       await DB.prepare('UPDATE portal_products SET sheet_price=?, sheet_shipping=?, sheet_status=?, sheet_note=? WHERE id=?').bind(norm(price), norm(ship), avail, norm(p.status === 'not_available' ? p.note : ''), p.id).run();
     }
-    if (rows.length) await batchValues(env, [{ range: `${QT}!A${QUOTE_FIRST_ROW + have.size}:O${QUOTE_FIRST_ROW + have.size + rows.length - 1}`, values: rows }], fetchImpl);
+    if (rows.length) await batchValues(env, [{ range: `${QT}!A${QUOTE_FIRST_ROW + have.size}:P${QUOTE_FIRST_ROW + have.size + rows.length - 1}`, values: rows }], fetchImpl);
     await putSetting(DB, TAB, '1');
     await putSetting(DB, OPTIONS_FORMAT, '1');
     await putSetting(DB, LAYOUT, LAYOUT_NOW);
@@ -170,13 +180,30 @@ function shippingCellFormat(sheetId) {
     { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 10, endColumnIndex: 11 }, cell: { note: SHIPPING_HELP }, fields: 'note' } },
   ];
 }
-// One-time switch to layout 2 for the live tab: insert column K (Shipping per order) right after the price.
-// Google moves everything right of it (supplier values, Status, Product ID, protections) by itself.
-// Safe to retry: it only inserts when K4 is not the shipping header yet. Must run before the tab is read.
+// One-time switches for the live tab, by header: layout 2 inserts column K (Shipping per order) right after the price;
+// layout 3 inserts column N (Competitor price) right after the supplier note. Google moves everything right of an
+// inserted column (supplier values, Status, Product ID, protections) by itself.
+// Safe to retry: each step checks the header first. Must run before the tab is read.
 export async function ensureQuoteLayout(DB, env, fetchImpl = fetch) {
-  if (await setting(DB, LAYOUT) === LAYOUT_NOW) return false;
+  const now = await setting(DB, LAYOUT);
+  if (now === LAYOUT_NOW) return false;
   const sheetId = await tabId(env, fetchImpl);
   if (sheetId == null) return false;
+  if (now !== '2' && !await quoteLayout2(DB, env, sheetId, fetchImpl)) return false;
+  const head = await sheetsRequest(env, '/values/' + encodeURIComponent(`${QT}!M4:O4`) + '?majorDimension=ROWS', {}, fetchImpl);
+  const m4 = norm(head.values?.[0]?.[0]), n4 = norm(head.values?.[0]?.[1]), o4 = norm(head.values?.[0]?.[2]);
+  // Already inserted (maybe by a run that stopped before writing the header): N is Competitor price, or empty with Status in O.
+  const inserted = n4 === QUOTE_HEADERS[COMP] || (n4 === '' && o4 === 'Status');
+  if (!inserted) {
+    if (m4 !== 'Supplier note' || n4 !== 'Status') throw new Error('Product Quotes: unexpected headers M4/N4 "' + m4 + '" / "' + n4 + '"; layout switch stopped.');
+    await batch(env, [{ insertDimension: { range: { sheetId, dimension: 'COLUMNS', startIndex: COMP, endIndex: COMP + 1 }, inheritFromBefore: true } }], fetchImpl);
+  }
+  await batchValues(env, [{ range: `${QT}!N4`, values: [[QUOTE_HEADERS[COMP]]] }, { range: `${QT}!A2`, values: [[QUOTE_HELP]] }], fetchImpl);
+  await batch(env, competitorFormat(sheetId), fetchImpl);
+  await putSetting(DB, LAYOUT, LAYOUT_NOW);
+  return true;
+}
+async function quoteLayout2(DB, env, sheetId, fetchImpl) {
   const head = await sheetsRequest(env, '/values/' + encodeURIComponent(`${QT}!J4:L4`) + '?majorDimension=ROWS', {}, fetchImpl);
   const j4 = norm(head.values?.[0]?.[0]), k4 = norm(head.values?.[0]?.[1]), l4 = norm(head.values?.[0]?.[2]);
   if (!j4 && !k4 && !l4) return false; // headers not written yet (tab still being made): nothing to switch
@@ -189,7 +216,7 @@ export async function ensureQuoteLayout(DB, env, fetchImpl = fetch) {
   await batchValues(env, [{ range: `${QT}!K4`, values: [[QUOTE_HEADERS[10]]] }, { range: `${QT}!A2`, values: [[QUOTE_HELP]] }], fetchImpl);
   await batch(env, [...shippingCellFormat(sheetId),
     { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 10, endIndex: 11 }, properties: { pixelSize: QUOTE_WIDTHS[10] }, fields: 'pixelSize' } }], fetchImpl);
-  await putSetting(DB, LAYOUT, LAYOUT_NOW);
+  await putSetting(DB, LAYOUT, '2');
   return true;
 }
 // One-time switch for the tab that was made before price options existed (only the price cell's rule and the help text change;
@@ -213,9 +240,9 @@ export async function syncQuoteRow(DB, env, productId, fetchImpl = fetch) {
   if (!p || p.client_archived) return { enabled: true, skipped: true };
   const photos = ((await DB.prepare('SELECT id FROM portal_product_photos WHERE product_id=? ORDER BY id LIMIT 3').bind(p.id).all()).results || []).map(r => Number(r.id));
   const { ai, no } = quoteCells(env, p, photos), row = (await rowsById(env, fetchImpl)).get(Number(p.id));
-  if (row) { await batchValues(env, [{ range: `${QT}!A${row}:I${row}`, values: [ai] }, { range: `${QT}!N${row}:O${row}`, values: [no] }], fetchImpl); return { enabled: true, row }; }
-  await sheetsRequest(env, '/values/' + encodeURIComponent(`${QT}!A${QUOTE_FIRST_ROW}:O`) + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
-    { method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values: [[...ai, '', '', '', '', ...no]] }) }, fetchImpl);
+  if (row) { await batchValues(env, [{ range: `${QT}!A${row}:I${row}`, values: [ai] }, { range: `${QT}!O${row}:P${row}`, values: [no] }], fetchImpl); return { enabled: true, row }; }
+  await sheetsRequest(env, '/values/' + encodeURIComponent(`${QT}!A${QUOTE_FIRST_ROW}:P`) + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+    { method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values: [[...ai, '', '', '', '', '', ...no]] }) }, fetchImpl);
   await DB.prepare("UPDATE portal_products SET sheet_price='', sheet_shipping='', sheet_status='', sheet_note='' WHERE id=?").bind(p.id).run();
   return { enabled: true, added: true };
 }
@@ -258,7 +285,7 @@ export async function pollQuoteTab(DB, env, settings, fetchImpl = fetch) {
     await DB.prepare("UPDATE portal_products SET sheet_status=NULL WHERE status='awaiting_quote'").run();
     await putSetting(DB, 'quote_reread_v1', '1');
   }
-  const ranges = [`${QT}!J${QUOTE_FIRST_ROW}:M`, `${QT}!O${QUOTE_FIRST_ROW}:O`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+  const ranges = [`${QT}!J${QUOTE_FIRST_ROW}:M`, `${QT}!P${QUOTE_FIRST_ROW}:P`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
   const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
   const [inputs, ids] = (data.valueRanges || []).map(v => v.values || []);
   let changed = 0; const skipped = [];
@@ -272,7 +299,7 @@ export async function pollQuoteTab(DB, env, settings, fetchImpl = fetch) {
       skipped.push({ productId: id, why: out });
       // Tell the supplier in the Status column (the website's own column) that the price wasn't understood.
       const row = QUOTE_FIRST_ROW + i;
-      await batchValues(env, [{ range: `${QT}!N${row}`, values: [[out.startsWith('shipping') ? SHIPPING_UNCLEAR : PRICE_UNCLEAR]] }], fetchImpl);
+      await batchValues(env, [{ range: `${QT}!O${row}`, values: [[out.startsWith('shipping') ? SHIPPING_UNCLEAR : PRICE_UNCLEAR]] }], fetchImpl);
     }
   }
   return { changed, skipped };

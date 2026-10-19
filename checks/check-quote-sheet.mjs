@@ -61,14 +61,14 @@ const photo = { filename: 'p.png', data: 'data:image/png;base64,' + png.toString
 const old = (await call('/products', 'POST', { name: 'Old mug', link: 'https://www.etsy.com/listing/1', variant: 'White', photos: [photo] }, client)).data.product; await settle();
 assert.ok(calls.includes('addSheet Product Quotes'), 'the tab is created on the first product');
 const qt = grid('Product Quotes');
-assert.deepEqual(qt[3].slice(0, 15), ['Requested', 'Request', 'Photo preview', 'Photo 2', 'Photo 3', 'Product link', 'Product name', 'Variation / notes', 'Expected per month', 'Price per item (USD)', 'Shipping per order (USD)', 'Available?', 'Supplier note', 'Status', 'Product ID']);
+assert.deepEqual(qt[3].slice(0, 16), ['Requested', 'Request', 'Photo preview', 'Photo 2', 'Photo 3', 'Product link', 'Product name', 'Variation / notes', 'Expected per month', 'Price per item (USD)', 'Shipping per order (USD)', 'Available?', 'Supplier note', 'Competitor price', 'Status', 'Product ID']);
 // a new price check from the client
 const r = await call('/products', 'POST', { name: 'Blue Mountain Tray', link: 'https://www.etsy.com/listing/2', variant: 'Blue, 6 cups', expectedQuantity: 20, photos: [photo, photo] }, client); await settle();
 assert.equal(r.status, 200, JSON.stringify(r.data)); const p = r.data.product;
-const rowOf = pid => qt.findIndex(x => x && x[14] === String(pid));
+const rowOf = pid => qt.findIndex(x => x && x[15] === String(pid));
 const i = rowOf(p.id); assert.ok(i >= 4, 'row added'); assert.ok(rowOf(old.id) >= 4, 'first product has its row too');
 assert.equal(qt[i][1], 'P-' + p.id); assert.match(qt[i][2], /^=IMAGE\("https:\/\/.+\/api\/portal\/sheet-product-photos\//); assert.match(qt[i][3], /Photo 2/);
-assert.equal(qt[i][6], 'Blue Mountain Tray'); assert.equal(qt[i][8], 20); assert.equal(qt[i][13], 'Waiting for price');
+assert.equal(qt[i][6], 'Blue Mountain Tray'); assert.equal(qt[i][8], 20); assert.equal(qt[i][14], 'Waiting for price'); assert.equal(qt[i][13] ?? '', '', 'Competitor price starts empty');
 assert.ok(!JSON.stringify(qt).includes('Local Client'), 'the supplier never sees who the client is');
 // the signed photo link works without signing in; a wrong key does not
 const link = /"(https:[^"]+)"/.exec(qt[i][2])[1].replace(/^https:\/\/[^/]+\/api\/portal/, 'http://localhost/api/portal');
@@ -81,16 +81,18 @@ await call('/admin/users/' + id, 'POST', { commissionPerOrder: '0.5' }, admin);
 qt[i][9] = 12.4; let poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(poll.ok, JSON.stringify(poll)); assert.equal(poll.quotes.changed, 1);
 let mine = (await call('/products', 'GET', null, client)).data.products.find(x => x.id === p.id);
 assert.equal(mine.status, 'approved'); assert.equal(mine.unitPrice, 12.9); assert.equal(mine.supplierPrice, undefined, 'client never gets the supplier price');
-assert.equal(qt[i][13], 'Quoted', 'status shown to the supplier');
+assert.equal(qt[i][14], 'Quoted', 'status shown to the supplier');
 poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(poll.quotes.changed, 0, 'applied once');
 // not available, with a reason
 const j = rowOf(old.id); qt[j][11] = 'Not available'; qt[j][12] = 'Out of stock until March';
 poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(poll.quotes.changed, 1);
 mine = (await call('/products', 'GET', null, client)).data.products.find(x => x.id === old.id);
 assert.equal(mine.status, 'not_available'); assert.equal(mine.note, 'Out of stock until March');
+// Direct Line types a competitor price: the website never reads or overwrites it
+qt[i][13] = '$19.90 on Etsy shop X';
 // admin can still change a quote on the website: the sheet status follows, the supplier's columns are left alone
 const aq = await call('/admin/products/' + p.id, 'POST', { status: 'approved', unitPrice: '15', note: '' }, admin); await settle(); assert.equal(aq.status, 200, JSON.stringify(aq.data));
-assert.equal(qt[i][9], 12.4, 'supplier price untouched'); assert.equal((await call('/products', 'GET', null, client)).data.products.find(x => x.id === p.id).unitPrice, 15);
+assert.equal(qt[i][9], 12.4, 'supplier price untouched'); assert.equal(qt[i][13], '$19.90 on Etsy shop X', 'competitor price untouched'); assert.equal((await call('/products', 'GET', null, client)).data.products.find(x => x.id === p.id).unitPrice, 15);
 // junk in the price cell is ignored and reported
 qt[i][9] = 'ask me'; poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(poll.quotes.skipped.length, 1);
 console.log('PASS supplier price -> client quote (+ fee), not available with reason, admin override, junk ignored');
