@@ -285,18 +285,18 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .add-product>summary>span:first-child{display:grid;gap:2px}.add-product>summary small{font-size:13px}
 .add-product[open]>summary{margin-bottom:16px}.add-product[open]>summary .btn{display:none}
 .mp-toolbar{margin:0 0 6px}
-.mp-row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:14px;align-items:start;padding:14px 0;border-top:1px solid var(--line)}
-.mp-row img,.mp-ph{width:64px;height:64px;border-radius:12px;object-fit:cover;background:var(--surface-3)}
+.mp-row{display:grid;grid-template-columns:112px minmax(0,1fr) auto;gap:14px;align-items:start;padding:14px 0;border-top:1px solid var(--line)}
+.mp-row img,.mp-ph{width:112px;height:112px;border-radius:14px;object-fit:cover;background:var(--surface-3)}
 .mp-main{display:grid;gap:3px;min-width:0}.mp-main b{overflow-wrap:anywhere}.mp-main small{color:var(--muted);font-size:13px}
 .mp-note{margin:4px 0 0;padding:8px 10px;border-radius:10px;background:var(--surface-2);font-size:13px}
 .mp-side{display:grid;gap:6px;justify-items:end;text-align:end;min-width:150px}
 .mp-status{min-height:28px;cursor:default;pointer-events:none}.mp-price{font-size:18px}
 .mp-row.is-new{background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 9%,transparent),transparent 60%);border-radius:12px;padding-inline:10px}
-@media(max-width:560px){.mp-row{grid-template-columns:56px minmax(0,1fr)}.mp-row img,.mp-ph{width:56px;height:56px}.mp-side{grid-column:1/-1;justify-items:start;text-align:start;min-width:0}.mp-side .price-options{width:100%}.add-product>summary{flex-wrap:wrap}}
+@media(max-width:560px){.mp-row{grid-template-columns:84px minmax(0,1fr)}.mp-row img,.mp-ph{width:84px;height:84px}.mp-side{grid-column:1/-1;justify-items:start;text-align:start;min-width:0}.mp-side .price-options{width:100%}.add-product>summary{flex-wrap:wrap}}
 /* My Products: rows open the product details */
 .mp-row{cursor:pointer}.mp-row:hover .mp-name{color:var(--gold-2)}
 .mp-name{all:unset;font-weight:700;cursor:pointer;overflow-wrap:anywhere}.mp-name:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:4px}
-.mp-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.mp-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
 .mp-photos img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:14px;border:1px solid var(--line);background:var(--surface-3);display:block}
 .kv dd a{overflow-wrap:anywhere}
 .mp-ship{font-size:13px;color:var(--muted)}.mp-ship b{color:var(--text)}
