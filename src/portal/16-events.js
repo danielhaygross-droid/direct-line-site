@@ -28,7 +28,7 @@
   }
   // The earnings block on Orders can be folded away; the choice is remembered on this device.
   document.addEventListener('toggle', e => { if (e.target.matches?.('[data-earn]')) store.set('dl-earn-open', e.target.open); }, true);
-  document.addEventListener('click',e=>{if(e.target.closest?.('[data-word-export]'))exportOrdersToWord();});
+  document.addEventListener('click',e=>{if(e.target.closest?.('[data-excel-export]'))exportOrdersToExcel();});
   // A "Sort" dropdown changed: remember it and redraw that list.
   document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});

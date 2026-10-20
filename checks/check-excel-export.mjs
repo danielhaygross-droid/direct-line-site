@@ -1,6 +1,6 @@
-// Behaviour check: "Export to Word" — the client portal's Orders page and the admin client panel download a .docx with
-// the orders on screen, their prices, a Paid check box per order and the total. EN/HE, 1440/390.
-//   node checks/check-word-export.mjs      (run from the repo root)
+// Behaviour check: "Export to Excel" — the client portal's Orders page and the admin client panel download an .xlsx with
+// the orders on screen, their prices, a Yes / No Paid column and paid / not paid totals. EN/HE, 1440/390.
+//   node checks/check-excel-export.mjs      (run from the repo root)
 import { createRequire } from 'node:module';
 import http from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
@@ -9,11 +9,11 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { pg, DB, env, call, seed } from './lib.mjs';
 import { route } from '../api/index.mjs';
-import { unzip } from '../tests/word-export.test.mjs';
+import { unzip } from '../tests/excel-export.test.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
 const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(here, '../dist'), out = path.join(process.env.CHECKS_OUT || (await import('node:os')).tmpdir(), 'direct-line-checks', 'word-export');
+const root = path.resolve(here, '../dist'), out = path.join(process.env.CHECKS_OUT || (await import('node:os')).tmpdir(), 'direct-line-checks', 'excel-export');
 await mkdir(out, { recursive: true });
 
 const server = http.createServer(async (req, res) => {
@@ -49,10 +49,10 @@ for (const [i, price] of prices.entries()) {
   await DB.prepare('UPDATE client_orders SET price=?, product_cost=? WHERE id=?').bind(price, price, r.data.order.id).run();
 }
 await call('/orders/' + ids[2], 'PUT', { status: 'cancelled', fee: 0 }, admin);
-const docOf = async (download, name) => { const file = path.join(out, name); await download.saveAs(file); return unzip(new Uint8Array(await readFile(file))).get('word/document.xml').text; };
+const docOf = async (download, name) => { const file = path.join(out, name); await download.saveAs(file); return unzip(new Uint8Array(await readFile(file))).get('xl/worksheets/sheet1.xml').text; };
 const expect = (doc, tag) => {
-  for (const s of ['#42010', '#42011', '$44.90', '$81.80', '$126.70']) assert.ok(doc.includes(s), tag + ' has ' + s);
-  assert.equal((doc.match(/<w14:checkbox>/g) || []).length, 2, tag + ': a Paid box for each order that is not cancelled');
+  for (const s of ['#42010', '#42011', '<v>44.9</v>', '<v>81.8</v>', '<f>SUM(G5:G7)</f>']) assert.ok(doc.includes(s), tag + ' has ' + s);
+  assert.equal((doc.match(/<dataValidation type="list"/g) || []).length, 1, tag + ': Paid is a Yes / No drop-down');
 };
 
 try {
@@ -60,26 +60,26 @@ try {
     const tag = `${lang}-${width}`;
     // ---------- client portal ----------
     let ctx = await session(client, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.reload(); await page.waitForSelector('[data-word-export]'); await page.waitForTimeout(400);
-    await page.locator('[data-word-export]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-portal-orders.png`) });
-    const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('[data-word-export]').click()]);
-    assert.match(dl.suggestedFilename(), /^Direct-Line-orders-\d{4}-\d{2}-\d{2}\.docx$/);
-    const doc = await docOf(dl, `${tag}-portal.docx`); expect(doc, tag + ' portal');
-    if (lang === 'he') assert.ok(doc.includes('<w:bidiVisual/>') && doc.includes('שולם'), 'Hebrew document');
+    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.reload(); await page.waitForSelector('[data-excel-export]'); await page.waitForTimeout(400);
+    await page.locator('[data-excel-export]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-portal-orders.png`) });
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('[data-excel-export]').click()]);
+    assert.match(dl.suggestedFilename(), /^Direct-Line-orders-\d{4}-\d{2}-\d{2}\.xlsx$/);
+    const doc = await docOf(dl, `${tag}-portal.xlsx`); expect(doc, tag + ' portal');
+    if (lang === 'he') assert.ok(doc.includes('rightToLeft="1"') && doc.includes('שולם') && doc.includes('"כן,לא"'), 'Hebrew sheet');
     // only what is on screen: the "Cancelled" chip exports just that order
     await page.locator('[data-filter=cancelled]').click(); await page.waitForTimeout(200);
-    const [dl2] = await Promise.all([page.waitForEvent('download'), page.locator('[data-word-export]').click()]);
-    const doc2 = await docOf(dl2, `${tag}-portal-cancelled.docx`);
+    const [dl2] = await Promise.all([page.waitForEvent('download'), page.locator('[data-excel-export]').click()]);
+    const doc2 = await docOf(dl2, `${tag}-portal-cancelled.xlsx`);
     assert.ok(doc2.includes('#42012') && !doc2.includes('#42010'), 'exports the filtered list');
     assert.deepEqual(errors, [], tag + ' portal'); await ctx.close();
     // ---------- admin client panel ----------
     ctx = await session(admin, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=clients]');
-    await ui.locator('[data-tab=clients]').click(); await ui.locator(`[data-open-client="${id}"]`).first().click(); await ui.waitForSelector('.drawer [data-word-export]'); await page.waitForTimeout(400);
+    await ui.locator('[data-tab=clients]').click(); await ui.locator(`[data-open-client="${id}"]`).first().click(); await ui.waitForSelector('.drawer [data-excel-export]'); await page.waitForTimeout(400);
     await page.screenshot({ path: path.join(out, `${tag}-admin-panel.png`) });
-    const [dl3] = await Promise.all([page.waitForEvent('download'), ui.locator('.drawer [data-word-export]').click()]);
-    assert.match(dl3.suggestedFilename(), /^Direct-Line-orders-localclient-\d{4}-\d{2}-\d{2}\.docx$/);
-    expect(await docOf(dl3, `${tag}-admin.docx`), tag + ' admin');
+    const [dl3] = await Promise.all([page.waitForEvent('download'), ui.locator('.drawer [data-excel-export]').click()]);
+    assert.match(dl3.suggestedFilename(), /^Direct-Line-orders-localclient-\d{4}-\d{2}-\d{2}\.xlsx$/);
+    expect(await docOf(dl3, `${tag}-admin.xlsx`), tag + ' admin');
     assert.deepEqual(errors, [], tag + ' admin'); await ctx.close();
     console.log('PASS', tag);
   }
