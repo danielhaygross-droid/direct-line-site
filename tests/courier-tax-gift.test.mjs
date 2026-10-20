@@ -12,7 +12,7 @@ test('sheet layout: Tax number and Gift message instead of Country, Courier betw
   assert.deepEqual(HEADERS.slice(-2), ['Order ID', 'Client ID']);
   const o = { id: 3, client_id: 1, order_date: '2026-10-14', status: 'processing', quantity: 1, buyer_name: 'L', address_line_1: '10 Rue\n34170 Castelnau', destination: 'FR', tax_number: 'IOSS IM3720000224', gift_message: '=Hi', notes: 'n', etsy_url: '' };
   const { am } = websiteCells({ APP_SESSION_SECRET: 'x' }, o, [], 'Shop');
-  assert.equal(am.length, 14); assert.equal(am[11], 'IOSS IM3720000224'); assert.equal(am[12], "'=Hi", 'a gift message never runs as a formula'); assert.equal(am[13], 'n');
+  assert.equal(am.length, 15); assert.equal(am[14], '', 'O Competitor price (from the client)'); assert.equal(am[11], 'IOSS IM3720000224'); assert.equal(am[12], "'=Hi", 'a gift message never runs as a formula'); assert.equal(am[13], 'n');
 });
 
 test('the country goes at the end of the address unless the client already wrote it', () => {

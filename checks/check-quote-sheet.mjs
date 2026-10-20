@@ -88,11 +88,13 @@ const j = rowOf(old.id); qt[j][11] = 'Not available'; qt[j][12] = 'Out of stock 
 poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(poll.quotes.changed, 1);
 mine = (await call('/products', 'GET', null, client)).data.products.find(x => x.id === old.id);
 assert.equal(mine.status, 'not_available'); assert.equal(mine.note, 'Out of stock until March');
-// Direct Line types a competitor price: the website never reads or overwrites it
-qt[i][13] = '$19.90 on Etsy shop X';
+// The client adds a competitor price in My Products: the Product Quotes row shows it (N)
+const cpp = await call('/products/' + p.id, 'PUT', { competitorPrice: '$19.90 on Etsy shop X' }, client); await settle();
+assert.equal(cpp.status, 200, JSON.stringify(cpp.data)); assert.equal(qt[i][13], '$19.90 on Etsy shop X', 'shown to the supplier');
+assert.equal((await call('/products/' + p.id, 'PUT', { name: 'x' }, client)).status, 400, 'only the competitor price can change');
 // admin can still change a quote on the website: the sheet status follows, the supplier's columns are left alone
 const aq = await call('/admin/products/' + p.id, 'POST', { status: 'approved', unitPrice: '15', note: '' }, admin); await settle(); assert.equal(aq.status, 200, JSON.stringify(aq.data));
-assert.equal(qt[i][9], 12.4, 'supplier price untouched'); assert.equal(qt[i][13], '$19.90 on Etsy shop X', 'competitor price untouched'); assert.equal((await call('/products', 'GET', null, client)).data.products.find(x => x.id === p.id).unitPrice, 15);
+assert.equal(qt[i][9], 12.4, 'supplier price untouched'); assert.equal(qt[i][13], '$19.90 on Etsy shop X', 'competitor price kept'); assert.equal((await call('/products', 'GET', null, client)).data.products.find(x => x.id === p.id).unitPrice, 15);
 // junk in the price cell is ignored and reported
 qt[i][9] = 'ask me'; poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(poll.quotes.skipped.length, 1);
 console.log('PASS supplier price -> client quote (+ fee), not available with reason, admin override, junk ignored');

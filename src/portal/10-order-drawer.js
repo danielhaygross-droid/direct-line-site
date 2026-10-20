@@ -58,6 +58,7 @@
           <label class="field"><span>Currency</span><select name="currency">${['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD'].map(c => `<option${c === (o.currency || 'USD') ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
           <label class="field"><span>Etsy fee <small>fees Etsy took from this order</small></span><input name="etsyFee" type="number" min="0" step="0.01" inputmode="decimal" value="${o.etsyFee == null ? '' : Number(o.etsyFee).toFixed(2)}"></label>
           <label class="field"><span>Or: You earned <small>Etsy › order › Earnings</small></span><input name="etsyEarned" type="number" min="0" step="0.01" inputmode="decimal" value="${o.etsyEarned == null ? '' : Number(o.etsyEarned).toFixed(2)}"></label>
+          <label class="field full"><span>Competitor price <small>what other shops charge · our supplier sees it</small></span><input name="competitorPrice" dir="auto" maxlength="200" autocomplete="off" data-no-i18n placeholder="e.g. $24.90 on Etsy shop X" value="${esc(o.competitorPrice)}"></label>
           <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="submit" class="btn btn-primary">Save numbers</button><p class="form-msg" data-numbers-msg style="margin:0" role="status"></p></div>
         </form></section>`}`;
     bindNumbers(o);
@@ -72,7 +73,7 @@
       e.preventDefault(); const b = $('[type=submit]', f), m = $('[data-numbers-msg]', f); if (b.disabled) return;
       b.disabled = true; m.textContent = ''; m.className = 'form-msg';
       try {
-        await api('/orders/' + o.id, { method: 'PUT', body: { sellingPrice: f.sellingPrice.value, currency: f.currency.value, etsyFee: f.etsyFee.value, etsyEarned: f.etsyEarned.value } });
+        await api('/orders/' + o.id, { method: 'PUT', body: { sellingPrice: f.sellingPrice.value, currency: f.currency.value, etsyFee: f.etsyFee.value, etsyEarned: f.etsyEarned.value, competitorPrice: f.competitorPrice.value } });
         f.dataset.dirty = ''; await refresh(); N.popup({ icon: 'check', title: 'Numbers saved' }, { duration: 4000 });
       } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
     });

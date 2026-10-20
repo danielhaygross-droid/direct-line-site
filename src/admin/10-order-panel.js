@@ -50,6 +50,7 @@
         <div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div><div><dt>Customer paid</dt><dd>${customerPaid(o)}</dd></div>
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
         ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
+        ${o.competitorPrice ? `<div class="full"><dt>Competitor price <small>from the client</small></dt><dd data-no-i18n><bdi>${esc(o.competitorPrice)}</bdi></dd></div>` : ''}
         
         <div class="full"><dt>Recipient</dt><dd>${esc(o.buyerName) || '—'}</dd></div>
         <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${DL.addressLines(o, o.destination ? place(o.destination) : '', false).map(esc).join('\n') || '—'}</dd><button type="button" class="btn btn-sm" data-copy="${esc(DL.addressLines(o, o.destination ? place(o.destination) : '', true).join('\n'))}">Copy full address</button></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>

@@ -79,11 +79,18 @@ console.log('PASS old notes split into Tax number / Gift message');
 assert.equal(wq[5][15], 55.9, 'cost moved to P'); assert.equal(wq[5][16], 'UL602450763YP', 'tracking moved to Q'); assert.equal(wq[5][14], '', 'competitor price O empty');
 assert.equal(wq[5][17], '', 'empty courier'); assert.equal(wq[5][18], 'Not shipped', 'status moved to S');
 assert.equal(wq[5][27], String(a.id), 'order id in AB'); assert.equal(wq[5][28], String(id), 'client id in AC');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '3');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '4');
 const o1 = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(a.id).first();
 assert.equal(o1.tracking_number, '', 'nothing applied from the wrong columns'); assert.equal(o1.courier, null);
 console.log('PASS switch: header, columns moved, old country cleared, ids found, nothing misapplied');
 
+// Layout 3 -> 4: a competitor price typed straight into O is copied to its order once, then the website keeps writing it.
+await DB.prepare("UPDATE portal_settings SET value='3' WHERE key='supplier_sheet_layout'").run();
+wq[6][14] = '$30 at shop Y';
+p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
+assert.equal((await DB.prepare('SELECT competitor_price FROM client_orders WHERE id=?').bind(b.id).first()).competitor_price, '$30 at shop Y');
+await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(wq[6][14], '$30 at shop Y', 'still shown after the row is rewritten');
+console.log('PASS competitor prices typed in the sheet before were copied to the orders');
 // 2) Polling again does not switch again.
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok);
 assert.equal(calls.filter(c => c.startsWith('insert')).length, 0, 'switch runs once');

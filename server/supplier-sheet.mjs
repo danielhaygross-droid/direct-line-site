@@ -7,7 +7,8 @@
 //   S  Shipping status   — "Shipped" moves the order to Shipped (client is notified).
 // The website never writes P, and writes Q/R/S only when an admin changes tracking/courier/status on the website.
 // L Tax number (e.g. Etsy's IOSS number) and M Gift message are the customer's, kept apart from the Notes (N).
-// O Competitor price is free text for Direct Line (or the supplier) to type in: the website never reads or writes it.
+// O Competitor price: what other shops charge, typed by the client in their portal (order form / Your numbers);
+//   the website writes it like A–N. Values typed in the sheet before that were copied to the orders once (layout 4).
 // There is no Country column: the country is the last line of the delivery address.
 // Sheets made before this layout are switched over once (see ensureLayout).
 // sheet_cost / sheet_tracking / sheet_shipped hold the last value seen in (or written to) each cell, so a
@@ -37,7 +38,7 @@ export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Pho
   'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID'];
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'Cancelled' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '3';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '4';
 export const DEFAULT_COURIERS = 'China Post\nYanwen';
 export const courierList = v => [...new Set(String(v ?? DEFAULT_COURIERS).split(/[\n,]/).map(x => x.trim()).filter(Boolean))].slice(0, 30);
 
@@ -83,7 +84,7 @@ export function savedPriceFlag(o) {
   if (o.price_source !== 'saved' || !['pending', 'processing'].includes(o.status)) return '';
   return 'Total cost filled in from an earlier order (same product, variation, country and quantity). Change it if this one is different.\n';
 }
-// Website-owned cells: A–N and T–AC (O is Direct Line's own Competitor price, P–S the supplier's). Column C is the shop the order came from — suppliers don't see who our clients are.
+// Website-owned cells: A–O and T–AC (P–S are the supplier's). Column C is the shop the order came from — suppliers don't see who our clients are.
 export function websiteCells(env, o, photos, shopName) {
   const urls = photos.map(p => sheetPhotoUrl(env, o.id, p.id));
   const links = String(o.etsy_url || '').split(/\s+/).filter(Boolean);
@@ -92,7 +93,7 @@ export function websiteCells(env, o, photos, shopName) {
     txt(o.order_date || new Date(Number(o.created_at) * 1000).toISOString().slice(0, 10)), txt(o.order_ref || '#' + o.id), txt(shopName),
     STATUS[o.status] || o.status, urls[0] ? `=IMAGE("${q(urls[0])}&size=thumb",1)` : '', urls[0] ? `=HYPERLINK("${q(urls[0])}","Photo 1")` : '',
     links[0] ? `=HYPERLINK("${q(links[0])}","Open product")` : '', Number(o.quantity || 1), txt(product), txt(o.buyer_name),
-    txt(addressLines(o)), txt(o.tax_number), txt(o.gift_message), txt(savedPriceFlag(o) + (o.notes || '')),
+    txt(addressLines(o)), txt(o.tax_number), txt(o.gift_message), txt(savedPriceFlag(o) + (o.notes || '')), txt(o.competitor_price),
   ];
   const qz = [...Array.from({ length: 7 }, (_, i) => urls[i + 1] ? `=HYPERLINK("${q(urls[i + 1])}","Photo ${i + 2}")` : ''),
     txt(links.slice(1).join('\n')), String(o.id), String(o.client_id)];
@@ -145,13 +146,13 @@ export async function removeClientFromWorkQueue(DB, env, clientId, fetchImpl = f
 // ---------- layout ----------
 const getSetting = async (DB, key) => (await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(key).first())?.value;
 const putSetting = (DB, key, value) => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key, value).run();
-const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. The website updates within a minute. Competitor price (blue) is where Direct Line writes what competitors charge. Other columns are filled in by Direct Line.';
+const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. Other columns are filled in by Direct Line.';
 // Competitor price (O): light blue, open for anyone with the sheet to type in.
 const COMP = 14, blue = { red: 0.85, green: 0.92, blue: 1 }, blueHead = { red: 0.62, green: 0.79, blue: 0.97 };
 const competitorFormat = sheetId => [
   { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { userEnteredFormat: { backgroundColor: blueHead, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
   { repeatCell: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { userEnteredFormat: { backgroundColor: blue, numberFormat: { type: 'TEXT' }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,numberFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
-  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { note: 'What competitors charge for this product (e.g. "$24.90 on Etsy shop X"). Filled in by Direct Line; the website never changes it.' }, fields: 'note' } },
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { note: 'What other shops charge for this product (e.g. "$24.90 on Etsy shop X"). Our client enters it in their portal; the website fills it in.' }, fields: 'note' } },
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: COMP, endIndex: COMP + 1 }, properties: { pixelSize: WIDTHS[COMP] }, fields: 'pixelSize' } },
 ];
 const courierRule = (sheetId, couriers) => ({ setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 17, endColumnIndex: 18 }, rule: {
@@ -193,6 +194,10 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     //    protected columns (A–N), so anyone with the sheet can type in it; the supplier's columns move one to the right.
     if (h[13] === 'Notes' && h[14] === 'Total cost (USD)') await batch(env, [{ insertDimension: { range: { sheetId, dimension: 'COLUMNS', startIndex: COMP, endIndex: COMP + 1 }, inheritFromBefore: true } }], fetchImpl);
     await batchValues(env, [{ range: `${WQ}!A5:AC5`, values: [HEADERS] }, { range: `${WQ}!A3`, values: [[instructions]] }], fetchImpl);
+    // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
+    const ranges = [`${WQ}!O${FIRST_ROW}:O`, `${WQ}!AB${FIRST_ROW}:AB`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+    const [vals, ids] = ((await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS', {}, fetchImpl)).valueRanges || []).map(x => x.values || []);
+    for (const [i, r] of (ids || []).entries()) { const v = norm(vals?.[i]?.[0]).slice(0, 200), id = Number(r?.[0]); if (id > 0 && v) await DB.prepare("UPDATE client_orders SET competitor_price=? WHERE id=? AND competitor_price=''").bind(v, id).run(); }
     await batch(env, [courierRule(sheetId, courierList(await getSetting(DB, 'couriers'))), ...competitorFormat(sheetId),
       ...[11, 12, 17].map(i => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: WIDTHS[i] }, fields: 'pixelSize' } }))], fetchImpl);
     // Every active row is written again so the new columns get their values.
@@ -214,7 +219,7 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
   const shop = order.store_id == null ? null : await DB.prepare('SELECT name FROM client_stores WHERE id=?').bind(order.store_id).first();
   const { am, qz } = websiteCells(env, order, photos, shop?.name || '');
   if (found.length) {
-    const r = found[0].row, data = [{ range: `${WQ}!A${r}:N${r}`, values: [am] }, { range: `${WQ}!T${r}:AC${r}`, values: [qz] }];
+    const r = found[0].row, data = [{ range: `${WQ}!A${r}:O${r}`, values: [am] }, { range: `${WQ}!T${r}:AC${r}`, values: [qz] }];
     const sets = [];
     // An admin changed tracking / shipped on the website since the sheet last showed it: show it in the sheet too.
     if (norm(order.tracking_number) && norm(order.tracking_number) !== norm(order.sheet_tracking)) {
@@ -234,7 +239,7 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
   }
   const supplier = [order.supplier_cost == null ? '' : Number(order.supplier_cost), txt(order.tracking_number), txt(order.courier), ['shipped', 'delivered'].includes(order.status) ? SHIPPED : NOT_SHIPPED];
   const res = await sheetsRequest(env, '/values/' + encodeURIComponent(`${WQ}!A${FIRST_ROW}:AC`) + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
-    method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values: [[...am, '', ...supplier, ...qz]] }),
+    method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values: [[...am, ...supplier, ...qz]] }),
   }, fetchImpl);
   await DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_courier=?, sheet_shipped=? WHERE id=?').bind(norm(supplier[0]), norm(order.tracking_number), norm(order.courier), supplier[3], order.id).run();
   const row = Number(/![A-Z]+(\d+)/.exec(res?.updates?.updatedRange || '')?.[1]);
@@ -354,13 +359,6 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   if (!googleSheetsConfigured(env)) throw new Error('Google Sheets is not connected.');
   // Running setup again: first take in anything the supplier typed, so the rebuilt table keeps it.
   if (await supplierSheetEnabled(DB)) { const p = await pollSupplierSheet(DB, env, { fetchImpl }); if (!p.ok) throw new Error('Could not read the supplier columns first: ' + p.error); }
-  // ...and the competitor prices typed in O (the website keeps no copy of them).
-  const competitor = new Map();
-  if (await supplierSheetEnabled(DB) && await getSetting(DB, LAYOUT) === LAYOUT_NOW) {
-    const ranges = [`${WQ}!O${FIRST_ROW}:O`, `${WQ}!AB${FIRST_ROW}:AB`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
-    const [vals, ids] = ((await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS', {}, fetchImpl)).valueRanges || []).map(v => v.values || []);
-    (ids || []).forEach((r, i) => { const v = norm(vals?.[i]?.[0]); if (Number(r?.[0]) > 0 && v) competitor.set(Number(r[0]), v); });
-  }
   const meta = await sheetsRequest(env, '?fields=sheets.properties', {}, fetchImpl);
   const props = (meta.sheets || []).map(s => s.properties);
   const current = props.find(p => p.title === WQ), backup = props.find(p => p.title === BACKUP_TITLE);
@@ -393,7 +391,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     const photos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(o.id).all()).results || [];
     const { am, qz } = websiteCells(env, o, photos, o.shop_name || '');
     const supplier = [o.supplier_cost == null ? '' : Number(o.supplier_cost), txt(o.tracking_number), txt(o.courier), ['shipped', 'delivered'].includes(o.status) ? SHIPPED : NOT_SHIPPED];
-    rows.push([...am, txt(competitor.get(Number(o.id)) || ''), ...supplier, ...qz]);
+    rows.push([...am, ...supplier, ...qz]);
     await DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_courier=?, sheet_shipped=? WHERE id=?').bind(norm(supplier[0]), norm(o.tracking_number), norm(o.courier), supplier[3], o.id).run();
   }
   const last = FIRST_ROW + Math.max(rows.length, 1) - 1;
