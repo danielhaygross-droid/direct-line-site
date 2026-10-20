@@ -449,17 +449,30 @@
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
   }
-  const viewOrders = () => `<details class="earn-box" data-earn${store.get('dl-earn-open', true) ? ' open' : ''}><summary><b>Your earnings</b><small>profit, billing and the chart for the selected period</small></summary>${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details><div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders', ORDER_SORTS)}</div>
+  const viewOrders = () => `<details class="earn-box" data-earn${store.get('dl-earn-open', true) ? ' open' : ''}><summary><b>Your earnings</b><small>profit, billing and the chart for the selected period</small></summary>${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details><div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-word-export title="A Word file with the orders on screen, their prices and a Paid box to tick">${ic('doc')}Export to Word</button></div>
       <section class="card" data-orders-list></section>`;
   function renderChips() {
     const c = st => storeOrders().filter(o => st === 'all' || o.status === st).length;
     $('[data-chips]').innerHTML = ['all', ...STATUSES].filter(st => st === 'all' || c(st) || st === S.filter)
       .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
   }
-  function renderOrdersList() {
+  // The orders on screen: store, status chip, search and sort (also what "Export to Word" exports).
+  function shownOrders() {
     const q = S.q.toLowerCase();
-    const list = sortList(storeOrders().filter(o => (S.filter === 'all' || o.status === S.filter)
+    return sortList(storeOrders().filter(o => (S.filter === 'all' || o.status === S.filter)
       && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination),S.stores.find(s=>s.id===o.storeId)?.name].join(' ').toLowerCase().includes(q))), 'portal-orders', ORDER_SORTS);
+  }
+  // "Export to Word": the orders on screen as a .docx with prices and a "Paid" check box per order.
+  function exportOrdersToWord() {
+    const list = shownOrders(); if (!list.length) { N.popup({ icon: 'alert', title: 'No orders to export' }); return; }
+    const he = window.DLi18n?.lang === 'he', t = he ? window.DLi18n.t : s => s;
+    const storeName = S.storeId ? S.stores.find(s => s.id === S.storeId)?.name : t('All stores');
+    const parts = [storeName, S.filter === 'all' ? t('All statuses') : t(UI.LABEL[S.filter]), S.q ? `"${S.q}"` : '', [t('Exported'), new Date().toLocaleDateString('en-GB')]].filter(Boolean);
+    const blob = window.DLWordExport.orders({ title: t('Orders') + ' — ' + S.me.name, subtitle: parts, orders: list, money, statusLabel: s => t(UI.LABEL[s] || s), t, rtl: he });
+    window.DLWordExport.download(blob, `Direct-Line-orders-${localDay()}.docx`);
+  }
+  function renderOrdersList() {
+    const list = shownOrders();
     $('[data-orders-list]').innerHTML = list.length ? `<div class="table-wrap">${ordersTable(list)}</div>`
       : S.orders.length ? empty('search', 'No orders match', 'Try another search or status.') : empty('orders', 'No orders yet', 'Add your first order and we’ll take it from there.', '<a class="btn btn-primary" href="#/new">New order</a>');
   }
@@ -963,6 +976,7 @@
   }
   // The earnings block on Orders can be folded away; the choice is remembered on this device.
   document.addEventListener('toggle', e => { if (e.target.matches?.('[data-earn]')) store.set('dl-earn-open', e.target.open); }, true);
+  document.addEventListener('click',e=>{if(e.target.closest?.('[data-word-export]'))exportOrdersToWord();});
   // A "Sort" dropdown changed: remember it and redraw that list.
   document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
