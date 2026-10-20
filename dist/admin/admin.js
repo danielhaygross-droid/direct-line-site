@@ -33,6 +33,7 @@
   const embedded = window.top !== window.self;
   const tell = m => { if (embedded) parent.postMessage(m, location.origin); };
   const P = {
+    doc: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>',
     chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
@@ -651,6 +652,16 @@
   // Client panel: 4 tabs, each with its own sections (sub-tabs) — Orders · Shop · Money · Account.
   const CLIENT_GROUPS = [['orders', 'Orders', ['orders']], ['shop', 'Shop', ['stores', 'products']], ['money', 'Money', ['payments', 'prices']], ['account', 'Account', ['account', 'activity']]];
   const groupOf = sec => (CLIENT_GROUPS.find(x => x[2].includes(sec)) || CLIENT_GROUPS[0])[0];
+  // "Export to Word" in the client panel: this client's orders (store filter and sort as on screen) with prices and Paid boxes.
+  document.addEventListener('click', e => {
+    const b = e.target.closest?.('[data-word-export]'); if (!b || S.drawer?.kind !== 'client') return;
+    const c = clientOf(S.drawer.id); if (!c) return;
+    const list = sortList(S.orders.filter(o => o.clientId === c.id && (!S.drawer.storeId || o.storeId === S.drawer.storeId)), 'client-orders', ORDER_SORTS);
+    const he = window.DLi18n?.lang === 'he', t = he ? window.DLi18n.t : s => s;
+    const storeName = S.drawer.storeId ? S.stores.find(s => s.id === S.drawer.storeId)?.name : t('All stores');
+    const blob = window.DLWordExport.orders({ title: t('Orders') + ' — ' + c.name, subtitle: [storeName, [t('Exported'), new Date().toLocaleDateString('en-GB')]], orders: list, money, statusLabel: s => t(UI.LABEL[s] || s), t, rtl: he });
+    window.DLWordExport.download(blob, `Direct-Line-orders-${String(c.username || c.id).replace(/[^\w-]+/g, '')}-${new Date().toISOString().slice(0, 10)}.docx`);
+  });
   // A "Sort" dropdown changed: remember it and redraw that list (client panel, Products tab, or the Orders / Clients list).
   document.addEventListener('change', e => {
     const s = e.target.closest?.('[data-sort]'); if (!s) return;
@@ -715,7 +726,7 @@
     const t = new Date(), iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     const pane = tab === 'orders'
       // Orders tab: the order list, with the store performance folded away (one line until opened).
-      ? `<div class="list-tools">${stores.length > 1 ? `<label class="store-pick"><span>Store</span><select data-client-store>${[`<option value="0">All stores (${stores.length})</option>`, ...stores.map(s => `<option value="${s.id}"${S.drawer.storeId === s.id ? ' selected' : ''} data-no-i18n>${esc(s.name)}</option>`)].join('')}</select></label>` : ''}${orders.length > 1 ? sortPick('client-orders', ORDER_SORTS) : ''}</div>`
+      ? `<div class="list-tools">${stores.length > 1 ? `<label class="store-pick"><span>Store</span><select data-client-store>${[`<option value="0">All stores (${stores.length})</option>`, ...stores.map(s => `<option value="${s.id}"${S.drawer.storeId === s.id ? ' selected' : ''} data-no-i18n>${esc(s.name)}</option>`)].join('')}</select></label>` : ''}${orders.length > 1 ? sortPick('client-orders', ORDER_SORTS) : ''}${orders.length ? `<button type="button" class="btn btn-sm" data-word-export="${c.id}" title="A Word file with these orders, their prices and a Paid box to tick">${ic('doc')}Export to Word</button>` : ''}</div>`
         + `<details class="card card-pad fold" data-fold="perf"${foldOpen('perf') ? ' open' : ''}><summary><h3 class="sec-title">Performance by store</h3><small class="dim">${S.drawer.storeId ? 'One store shown' : 'All stores'}</small></summary>${window.DLClientStoreUI.periodFields(S.period,S.from,S.to,window.DLClientStoreMath.monthsOf(allOrders))}${window.DLClientStoreUI.table(stats,'data-admin-select-store')}</details>`
         // One compact row per order (order number, customer and store; total and status on the right).
         + (orders.length ? `<section class="card ord-list">${sortList(orders, 'client-orders', ORDER_SORTS).map(o=>`<button type="button" class="ord-row" data-open-order="${o.id}" data-back="${c.id}"><span class="ord-main"><b>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(o.buyerName) || '—'}</span> · ${window.DLClientStoreUI.label(stores.find(s=>s.id===o.storeId))}</small></span><span class="ord-side"><b>${money(o.price)}</b>${UI.pill(o.status)}</span></button>`).join('')}</section>` : empty('No orders yet', 'Orders this client adds show up here.'))
