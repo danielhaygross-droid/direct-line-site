@@ -6,7 +6,11 @@ export const PRODUCT_SCHEMA=[
  `CREATE TABLE IF NOT EXISTS portal_product_events(id SERIAL PRIMARY KEY,product_id INTEGER NOT NULL REFERENCES portal_products(id),client_id INTEGER NOT NULL REFERENCES users(id),actor TEXT NOT NULL,detail TEXT NOT NULL,created_at INTEGER NOT NULL)`,
  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES portal_products(id)',
  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS quoted_unit_price DOUBLE PRECISION',
+ // What competitors charge, typed by the client (free text, e.g. "$24.90 on Etsy"); shown to the supplier in the sheet.
+ "ALTER TABLE portal_products ADD COLUMN IF NOT EXISTS competitor_price TEXT NOT NULL DEFAULT ''",
+ "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS competitor_price TEXT NOT NULL DEFAULT ''",
 ];
+export const competitorText = v => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
 // Several prices for one product (from the supplier sheet): [{ label, unitPrice, supplierPrice? }], or null.
 export function priceOptions(raw,admin=false){let list;try{list=JSON.parse(raw||'null');}catch{return null;}if(!Array.isArray(list)||!list.length)return null;return list.map(o=>({label:String(o.label),unitPrice:Number(o.unit),...(admin?{supplierPrice:Number(o.supplier)}:{})}));}
 export function productInput(body){
@@ -14,18 +18,21 @@ export function productInput(body){
  const qty=body.expectedQuantity==null||body.expectedQuantity===''?null:Number(body.expectedQuantity);if(qty!==null&&(!Number.isSafeInteger(qty)||qty<1||qty>1000000))throw new Error('Enter a valid expected monthly quantity.');
  if(!Array.isArray(body.photos)||!body.photos.length||body.photos.length>3)throw new Error('Add one to three product photos.');
  const photos=body.photos.map(uploadedFile);if(photos.some(p=>!p.mime.startsWith('image/')))throw new Error('Choose product photos, not a PDF.');if(photos.reduce((n,p)=>n+p.bytes,0)>3*1024*1024)throw new Error('Product photos must total 3 MB or less.');
- return {name:String(body.name||url.hostname).trim().slice(0,160)||url.hostname,link:url.href.slice(0,1000),variant:String(body.variant||'').trim().slice(0,500),qty,photos};
+ return {name:String(body.name||url.hostname).trim().slice(0,160)||url.hostname,link:url.href.slice(0,1000),variant:String(body.variant||'').trim().slice(0,500),qty,photos,competitor:competitorText(body.competitorPrice)};
 }
 export async function products(DB,clientId=null){
  const where=clientId===null?'NOT u.archived':'p.client_id=?';
  const rows=(await DB.prepare(`SELECT p.*,u.display_name AS client_name,COALESCE(array_agg(ph.id) FILTER(WHERE ph.id IS NOT NULL),ARRAY[]::integer[]) AS photo_ids FROM portal_products p JOIN users u ON u.id=p.client_id LEFT JOIN portal_product_photos ph ON ph.product_id=p.id WHERE ${where} GROUP BY p.id,u.display_name ORDER BY p.created_at,p.id`).bind(...(clientId===null?[]:[clientId])).all()).results||[];
- return rows.map(r=>({id:Number(r.id),clientId:Number(r.client_id),clientName:r.client_name,name:r.name,link:r.link,variant:r.variant,expectedQuantity:r.expected_quantity==null?null:Number(r.expected_quantity),status:r.status,unitPrice:r.unit_price==null?null:Number(r.unit_price),shipping:r.status==='approved'&&r.supplier_shipping!=null?Number(r.supplier_shipping):null,priceOptions:r.status==='approved'?priceOptions(r.price_options,clientId===null):null,note:r.note,...(clientId===null?{supplierPrice:r.supplier_price==null?null:Number(r.supplier_price)}:{}),photoIds:r.photo_ids.map(Number),createdAt:Number(r.created_at),updatedAt:Number(r.updated_at)}));
+ return rows.map(r=>({id:Number(r.id),clientId:Number(r.client_id),clientName:r.client_name,name:r.name,link:r.link,variant:r.variant,competitorPrice:r.competitor_price||'',expectedQuantity:r.expected_quantity==null?null:Number(r.expected_quantity),status:r.status,unitPrice:r.unit_price==null?null:Number(r.unit_price),shipping:r.status==='approved'&&r.supplier_shipping!=null?Number(r.supplier_shipping):null,priceOptions:r.status==='approved'?priceOptions(r.price_options,clientId===null):null,note:r.note,...(clientId===null?{supplierPrice:r.supplier_price==null?null:Number(r.supplier_price)}:{}),photoIds:r.photo_ids.map(Number),createdAt:Number(r.created_at),updatedAt:Number(r.updated_at)}));
 }
 export async function addProduct(DB,clientId,body){
  const f=productInput(body),t=Math.floor(Date.now()/1000),photos=f.photos.map(p=>({mime:p.mime,data:p.content,bytes:p.bytes}));
  const r=await DB.prepare(`WITH product AS (INSERT INTO portal_products(client_id,name,link,variant,expected_quantity,created_at,updated_at) VALUES (?,?,?,?,?,?,?) RETURNING id),photos AS (INSERT INTO portal_product_photos(product_id,mime,data,bytes) SELECT product.id,p.mime,p.data,p.bytes FROM product CROSS JOIN jsonb_to_recordset(?::jsonb) p(mime text,data text,bytes integer)),event AS (INSERT INTO portal_product_events(product_id,client_id,actor,detail,created_at) SELECT id,?,'client','New product awaiting quote',? FROM product) SELECT id FROM product`).bind(clientId,f.name,f.link,f.variant,f.qty,t,t,JSON.stringify(photos),clientId,t).first();
+ if(f.competitor)await DB.prepare('UPDATE portal_products SET competitor_price=? WHERE id=?').bind(f.competitor,r.id).run();
  return (await products(DB,clientId)).find(p=>p.id===Number(r.id));
 }
+// The client changes the competitor price of one of their products (any time; it never changes the quote).
+export async function setCompetitorPrice(DB,id,clientId,value){const r=await DB.prepare(`UPDATE portal_products SET competitor_price=? WHERE id=?${clientId===null?'':' AND client_id=?'} RETURNING client_id`).bind(competitorText(value),id,...(clientId===null?[]:[clientId])).first();if(!r)return null;return(await products(DB,clientId===null?null:clientId)).find(p=>p.id===Number(id));}
 export function quoteInput(body){const status=body.status,price=Number(body.unitPrice),note=String(body.note||'').trim().slice(0,1000),ship=body.shipping==null||body.shipping===''?null:Number(body.shipping);
  if(ship!==null&&(!Number.isFinite(ship)||ship<0||ship>=1e7||Math.abs(ship*100-Math.round(ship*100))>1e-7))throw new Error('Enter the shipping per order with up to two decimal places.');
  if(!['approved','not_available'].includes(status))throw new Error('Choose Approved or Not available.');

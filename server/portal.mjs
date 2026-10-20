@@ -18,7 +18,7 @@ import { STATUS_SCHEMA, changeStatus, balanceAdjustments } from './order-status.
 
 import { INVOICE_SCHEMA, invoices, saveInvoice, monthlyInvoices } from './invoices.mjs';
 
-import { PRODUCT_SCHEMA, products, addProduct, quoteProduct, productPhoto, productEvents, priceOptions } from './products.mjs';
+import { PRODUCT_SCHEMA, products, addProduct, quoteProduct, productPhoto, productEvents, priceOptions, setCompetitorPrice, competitorText } from './products.mjs';
 
 import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from './claims.mjs';
 
@@ -277,7 +277,14 @@ export function sameCustomer(a, b) {
 }
 // The client's own accounting (what their customer paid, in which currency, and the Etsy fee) never affects the bill,
 // so it can be entered or corrected at any time, also on shipped orders.
-export const ACCOUNTING_BODY_KEYS = ['sellingPrice', 'currency', 'etsyFee', 'etsyEarned'];
+// competitorPrice: what other shops charge (for the supplier); like the accounting numbers it never changes the bill.
+export const ACCOUNTING_BODY_KEYS = ['sellingPrice', 'currency', 'etsyFee', 'etsyEarned', 'competitorPrice'];
+async function saveCompetitorPrice(DB, id, body) {
+  if (body.competitorPrice === undefined) return undefined;
+  const v = competitorText(body.competitorPrice);
+  await DB.prepare('UPDATE client_orders SET competitor_price=? WHERE id=?').bind(v, id).run();
+  return v;
+}
 export const accountingOnlyEdit = body => { const keys = Object.keys(body || {}); return keys.length > 0 && keys.every(k => ACCOUNTING_BODY_KEYS.includes(k)); };
 // The Etsy fee is stored on its own (the long order INSERT/UPDATE stay as they are). Empty clears it.
 async function saveEtsyFee(DB, id, body) {
@@ -374,7 +381,7 @@ function orderOut(r) {
     // price = what the client pays for the order = product cost (incl. our hidden fee) + shipping fee.
     productCost: r.product_cost === null || r.product_cost === undefined ? null : Number(r.product_cost),
     shippingFee: r.shipping_fee === null || r.shipping_fee === undefined ? null : Number(r.shipping_fee),
-    price, sellingPrice: sell, etsyFee: r.etsy_fee == null ? null : Number(r.etsy_fee), etsyEarned: r.etsy_earned == null ? null : Number(r.etsy_earned),
+    price, sellingPrice: sell, etsyFee: r.etsy_fee == null ? null : Number(r.etsy_fee), etsyEarned: r.etsy_earned == null ? null : Number(r.etsy_earned), competitorPrice: r.competitor_price || '',
     // Profit = what the client earned after Etsy's fees - what they pay Direct Line.
     // Profit only for USD orders: an EUR/GBP… earning is not compared with a USD bill (no exchange rate is guessed).
     earned: earnedAfterFee(r), profit: earnedAfterFee(r) === null || (r.currency || 'USD') !== 'USD' ? null : round2(earnedAfterFee(r) - price),
@@ -684,6 +691,9 @@ async function routePortal(request, url, ctx, meta) {
   if(path==='/client-stores'&&!who.admin){if(method==='GET')return json({ok:true,stores:await clientStores(DB,who.clientId)});if(method==='POST'){try{const store=await saveStore(DB,who.clientId,null,await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}}
   const storeEdit=/^\/client-stores\/(\d+)$/.exec(path);if(storeEdit&&method==='POST'&&!who.admin){try{const store=await saveStore(DB,who.clientId,Number(storeEdit[1]),await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
   if(path==='/products' && !who.admin){if(method==='GET')return json({ok:true,products:await products(DB,who.clientId)});if(method==='POST'){let product;try{product=await addProduct(DB,who.clientId,await readBody(request));}catch(e){return json({ok:false,error:e.message},400);}const qs=syncQuoteRow(DB,env,product.id).catch(e=>console.error('Product Quotes row failed',e));if(waitUntil)waitUntil(qs);else await qs;return json({ok:true,product});}}
+  // The client (or an admin) sets the competitor price of a product; the Product Quotes row follows.
+  const productComp=/^\/products\/(\d+)$/.exec(path);
+  if(productComp&&method==='PUT'&&!who.preview){const body=(await readBody(request))||{};if(Object.keys(body).some(k=>k!=='competitorPrice'))return json({ok:false,error:'Only the competitor price can be changed here.'},400);const product=await setCompetitorPrice(DB,Number(productComp[1]),who.admin?null:who.clientId,body.competitorPrice);if(!product)return json({ok:false,error:'Not found'},404);const qs=syncQuoteRow(DB,env,product.id).catch(e=>console.error('Product Quotes row failed',e));if(waitUntil)waitUntil(qs);else await qs;return json({ok:true,product});}
   const productImage=/^\/products\/(\d+)\/photos\/(\d+)$/.exec(path);if(productImage&&method==='GET')return productPhoto(DB,Number(productImage[1]),Number(productImage[2]),who,env);
   if (path === '/orders' && method === 'POST') {
     const body = await readBody(request);
@@ -728,6 +738,7 @@ async function routePortal(request, url, ctx, meta) {
     if (f.quoted_shipping != null) { await DB.prepare('UPDATE client_orders SET quoted_shipping=? WHERE id=?').bind(f.quoted_shipping, row.id).run(); row.quoted_shipping = f.quoted_shipping; }
     const newFee = await saveEtsyFee(DB, row.id, body); if (newFee !== undefined) row.etsy_fee = newFee;
     const newEarned = await saveEtsyEarned(DB, row.id, body); if (newEarned !== undefined) row.etsy_earned = newEarned;
+    const newComp = await saveCompetitorPrice(DB, row.id, body); if (newComp !== undefined) { row.competitor_price = newComp; if (newComp) { const s2 = syncPortalOrderToGoogleSheet(DB, env, row.id).catch(() => {}); if (waitUntil) waitUntil(s2); else await s2; } }
     const out = { ...orderOut(row), photos: saved };
     return json({ ok: true, order: who.admin ? out : clientOrder(out) });
   }
@@ -853,6 +864,7 @@ async function routePortal(request, url, ctx, meta) {
     }
     const fee = await saveEtsyFee(DB, id, body); if (fee !== undefined) row.etsy_fee = fee;
     const earnedNow = await saveEtsyEarned(DB, id, body); if (earnedNow !== undefined) row.etsy_earned = earnedNow;
+    const compNow = await saveCompetitorPrice(DB, id, body); if (compNow !== undefined) row.competitor_price = compNow;
     const changed = EDIT_FIELDS.filter(k => String(row[k] ?? '') !== String(existing[k] ?? ''));
     if (changed.length && !accountingOnly) await logEvent(DB, id, existing.client_id, 'edited', actor, changed.every(k => CUSTOMER_COLUMNS.includes(k)) ? 'customer' : '');
     const sheetSync = syncPortalOrderToGoogleSheet(DB, env, id).catch(error => console.error('Google Sheets order update failed', error));

@@ -184,11 +184,13 @@ await call('/admin/orders/' + D2.id + '/archive', 'POST', { archived: true }, ad
 assert.equal(wq()[D2.id], undefined, 'archived order row removed');
 console.log('PASS new order appended; archived order removed');
 
-// ---------- Competitor price (O): typed by Direct Line, never touched by the website ----------
-supplierTypes(A.id, 14, '$24.90 on Etsy shop X');
+// ---------- Competitor price (O): the client enters it in the portal ("Your numbers", any time); the sheet shows it ----------
+const cp = await call('/orders/' + A.id, 'PUT', { competitorPrice: '  $24.90 on   Etsy shop X ' }, client); await settle();
+assert.equal(cp.status, 200, JSON.stringify(cp.data)); assert.equal(cp.data.order.competitorPrice, '$24.90 on Etsy shop X');
+assert.equal(cell(A.id, 14), '$24.90 on Etsy shop X', 'shown in the supplier sheet');
 await call('/orders/' + A.id, 'PUT', { notes: 'resync me' }, admin); await settle();
 assert.equal(cell(A.id, 13), 'resync me', 'row was rewritten'); assert.equal(cell(A.id, 14), '$24.90 on Etsy shop X', 'competitor price kept');
-console.log('PASS competitor price kept when the website rewrites the row');
+console.log('PASS competitor price from the client portal reaches the sheet and stays when the row is rewritten');
 
 // ---------- setup again keeps supplier data ----------
 supplierTypes(A.id, N, 25);

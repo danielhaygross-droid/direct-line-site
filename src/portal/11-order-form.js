@@ -21,6 +21,7 @@
             <p class="pick-hint">A screenshot of your store order is perfect. You can add up to ${MAX_PHOTOS}.</p></div>
           <label class="field" data-f="quantity"><span>How many?</span><input name="quantity" required type="number" min="1" max="999" step="1" inputmode="numeric" value="${ed?.quantity || 1}"></label>
           <label class="field"><span>Color, size or engraving <small>if any</small></span><input name="variant" maxlength="500" placeholder="e.g. Gold, engraved “M + K”" value="${esc(ed?.variant)}"></label>
+          <label class="field full"><span>Competitor price <small>optional · what other shops charge</small></span><input name="competitorPrice" dir="auto" maxlength="200" autocomplete="off" data-no-i18n placeholder="e.g. $24.90 on Etsy shop X" value="${esc(ed?.competitorPrice)}"></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
           <label class="field full" data-f="buyerName"><span>Customer name</span><input name="buyerName" required maxlength="160" autocomplete="off" value="${esc(ed?.buyerName)}"></label>
@@ -109,7 +110,7 @@
       selectedProduct=S.products.find(p=>p.id===Number(form.productId.value))||null;
       linkBox.innerHTML=linkRow(selectedProduct?.link||'');syncLinks();
       picks=selectedProduct ? selectedProduct.photoIds.map(id=>({key:'product-'+id,productFrom:true,thumb:'/api/portal/products/'+selectedProduct.id+'/photos/'+id})) : [];
-      if(selectedProduct)form.variant.value=selectedProduct.variant;
+      if(selectedProduct)form.variant.value=selectedProduct.variant;if(selectedProduct?.competitorPrice&&!form.competitorPrice.value)form.competitorPrice.value=selectedProduct.competitorPrice;
       const opts=selectedProduct?.priceOptions||null,optBox=$('[data-f="productOption"]',form);
       optBox.hidden=!opts;form.productOption.innerHTML=opts?`<option value="">Choose an option…</option>`+opts.map(o=>`<option value="${esc(o.label)}">${esc(o.label)} · ${money(o.unitPrice)}</option>`).join(''):'';
       showUnit();renderPicks();updateSum();
@@ -161,7 +162,7 @@
       }
       const body = {
         storeId:Number(form.storeId.value),orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value, etsyFee: form.etsyFee.value, etsyEarned: form.etsyEarned.value,
-        sku: form.sku.value, quantity: form.quantity.value, variant: form.variant.value, etsyUrl: links.join('\n'),
+        sku: form.sku.value, quantity: form.quantity.value, variant: form.variant.value, competitorPrice: form.competitorPrice.value, etsyUrl: links.join('\n'),
         buyerName: form.buyerName.value, ...UI.addressFields(form.address1.value,ed), destination: dest.get(), notes: form.notes.value, taxNumber: form.taxNumber.value, giftMessage: form.giftMessage.value,
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');

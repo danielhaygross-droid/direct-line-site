@@ -10,7 +10,7 @@ test('Product Quotes tab: website columns, supplier columns, no client name, tex
   const { ai, no } = quoteCells({ APP_SESSION_SECRET: 's' }, { id: 7, created_at: 1800000000, name: '=cmd', variant: '+x', link: 'https://e.com/a"b', expected_quantity: 3, status: 'awaiting_quote' }, [4, 5]);
   assert.equal(ai.length, 9); assert.equal(ai[1], 'P-7'); assert.equal(ai[6], "'=cmd"); assert.equal(ai[7], "'+x");
   assert.match(ai[2], /^=IMAGE\("https:\/\/.+\/sheet-product-photos\/7\/4\?key=/); assert.match(ai[5], /a""b/);
-  assert.deepEqual(no, ['Waiting for price', '7']);
+  assert.deepEqual(no, ['', 'Waiting for price', '7'], 'N Competitor price (from the client), O Status, P Product ID');
 });
 
 test('supplier price: money formats, then client price = supplier price + client fee; not available needs no price', async () => {
@@ -29,7 +29,7 @@ test('supplier price: money formats, then client price = supplier price + client
 test('wired up: schema, signed photo route, sync on new product and admin quote, cron, screens', async () => {
   for (const s of QUOTE_SHEET_SCHEMA) assert.ok(SCHEMA.indexOf(s) > SCHEMA.findIndex(x => /CREATE TABLE IF NOT EXISTS portal_products\b/.test(x)), s);
   const portal = await readFile(new URL('../server/portal.mjs', import.meta.url), 'utf8'), sheet = await readFile(new URL('../server/supplier-sheet.mjs', import.meta.url), 'utf8');
-  assert.ok(portal.includes('serveSheetProductPhoto(DB,env,url') && (portal.match(/syncQuoteRow\(DB,env,product\.id\)/g) || []).length === 2);
+  assert.ok(portal.includes('serveSheetProductPhoto(DB,env,url') && (portal.match(/syncQuoteRow\(DB,env,product\.id\)/g) || []).length === 3);
   assert.ok(sheet.includes('result.quotes = await pollQuoteTab('));
   const products = await readFile(new URL('../server/products.mjs', import.meta.url), 'utf8');
   assert.ok(products.includes('...(clientId===null?{supplierPrice:'), 'only admins get the supplier price');

@@ -301,3 +301,6 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .kv dd a{overflow-wrap:anywhere}
 .mp-ship{font-size:13px;color:var(--muted)}.mp-ship b{color:var(--text)}
 .bars.days{gap:3px;padding-inline:14px}.bars.days .bar-col small{font-size:10px;min-height:14px}@media(max-width:560px){.bars.days{gap:1px;padding-inline:8px}}
+/* competitor price (from the client; the supplier sees it) */
+.comp-form{display:flex;gap:8px;align-items:center}.comp-form input{flex:1;min-width:0;min-height:42px;padding:0 12px;border:1px solid var(--line-2,var(--line));border-radius:11px;background:var(--surface);color:var(--text);font:inherit}
+.mp-comp b{color:var(--text)}

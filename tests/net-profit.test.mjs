@@ -33,7 +33,7 @@ test('"You earned" from Etsy can be typed instead, and wins; nothing is guessed'
 
 test('the Etsy fee and "You earned" are stored and editable at any time, while other fields stay locked', async () => {
   assert.ok(SCHEMA.some(s => /ADD COLUMN IF NOT EXISTS etsy_fee DOUBLE PRECISION/.test(s)) && SCHEMA.some(s => /ADD COLUMN IF NOT EXISTS etsy_earned DOUBLE PRECISION/.test(s)));
-  assert.deepEqual(ACCOUNTING_BODY_KEYS, ['sellingPrice', 'currency', 'etsyFee', 'etsyEarned']);
+  assert.deepEqual(ACCOUNTING_BODY_KEYS, ['sellingPrice', 'currency', 'etsyFee', 'etsyEarned', 'competitorPrice']);
   assert.equal(accountingOnlyEdit({ etsyEarned: '3' }), true); assert.equal(accountingOnlyEdit({ sellingPrice: 1, currency: 'USD', etsyFee: 2, etsyEarned: 1 }), true);
   for (const body of [{}, null, { etsyFee: 1, notes: 'x' }, { quantity: 2 }, { etsyEarned: 1, buyerName: 'A' }]) assert.equal(accountingOnlyEdit(body), false, JSON.stringify(body));
   assert.equal(customerOnlyEdit({ etsyFee: 1 }), false);
