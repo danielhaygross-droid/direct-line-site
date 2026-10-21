@@ -68,7 +68,7 @@
       const r = first + i, cancelled = o.status === 'cancelled';
       const priced = o.priced ?? (o.productCost != null || o.shippingFee != null || o.quotedUnitPrice != null);
       const date = o.orderDate || (o.createdAt ? new Date(o.createdAt * 1000).toISOString().slice(0, 10) : ''), ds = serial(date);
-      const product = [o.itemTitle, o.variant].filter(Boolean).join(' · ') || '—';
+      const product = [o.itemTitle, String(o.variant || '').split('\n').join('; ')].filter(Boolean).join(' · ') || '—';
       const total = cancelled ? str('G' + r, t('Cancelled'), 10) : priced ? num('G' + r, Math.round(Number(o.price || 0) * 100) / 100, 5) : str('G' + r, t('Not priced yet'), 10);
       rows.push(`<row r="${r}">${str('A' + r, o.orderRef || '#' + o.id, 4)}${ds != null ? num('B' + r, ds, 6) : str('B' + r, date, 4)}${str('C' + r, o.buyerName || '—', 4)}${str('D' + r, product, 4)}${num('E' + r, Number(o.quantity || 1), 7)}${str('F' + r, statusLabel(o.status), cancelled ? 10 : 4)}${total}${cancelled ? str('H' + r, '', 7) : str('H' + r, o.paymentId ? YES : NO, 7)}</row>`);
     });

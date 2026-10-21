@@ -45,7 +45,7 @@ test('client order form captures Etsy sale details and leaves fulfilment to admi
   assert.match(form, /Order date/);
   assert.match(form, /Customer paid/);
   assert.match(form, /Customer name/);
-  assert.match(form, /Color, size or engraving/);
+  assert.match(portal.slice(portal.indexOf('function viewForm()'), portal.indexOf('// ---------- messages')), /Color, size or engraving/, 'on each order line');
   assert.doesNotMatch(form, /name=\\?"(?:trackingNumber|weightKg|productCost|price)\\?"/);
   assert.match(server, /f\.tracking_number = ''; f\.category = ''; f\.weight_kg = null/);
   assert.match(server, /f\.product_cost = null; f\.shipping_fee = null; f\.price = 0/);

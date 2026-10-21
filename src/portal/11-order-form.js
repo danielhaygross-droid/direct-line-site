@@ -14,13 +14,11 @@
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>2</i>What did the customer buy?</h3><div class="form-grid">
           ${!ed ? `<label class="field full"><span>Choose from My Products</span><select name="productId"><option value="">Free-form order</option>${S.products.filter(p=>p.status==='approved').map(p=>`<option value="${p.id}">${esc(p.name)} · ${p.priceOptions?'from '+money(p.unitPrice):money(p.unitPrice)} / unit</option>`).join('')}</select><small data-product-price></small></label><label class="field full" data-f="productOption" hidden><span>Which option did the customer buy?</span><select name="productOption"></select></label>` : ed.quotedUnitPrice!=null ? `<p class="note full"><span>Fixed unit quote</span> <b>${money(ed.quotedUnitPrice)}</b></p>` : ''}
-          <div class="field full" data-f="links"><span>Product link <small>Copy from your store</small></span><div class="link-list" data-links></div>
-            <button type="button" class="btn btn-sm link-add" data-link-add>+ Add another product</button></div>
+          <div class="field full" data-f="links"><span>What the customer ordered <small>one line per product or colour</small></span><div class="item-list" data-items></div>
+            <button type="button" class="btn btn-sm link-add" data-item-add>+ Add another product or colour</button><em class="help">Same product in another colour or size? Add a line: the link is copied for you.</em></div>
           <div class="field full photo-field" data-f="photos"><span>Photo or screenshot of the product <small data-pick-count></small></span>
             <div class="pm-photos pick-zone" data-picks></div>
             <p class="pick-hint">A screenshot of your store order is perfect. You can add up to ${MAX_PHOTOS}.</p></div>
-          <label class="field" data-f="quantity"><span>How many?</span><input name="quantity" required type="number" min="1" max="999" step="1" inputmode="numeric" value="${ed?.quantity || 1}"></label>
-          <label class="field"><span>Color, size or engraving <small>if any</small></span><input name="variant" maxlength="500" placeholder="e.g. Gold, engraved “M + K”" value="${esc(ed?.variant)}"></label>
           <label class="field full"><span>Competitor price <small>optional · what other shops charge</small></span><input name="competitorPrice" dir="auto" maxlength="200" autocomplete="off" data-no-i18n placeholder="e.g. $24.90 on Etsy shop X" value="${esc(ed?.competitorPrice)}"></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
@@ -95,22 +93,32 @@
     zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
     zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag'); if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); });
     renderPicks();
-    // ----- product links: one box per product, add/remove -----
-    const linkBox = $('[data-links]', form);
-    const linkRow = (v = '') => `<div class="link-row"><input data-link type="url" inputmode="url" maxlength="2000" placeholder="https://..." value="${esc(v)}"><button type="button" class="btn btn-sm btn-ghost" data-link-remove aria-label="Remove link">×</button></div>`;
-    const startLinks = (ed?.productLinks?.length ? ed.productLinks : String(ed?.etsyUrl || '').split(/\s+/).filter(Boolean));
-    linkBox.innerHTML = (startLinks.length ? startLinks : ['']).map(linkRow).join('');
-    const syncLinks = () => { const rows = $$('.link-row', linkBox); rows.forEach(r => { r.querySelector('[data-link-remove]').hidden = rows.length < 2; }); $('[data-link-add]', form).hidden = rows.length >= 10; };
-    syncLinks();
+    // ----- order lines: one per product or colour — link, how many, colour / size (Pauline: different quantities per colour) -----
+    const itemBox = $('[data-items]', form);
+    const itemRow = (it = {}, n = 1) => `<div class="item-row" data-item><span class="item-no">${n}</span>
+      <label class="field item-link"><span>Product link <small>copy from your store</small></span><input data-link type="url" inputmode="url" maxlength="2000" placeholder="https://..." value="${esc(it.link || '')}"></label>
+      <label class="field item-qty"><span>How many?</span><input data-qty type="number" min="1" max="999" step="1" inputmode="numeric" value="${it.quantity ?? 1}"></label>
+      <label class="field item-var"><span>Color, size or engraving <small>if any</small></span><input data-variant maxlength="500" placeholder="e.g. Gold, engraved “M + K”" value="${esc(it.variant || '')}"></label>
+      <button type="button" class="btn btn-sm btn-ghost item-remove" data-item-remove aria-label="Remove this line">×</button></div>`;
+    // Editing: the saved lines; an older order: its first link with its quantity, other links need their own quantity.
+    const oldLinks = ed?.productLinks?.length ? ed.productLinks : String(ed?.etsyUrl || '').split(/\s+/).filter(Boolean);
+    const startItems = ed?.items?.length ? ed.items : ed ? [{ link: oldLinks[0] || '', quantity: ed.quantity || 1, variant: ed.variant || '' }, ...oldLinks.slice(1).map(link => ({ link, quantity: '', variant: '' }))] : [{}];
+    itemBox.innerHTML = startItems.map((it, i) => itemRow(it, i + 1)).join('');
+    // Function declarations: the photo box updates the summary before the lines are drawn.
+    function itemRows() { return $$('[data-item]', form); }
+    function items() { return itemRows().map(r => ({ link: r.querySelector('[data-link]').value.trim(), quantity: parseInt(r.querySelector('[data-qty]').value, 10), variant: r.querySelector('[data-variant]').value.trim() })); }
+    function totalQty() { return items().reduce((n, i) => n + (i.quantity > 0 ? i.quantity : 0), 0); }
+    const syncItems = () => { const rows = itemRows(); rows.forEach((r, i) => { r.querySelector('.item-no').textContent = i + 1; r.querySelector('[data-item-remove]').hidden = rows.length < 2; }); itemBox.classList.toggle('many', rows.length > 1); $('[data-item-add]', form).hidden = rows.length >= 10 || !!selectedProduct?.priceOptions; };
+    syncItems();
     form.addEventListener('click', e => {
-      if (e.target.closest('[data-link-add]')) { linkBox.insertAdjacentHTML('beforeend', linkRow()); syncLinks(); $$('[data-link]', linkBox).pop().focus(); }
-      const rm = e.target.closest('[data-link-remove]'); if (rm) { rm.closest('.link-row').remove(); syncLinks(); }
+      if (e.target.closest('[data-item-add]')) { const prev = items().at(-1) || {}; itemBox.insertAdjacentHTML('beforeend', itemRow({ link: prev.link }, itemRows().length + 1)); syncItems(); itemRows().at(-1).querySelector('[data-variant]').focus(); updateSum(); }
+      const rm = e.target.closest('[data-item-remove]'); if (rm) { rm.closest('[data-item]').remove(); syncItems(); updateSum(); }
     });
     form.productId?.addEventListener('change',()=>{
       selectedProduct=S.products.find(p=>p.id===Number(form.productId.value))||null;
-      linkBox.innerHTML=linkRow(selectedProduct?.link||'');syncLinks();
+      itemBox.innerHTML=itemRow({link:selectedProduct?.link||'',variant:selectedProduct?.variant||''},1);syncItems();
       picks=selectedProduct ? selectedProduct.photoIds.map(id=>({key:'product-'+id,productFrom:true,thumb:'/api/portal/products/'+selectedProduct.id+'/photos/'+id})) : [];
-      if(selectedProduct)form.variant.value=selectedProduct.variant;if(selectedProduct?.competitorPrice&&!form.competitorPrice.value)form.competitorPrice.value=selectedProduct.competitorPrice;
+      if(selectedProduct?.competitorPrice&&!form.competitorPrice.value)form.competitorPrice.value=selectedProduct.competitorPrice;
       const opts=selectedProduct?.priceOptions||null,optBox=$('[data-f="productOption"]',form);
       optBox.hidden=!opts;form.productOption.innerHTML=opts?`<option value="">Choose an option…</option>`+opts.map(o=>`<option value="${esc(o.label)}">${esc(o.label)} · ${money(o.unitPrice)}</option>`).join(''):'';
       showUnit();renderPicks();updateSum();
@@ -125,7 +133,7 @@
     const mark = (key, bad) => { const f = form.querySelector(`[data-f="${key}"]`); if (f) f.classList.toggle('bad', !!bad); };
     form.addEventListener('input', e => { const f = e.target.closest('[data-f]'); if (f) f.classList.remove('bad'); });
     function updateSum() {
-      const qty = parseInt(form.quantity.value, 10) || 1, links = $$('[data-link]', form).filter(i => i.value.trim()).length;
+      const qty = totalQty() || 1, links = new Set(items().map(i => i.link).filter(Boolean)).size;
       const where = [form.buyerName.value.trim(), dest.label()].filter(Boolean).join(' · ');
       const row = (label, value) => `<div><span>${label}</span><b>${value ? esc(value) : '<em class="miss">not filled in yet</em>'}</b></div>`;
       $('[data-sum]').innerHTML = row('Order number', form.orderRef.value.trim()) + row('Product', links ? `${links} link${links > 1 ? 's' : ''} · ${qty} item${qty > 1 ? 's' : ''}` : '')
@@ -147,7 +155,13 @@
       check('orderDate', form.orderDate.value, 'order date');
       check('links', links.length && !badLink, badLink ? 'a full product link (starting with https://)' : 'product link');
       check('photos', picks.length || ed?.source === 'etsy-csv', 'photo or screenshot');
-      const q = parseInt(form.quantity.value, 10); check('quantity', q >= 1 && q <= 999, 'how many');
+      const badQty = itemRows().filter(r => { const q = parseInt(r.querySelector('[data-qty]').value, 10); return !(q >= 1 && q <= 999); });
+      itemRows().forEach(r => r.querySelector('.item-qty').classList.toggle('bad', badQty.includes(r)));
+      const noLink = itemRows().filter(r => !r.querySelector('[data-link]').value.trim());
+      itemRows().forEach(r => r.querySelector('.item-link').classList.toggle('bad', noLink.includes(r) || (r.querySelector('[data-link]').value.trim() && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(r.querySelector('[data-link]').value.trim()))));
+      if (badQty.length) { missing.push(['links', 'how many (each line)']); }
+      if (noLink.length && links.length) { mark('links', true); missing.push(['links', 'a product link on each line']); }
+      if (totalQty() > 999) { mark('links', true); missing.push(['links', 'at most 999 items in one order']); }
       check('buyerName', form.buyerName.value.trim(), 'customer name');
       check('address1', form.address1.value.trim(), 'full address');
       check('destination', dest.get(), 'country');
@@ -162,7 +176,7 @@
       }
       const body = {
         storeId:Number(form.storeId.value),orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value, etsyFee: form.etsyFee.value, etsyEarned: form.etsyEarned.value,
-        sku: form.sku.value, quantity: form.quantity.value, variant: form.variant.value, competitorPrice: form.competitorPrice.value, etsyUrl: links.join('\n'),
+        sku: form.sku.value, items: items(), competitorPrice: form.competitorPrice.value,
         buyerName: form.buyerName.value, ...UI.addressFields(form.address1.value,ed), destination: dest.get(), notes: form.notes.value, taxNumber: form.taxNumber.value, giftMessage: form.giftMessage.value,
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');

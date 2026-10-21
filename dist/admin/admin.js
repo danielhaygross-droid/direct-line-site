@@ -510,7 +510,7 @@
         <div><dt>Client</dt><dd><button type="button" class="back" style="margin:0" data-open-client="${o.clientId}">${esc(clientName(o.clientId))}</button></dd></div><div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}${o.source === 'etsy-csv' ? ' <span class="st" style="--tone:var(--blue);text-transform:none">From Etsy file</span>' : ''}</dd></div>
         <div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div><div><dt>Customer paid</dt><dd>${customerPaid(o)}</dd></div>
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
-        ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
+        ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd style="white-space:pre-line">${esc(o.variant)}</dd></div>` : ''}
         ${o.competitorPrice ? `<div class="full"><dt>Competitor price <small>from the client</small></dt><dd data-no-i18n><bdi>${esc(o.competitorPrice)}</bdi></dd></div>` : ''}
         
         <div class="full"><dt>Recipient</dt><dd>${esc(o.buyerName) || '—'}</dd></div>
@@ -898,7 +898,7 @@
         <button type="button" class="btn btn-sm link-add" data-link-add>+ Add another product link</button></div>
       <label class="field"><span>Quantity</span><input name="quantity" type="number" min="1" max="999" step="1" inputmode="numeric" value="${order?.quantity || 1}"></label>
       <label class="field"><span>SKU or listing ID <small>optional</small></span><input name="sku" maxlength="120" placeholder="e.g. LIGHTER-01" value="${esc(order?.sku)}"></label>
-      <label class="field full"><span>Variation / personalization <small>optional</small></span><input name="variant" maxlength="500" placeholder="Color, size, engraving or personalization" value="${esc(order?.variant)}"></label>
+      <label class="field full"><span>Variation / personalization <small>optional</small></span><textarea name="variant" rows="2" maxlength="2000" placeholder="Color, size, engraving or personalization">${esc(order?.variant)}</textarea></label>
       </div></section>
       <section class="af-sec"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
       <label class="field full"><span>Customer / recipient name</span><input name="buyerName" maxlength="160" value="${esc(order?.buyerName)}"></label>
