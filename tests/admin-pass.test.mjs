@@ -23,7 +23,7 @@ test('admin: saves are guarded against double clicks, payments default to bank t
   assert.ok(/data-track-form[\s\S]{0,200}if \(b\.disabled\) return; b\.disabled = true;/.test(admin.slice(admin.indexOf("const tf = e.target.closest('[data-track-form]')"))));
   assert.ok(admin.includes('if (dp.disabled) return; dp.disabled = true;'));
   assert.ok(admin.includes('const btn = $(\'[type=submit]\', f); if (btn.disabled) return; btn.disabled = true;'), 'Save bill');
-  assert.ok(admin.includes('["Bank transfer", "PayPal", "Wise", "Other"].map(m => `<option value="${m}">${m}</option>`)'), 'option values are not translated');
+  assert.ok(admin.includes("const base = ['Bank transfer', 'PayPal', 'Wise', 'Other'];") && admin.includes("methods('').map(m => `<option value=\"${m}\">${m}</option>`)"), 'option values are not translated');
   assert.ok(!/<option>(Bank transfer|PayPal)<\/option>/.test(admin));
   assert.ok(admin.includes("toast('Couldn’t load payments: ' + e.message)"));
 });

@@ -24,7 +24,7 @@ test('usernames can be changed by admins, with the same rules as when an account
 
 test('admin screens: payment edit, team admin edit and username field are wired in the right click handler', async () => {
   const admin = await read('dist/admin/admin.js');
-  assert.ok(admin.includes('data-edit-payment') && admin.includes('data-payment-edit-form') && admin.includes("'/admin/payments/' + pe.dataset.paymentEditForm"));
+  assert.ok(admin.includes('data-pay-edit') && admin.includes('data-payment-edit-form') && admin.includes("'/admin/payments/' + pe.dataset.paymentEditForm"));
   assert.ok(admin.includes("if (soft && d.body.querySelector('[data-payment-edit-form]')) return;"), 'a background refresh must not wipe an open payment form');
   // The team list sits outside the side panel, so its clicks must be handled by the page-level handler.
   const page = admin.indexOf('  function onClick(e) {'), panelOnly = admin.indexOf("if (!d.el.contains(t)) return;");

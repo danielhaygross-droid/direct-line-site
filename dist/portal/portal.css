@@ -304,3 +304,8 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 /* competitor price (from the client; the supplier sees it) */
 .comp-form{display:flex;gap:8px;align-items:center}.comp-form input{flex:1;min-width:0;min-height:42px;padding:0 12px;border:1px solid var(--line-2,var(--line));border-radius:11px;background:var(--surface);color:var(--text);font:inherit}
 .mp-comp b{color:var(--text)}
+/* Payment history: amount, the orders it paid, the receipt to download. */
+.cpay-list{display:grid}.cpay-row{display:grid;grid-template-columns:minmax(150px,1fr) minmax(0,1.6fr) auto;gap:14px;align-items:center;padding:14px 20px;border-top:1px solid var(--line)}
+.cpay-main{display:grid;gap:2px}.cpay-main b{font-size:18px}.cpay-main small{color:var(--muted);font-size:13px}.cpay-receipt{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.month-receipts{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}.month-receipts .field{margin:0}
+@media(max-width:700px){.cpay-row{grid-template-columns:1fr;gap:8px;padding:14px 16px}.cpay-receipt{justify-content:flex-start}}
