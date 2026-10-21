@@ -126,6 +126,7 @@ details.fold>summary small{margin-inline-start:auto}
 .ord-row:first-child{border-top:0}.ord-row:hover,.ord-row:focus-visible{background:var(--surface-2,rgba(0,0,0,.03))}
 .ord-main{display:grid;gap:2px;min-width:0}.ord-main small{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ord-side{display:flex;align-items:center;gap:10px;flex:none}
+.ord-title{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}.ord-date{color:var(--muted);font-size:13px;font-weight:500;white-space:nowrap}
 @media(max-width:560px){.ord-row{padding:10px 14px;align-items:flex-start}.ord-side{flex-direction:column;align-items:flex-end;gap:4px}}
 .addr-flag{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--gold) 14%,transparent)}.addr-flag dd{margin:0}.addr-flag>.btn{width:auto;flex:none}
 /* client panel v2: summary row, 4 grouped tabs, sub-tabs, store filter */
