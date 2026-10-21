@@ -394,7 +394,7 @@
   // Supplier Work Queue: suppliers fill in total cost, tracking and shipping status in the Google Sheet.
   function supplierSheetHTML(d) {
     if (!d.configured) return '<p class="note" style="margin:0">The Google Sheet isn’t connected.</p>';
-    if (!d.enabled) return '<p class="note" style="margin:0">Set up adds three yellow columns to the Work Queue tab for the supplier: Total cost (whole order, USD), Tracking number and Shipping status. The website then bills clients (total + fee), adds tracking and marks orders Shipped within a minute. The current Work Queue is kept as a hidden backup tab.</p>';
+    if (!d.enabled) return '<p class="note" style="margin:0">Set up adds three yellow columns to the Orders tab for the supplier: Total cost (whole order, USD), Tracking number and Shipping status. The website then bills clients (total + fee), adds tracking and marks orders Shipped within a minute. The current tab is kept as a hidden backup tab.</p>';
     const l = d.last;
     return `<p style="margin:0 0 6px"><b>On.</b> <span>The website reads the supplier columns every minute.</span></p>${l ? `<p class="note" style="margin:0"><span>Last check</span> <span data-no-i18n>${esc(fullDate(l.at))}</span>: ${l.ok ? `<span data-no-i18n>${l.checked}</span> <span>orders checked</span>, <span data-no-i18n>${l.changed}</span> <span>updated</span>` : `<span>error</span> <span data-no-i18n>${esc(l.error)}</span>`}</p>${(l.skipped || []).length ? `<p class="note" style="margin:6px 0 0"><b>Needs a look:</b> <span data-no-i18n>${l.skipped.map(s => esc((s.ref || '#' + s.orderId) + ' — ' + s.why.join(', '))).join('; ')}</span></p>` : ''}` : ''}`;
   }
