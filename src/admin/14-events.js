@@ -106,11 +106,12 @@
       const p=payments.find(x=>x.id===Number(ep.dataset.editPayment)),row=ep.closest('tr');if(!p)return;
       if(row.nextElementSibling?.matches('[data-payment-edit-row]')){row.nextElementSibling.remove();return;}
       const base=['Bank transfer','PayPal','Wise','Other'],list=!p.method||base.includes(p.method)?base:[p.method,...base];
-      row.insertAdjacentHTML('afterend',`<tr data-payment-edit-row="${p.id}"><td colspan="4"><form class="form-grid" data-payment-edit-form="${p.id}" novalidate>
+      row.insertAdjacentHTML('afterend',`<tr data-payment-edit-row="${p.id}"><td colspan="5"><form class="form-grid" data-payment-edit-form="${p.id}" novalidate>
         <label class="field"><span>Amount received</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" value="${Number(p.amount).toFixed(2)}"></span></label>
         <label class="field"><span>Date</span><input name="paidAt" type="date" value="${new Date(p.paidAt*1000).toISOString().slice(0,10)}"></label>
         <label class="field"><span>Method</span><select name="method">${list.map(m=>`<option value="${esc(m)}"${m===p.method?' selected':''}>${esc(m)}</option>`).join('')}</select></label>
         <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500" value="${esc(p.note)}"></label>
+        <div class="field full"><span>Orders this payment is for <small>tick the orders the money is for</small></span>${poList(p.clientId, { paymentId: p.id, checked: p.orderIds || [], amount: p.amount })}</div>
         <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save payment</button><button type="button" class="btn" data-payment-edit-cancel>Cancel</button><p class="form-msg" data-payment-edit-msg style="margin:0"></p></div></form></td></tr>`);
       row.nextElementSibling.querySelector('[name=amount]').focus();return;
     }
@@ -163,9 +164,11 @@
       setArchived(Number(ar.dataset.archive), true, ar); return;
     }
     const record=t.closest('[data-record-transfer]'), restore=t.closest('[data-restore-payment]');
-    if (record || restore) {
-      const b=record || restore;b.disabled=true;
-      try { await api(record ? '/admin/transfers/'+record.dataset.recordTransfer+'/record' : '/admin/payments/'+restore.dataset.restorePayment+'/restore',{method:'POST'}); await loadAll();renderList();await loadPayments(S.drawer.id);toast(record ? 'Payment recorded.' : 'Payment restored.'); }
+    if (record) { S.drawer.transferId=Number(record.dataset.recordTransfer); fillClient(clientOf(S.drawer.id), false); setTimeout(()=>$('[data-pay-card]')?.scrollIntoView({behavior:'smooth',block:'start'}),50); return; }
+    if (t.closest('[data-transfer-cancel]')) { delete S.drawer.transferId; fillClient(clientOf(S.drawer.id), false); return; }
+    if (restore) {
+      const b=restore;b.disabled=true;
+      try { const r=await api('/admin/payments/'+restore.dataset.restorePayment+'/restore',{method:'POST'}); await loadAll();renderList();await loadPayments(S.drawer.id);toast(r.dropped ? `Payment restored. ${r.dropped} of its orders were already paid by another payment and were taken off it.` : 'Payment restored.'); }
       catch(ex) {toast(ex.message);b.disabled=false;} return;
     }
     const dp = t.closest('[data-del-payment]');
@@ -181,7 +184,9 @@
     if (pe) {
       e.preventDefault();
       const b = $('[type=submit]', pe), m = $('[data-payment-edit-msg]', pe); if (b.disabled) return; b.disabled = true; m.textContent = ''; m.className = 'form-msg';
-      try { await api('/admin/payments/' + pe.dataset.paymentEditForm, { method: 'POST', body: { amount: pe.amount.value, paidAt: pe.paidAt.value, method: pe.method.value, note: pe.note.value } }); pe.closest('tr').remove(); document.activeElement?.blur(); await loadAll(); renderList(); await loadPayments(S.drawer.id); toast('Payment updated.'); }
+      const p = payments.find(x => x.id === Number(pe.dataset.paymentEditForm)), listed = new Set([...pe.querySelectorAll('[name=poOrder]')].map(i => Number(i.value)));
+      const orderIds = [...PO.picked(pe), ...(p?.orderIds || []).filter(id => !listed.has(id))];
+      try { await api('/admin/payments/' + pe.dataset.paymentEditForm, { method: 'POST', body: { amount: pe.amount.value, paidAt: pe.paidAt.value, method: pe.method.value, note: pe.note.value, orderIds } }); pe.closest('tr').remove(); document.activeElement?.blur(); await loadAll(); renderList(); await loadPayments(S.drawer.id); toast('Payment updated.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
       return;
     }
@@ -216,7 +221,15 @@
     const cd=e.target.closest('[data-claim-decision]');if(cd){e.preventDefault();const b=$('[type=submit]',cd),m=$('[data-claim-msg]',cd);b.disabled=true;try{await api('/admin/claims/'+cd.dataset.claimDecision,{method:'POST',body:{status:cd.status.value,reply:cd.reply.value}});document.activeElement?.blur();await loadAll();if(S.tab==='claims')renderClaims();else refreshDrawer();toast('Claim decision saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     const pq=e.target.closest('[data-product-quote]');if(pq){e.preventDefault();const b=$('[type=submit]',pq),m=$('[data-quote-msg]',pq);b.disabled=true;try{await api('/admin/products/'+pq.dataset.productQuote,{method:'POST',body:{status:pq.status.value,unitPrice:pq.unitPrice.value,shipping:pq.shipping.value,note:pq.note.value}});document.activeElement?.blur();await loadAll();if(S.tab==='products')renderProducts();else refreshDrawer();toast('Quote saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     const inf=e.target.closest('[data-invoice-form]');
-    if(inf){e.preventDefault();const b=$('[type=submit]',inf),m=$('[data-invoice-msg]',inf);b.disabled=true;try{const file=await invoiceFile(inf);if(!file)throw new Error('Choose an invoice file.');await api('/admin/invoices',{method:'POST',body:{clientId:Number(inf.dataset.invoiceForm),orderIds:inf.dataset.orderId?[Number(inf.dataset.orderId)]:selectedInvoiceOrders(inf),paymentId:inf.invoicePayment?.value||null,date:inf.invoiceDate.value,file}});document.activeElement?.blur();inf.reset();invoiceFiles=(await api('/admin/invoices?clientId='+inf.dataset.invoiceForm)).invoices;refreshDrawer();toast('Invoice uploaded.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
+    if(inf){e.preventDefault();const b=$('[type=submit]',inf),m=$('[data-invoice-msg]',inf);b.disabled=true;try{const file=await invoiceFile(inf);if(!file)throw new Error('Choose an invoice file.');await api('/admin/invoices',{method:'POST',body:{clientId:Number(inf.dataset.invoiceForm),orderIds:inf.dataset.orderId?[Number(inf.dataset.orderId)]:PO.picked(inf),paymentId:inf.invoicePayment?.value||null,date:inf.invoiceDate.value,file}});document.activeElement?.blur();inf.reset();invoiceFiles=(await api('/admin/invoices?clientId='+inf.dataset.invoiceForm)).invoices;refreshDrawer();toast('Invoice uploaded.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
+    const abf = e.target.closest('[data-admin-billing]');
+    if (abf) {
+      e.preventDefault();
+      const b = $('[type=submit]', abf), m = $('[data-billing-msg]', abf); if (b.disabled) return; b.disabled = true; m.textContent = ''; m.className = 'form-msg';
+      try { const r = await api('/admin/billing/' + abf.dataset.adminBilling, { method: 'POST', body: { name: abf.name.value, company: abf.company.value, address: abf.address.value, email: abf.email.value, phone: abf.phone.value } }); billing = r.billing; delete abf.dataset.dirty; document.activeElement?.blur(); fillClient(clientOf(Number(abf.dataset.adminBilling)), false); toast('Billing details saved.'); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
+      return;
+    }
     const pf = e.target.closest('[data-pay-form]');
     if (pf) {
       e.preventDefault();
@@ -225,9 +238,11 @@
         const b=$('[type=submit]',pf);if(b.disabled)return;b.disabled=true;
         const file=await invoiceFile(pf);
         let invoiceError='';
-        const payment=await api('/admin/payments', { method: 'POST', body: { clientId: Number(pf.dataset.payForm), amount: pf.amount.value, method: pf.method.value, note: pf.note.value, paidAt: pf.paidAt.value } });
-        if(file){try{await api('/admin/invoices',{method:'POST',body:{clientId:Number(pf.dataset.payForm),paymentId:payment.id,orderIds:selectedInvoiceOrders(pf),date:pf.paidAt.value,file}});}catch(ex){invoiceError='Payment recorded; invoice upload failed. Use Save invoice to retry. '+ex.message;}}
-        document.activeElement?.blur();pf.reset(); await loadAll(); renderList(); await loadPayments(Number(pf.dataset.payForm)); toast(invoiceError||'Payment recorded.');
+        // The ticked orders go with the payment; a transfer confirmation is recorded through its own route (credited once).
+        const orderIds=PO.picked(pf), body={ amount: pf.amount.value, method: pf.method.value, note: pf.note.value, paidAt: pf.paidAt.value, orderIds };
+        const paymentId=pf.dataset.transfer ? (await api('/admin/transfers/'+pf.dataset.transfer+'/record',{method:'POST',body})).transfer?.paymentId : (await api('/admin/payments', { method: 'POST', body: { clientId: Number(pf.dataset.payForm), ...body } })).id;
+        if(file){try{await api('/admin/invoices',{method:'POST',body:{clientId:Number(pf.dataset.payForm),paymentId,orderIds,date:pf.paidAt.value,file}});}catch(ex){invoiceError='Payment recorded; invoice upload failed. Use Save invoice to retry. '+ex.message;}}
+        delete S.drawer.transferId; delete pf.dataset.dirty; document.activeElement?.blur();pf.reset(); await loadAll(); renderList(); await loadPayments(Number(pf.dataset.payForm)); refreshDrawer(); toast(invoiceError||(orderIds.length ? `Payment recorded for ${orderIds.length} order${orderIds.length === 1 ? '' : 's'}.` : 'Payment recorded.'));
       } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err';$('[type=submit]',pf).disabled=false; }
       return;
     }

@@ -24,7 +24,7 @@
   function renderView(soft) {
     const view = $('#view');
     if(soft && S.route==='products' && ($('#product-form')?.dataset.dirty || document.activeElement?.matches?.('[data-pq]')))return;
-    if (soft && S.route === 'payments' && $('#transfer-form')?.dataset.dirty) return;
+    if (soft && S.route === 'payments' && ($('#transfer-form')?.dataset.dirty || $('#billing-form')?.dataset.dirty)) return;
     if(soft && S.route==='stores' && [...document.querySelectorAll('[data-client-store-form]')].some(f=>f.dataset.dirty))return;
     if (soft && S.route === 'orders' && $('[data-orders-list]')) {const sw=$('[data-store-switcher]');if(sw)sw.outerHTML=storeSwitcher(); const er=$('[data-earnings]'); if(er)er.innerHTML=earningsInner(); renderChips(); renderOrdersList(); return; }
     if (!soft && S.route === 'products' && !S.me.preview) { S.productsSeenBefore = store.get(productsSeenKey(), 0); store.set(productsSeenKey(), Math.floor(Date.now() / 1000)); }

@@ -44,7 +44,7 @@ test('existing imported orders remain readable with their source and photo exemp
       return { active: true, archived: false };
     }, async all() {
       if (sql.includes('FROM client_orders')) return { results: [row] };
-      assert.match(sql, /FROM (order_photos|order_messages)/);
+      assert.match(sql, /FROM (order_photos|order_messages|payment_orders)/);
       return { results: [] };
     } };
   } };

@@ -13,6 +13,8 @@ import { googleSheetsConfigured, retryPendingGoogleSheetOrders, syncClientToGoog
 import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms } from './terms.mjs';
 
 import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } from './files.mjs';
+import { BILLING_SCHEMA, getBilling, saveBilling } from './billing.mjs';
+import { PAYMENT_ORDER_SCHEMA, orderIdList, checkOrders, setPaymentOrders, paymentOrderIds, withPaid, dropTakenOrders } from './payment-orders.mjs';
 
 import { STATUS_SCHEMA, changeStatus, balanceAdjustments } from './order-status.mjs';
 
@@ -199,6 +201,8 @@ SCHEMA.push(`CREATE TABLE IF NOT EXISTS admin_impersonation_log (
 SCHEMA.push(`CREATE TABLE IF NOT EXISTS payment_edits (
   id SERIAL PRIMARY KEY, payment_id INTEGER NOT NULL REFERENCES client_payments(id), field TEXT NOT NULL,
   old_value TEXT NOT NULL DEFAULT '', new_value TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`);
+// Which orders each payment is for (payment-orders.mjs).
+SCHEMA.push(...PAYMENT_ORDER_SCHEMA, ...BILLING_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -646,6 +650,11 @@ async function routePortal(request, url, ctx, meta) {
   const fileMatch=/^\/files\/(\d+)$/.exec(path);
   if (fileMatch && method === 'GET') return downloadFile(DB,Number(fileMatch[1]),who,url,env);
   if (path === '/transfers' && method === 'GET' && !who.admin) return json({ ok:true, transfers:await transfers(DB,who.clientId) });
+  // Billing details for receipts (the client, or an admin logged in as the client).
+  if (path === '/billing' && method === 'PUT' && !who.admin && !who.preview) {
+    try { return json({ ok:true, billing:await saveBilling(DB,who.clientId,await readBody(request),who.acting ? 'admin' : 'client') }); }
+    catch(e) { return json({ ok:false,error:e.message },400); }
+  }
   if (path === '/transfers' && method === 'POST' && !who.admin && !who.preview) {
     try { return json({ ok:true, transfer:await saveTransfer(DB,who.clientId,await readBody(request)) }); }
     catch(e) { return json({ ok:false,error:e.message },400); }
@@ -681,11 +690,12 @@ async function routePortal(request, url, ctx, meta) {
   // ----- client routes -----
   if (path === '/orders' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? AND NOT archived ORDER BY created_at DESC, id DESC').bind(who.clientId).all()).results || [];
-    return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, rows.map(orderOut).map(clientOrder), false)) });
+    return json({ ok: true, orders: await withPaid(DB, await withPhotos(DB, await withMessages(DB, rows.map(orderOut).map(clientOrder), false)), who.clientId) });
   }
   if (path === '/payments' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? AND NOT archived ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
-    return json({ ok: true, payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })), invoices: await invoices(DB,who.clientId), adjustments: await balanceAdjustments(DB,who.clientId), transfers: await transfers(DB,who.clientId) });
+    const linked = await paymentOrderIds(DB, who.clientId);
+    return json({ ok: true, billing: await getBilling(DB, who.clientId), payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), orderIds: linked.get(Number(r.id)) || [] })), invoices: await invoices(DB,who.clientId), adjustments: await balanceAdjustments(DB,who.clientId), transfers: await transfers(DB,who.clientId) });
   }
   if (path==='/invoices/month' && method==='GET' && !who.admin) return monthlyInvoices(DB,who.clientId,url.searchParams.get('month'),env);
   if(path==='/client-stores'&&!who.admin){if(method==='GET')return json({ok:true,stores:await clientStores(DB,who.clientId)});if(method==='POST'){try{const store=await saveStore(DB,who.clientId,null,await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}}
@@ -932,13 +942,19 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/admin/transfers' && method === 'GET') return json({ ok:true, transfers:await transfers(DB,Number(url.searchParams.get('clientId') || 0)) });
   const recordMatch=/^\/admin\/transfers\/(\d+)\/record$/.exec(path);
   if (recordMatch && method === 'POST') {
-    const transfer=await recordTransfer(DB,Number(recordMatch[1]));
-    return transfer ? json({ok:true,transfer}) : json({ok:false,error:'Not found'},404);
+    try {
+      const transfer=await recordTransfer(DB,Number(recordMatch[1]),(await readBody(request))||{});
+      return transfer ? json({ok:true,transfer}) : json({ok:false,error:'Not found'},404);
+    } catch (e) { return json({ ok:false, error:e.message }, 400); }
   }
   const restorePayment=/^\/admin\/payments\/(\d+)\/restore$/.exec(path);
   if (restorePayment && method === 'POST') {
-    await DB.prepare('UPDATE client_payments SET archived=FALSE WHERE id=?').bind(Number(restorePayment[1])).run();
-    return json({ok:true});
+    const p=await DB.prepare('SELECT id, client_id, archived FROM client_payments WHERE id=?').bind(Number(restorePayment[1])).first();
+    if (!p) return json({ ok:false, error:'Payment not found' }, 404);
+    // Orders paid by another payment while this one was archived are taken off it (checked while still archived).
+    const dropped=p.archived ? await dropTakenOrders(DB,Number(p.id),Number(p.client_id)) : 0;
+    await DB.prepare('UPDATE client_payments SET archived=FALSE WHERE id=?').bind(Number(p.id)).run();
+    return json({ok:true,dropped});
   }
   // ----- file storage + backups (admin Settings → Storage & backups) -----
   // ----- supplier Work Queue in the Google Sheet (admin Settings → Supplier sheet) -----
@@ -1024,7 +1040,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/admin/orders' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0), archived = url.searchParams.get('archived') === '1';
     const rows = (await DB.prepare(`SELECT * FROM client_orders WHERE archived=? ${clientId ? 'AND client_id=?' : 'AND client_id NOT IN (SELECT id FROM users WHERE archived)'} ORDER BY created_at DESC, id DESC LIMIT 500`).bind(archived,...(clientId ? [clientId] : [])).all()).results;
-    return json({ ok: true, orders: await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)) });
+    return json({ ok: true, orders: await withPaid(DB, await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)), clientId || null) });
   }
   if(path==='/admin/client-stores'&&method==='GET'){const clientId=url.searchParams.has('clientId')?Number(url.searchParams.get('clientId')):null;return json({ok:true,stores:await clientStores(DB,clientId)});}
   const adminStore=/^\/admin\/client-stores(?:\/(\d+))?$/.exec(path);if(adminStore&&method==='POST'){const body=await readBody(request);try{const store=await saveStore(DB,Number(body.clientId),adminStore[1]?Number(adminStore[1]):null,body);return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
@@ -1054,7 +1070,15 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/admin/payments' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(clientId).all()).results || [];
-    return json({ ok: true, payments: rows.map(r => ({ id: r.id, clientId: r.client_id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), archived: !!r.archived })),adjustments:await balanceAdjustments(DB,clientId) });
+    const linked = await paymentOrderIds(DB, clientId);
+    return json({ ok: true, payments: rows.map(r => ({ id: r.id, clientId: r.client_id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), archived: !!r.archived, confirmationId: r.confirmation_id == null ? null : Number(r.confirmation_id), orderIds: linked.get(Number(r.id)) || [] })),adjustments:await balanceAdjustments(DB,clientId),billing:await getBilling(DB,clientId) });
+  }
+  const billingMatch = /^\/admin\/billing\/(\d+)$/.exec(path);
+  if (billingMatch && method === 'POST') {
+    const client = await DB.prepare("SELECT id FROM users WHERE id = ? AND role = 'client'").bind(Number(billingMatch[1])).first();
+    if (!client) return json({ ok: false, error: 'Unknown client' }, 400);
+    try { return json({ ok: true, billing: await saveBilling(DB, Number(client.id), await readBody(request), 'admin') }); }
+    catch (e) { return json({ ok: false, error: e.message }, 400); }
   }
   if (path === '/admin/payments' && method === 'POST') {
     const body = await readBody(request);
@@ -1063,7 +1087,11 @@ async function routePortal(request, url, ctx, meta) {
     if (!client) return json({ ok: false, error: 'Unknown client' }, 400);
     if (!(amount > 0) || !isMoney(amount)) return json({ ok: false, error: 'Amount must be more than 0' }, 400);
     const paidAt = /^\d{4}-\d{2}-\d{2}$/.test(String(body.paidAt || '')) ? Math.floor(new Date(body.paidAt + 'T12:00:00Z').getTime() / 1000) : now();
+    // The orders this payment is for (optional), checked before anything is saved.
+    let orderIds;
+    try { orderIds = orderIdList(body.orderIds) || []; await checkOrders(DB, clientId, orderIds); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     const row = await DB.prepare('INSERT INTO client_payments (client_id, amount, method, note, paid_at, created_at) VALUES (?,?,?,?,?,?) RETURNING id').bind(clientId, amount, text(body.method, 60), text(body.note, 500), Number.isFinite(paidAt) ? paidAt : now(), now()).first();
+    if (orderIds.length) await setPaymentOrders(DB, Number(row.id), clientId, orderIds, { log: false });
     return json({ ok: true, id: row.id });
   }
   // Edit a recorded payment (amount, date, method, note). The old values are kept in payment_edits.
@@ -1083,9 +1111,17 @@ async function routePortal(request, url, ctx, meta) {
     const methodText = body.method === undefined ? old.method : text(body.method, 60), note = body.note === undefined ? old.note : text(body.note, 500);
     const day = sec => new Date(Number(sec) * 1000).toISOString().slice(0, 10);
     const changes = [['amount', Number(old.amount), amount], ['date', day(old.paid_at), day(paidAt)], ['method', old.method, methodText], ['note', old.note, note]].filter(([, a, b]) => String(a) !== String(b));
-    if (changes.length) {
+    // The orders this payment is for: checked before anything is saved (orders already on it may stay).
+    let orderIds = null;
+    try {
+      orderIds = orderIdList(body.orderIds);
+      if (orderIds) await checkOrders(DB, Number(old.client_id), orderIds, { paymentId: id, keep: (await paymentOrderIds(DB, Number(old.client_id))).get(id) || [] });
+    } catch (e) { return json({ ok: false, error: e.message }, 400); }
+    const linkChange = orderIds ? await setPaymentOrders(DB, id, Number(old.client_id), orderIds) : { added: 0, removed: 0 };
+    if (linkChange.added || linkChange.removed) changes.push(['orders']);
+    if (changes.some(c => c[0] !== 'orders')) {
       await DB.prepare('UPDATE client_payments SET amount=?, method=?, note=?, paid_at=? WHERE id=?').bind(amount, methodText, note, paidAt, id).run();
-      for (const [field, a, b] of changes) await DB.prepare('INSERT INTO payment_edits (payment_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?)').bind(id, field, String(a), String(b), now()).run();
+      for (const [field, a, b] of changes.filter(c => c[0] !== 'orders')) await DB.prepare('INSERT INTO payment_edits (payment_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?)').bind(id, field, String(a), String(b), now()).run();
     }
     return json({ ok: true, changed: changes.map(c => c[0]) });
   }
