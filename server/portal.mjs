@@ -109,6 +109,8 @@ export const SCHEMA = [
   "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sku TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS variant TEXT NOT NULL DEFAULT ''",
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1',
+  // One line per product / colour of an order (JSON [{link, quantity, variant}]); see orderItems().
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS items TEXT',
   "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS etsy_url TEXT NOT NULL DEFAULT ''",
   // Google Sheets is an operations mirror. The database remains authoritative if the external sync is unavailable.
   "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_sync_status TEXT NOT NULL DEFAULT 'waiting'",
@@ -392,7 +394,7 @@ function orderOut(r) {
     orderDate: r.order_date || '', currency: r.currency || 'USD', buyerName: r.buyer_name || '', buyerPhone: r.buyer_phone || '',
     addressChangedAt: r.address_changed_at == null ? null : Number(r.address_changed_at),
     address1: r.address_line_1 || '', address2: r.address_line_2 || '', city: r.city || '', region: r.region || '', postalCode: r.postal_code || '',
-    itemTitle: r.item_title || '', sku: r.sku || '', variant: r.variant || '', quantity: Number(r.quantity || 1), etsyUrl: r.etsy_url || '', productLinks: String(r.etsy_url || '').split(/\s+/).filter(Boolean),
+    itemTitle: r.item_title || '', sku: r.sku || '', variant: r.variant || '', quantity: Number(r.quantity || 1), items: itemsOut(r.items), etsyUrl: r.etsy_url || '', productLinks: String(r.etsy_url || '').split(/\s+/).filter(Boolean),
     commission: Number(r.commission || 0), supplierShare: 0, // the supplier is paid inside their own price: nothing is taken out of our fee
     ourShare: round2(Number(r.commission || 0)),
     reshipmentOf:r.reshipment_of==null?null:Number(r.reshipment_of),lastTrackingUpdateAt:r.last_tracking_update_at==null?null:Number(r.last_tracking_update_at),claimEligibility:claimEligibility(r),notes: r.notes, status: r.status, deliveredAt: r.delivered_at == null ? null : Number(r.delivered_at), cancellationReason: r.cancellation_reason || '', cancellationPreviousStatus: r.cancellation_previous_status || '', editLocked: !!r.edit_locked, source: r.source || '',
@@ -501,6 +503,35 @@ function validLink(value) {
 
 // Up to 10 links, one per line. Links are kept whole (a cut-off link would still look valid), and a
 // link pasted without https:// ("www.etsy.com/listing/…") is completed.
+// Order lines (Pauline, 22 Oct 2026): each product / colour of an order has its own link, quantity and colour / size.
+// Saved as JSON in client_orders.items; the order's links, quantity (the sum) and variation text are worked out from
+// them, so the supplier sheet, saved prices and exports keep working ("3 × Black Walnut, 7 Hooks" one line each).
+export function orderItems(value) {
+  if (!Array.isArray(value)) return null;
+  if (!value.length || value.length > 10) throw new Error('Add one to ten products.');
+  const items = value.map(it => ({ link: productLinks(it?.link).split('\n')[0] || '', quantity: Number(it?.quantity), variant: text(it?.variant, 500) }));
+  items.forEach((it, i) => { if (!Number.isInteger(it.quantity) || it.quantity < 1 || it.quantity > 999) throw new Error(items.length > 1 ? `How many: use a whole number from 1 to 999 (product ${i + 1}).` : 'How many: use a whole number from 1 to 999.'); });
+  return items;
+}
+export function itemsSummary(items) {
+  const links = [...new Set(items.map(i => i.link).filter(Boolean))];
+  const line = i => (links.length > 1 && i.link ? `Product ${links.indexOf(i.link) + 1} · ` : '') + (i.variant ? `${i.quantity} × ${i.variant}` : `${i.quantity} pcs`);
+  return { etsyUrl: links.join('\n'), quantity: items.reduce((n, i) => n + i.quantity, 0), variant: items.length === 1 ? items[0].variant : items.map(line).join('\n') };
+}
+function itemsOut(v) {
+  try { const a = v ? JSON.parse(v) : null; return Array.isArray(a) && a.length ? a.map(i => ({ link: String(i.link || ''), quantity: Number(i.quantity) || 1, variant: String(i.variant || '') })) : null; } catch { return null; }
+}
+// Reads body.items: turns them into etsyUrl / quantity / variant (or returns an error text).
+function applyItems(body, admin) {
+  let items;
+  try { items = orderItems(body.items); } catch (e) { return { error: e.message }; }
+  delete body.items;
+  if (!items) return { items: null };
+  if (!admin && items.some(i => !i.link)) return { error: 'Please add the product link for each product.' };
+  Object.assign(body, itemsSummary(items));
+  return { items };
+}
+const saveItems = (DB, id, items) => DB.prepare('UPDATE client_orders SET items=? WHERE id=?').bind(items ? JSON.stringify(items) : null, id).run();
 export function productLinks(value) {
   return String(value ?? '').split(/\s+/).map(v => v.trim()).filter(Boolean).slice(0, 10)
     .map(v => !/^[a-z][a-z0-9+.-]*:/i.test(v) && /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+([/?#]|$)/i.test(v) ? 'https://' + v : v).join('\n');
@@ -522,7 +553,7 @@ function orderFields(body) {
     order_date: text(body.orderDate, 10), currency: text(body.currency || 'USD', 3).toUpperCase(),
     buyer_name: text(body.buyerName, 160), buyer_phone: text(body.buyerPhone, 80),
     address_line_1: text(body.address1, 2000), address_line_2: text(body.address2, 200), city: text(body.city, 100), region: text(body.region, 100), postal_code: text(body.postalCode, 40),
-    item_title: text(body.itemTitle, 300), sku: text(body.sku, 120), variant: text(body.variant, 500), quantity: Number(body.quantity ?? 1), etsy_url: productLinks(body.etsyUrl),
+    item_title: text(body.itemTitle, 300), sku: text(body.sku, 120), variant: text(body.variant, 2000), quantity: Number(body.quantity ?? 1), etsy_url: productLinks(body.etsyUrl),
     notes: text(body.notes, 2000), tax_number: text(body.taxNumber, 300) || null, gift_message: text(body.giftMessage, 1000) || null,
   };
   if (![f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee].every(isMoney)) throw new Error('Numbers must be zero or more');
@@ -707,6 +738,7 @@ async function routePortal(request, url, ctx, meta) {
   const productImage=/^\/products\/(\d+)\/photos\/(\d+)$/.exec(path);if(productImage&&method==='GET')return productPhoto(DB,Number(productImage[1]),Number(productImage[2]),who,env);
   if (path === '/orders' && method === 'POST') {
     const body = await readBody(request);
+    const lines = applyItems(body, who.admin); if (lines.error) return json({ ok: false, error: lines.error }, 400);
     const clientId = who.admin ? Number(body.clientId) : who.clientId;
     const client = await DB.prepare("SELECT id, commission_per_order, supplier_share_per_order, active FROM users WHERE id = ? AND role = 'client'").bind(clientId).first();
     if (!client || !client.active) return json({ ok: false, error: 'Unknown client' }, 400);
@@ -727,6 +759,7 @@ async function routePortal(request, url, ctx, meta) {
       // A product with several prices: the client picks one option; its price is the fixed price per item.
       const options=priceOptions(savedProduct.price_options),option=options?options.find(o=>o.label===String(body.productOption||'')):null;
       if(options&&!option)return json({ok:false,error:'Choose which option of this product the customer bought.'},400);
+      if(options&&lines.items?.length>1)return json({ok:false,error:'This product has several prices: add one option per order.'},400);
       const unit=option?option.unitPrice:Number(savedProduct.unit_price);
       // Shipping per order from the supplier (one parcel): added once, whatever the quantity.
       const ship=savedProduct.supplier_shipping==null?null:Number(savedProduct.supplier_shipping);
@@ -745,6 +778,7 @@ async function routePortal(request, url, ctx, meta) {
     if (etsyFeeProblem(body)) return json({ ok: false, error: etsyFeeProblem(body) }, 400);
     const settings = await getSettings(DB);
     const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, actorOf(who), '', settings);
+    if (lines.items) { await saveItems(DB, row.id, lines.items); row.items = JSON.stringify(lines.items); }
     if (f.quoted_shipping != null) { await DB.prepare('UPDATE client_orders SET quoted_shipping=? WHERE id=?').bind(f.quoted_shipping, row.id).run(); row.quoted_shipping = f.quoted_shipping; }
     const newFee = await saveEtsyFee(DB, row.id, body); if (newFee !== undefined) row.etsy_fee = newFee;
     const newEarned = await saveEtsyEarned(DB, row.id, body); if (newEarned !== undefined) row.etsy_earned = newEarned;
@@ -807,6 +841,7 @@ async function routePortal(request, url, ctx, meta) {
     let existing = await DB.prepare('SELECT * FROM client_orders WHERE id = ?').bind(id).first();
     if (!existing || (!who.admin && existing.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
     const body = await readBody(request);
+    const lines = applyItems(body, who.admin); if (lines.error) return json({ ok: false, error: lines.error }, 400);
     // Admin: the supplier has seen the "ADDRESS CHANGED" warning (or it was a false alarm): take it off the row.
     if (body.clearAddressFlag !== undefined) {
       if (!who.admin) return json({ ok: false, error: 'Not found' }, 404);
@@ -874,6 +909,9 @@ async function routePortal(request, url, ctx, meta) {
         if (!EDIT_FIELDS.some(k => String(row[k] ?? '') !== String(existing[k] ?? ''))) await logEvent(DB, id, existing.client_id, 'edited', actorOf(who), 'customer');
       }
     }
+    // Order lines: saved with the order; an edit of the link / quantity / variation without lines (admin form) drops them,
+    // the variation text keeps what they said.
+    if (lines.items || body.quantity !== undefined || body.variant !== undefined || body.etsyUrl !== undefined) { await saveItems(DB, id, lines.items); row.items = lines.items ? JSON.stringify(lines.items) : null; }
     const fee = await saveEtsyFee(DB, id, body); if (fee !== undefined) row.etsy_fee = fee;
     const earnedNow = await saveEtsyEarned(DB, id, body); if (earnedNow !== undefined) row.etsy_earned = earnedNow;
     const compNow = await saveCompetitorPrice(DB, id, body); if (compNow !== undefined) row.competitor_price = compNow;

@@ -39,7 +39,7 @@
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
         <div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}</dd></div>${o.deliveredAt ? `<div><dt>Delivered date</dt><dd>${esc(fullDate(o.deliveredAt))}</dd></div>` : ''}${o.cancellationReason ? `<div class="full"><dt>Cancellation reason</dt><dd data-no-i18n>${esc(o.cancellationReason)}</dd></div>` : ''}<div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div>
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
-        ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd>${esc(o.variant)}</dd></div>` : ''}
+        ${o.variant ? `<div class="full"><dt>Variation / personalization</dt><dd style="white-space:pre-line">${esc(o.variant)}</dd></div>` : ''}
         <div><dt>Customer</dt><dd>${esc(o.buyerName) || '—'}</dd></div><div><dt>Country</dt><dd>${esc(place(o.destination))}</dd></div>
         <div class="full"><dt>Delivery address &amp; phone</dt><dd style="white-space:pre-line">${DL.addressLines(o, o.destination ? place(o.destination) : '', true).map(esc).join('\n') || '—'}</dd></div>
         ${o.taxNumber ? `<div class="full"><dt>Tax number</dt><dd data-no-i18n>${esc(o.taxNumber)}</dd></div>` : ''}${o.giftMessage ? `<div class="full"><dt>Gift message</dt><dd data-no-i18n style="white-space:pre-line">${esc(o.giftMessage)}</dd></div>` : ''}

@@ -53,7 +53,7 @@ try {
     await page.locator('.mp-name', { hasText: 'Brass key hooks' }).click(); await page.waitForSelector('.drawer.open .money-rows'); await page.waitForTimeout(300);
     await page.screenshot({ path: path.join(out, `${tag}-details.png`) });
     await page.locator('.drawer.open [data-order-product]').click(); await page.waitForSelector('#order-form'); await page.waitForTimeout(400);
-    await page.locator('[name=quantity]').fill('3'); await page.locator('[name=quantity]').dispatchEvent('input'); await page.waitForTimeout(200);
+    await page.locator('[data-qty]').first().fill('3'); await page.locator('[data-qty]').first().dispatchEvent('input'); await page.waitForTimeout(200);
     await page.locator('[name=productId]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-new-order.png`) });
     if (lang === 'en') { assert.match(await page.locator('[data-product-price]').innerText(), /\$5\.40[\s\S]*\$3\.25/); assert.match(await page.locator('[data-sum]').innerText(), /\$19\.45/); }
     assert.deepEqual(errors, [], tag); await ctx.close();

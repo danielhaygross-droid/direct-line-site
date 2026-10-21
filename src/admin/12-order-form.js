@@ -28,7 +28,7 @@
         <button type="button" class="btn btn-sm link-add" data-link-add>+ Add another product link</button></div>
       <label class="field"><span>Quantity</span><input name="quantity" type="number" min="1" max="999" step="1" inputmode="numeric" value="${order?.quantity || 1}"></label>
       <label class="field"><span>SKU or listing ID <small>optional</small></span><input name="sku" maxlength="120" placeholder="e.g. LIGHTER-01" value="${esc(order?.sku)}"></label>
-      <label class="field full"><span>Variation / personalization <small>optional</small></span><input name="variant" maxlength="500" placeholder="Color, size, engraving or personalization" value="${esc(order?.variant)}"></label>
+      <label class="field full"><span>Variation / personalization <small>optional</small></span><textarea name="variant" rows="2" maxlength="2000" placeholder="Color, size, engraving or personalization">${esc(order?.variant)}</textarea></label>
       </div></section>
       <section class="af-sec"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
       <label class="field full"><span>Customer / recipient name</span><input name="buyerName" maxlength="160" value="${esc(order?.buyerName)}"></label>
