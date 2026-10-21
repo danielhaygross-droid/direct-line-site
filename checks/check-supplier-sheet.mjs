@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { DB, env, call, seed, pg } from './lib.mjs';
 import { route } from '../api/index.mjs';
-import { WQ, FIRST_ROW, HEADERS, SHIPPED, NOT_SHIPPED } from '../server/supplier-sheet.mjs';
+import { WQ, WQ_NEW, LOG_NEW, TAB_NAMES, FIRST_ROW, HEADERS, SHIPPED, NOT_SHIPPED } from '../server/supplier-sheet.mjs';
 
 // ---------- fake Google Sheets ----------
 const sheets = new Map(); // title -> { sheetId, hidden, grid: array of rows (arrays) }
@@ -46,7 +46,11 @@ globalThis.fetch = (real => async (url, opt = {}) => {
       const [kind, a] = Object.entries(rq)[0];
       const byId = id => [...sheets].find(([, s]) => s.sheetId === id);
       if (kind === 'duplicateSheet') { const [, src] = byId(a.sourceSheetId); const t = addTab(a.newSheetName); t.grid = JSON.parse(JSON.stringify(src.grid)); }
-      else if (kind === 'updateSheetProperties') byId(a.properties.sheetId)[1].hidden = a.properties.hidden;
+      else if (kind === 'updateSheetProperties') {
+        const [title, tab] = byId(a.properties.sheetId);
+        if (a.fields.includes('hidden')) tab.hidden = a.properties.hidden;
+        if (a.fields.includes('title')) { if (sheets.has(a.properties.title)) return Response.json({ error: { message: 'name taken' } }, { status: 400 }); const all = [...sheets]; sheets.clear(); for (const [t, x] of all) sheets.set(t === title ? a.properties.title : t, x); }
+      }
       else if (kind === 'deleteSheet') { const [title] = byId(a.sheetId); if (![...sheets].some(([t, s]) => t !== title && !s.hidden)) return Response.json({ error: { code: 400, message: "Invalid requests[0].deleteSheet: You can't remove all the visible sheets in a document." } }, { status: 400 }); sheets.delete(title); }
       else if (kind === 'addSheet') { const p = a.properties; if (p.sheetId != null && byId(p.sheetId)) throw new Error('id in use'); const t = addTab(p.title, p.sheetId ?? nextId++); replies.push({ addSheet: { properties: { sheetId: t.sheetId, title: p.title } } }); continue; }
       else if (kind === 'deleteDimension') { const [, s] = byId(a.range.sheetId); if (a.range.dimension === 'ROWS') s.grid.splice(a.range.startIndex, a.range.endIndex - a.range.startIndex); }
@@ -203,6 +207,29 @@ assert.ok(sheets.get('Work Queue (old formulas)').grid[6][0].startsWith('=IF('),
 assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t), [WQ], 'rebuild works; besides the supplier Product Quotes tab only the Work Queue is visible');
 assert.equal(sheets.get(WQ).sheetId, 2026101301);
 console.log('PASS running setup again keeps supplier values and the original backup');
+
+// ---------- the tabs are renamed: hidden website log "Orders" -> "Order Log", then "Work Queue" -> "Orders" ----------
+assert.ok(sheets.has(LOG_NEW) && sheets.get(LOG_NEW).hidden, 'step 1 already happened on the first poll: the hidden website log is "Order Log"');
+assert.ok(!sheets.has('Orders') && sheets.has(WQ), 'the supplier tab keeps its old name for at least 10 minutes');
+assert.ok(lastRow(LOG_NEW) > 5, 'the website log is written under its new name');
+const logId = sheets.get(LOG_NEW).sheetId;
+assert.equal((await cron()).ok, true); assert.ok(sheets.has(WQ), 'still waiting');
+await DB.prepare('UPDATE portal_settings SET value=? WHERE key=?').bind('log:' + (Math.floor(Date.now() / 1000) - 700), TAB_NAMES).run();
+const switched = await cron(); assert.equal(switched.ok, true, JSON.stringify(switched));
+assert.equal((await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(TAB_NAMES).first()).value, 'done');
+assert.ok(!sheets.has(WQ) && sheets.get(WQ_NEW).sheetId === 2026101301, 'the supplier tab is now "Orders" (same tab id, links still open it)');
+assert.equal(sheets.get(LOG_NEW).sheetId, logId); assert.equal(sheets.get(WQ_NEW).grid[1][0], 'Direct Line — Orders');
+assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t), [WQ_NEW], 'only "Orders" is visible');
+const rowOf = id => sheets.get(WQ_NEW).grid.findIndex(r => r && Number(r[27]) === id);
+const T = await mk('T-TABS'); await settle();
+assert.ok(rowOf(T.id) > 0, 'a new order lands in "Orders"');
+assert.ok(sheets.get(LOG_NEW).grid.some(r => r && String(r[0]) === String(T.id)), 'and in the website log "Order Log"');
+sheets.get(WQ_NEW).grid[rowOf(T.id)][N] = 12; assert.equal((await cron()).ok, true);
+assert.equal(Number((await order(T.id)).supplier_cost), 12, 'the supplier’s cost is read from "Orders"');
+const rebuilt = await call('/admin/supplier-sheet/setup', 'POST', {}, admin); assert.equal(rebuilt.status, 200, JSON.stringify(rebuilt.data));
+assert.ok(!sheets.has(WQ) && sheets.get(WQ_NEW).sheetId === 2026101301 && rowOf(T.id) > 0, 'running setup again keeps the "Orders" name');
+assert.equal(sheets.get(LOG_NEW).sheetId, logId, 'the website log is not touched');
+console.log('PASS tab names: "Orders" for the supplier tab, "Order Log" for the website log, in two safe steps; writes, reads and setup follow');
 
 // Cron needs the secret.
 assert.equal((await route(new Request('http://x/api/cron/supplier-sheet'), { db: DB, env })).status, 401);

@@ -1,6 +1,6 @@
 import { createSign } from 'node:crypto';
 import { sheetPhotoUrl } from './sheet-photos.mjs';
-import { syncWorkQueueRow, removeClientFromWorkQueue } from './supplier-sheet.mjs';
+import { syncWorkQueueRow, removeClientFromWorkQueue, tabNames } from './supplier-sheet.mjs';
 
 const DEFAULT_SPREADSHEET_ID = '1L_C87W4jrZGIIrT2Fg_cGowNi3R5fTehdDw8d-vpZag';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
@@ -102,8 +102,9 @@ export async function sheetsRequest(env, path, options = {}, fetchImpl = fetch) 
   return response.status === 204 ? {} : response.json();
 }
 
-async function findOrderRow(env, orderId, fetchImpl) {
-  const range = encodeURIComponent('Orders!A6:A');
+// The website's hidden order log: "Orders", renamed "Order Log" once the supplier tab took the name (see tabNames).
+async function findOrderRow(env, orderId, fetchImpl, log) {
+  const range = encodeURIComponent(`${log}!A6:A`);
   const data = await sheetsRequest(env, '/values/' + range + '?majorDimension=ROWS', {}, fetchImpl);
   const rows = data.values || [];
   const index = rows.findIndex(row => String(row?.[0] ?? '') === String(orderId));
@@ -120,9 +121,9 @@ async function findClientRow(env, clientId, fetchImpl) {
 
 // Clear every matching row, including historical duplicate sync rows. Keep the
 // fixed column layout so the service and the team's views remain compatible.
-async function clearClientSheetRows(env, clientId, fetchImpl) {
+async function clearClientSheetRows(env, clientId, fetchImpl, log) {
   const ranges = [];
-  for (const [sheet,column,last] of [['Clients','A','H'],['Orders','B','BF']]) {
+  for (const [sheet,column,last] of [['Clients','A','H'],[log,'B','BF']]) {
     const data = await sheetsRequest(env,'/values/'+encodeURIComponent(`${sheet}!${column}6:${column}`)+'?majorDimension=ROWS',{},fetchImpl);
     (data.values || []).forEach((row,i)=>{if(String(row?.[0] ?? '') === String(clientId)) ranges.push(`${sheet}!A${i+6}:${last}${i+6}`);});
   }
@@ -164,9 +165,10 @@ export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl =
   const order = await DB.prepare(`SELECT o.*, u.display_name AS client_name, u.archived AS client_archived
     FROM client_orders o JOIN users u ON u.id = o.client_id WHERE o.id = ?`).bind(orderId).first();
   if (!order) throw new Error('Order not found for Google Sheets sync');
+  const { log } = await tabNames(DB);
 
   if (order.client_archived) {
-    await clearClientSheetRows(env,order.client_id,fetchImpl);
+    await clearClientSheetRows(env,order.client_id,fetchImpl,log);
     await removeClientFromWorkQueue(DB,env,order.client_id,fetchImpl);
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='synced',sheet_sync_error='' WHERE client_id=?").bind(order.client_id).run();
     return {configured:true,synced:true,removed:true};
@@ -176,16 +178,16 @@ export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl =
   await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting', sheet_sync_attempts=?, sheet_sync_error='' WHERE id=?")
     .bind(attempt, orderId).run();
   try {
-    const rowNumber = await findOrderRow(env, orderId, fetchImpl);
+    const rowNumber = await findOrderRow(env, orderId, fetchImpl, log);
     const syncedAt = Math.floor(Date.now() / 1000);
     const photos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(orderId).all()).results || [];
     const values = [orderValues(order, syncedAt).concat(photoCells(env,orderId,photos),[!!order.archived])];
     if (rowNumber) {
-      await sheetsRequest(env, '/values/' + encodeURIComponent(`Orders!A${rowNumber}:BF${rowNumber}`) + '?valueInputOption=USER_ENTERED', {
+      await sheetsRequest(env, '/values/' + encodeURIComponent(`${log}!A${rowNumber}:BF${rowNumber}`) + '?valueInputOption=USER_ENTERED', {
         method: 'PUT', body: JSON.stringify({ majorDimension: 'ROWS', values }),
       }, fetchImpl);
     } else {
-      await sheetsRequest(env, '/values/' + encodeURIComponent('Orders!A:BF') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+      await sheetsRequest(env, '/values/' + encodeURIComponent(`${log}!A:BF`) + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
         method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values }),
       }, fetchImpl);
     }
@@ -226,7 +228,7 @@ export async function syncClientToGoogleSheet(DB, env, clientId, fetchImpl = fet
     .bind(clientId).first();
   if (!client) return { configured: true, synced: false };
   if (client.archived) {
-    await clearClientSheetRows(env,clientId,fetchImpl);
+    await clearClientSheetRows(env,clientId,fetchImpl,(await tabNames(DB)).log);
     await removeClientFromWorkQueue(DB,env,clientId,fetchImpl);
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='synced',sheet_sync_error='' WHERE client_id=?").bind(clientId).run();
     return {configured:true,synced:true,removed:true};
@@ -276,13 +278,14 @@ function photoCells(env,orderId,photos) {
 }
 // One-off maintenance: update only new photo columns; preserve all existing order cells.
 export async function backfillSheetPhotos(DB,env,fetchImpl=fetch) {
-  const source=await sheetsRequest(env,'/values/'+encodeURIComponent('Orders!A6:A'),{},fetchImpl);
+  const {log}=await tabNames(DB);
+  const source=await sheetsRequest(env,'/values/'+encodeURIComponent(`${log}!A6:A`),{},fetchImpl);
   const changes=[];const photoRows=[];
   for (let index=0;index<(source.values||[]).length;index++) {
     const id=Number(source.values[index]?.[0]);if(!Number.isSafeInteger(id)||id<=0)continue;
     const photos=(await DB.prepare(`SELECT p.id FROM order_photos p JOIN client_orders o ON o.id=p.order_id
       JOIN users u ON u.id=o.client_id WHERE p.order_id=? AND u.active AND NOT u.archived ORDER BY p.id LIMIT 8`).bind(id).all()).results||[];
-    changes.push({range:`Orders!AV${index+6}:BE${index+6}`,values:[photoCells(env,id,photos)]});
+    changes.push({range:`${log}!AV${index+6}:BE${index+6}`,values:[photoCells(env,id,photos)]});
     if(photos.length)photoRows.push(index+6);
   }
   for(let i=0;i<changes.length;i+=50)await sheetsRequest(env,'/values:batchUpdate',{
