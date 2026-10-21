@@ -68,8 +68,8 @@ await DB.prepare('UPDATE client_orders SET notes=? WHERE id=?').bind(FR_NOTES, a
 let p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
 assert.ok(p.ok, JSON.stringify(p));
 assert.deepEqual(wq[4].slice(0, HEADERS.length), HEADERS, 'header is the new layout');
-assert.equal(wq[4].length, 29);
-assert.deepEqual(calls.filter(c => c.startsWith('insert')), ['insert 12', 'insert 16', 'insert 14'], 'gift message, courier, then competitor price');
+assert.equal(wq[4].length, 30);
+assert.deepEqual(calls.filter(c => c.startsWith('insert')), ['insert 12', 'insert 16', 'insert 14', 'insert 19'], 'gift message, courier, competitor price, then client paid');
 assert.equal(wq[6][11], '', 'old country code cleared from Tax number'); assert.equal(wq[6][12], ''); assert.equal(wq[6][13], 'old note');
 // the old notes were split: own columns in the sheet, notes cleaned
 assert.equal(wq[5][11], "Etsy's IOSS number: IM3720000224 EUR 72.37"); assert.match(wq[5][12], /^Un petit cadeau.*Clara$/s); assert.equal(wq[5][13], '', 'notes no longer repeat them');
@@ -78,8 +78,8 @@ assert.equal(fr.notes, ''); assert.equal(fr.tax_number, "Etsy's IOSS number: IM3
 console.log('PASS old notes split into Tax number / Gift message');
 assert.equal(wq[5][15], 55.9, 'cost moved to P'); assert.equal(wq[5][16], 'UL602450763YP', 'tracking moved to Q'); assert.equal(wq[5][14], '', 'competitor price O empty');
 assert.equal(wq[5][17], '', 'empty courier'); assert.equal(wq[5][18], 'Not shipped', 'status moved to S');
-assert.equal(wq[5][27], String(a.id), 'order id in AB'); assert.equal(wq[5][28], String(id), 'client id in AC');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '4');
+assert.equal(wq[5][28], String(a.id), 'order id in AC'); assert.equal(wq[5][29], String(id), 'client id in AD');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '5', 'up to date: layout 5 (Client paid)');
 const o1 = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(a.id).first();
 assert.equal(o1.tracking_number, '', 'nothing applied from the wrong columns'); assert.equal(o1.courier, null);
 console.log('PASS switch: header, columns moved, old country cleared, ids found, nothing misapplied');

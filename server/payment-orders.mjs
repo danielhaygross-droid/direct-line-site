@@ -110,6 +110,21 @@ export async function stillOpen(DB, clientId, ids) {
   return (await orderRows(DB, clientId, ids)).filter(r => !r.archived && dueCents(r) > 0 && !paid.has(Number(r.id))).map(r => Number(r.id)).sort((a, b) => a - b);
 }
 
+// The supplier sheet's "Client paid" column (Erwin, 22 Oct 2026): 'Paid' (on a payment that is not archived),
+// 'Not paid' (something billed, no payment yet) or '' (no bill yet, or cancelled without a fee).
+export const PAID = 'Paid', NOT_PAID = 'Not paid';
+export async function paidLabels(DB, ids) {
+  const out = new Map();
+  for (let i = 0; i < ids.length; i += 300) {
+    const part = ids.slice(i, i + 300);
+    const rows = (await DB.prepare(`SELECT o.id, o.status, o.price, COALESCE((SELECT SUM(a.amount) FROM client_balance_adjustments a WHERE a.order_id = o.id), 0) AS adj,
+        EXISTS (SELECT 1 FROM payment_orders po JOIN client_payments p ON p.id = po.payment_id WHERE po.order_id = o.id AND NOT p.archived) AS paid
+      FROM client_orders o WHERE o.id IN (${marks(part.length)})`).bind(...part).all()).results || [];
+    for (const r of rows) out.set(Number(r.id), r.paid ? PAID : dueCents(r) > 0 ? NOT_PAID : '');
+  }
+  return out;
+}
+
 // Restoring an archived payment: orders paid by another payment meanwhile are taken off this one.
 // Call it while the payment is still archived (then every active link belongs to another payment).
 export async function dropTakenOrders(DB, paymentId, clientId) {
