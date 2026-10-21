@@ -16,8 +16,8 @@ test('Work Queue cells: website columns only, client text can never run as a for
   assert.equal(am.length + 4 + qz.length, HEADERS.length, 'A–O (O = Competitor price) + 4 supplier columns + T–AD (T = Client paid)');
   assert.equal(am[1], "'=IMPORTXML(\"x\")"); assert.equal(am[8], 'Mug · +Gold'); assert.equal(am[9], "'@me"); assert.equal(am[13], "'-note");
   assert.equal(am[0], "'2026-10-11", 'date stays text'); assert.equal(am[3], 'In Progress');
-  assert.match(am[6], /^=HYPERLINK\("https:\/\/a\.com\/x""y","Open product"\)$/, 'quotes in links are escaped');
-  assert.match(am[4], /^=IMAGE\("https?:/); assert.equal(qz.at(-2), '7'); assert.equal(qz.at(-1), '3'); assert.equal(qz[8], 'https://b.com/z'); assert.equal(qz[0], '', 'Client paid: nothing billed yet');
+  assert.match(am[6], /^=HYPERLINK\("https:\/\/a\.com\/x""y","Open product 1"\)$/, 'quotes in links are escaped; numbered when there are several');
+  assert.match(am[4], /^=IMAGE\("https?:/); assert.equal(qz.at(-2), '7'); assert.equal(qz.at(-1), '3'); assert.equal(qz[8], 'Product 2: https://b.com/z'); assert.equal(qz[0], '', 'Client paid: nothing billed yet');
   assert.equal(websiteCells({ APP_SESSION_SECRET: 's' }, { ...o, client_paid: 'Paid' }, [], '').qz[0], 'Paid');
   assert.deepEqual(HEADERS.slice(11, 19), ['Tax number', 'Gift message', 'Notes', 'Competitor price', 'Total cost (USD)', 'Tracking number', 'Courier', 'Shipping status']);
   assert.ok(!HEADERS.includes('Country'), 'the country is in the address instead');

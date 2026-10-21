@@ -9,7 +9,7 @@ test('client order form requires product photos and the product link', () => {
   const form = portal.slice(portal.indexOf('function viewForm()'), portal.indexOf('// ---------- messages'));
   assert.match(form, /Photo or screenshot of the product/);
   assert.match(form, /data-pick-input/);
-  assert.match(form, /data-item-add/);
+  assert.match(form, /data-prod-add/); assert.match(form, /data-var-add/);
   assert.match(form, /data-qty/, 'how many on each order line');
   assert.match(form, /Full address and phone/);
   assert.doesNotMatch(form, /name="itemTitle"/);

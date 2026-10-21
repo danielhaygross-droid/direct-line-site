@@ -107,11 +107,11 @@ export function websiteCells(env, o, photos, shopName) {
   const am = [
     txt(o.order_date || new Date(Number(o.created_at) * 1000).toISOString().slice(0, 10)), txt(o.order_ref || '#' + o.id), txt(shopName),
     STATUS[o.status] || o.status, urls[0] ? `=IMAGE("${q(urls[0])}&size=thumb",1)` : '', urls[0] ? `=HYPERLINK("${q(urls[0])}","Photo 1")` : '',
-    links[0] ? `=HYPERLINK("${q(links[0])}","Open product")` : '', Number(o.quantity || 1), txt(product), txt(o.buyer_name),
+    links[0] ? `=HYPERLINK("${q(links[0])}","${links.length > 1 ? 'Open product 1' : 'Open product'}")` : '', Number(o.quantity || 1), txt(product), txt(o.buyer_name),
     txt(addressLines(o)), txt(o.tax_number), txt(o.gift_message), txt(savedPriceFlag(o) + (o.notes || '')), txt(o.competitor_price),
   ];
   const qz = [o.client_paid || '', ...Array.from({ length: 7 }, (_, i) => urls[i + 1] ? `=HYPERLINK("${q(urls[i + 1])}","Photo ${i + 2}")` : ''),
-    txt(links.slice(1).join('\n')), String(o.id), String(o.client_id)];
+    txt(links.slice(1).map((l, i) => `Product ${i + 2}: ${l}`).join('\n')), String(o.id), String(o.client_id)];
   return { am, qz };
 }
 
