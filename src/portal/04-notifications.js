@@ -7,7 +7,7 @@
     const base = { id: 'n' + e.id, orderId: e.orderId, time: e.createdAt * 1000, action: 'View order' };
     let it;
     if(e.kind==='product')it={...base,product:true,action:'View products',icon:'order',tone:'gold',title:'Product quote updated',text:e.productName};
-    else if (e.kind === 'invoice') it = {...base, invoice:true, action:'View payments', icon:'wallet',tone:'mint',title:'New invoice available',text:e.detail};
+    else if (e.kind === 'invoice') { const [amt, day] = String(e.detail || '').split('|'); it = {...base, invoice:true, action:'View payments', icon:'wallet',tone:'mint',title:'New receipt',text:day ? `For your ${money(amt)} payment of ${window.DLPayOrders.day(day)}` : e.detail}; }
     else if(e.kind==='claim')it={...base,icon:'alert',tone:'gold',title:'Claim updated',text:ref};
     else if (e.kind === 'status') {
       const words = { processing: 'We’re working on it now.', shipped: 'It’s on its way to your customer.', delivered: 'It was delivered to your customer.', cancelled: 'This order was cancelled.', pending: 'It’s back to pending.' };

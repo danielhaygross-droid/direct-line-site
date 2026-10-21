@@ -92,13 +92,14 @@
     try { const [p,t,f] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id),api('/admin/invoices?clientId='+id)]); payments=p.payments; transferProofs=t.transfers;invoiceFiles=f.invoices;balanceAdjustments=p.adjustments||[];billing=p.billing||null; } catch (e) { payments = []; transferProofs = []; invoiceFiles=[]; toast('Couldn’t load payments: ' + e.message); }
     if (S.drawer?.kind === 'client' && S.drawer.id === id) fillClient(clientOf(id), true);
   }
-  const adminInvoiceLinks=files=>files.length ? files.map(f=>`<p><a href="/api/portal/files/${f.id}" target="_blank" rel="noopener"><span>Download invoice</span> <span data-no-i18n>${esc(f.filename)}</span></a></p>`).join('') : '<span class="muted">Invoice pending</span>';
+  // Receipts (stored as portal_files kind 'invoice'): the file Direct Line sends the client for money already paid.
+  const adminInvoiceLinks=files=>files.length ? files.map(f=>`<p><a href="/api/portal/files/${f.id}" target="_blank" rel="noopener"><span>Download receipt</span> <span data-no-i18n>${esc(f.filename)}</span></a></p>`).join('') : '<span class="muted">No receipt yet</span>';
   function invoiceFields(clientId,orderId,withOrders){
-    return `<label class="field full"><span>Upload invoice <small>PDF or image, maximum 2 MB</small></span><input name="invoiceFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp"></label>${withOrders ? `<div class="field full"><span>Orders on this invoice <small>optional</small></span>${poList(clientId,{all:true,compare:false})}</div>` : ''}`;
+    return `<label class="field full"><span>Receipt file <small>PDF or image, maximum 2 MB</small></span><input name="invoiceFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp"></label>${withOrders ? `<div class="field full"><span>Orders on this receipt <small>optional</small></span>${poList(clientId,{all:true,compare:false})}</div>` : ''}`;
   }
   function invoiceForm(clientId,orderId){
     const today=new Date().toLocaleDateString('en-CA');
-    return `<form class="form-grid" data-invoice-form="${clientId}" data-order-id="${orderId||''}">${invoiceFields(clientId,orderId,!orderId)}<label class="field"><span>Invoice date</span><input name="invoiceDate" type="date" value="${today}" required></label>${orderId ? '' : `<label class="field"><span>Linked payment <small>optional</small></span><select name="invoicePayment"><option value="">No payment link</option>${payments.map(p=>`<option value="${p.id}">${money(p.amount)} · ${esc(fullDate(p.paidAt))}${p.archived?' · Archived':''}</option>`).join('')}</select></label>`}<button type="submit" class="btn btn-primary">Save invoice</button><p class="form-msg" data-invoice-msg></p></form>`;
+    return `<form class="form-grid" data-invoice-form="${clientId}" data-order-id="${orderId||''}">${invoiceFields(clientId,orderId,!orderId)}<label class="field"><span>Receipt date</span><input name="invoiceDate" type="date" value="${today}" required></label>${orderId ? '' : `<label class="field"><span>Linked payment <small>optional</small></span><select name="invoicePayment"><option value="">No payment link</option>${payments.map(p=>`<option value="${p.id}">${money(p.amount)} · ${esc(fullDate(p.paidAt))}${p.archived?' · Archived':''}</option>`).join('')}</select></label>`}<button type="submit" class="btn btn-primary">Save receipt</button><p class="form-msg" data-invoice-msg></p></form>`;
   }
   async function invoiceFile(f){
     const file=f.invoiceFile.files[0];if(!file)return null;if(file.size>2*1024*1024)throw new Error('The file is too large. Maximum 2 MB.');
@@ -120,13 +121,15 @@
   function paySummary(c) {
     const mine = S.orders.filter(o => o.clientId === c.id && !o.archived), st = o => PO.state(o, balanceAdjustments);
     const unpaid = mine.filter(o => st(o) === 'unpaid'), due = unpaid.reduce((n, o) => n + PO.dueCents(o, balanceAdjustments), 0) / 100;
-    const loose = payments.filter(p => !p.archived && !p.orderIds?.length), looseSum = loose.reduce((n, p) => n + Number(p.amount), 0);
+    const live = payments.filter(p => !p.archived), loose = live.filter(p => !p.orderIds?.length), noReceipt = live.filter(p => !receiptsOf(p).length);
+    const todo = [[loose, 'payment is not linked to orders yet', 'payments are not linked to orders yet', 'Press Edit on it and tick its orders.'],
+      [noReceipt, 'payment has no receipt yet', 'payments have no receipt yet', 'Press Attach receipt: the client gets it in their portal.']].filter(([l]) => l.length);
     return `<section class="card card-pad"><h3 class="sec-title">Orders and payments</h3><div class="pay-sum">
         <div><small>Paid orders</small><b class="pos">${mine.filter(o => st(o) === 'paid').length}</b></div>
         <div><small>Not paid yet</small><b class="${unpaid.length ? 'neg' : ''}">${unpaid.length}</b><em>${money(due)}</em></div>
         <div><small>No bill yet</small><b>${mine.filter(o => st(o) === 'unbilled').length}</b><em>No cost yet</em></div>
         <div><small>Balance</small><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b><em><span>Billed</span> ${money(c.billed)} · <span>Paid</span> ${money(c.paid)}</em></div></div>
-      ${loose.length ? `<p class="pay-warn"><b>${loose.length}</b> <span>${loose.length === 1 ? 'payment is not linked to orders yet' : 'payments are not linked to orders yet'}</span> (${money(looseSum)}). <span>Press Edit on the payment below and tick its orders.</span></p>` : ''}</section>`;
+      ${todo.length ? `<div class="pay-todo"><b class="pay-todo-title">To do</b>${todo.map(([l, one, many, hint]) => `<p><button type="button" class="link-btn" data-scroll-pay="pay-${l[0].id}"><b>${l.length}</b> <span>${l.length === 1 ? one : many}</span></button> <span class="dim">${hint}</span></p>`).join('')}</div>` : ''}</section>`;
   }
   // Billing details for receipts (the client fills them in on their Payments page; Ada uses them for the invoice header).
   function billingHTML(c) {
@@ -142,8 +145,71 @@
         <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save billing details</button><p class="form-msg" data-billing-msg style="margin:0"></p></div></form></details></section>`;
   }
   function transferProofHTML() {
-    return transferProofs.length ? `<section class="card card-pad"><h3 class="sec-title">Transfer confirmations</h3><p class="note">Check the confirmation and receipt of funds before recording the payment.</p>${transferProofs.map(t=>`<div class="confirmation-row"><div><b>${money(t.amount)}</b> <small data-no-i18n>${esc(t.date)}</small><p><a href="/api/portal/files/${t.id}${t.mime.startsWith('image/') ? '?inline=1" data-photo="1' : ''}" target="_blank" rel="noopener">Open confirmation</a></p>${t.orderIds?.length ? `<small class="dim"><span>Orders ticked by the client:</span> ${t.orderIds.length}</small>` : ''}${t.mime.startsWith('image/') ? `<img data-photo src="/api/portal/files/${t.id}?inline=1" style="max-width:160px;max-height:120px;object-fit:contain" alt="Transfer confirmation">` : ''}</div>${t.status==='pending' ? `<button type="button" class="btn btn-primary" data-record-transfer="${t.id}">Record this payment</button>` : t.status==='archived' ? `<button type="button" class="btn" data-restore-payment="${t.paymentId}">Restore payment</button>` : '<span class="tag">Recorded</span>'}</div>`).join('')}</section>` : '';
+    const list = transferProofs.filter(t => t.status !== 'recorded');
+    return list.length ? `<section class="card card-pad attn-card"><h3 class="sec-title">Transfer confirmations to check</h3><p class="note">The client sent these. Check that the money arrived, then record the payment.</p>${list.map(t=>`<div class="confirmation-row"><div><b>${money(t.amount)}</b> <small data-no-i18n>${esc(PO.day(t.date))}</small><p><a href="/api/portal/files/${t.id}${t.mime.startsWith('image/') ? '?inline=1" data-photo="1' : ''}" target="_blank" rel="noopener">Open confirmation</a></p>${t.orderIds?.length ? `<small class="dim"><span>Orders ticked by the client:</span> ${t.orderIds.length}</small>` : ''}${t.mime.startsWith('image/') ? `<img data-photo src="/api/portal/files/${t.id}?inline=1" style="max-width:160px;max-height:120px;object-fit:contain" alt="Transfer confirmation">` : ''}</div>${t.status==='pending' ? `<button type="button" class="btn btn-primary" data-record-transfer="${t.id}">Record this payment</button>` : `<button type="button" class="btn" data-restore-payment="${t.paymentId}">Restore payment</button>`}</div>`).join('')}</section>` : '';
   }
+  // ---------- Money > Payments (Erwin, 21 Oct 2026): one card per payment — the amount, the orders it pays and its
+  // receipt. "Attach receipt" sends the receipt to the client (notification + download on their Payments page). ----------
+  const receiptsOf = p => invoiceFiles.filter(f => f.paymentId === p.id);
+  const dayInput = sec => new Date(Number(sec) * 1000).toISOString().slice(0, 10);
+  const methods = m => { const base = ['Bank transfer', 'PayPal', 'Wise', 'Other']; return !m || base.includes(m) ? base : [m, ...base]; };
+  const receiptInput = (required = false) => `<label class="field full"><span>Receipt file <small>PDF or image, maximum 2 MB</small></span><input name="invoiceFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp"${required ? ' required' : ''}></label>`;
+  function recordForm(c, iso) {
+    const tr = pendingTransfer();
+    return `<form class="form-grid pay-form" data-pay-form="${c.id}"${tr ? ` data-transfer="${tr.id}"` : ''} novalidate>
+      ${tr ? `<div class="pay-from full"><span><b>From the client’s transfer confirmation</b> <span data-no-i18n>${money(tr.amount)} · ${esc(PO.day(tr.date))}</span></span></div>` : ''}
+      <p class="pay-step full"><b>1</b><span>How much arrived, and when</span></p>
+      <label class="field"><span>Amount received</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal"${tr ? ` value="${Number(tr.amount).toFixed(2)}"` : ''}></span></label>
+      <label class="field"><span>Date</span><input name="paidAt" type="date" value="${tr ? esc(tr.date) : iso}"></label>
+      <label class="field"><span>Method</span><select name="method">${methods('').map(m => `<option value="${m}">${m}</option>`).join('')}</select></label>
+      <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500"${tr ? ` placeholder="Transfer confirmation #${tr.id}"` : ''}></label>
+      <p class="pay-step full"><b>2</b><span>Which orders it pays</span></p>
+      <div class="full">${poList(c.id, { checked: tr ? tr.orderIds || [] : [], amount: tr ? tr.amount : 0 })}</div>
+      <p class="pay-step full"><b>3</b><span>Receipt for the client <small>optional: you can also attach it later</small></span></p>
+      ${receiptInput()}
+      <div class="full pay-actions"><button class="btn btn-primary" type="submit">Record payment</button><button type="button" class="btn" data-pay-cancel>Cancel</button><p class="form-msg" data-pay-msg></p></div></form>`;
+  }
+  function attachForm(p) {
+    const b = billing, copy = b ? [b.name, b.company, b.address, b.email, b.phone].filter(Boolean).join('\n') : '';
+    return `<form class="form-grid pay-inline" data-receipt-form="${p.id}" novalidate>
+      <p class="pay-step full"><b>${ic('doc')}</b><span>Send a receipt for this payment</span></p>
+      <div class="full bill-to">${b ? `<div><small class="dim">Bill to</small><p><b data-no-i18n>${esc(b.name)}</b>${b.company ? ` · <span data-no-i18n>${esc(b.company)}</span>` : ''}</p><p data-no-i18n style="white-space:pre-line">${esc(b.address)}</p><p data-no-i18n>${[b.email, b.phone].filter(Boolean).map(esc).join(' · ')}</p></div><button type="button" class="btn btn-sm" data-copy="${esc(copy)}">${ic('copy')}Copy</button>` : '<p class="pay-warn" style="margin:0">No billing details yet. The client can add them on their Payments page, or you can add them in Billing details below.</p>'}</div>
+      ${receiptInput(true)}
+      <label class="field"><span>Receipt date</span><input name="invoiceDate" type="date" value="${dayInput(p.paidAt)}"></label>
+      <p class="note full" style="margin:0">The client gets a notification and can download the receipt on their Payments page.</p>
+      <div class="full pay-actions"><button class="btn btn-primary" type="submit">Send receipt to the client</button><button type="button" class="btn" data-receipt-cancel>Cancel</button><p class="form-msg" data-receipt-msg></p></div></form>`;
+  }
+  function editForm(p) {
+    return `<form class="form-grid pay-inline" data-payment-edit-form="${p.id}" novalidate>
+      <label class="field"><span>Amount received</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" value="${Number(p.amount).toFixed(2)}"></span></label>
+      <label class="field"><span>Date</span><input name="paidAt" type="date" value="${dayInput(p.paidAt)}"></label>
+      <label class="field"><span>Method</span><select name="method">${methods(p.method).map(m => `<option value="${esc(m)}"${m === p.method ? ' selected' : ''}>${esc(m)}</option>`).join('')}</select></label>
+      <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500" value="${esc(p.note)}"></label>
+      <div class="field full"><span>Orders this payment is for <small>tick the orders the money is for</small></span>${poList(p.clientId, { paymentId: p.id, checked: p.orderIds || [], amount: p.amount })}</div>
+      <div class="full pay-actions"><button class="btn btn-primary" type="submit">Save payment</button><button type="button" class="btn" data-pay-edit="${p.id}">Cancel</button><p class="form-msg" data-payment-edit-msg></p><span class="pay-spacer"></span><button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button></div></form>`;
+  }
+  function paymentCard(c, p) {
+    const files = receiptsOf(p), editing = S.drawer.payEdit === p.id, attaching = S.drawer.payAttach === p.id;
+    const tr = p.confirmationId ? transferProofs.find(t => t.id === p.confirmationId) : null;
+    return `<article class="card pay-card${p.archived ? ' archived' : ''}${editing || attaching ? ' open' : ''}" id="pay-${p.id}">
+      <div class="pay-card-head"><div class="pay-main"><b class="pay-amt">${money(p.amount)}</b><small><span data-no-i18n>${esc(PO.day(p.paidAt))}</span> · ${esc(p.method) || '—'}${p.note ? ` · <span data-no-i18n>${esc(p.note)}</span>` : ''}</small></div>
+        <div class="pay-tools">${p.archived ? `<span class="tag">Archived</span><button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm" data-pay-edit="${p.id}">${ic('edit')}${editing ? 'Close' : 'Edit'}</button>`}</div></div>
+      <div class="pay-line"><span class="pay-label">Orders</span><div>${PO.linked({ payment: p, orders: S.orders.filter(o => o.clientId === c.id), adjustments: balanceAdjustments, orderName, esc, admin: true })}</div></div>
+      <div class="pay-line"><span class="pay-label">Receipt</span><div class="receipt-cell">${files.length ? files.map(f => `<div class="receipt-file">${ic('doc')}<a href="/api/portal/files/${f.id}" target="_blank" rel="noopener" data-no-i18n>${esc(f.filename)}</a><small class="dim"><span>Sent to the client</span> · <span data-no-i18n>${esc(PO.day(f.createdAt))}</span></small><button type="button" class="btn btn-sm btn-ghost" data-receipt-remove="${f.id}">Remove</button></div>`).join('') : '<span class="pay-tag unpaid">Not sent yet</span>'}${p.archived || attaching ? '' : `<button type="button" class="btn btn-sm${files.length ? '' : ' btn-primary'}" data-pay-attach="${p.id}">${ic(files.length ? 'plus' : 'doc')}${files.length ? 'Attach another file' : 'Attach receipt'}</button>`}</div></div>
+      ${tr ? `<div class="pay-line"><span class="pay-label">Source</span><div><a href="/api/portal/files/${tr.id}${tr.mime.startsWith('image/') ? '?inline=1" data-photo="1' : ''}" target="_blank" rel="noopener">The client’s transfer confirmation</a></div></div>` : ''}
+      ${attaching ? attachForm(p) : ''}${editing ? editForm(p) : ''}
+    </article>`;
+  }
+  function paymentsPane(c, iso) {
+    const adding = S.drawer.payNew || pendingTransfer(), other = invoiceFiles.filter(f => !f.paymentId || !payments.some(p => p.id === f.paymentId));
+    return `${paySummary(c)}${transferProofHTML()}
+      ${adding ? `<section class="card card-pad" data-pay-card><h3 class="sec-title">Record a payment</h3>${recordForm(c, iso)}</section>` : ''}
+      <section class="pay-cards"><div class="pay-cards-head"><h3 class="sec-title">Payments <small>${payments.length}</small></h3>${adding ? '' : `<button type="button" class="btn btn-primary btn-sm" data-pay-new>${ic('plus')}Record a payment</button>`}</div>
+        ${payments.length ? payments.map(p => paymentCard(c, p)).join('') : `<div class="card">${empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</div>`}</section>
+      ${other.length ? `<section class="card card-pad"><h3 class="sec-title">Other receipts</h3>${adminInvoiceLinks(other)}</section>` : ''}
+      ${billingHTML(c)}`;
+  }
+
   // Account form: which existing orders also get the fee when it is saved, with how many orders each choice changes.
   function feeScopes(c) {
     const os = S.orders.filter(o => o.clientId === c.id && o.status !== 'cancelled' && !o.archived), n = st => os.filter(o => st.includes(o.status)).length;
@@ -156,7 +222,7 @@
     if (soft && [...d.body.querySelectorAll('[name=invoiceFile]')].some(f=>f.files.length)) return;
     if (soft && $('[data-reset-result] input', d.body)) return;
     if (soft && d.body.querySelector('[data-payment-edit-form]')) return;
-    if (soft && d.body.querySelector('form[data-dirty] [data-po], form[data-admin-billing][data-dirty]')) return;
+    if (soft && d.body.querySelector('form[data-dirty] [data-po], form[data-admin-billing][data-dirty], [data-receipt-form]')) return;
     if (soft && d.body.contains(document.activeElement) && document.activeElement.matches('input,select,textarea')) return;
     const t = new Date(), iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
     const pane = tab === 'orders'
@@ -168,15 +234,7 @@
       : tab === 'stores'
         ? `<section class="card card-pad"><h3 class="sec-title">My Stores</h3>${stores.length ? stores.map(s=>`<details class="fold-row" data-keep="s${s.id}"><summary>${window.DLClientStoreUI.label(s)}</summary>${window.DLClientStoreUI.form(s,c.id)}</details>`).join('') : '<p class="muted">No stores yet.</p>'}<details class="fold-row" data-keep="s-new"><summary><b>+ Add store</b></summary>${window.DLClientStoreUI.form(null,c.id)}</details></section>`
       : tab === 'products' ? productsPane(products)
-      : tab === 'payments'
-        ? `${paySummary(c)}${billingHTML(c)}${transferProofHTML()}${(tr => `<section class="card card-pad" data-pay-card><h3 class="sec-title">Record a payment</h3>${tr ? `<div class="pay-from"><span><b>From the client’s transfer confirmation</b> <span data-no-i18n>${money(tr.amount)} · ${esc(PO.day(tr.date))}</span></span><button type="button" class="btn btn-sm" data-transfer-cancel>Cancel</button></div>` : ''}<form class="form-grid" data-pay-form="${c.id}"${tr ? ` data-transfer="${tr.id}"` : ''} novalidate>
-            <label class="field"><span>Amount received</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal"${tr ? ` value="${Number(tr.amount).toFixed(2)}"` : ''}></span></label>
-            <label class="field"><span>Date</span><input name="paidAt" type="date" value="${tr ? esc(tr.date) : iso}"></label>
-            <label class="field"><span>Method</span><select name="method">${["Bank transfer", "PayPal", "Wise", "Other"].map(m => `<option value="${m}">${m}</option>`).join("")}</select></label>
-            <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500"${tr ? ` placeholder="Transfer confirmation #${tr.id}"` : ''}></label>
-            <div class="field full"><span>Orders this payment is for <small>tick the orders the money is for</small></span>${poList(c.id, { checked: tr ? tr.orderIds || [] : [], amount: tr ? tr.amount : 0 })}</div>
-            ${invoiceFields(c.id, null, false)}<p class="note full" style="margin:0">An invoice uploaded here is attached to this payment and to the ticked orders.</p><div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" type="submit">Record payment</button><p class="form-msg" data-pay-msg></p></div></form></section>`)(pendingTransfer())}
-          <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${adminInvoiceLinks(invoiceFiles)}${invoiceForm(c.id)}</section><section class="card">${payments.length ? `<table class="tbl"><tbody>${payments.map(p => `<tr><td><b class="pos">${money(p.amount)}</b><br><small class="dim">${esc(fullDate(p.paidAt))} · ${esc(p.method) || '—'}</small></td><td>${esc(p.note) || '<span class="dim">—</span>'}</td><td>${PO.linked({ payment: p, orders: S.orders.filter(o => o.clientId === c.id), adjustments: balanceAdjustments, orderName, esc, admin: true })}</td><td>${adminInvoiceLinks(invoiceFiles.filter(f=>f.paymentId===p.id))}</td><td class="num"><button type="button" class="btn btn-sm" data-edit-payment="${p.id}">Edit</button> ${p.archived ? `<span class="tag">Archived</span> <button type="button" class="btn btn-sm" data-restore-payment="${p.id}">Restore payment</button>` : `<button type="button" class="btn btn-sm btn-danger" data-del-payment="${p.id}">Archive payment</button>`}</td></tr>`).join('')}</tbody></table>` : empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</section>`
+      : tab === 'payments' ? paymentsPane(c, iso)
         : tab === 'prices' ? savedPricesHTML(c)
         : tab === 'activity' ? activityHTML(c)
         : `<section class="card card-pad"><form class="form-grid" data-account-form="${c.id}" novalidate>

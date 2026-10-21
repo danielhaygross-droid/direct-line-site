@@ -92,6 +92,17 @@ try {
   assert.deepEqual(ok(await call('/payments', 'GET', null, other)).payments, []);
   assert.ok(Object.values(Object.fromEntries((ok(await call('/orders', 'GET', null, other)).orders).map(o => [o.id, o]))).length === 0);
 
+  // A receipt for a payment: the client sees it and is notified; a receipt sent by mistake can be removed (archived) by an admin only.
+  const rc = ok(await call('/admin/invoices', 'POST', { clientId: id, paymentId: r1.paymentId, orderIds: [B, C], date: '2026-10-21', file }, admin)).invoice;
+  assert.equal(rc.paymentId, r1.paymentId); assert.deepEqual(rc.orderIds, [B, C]);
+  assert.deepEqual(ok(await call('/payments', 'GET', null, client)).invoices.map(f => f.id), [rc.id]);
+  const note = ok(await call('/notifications', 'GET', null, client)).items.find(n => n.kind === 'invoice');
+  assert.equal(note.detail, '59.00|2026-10-21', 'the notification names the payment');
+  assert.equal((await call('/admin/invoices/' + rc.id + '/archive', 'POST', {}, client)).status, 403, 'clients cannot remove receipts');
+  ok(await call('/admin/invoices/' + rc.id + '/archive', 'POST', {}, admin));
+  assert.deepEqual(ok(await call('/payments', 'GET', null, client)).invoices, [], 'removed: the client no longer sees it');
+  assert.equal(Number((await DB.prepare('SELECT COUNT(*) AS n FROM portal_files WHERE id=? AND archived').bind(rc.id).first()).n), 1, 'kept in the database');
+
   // Billing details for receipts.
   assert.equal(mine.billing, null);
   for (const [body, re] of [[{ address: '1 St', email: 'a@b.co' }, /name/], [{ name: 'Yael', email: 'a@b.co' }, /address/], [{ name: 'Yael', address: '1 St' }, /email or a phone/], [{ name: 'Yael', address: '1 St', email: 'not-an-email' }, /email/], [{ name: 'Yael', address: '1 St', phone: 'call me' }, /phone/]]) {
@@ -104,5 +115,5 @@ try {
   assert.notEqual((await call('/billing', 'PUT', { name: 'X', address: 'Y', email: 'x@y.co' }, admin, { 'x-dl-view-as': String(id) })).status, 200, 'admin preview cannot save');
   const byAdmin = ok(await call('/admin/billing/' + id, 'POST', { ...saved, phone: '' }, admin)).billing; assert.equal(byAdmin.updatedBy, 'admin'); assert.equal(byAdmin.phone, '');
   assert.equal((await call('/admin/billing/' + id, 'POST', { name: 'X' }, client)).status, 403, 'clients cannot use the admin route');
-  console.log('PASS payment orders: link, refuse without saving, edit + history, archive/restore without double payment, transfer ticks, amount correction, client view; billing details: checks, tidy, admin view and edit, privacy');
+  console.log('PASS payment orders: link, receipts (send, notify, remove), refuse without saving, edit + history, archive/restore without double payment, transfer ticks, amount correction, client view; billing details: checks, tidy, admin view and edit, privacy');
 } finally { await pg.close(); }

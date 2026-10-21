@@ -31,7 +31,7 @@
     $('[data-d-info]', d.body).innerHTML = `
       <section class="card card-pad">${UI.tracker(o, drawerEvents)}</section>${UI.activity(drawerEvents)}
       ${claimCard(S.claims.find(c=>c.orderId===o.id))}
-      <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${invoiceLinks(S.invoices.filter(f=>f.orderIds.includes(o.id)))}</section>
+      <section class="card card-pad"><h3 class="sec-title">Receipts</h3>${invoiceLinks(S.invoices.filter(f=>f.orderIds.includes(o.id)))}</section>
       <section class="card card-pad"><h3 class="sec-title">Tracking</h3>${o.trackingNumber
         ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="tracking" style="font-size:16px;font-weight:600">${esc(o.trackingNumber)}</span>${o.courier ? `<span class="courier-tag"><small>Courier</small> <b data-no-i18n>${esc(o.courier)}</b></span>` : ''}<span style="flex:1"></span><button type="button" class="btn btn-sm" data-copy="${esc(o.trackingNumber)}">${ic('copy')}Copy</button><a class="btn btn-sm" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track parcel</a></div>`
         : '<p class="muted" style="margin:0">No tracking number yet. Direct Line will add it after the parcel ships.</p>'}</section>

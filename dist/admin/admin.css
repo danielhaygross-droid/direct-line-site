@@ -146,3 +146,21 @@ details.fold>summary small{margin-inline-start:auto}
 /* product photos in the price form: big enough to judge the product; click one for full size */
 .qf-photos{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px}.qf-photo{width:160px;height:160px;object-fit:contain;border:1px solid var(--line);border-radius:14px;background:var(--surface);cursor:zoom-in}
 @media(max-width:560px){.qf-photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.qf-photo{width:100%;height:auto;aspect-ratio:1}}
+/* Money > Payments: one card per payment (amount, orders, receipt). */
+.pay-todo{margin-top:12px;padding:10px 12px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--orange) 10%,transparent)}.pay-todo p{margin:4px 0}.pay-todo-title{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:2px}
+.link-btn{border:0;background:none;padding:0;font:inherit;color:var(--gold-2);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.attn-card{border-color:color-mix(in srgb,var(--gold) 45%,var(--line))}.attn-card .confirmation-row{align-items:flex-start}.attn-card .confirmation-row small{display:block;margin-top:4px}.attn-card .confirmation-row img{display:block;margin-top:8px;border-radius:8px;border:1px solid var(--line);background:var(--surface)}
+.pay-cards{display:grid;gap:12px}.pay-cards-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}.pay-cards-head .sec-title{margin:0}.pay-cards-head small{color:var(--muted);font-weight:500;margin-inline-start:4px}
+.pay-card{padding:16px 18px}.pay-card.open{border-color:color-mix(in srgb,var(--gold) 55%,var(--line));box-shadow:var(--shadow-sm)}.pay-card.archived{opacity:.65}
+.pay-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:8px}
+.pay-main{display:grid;gap:2px;min-width:0}.pay-amt{font-size:22px;color:var(--mint)}.pay-main small{color:var(--muted);font-size:13px}
+.pay-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.pay-line{display:grid;grid-template-columns:84px minmax(0,1fr);gap:10px;align-items:start;padding:9px 0;border-top:1px solid var(--line)}
+.pay-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding-top:3px}
+.receipt-cell{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.receipt-file{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;width:100%}.receipt-file svg{width:18px;height:18px;fill:none;stroke:var(--gold-2);stroke-width:1.8;flex:none}.receipt-file a{font-weight:600}
+.pay-inline{margin-top:10px;padding:14px;border-radius:var(--radius-sm);background:var(--surface-2);border:1px solid var(--line)}
+.pay-step{display:flex;align-items:center;gap:10px;margin:6px 0 0;font-weight:700}.pay-step>b{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--gold-2);color:#fff;font-size:13px;flex:none}.pay-step>b svg{width:15px;height:15px;fill:none;stroke:#fff;stroke-width:2}.pay-step small{font-weight:500;color:var(--muted)}
+.pay-form .pay-step:first-of-type{margin-top:0}
+.pay-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.pay-actions .form-msg{margin:0}.pay-spacer{flex:1}
+.bill-to{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface)}.bill-to p{margin:2px 0}
+@media(max-width:560px){.pay-inline.form-grid,.pay-form.form-grid{grid-template-columns:minmax(0,1fr)}.pay-inline .field input,.pay-inline .field select{min-width:0;width:100%}.pay-card{padding:14px}.pay-line{grid-template-columns:1fr;gap:4px}.pay-amt{font-size:20px}.pay-spacer{display:none}}

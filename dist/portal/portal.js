@@ -228,7 +228,7 @@
     const base = { id: 'n' + e.id, orderId: e.orderId, time: e.createdAt * 1000, action: 'View order' };
     let it;
     if(e.kind==='product')it={...base,product:true,action:'View products',icon:'order',tone:'gold',title:'Product quote updated',text:e.productName};
-    else if (e.kind === 'invoice') it = {...base, invoice:true, action:'View payments', icon:'wallet',tone:'mint',title:'New invoice available',text:e.detail};
+    else if (e.kind === 'invoice') { const [amt, day] = String(e.detail || '').split('|'); it = {...base, invoice:true, action:'View payments', icon:'wallet',tone:'mint',title:'New receipt',text:day ? `For your ${money(amt)} payment of ${window.DLPayOrders.day(day)}` : e.detail}; }
     else if(e.kind==='claim')it={...base,icon:'alert',tone:'gold',title:'Claim updated',text:ref};
     else if (e.kind === 'status') {
       const words = { processing: 'We’re working on it now.', shipped: 'It’s on its way to your customer.', delivered: 'It was delivered to your customer.', cancelled: 'This order was cancelled.', pending: 'It’s back to pending.' };
@@ -511,7 +511,7 @@
     $('[data-d-info]', d.body).innerHTML = `
       <section class="card card-pad">${UI.tracker(o, drawerEvents)}</section>${UI.activity(drawerEvents)}
       ${claimCard(S.claims.find(c=>c.orderId===o.id))}
-      <section class="card card-pad"><h3 class="sec-title">Invoices</h3>${invoiceLinks(S.invoices.filter(f=>f.orderIds.includes(o.id)))}</section>
+      <section class="card card-pad"><h3 class="sec-title">Receipts</h3>${invoiceLinks(S.invoices.filter(f=>f.orderIds.includes(o.id)))}</section>
       <section class="card card-pad"><h3 class="sec-title">Tracking</h3>${o.trackingNumber
         ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="tracking" style="font-size:16px;font-weight:600">${esc(o.trackingNumber)}</span>${o.courier ? `<span class="courier-tag"><small>Courier</small> <b data-no-i18n>${esc(o.courier)}</b></span>` : ''}<span style="flex:1"></span><button type="button" class="btn btn-sm" data-copy="${esc(o.trackingNumber)}">${ic('copy')}Copy</button><a class="btn btn-sm" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track parcel</a></div>`
         : '<p class="muted" style="margin:0">No tracking number yet. Direct Line will add it after the parcel ships.</p>'}</section>
@@ -827,7 +827,7 @@
       try{const r=await api('/billing',{method:'PUT',body:{name:bf.name.value,company:bf.company.value,address:bf.address.value,email:bf.email.value,phone:bf.phone.value}});S.billing=r.billing;S.billingEdit=false;bf.dataset.dirty='';renderView();N.popup({icon:'check',title:'Billing details saved.'});}
       catch(ex){m.textContent=ex.message;m.className='form-msg err';b.disabled=false;}});}
     $('[data-unpaid]')?.addEventListener('toggle',e=>{S.unpaidOpen=e.target.open;});
-    const monthly=$('#invoice-month-form');if(monthly)monthly.addEventListener('submit',async e=>{e.preventDefault();const msg=$('[data-month-msg]',monthly),b=$('[type=submit]',monthly);msg.textContent='';b.disabled=true;try{const r=await fetch('/api/portal/invoices/month?month='+encodeURIComponent(monthly.month.value),{credentials:'same-origin'});if(!r.ok)throw new Error(r.status===404?'No invoices for this month.':'Could not download invoices.');const url=URL.createObjectURL(await r.blob()),a=document.createElement('a');a.href=url;a.download='Direct-Line-invoices-'+monthly.month.value+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(ex){msg.textContent=ex.message;}finally{b.disabled=false;}});
+    const monthly=$('#invoice-month-form');if(monthly)monthly.addEventListener('submit',async e=>{e.preventDefault();const msg=$('[data-month-msg]',monthly),b=$('[type=submit]',monthly);msg.textContent='';b.disabled=true;try{const r=await fetch('/api/portal/invoices/month?month='+encodeURIComponent(monthly.month.value),{credentials:'same-origin'});if(!r.ok)throw new Error(r.status===404?'No receipts for this month.':'Could not download the receipts.');const url=URL.createObjectURL(await r.blob()),a=document.createElement('a');a.href=url;a.download='Direct-Line-receipts-'+monthly.month.value+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(ex){msg.textContent=ex.message;}finally{b.disabled=false;}});
 
     const f=$('#transfer-form'); if (!f) return;
     f.addEventListener('input',()=>{f.dataset.dirty='1';});
@@ -954,8 +954,16 @@
     $('[data-pq]')?.addEventListener('input',e=>{S.productQ=e.target.value;$('[data-plist]').innerHTML=productListHTML();});
     $('[data-add-product]')?.addEventListener('toggle',e=>{S.addProductOpen=e.target.open;});
     const f=$('#product-form');if(!f)return;f.addEventListener('input',()=>{f.dataset.dirty='1';});f.addEventListener('change',()=>{f.dataset.dirty='1';});f.addEventListener('submit',async e=>{e.preventDefault();const b=$('[type=submit]',f),m=$('[data-product-msg]',f);b.disabled=true;m.textContent='';try{const files=[...f.photos.files];if(!files.length||files.length>3)throw new Error('Add one to three product photos.');const photos=[];for(const file of files){const p=await shrinkImage(file);photos.push({filename:file.name,data:p.data});}await api('/products',{method:'POST',body:{name:f.name.value,link:f.link.value,variant:f.variant.value,expectedQuantity:f.expectedQuantity.value,competitorPrice:f.competitorPrice.value,photos}});f.dataset.dirty='';await refresh();N.popup({icon:'check',title:'Product sent for quote.'});}catch(ex){m.textContent=ex.message;b.disabled=false;}});}
+  // Receipts Direct Line sent for money already paid (stored as kind 'invoice').
   function invoiceLinks(files) {
-    return files.length ? files.map(f=>`<p><a class="btn btn-sm" href="/api/portal/files/${f.id}" target="_blank" rel="noopener"><span>Download invoice</span> <small data-no-i18n>${esc(f.filename)}</small></a></p>`).join('') : '<span class="muted">Invoice pending</span>';
+    return files.length ? files.map(f=>`<p><a class="btn btn-sm" href="/api/portal/files/${f.id}" target="_blank" rel="noopener">${ic('doc')}<span>Download receipt</span> <small data-no-i18n>${esc(f.filename)}</small></a></p>`).join('') : '<span class="muted">Receipt not ready yet</span>';
+  }
+  // Payment history: one row per payment — amount and date, the orders it paid, and its receipt to download.
+  function paymentRow(p) {
+    const files = S.invoices.filter(f => f.paymentId === p.id);
+    return `<div class="cpay-row"><div class="cpay-main"><b class="pos">${money(p.amount)}</b><small><span data-no-i18n>${esc(window.DLPayOrders.day(p.paidAt))}</span> · ${esc(p.method) || '—'}${p.note ? ` · <span data-no-i18n>${esc(p.note)}</span>` : ''}</small></div>
+      <div class="cpay-orders">${window.DLPayOrders.linked({ payment: p, orders: S.orders, adjustments: S.adjustments, orderName, esc })}</div>
+      <div class="cpay-receipt">${files.length ? files.map(f => `<a class="btn btn-sm btn-primary" href="/api/portal/files/${f.id}" target="_blank" rel="noopener" title="${esc(f.filename)}">${ic('doc')}<span>Download receipt</span></a>`).join('') : '<span class="muted">Receipt not ready yet</span>'}</div></div>`;
   }
   function viewPayments() {
     const s = S.me.summary, credit = s.outstanding < 0, adjustments=S.adjustments.filter(a=>!S.storeId||S.orders.some(o=>o.id===a.orderId&&o.storeId===S.storeId));
@@ -970,10 +978,8 @@
       ${S.billing ? '' : billingCard()}
       ${howToPay()}
       ${transferForm()}
-      <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3><form id="invoice-month-form"><label class="field"><span>Invoice month</span><input type="month" name="month" value="${localDay().slice(0,7)}" required></label><button class="btn btn-sm" type="submit">Download all invoices for month</button><p data-month-msg class="form-msg"></p></form></div>
-        ${S.payments.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Date</th><th>Method</th><th>Note</th><th>Orders</th><th>Invoice</th><th class="num">Amount</th></tr></thead><tbody>
-          ${S.payments.map(p => `<tr><td data-label="Date">${esc(fullDate(p.paidAt))}</td><td data-label="Method">${esc(p.method) || '—'}</td><td data-label="Note" class="wide">${esc(p.note) || '<span class="dim">—</span>'}</td><td data-label="Orders">${window.DLPayOrders.linked({ payment: p, orders: S.orders, adjustments: S.adjustments, orderName, esc })}</td><td data-label="Invoice">${invoiceLinks(S.invoices.filter(f=>f.paymentId===p.id))}</td><td data-label="Amount" class="num"><b class="pos">${money(p.amount)}</b></td></tr>`).join('')}
-        </tbody></table></div>` : empty('wallet', 'No payments yet', 'When we receive a payment from you, we record it here.')}
+      <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3><form id="invoice-month-form" class="month-receipts"><label class="field"><span>Receipts for a month</span><input type="month" name="month" value="${localDay().slice(0,7)}" required></label><button class="btn btn-sm" type="submit">Download all</button><p data-month-msg class="form-msg"></p></form></div>
+        ${S.payments.length ? `<div class="cpay-list">${S.payments.map(paymentRow).join('')}</div>` : empty('wallet', 'No payments yet', 'When we receive a payment from you, we record it here.')}
       </section>
       ${S.billing ? billingCard() : ''}
       <p class="note">Your bill is the total of each order. The Direct Line team records payments when they arrive.</p>`;

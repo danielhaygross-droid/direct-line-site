@@ -755,7 +755,9 @@ async function routePortal(request, url, ctx, meta) {
   // ----- notifications: what the other side did, newest first -----
   if (path === '/notifications' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND NOT o.archived AND e.actor = 'admin' ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
-    for(const f of await invoices(DB,who.clientId)) rows.push({id:'invoice-'+f.id,order_id:f.orderIds[0]||null,client_id:who.clientId,kind:'invoice',actor:'admin',detail:f.filename,created_at:f.createdAt});
+    // A receipt: "amount|YYYY-MM-DD" of its payment (the portal shows "For your $1301.00 payment of 21 Oct 2026"), else the file name.
+    const pays = new Map((((await DB.prepare('SELECT id, amount, paid_at FROM client_payments WHERE client_id = ? AND NOT archived').bind(who.clientId).all()).results) || []).map(p => [Number(p.id), p]));
+    for(const f of await invoices(DB,who.clientId)) { const p = pays.get(f.paymentId); rows.push({id:'invoice-'+f.id,order_id:f.orderIds[0]||null,client_id:who.clientId,kind:'invoice',actor:'admin',detail:p ? Number(p.amount).toFixed(2) + '|' + new Date(Number(p.paid_at) * 1000).toISOString().slice(0, 10) : f.filename,created_at:f.createdAt}); }
     rows.sort((a,b)=>Number(b.created_at)-Number(a.created_at));
     const u = await DB.prepare('SELECT notif_seen_at FROM users WHERE id = ?').bind(who.clientId).first();
     return json({ ok: true, items: [...rows.map(eventOut),...await productEvents(DB,who.clientId)].sort((a,b)=>b.createdAt-a.createdAt).slice(0,50), seenAt: Number(u?.notif_seen_at || 0), now: now() });
@@ -1066,6 +1068,12 @@ async function routePortal(request, url, ctx, meta) {
   if (spForget && method === 'POST') return (await forgetSavedPrice(DB, Number(spForget[1]))) ? json({ ok: true }) : json({ ok: false, error: 'Not found' }, 404);
   const productQuote=/^\/admin\/products\/(\d+)$/.exec(path);if(productQuote&&method==='POST'){try{const product=await quoteProduct(DB,Number(productQuote[1]),await readBody(request));if(!product)return json({ok:false,error:'Not found'},404);const qs=syncQuoteRow(DB,env,product.id).catch(e=>console.error('Product Quotes row failed',e));if(waitUntil)waitUntil(qs);else await qs;return json({ok:true,product});}catch(e){return json({ok:false,error:e.message},400);}}
   if (path==='/admin/invoices' && method==='GET') return json({ok:true,invoices:await invoices(DB,Number(url.searchParams.get('clientId')))});
+  // Remove a receipt sent by mistake: archived (kept in the database), the client no longer sees it.
+  const receiptArchive = /^\/admin\/invoices\/(\d+)\/archive$/.exec(path);
+  if (receiptArchive && method === 'POST') {
+    await DB.prepare("UPDATE portal_files SET archived=TRUE WHERE id=? AND kind='invoice'").bind(Number(receiptArchive[1])).run();
+    return json({ ok: true });
+  }
   if (path==='/admin/invoices' && method==='POST') {try{return json({ok:true,invoice:await saveInvoice(DB,await readBody(request))});}catch(e){return json({ok:false,error:e.message},400);}}
   if (path === '/admin/payments' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
