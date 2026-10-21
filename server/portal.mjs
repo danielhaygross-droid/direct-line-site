@@ -28,7 +28,7 @@ import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, client
 
 import { STORAGE_SCHEMA, photoBytes, syncFileStorage, fileStorageStatus } from './file-storage.mjs';
 import { splitNotes } from './order-notes.mjs';
-import { SUPPLIER_SHEET_SCHEMA, setupSupplierWorkQueue, pollSupplierSheet, supplierSheetStatus, DEFAULT_COURIERS, courierList, updateCourierDropdown } from './supplier-sheet.mjs';
+import { SUPPLIER_SHEET_SCHEMA, markPaidDirty, setupSupplierWorkQueue, pollSupplierSheet, supplierSheetStatus, DEFAULT_COURIERS, courierList, updateCourierDropdown } from './supplier-sheet.mjs';
 import { runBackup, listBackups, downloadBackup } from './backup.mjs';
 import { LOGIN_LIMIT_SCHEMA, LOCK_MESSAGE, clientIp, loginKeys, lockedFor, recordFailure, clearFailures } from './login-limit.mjs';
 
@@ -984,6 +984,7 @@ async function routePortal(request, url, ctx, meta) {
   if (recordMatch && method === 'POST') {
     try {
       const transfer=await recordTransfer(DB,Number(recordMatch[1]),(await readBody(request))||{});
+      if (transfer) await markPaidDirty(DB);
       return transfer ? json({ok:true,transfer}) : json({ok:false,error:'Not found'},404);
     } catch (e) { return json({ ok:false, error:e.message }, 400); }
   }
@@ -994,6 +995,7 @@ async function routePortal(request, url, ctx, meta) {
     // Orders paid by another payment while this one was archived are taken off it (checked while still archived).
     const dropped=p.archived ? await dropTakenOrders(DB,Number(p.id),Number(p.client_id)) : 0;
     await DB.prepare('UPDATE client_payments SET archived=FALSE WHERE id=?').bind(Number(p.id)).run();
+    await markPaidDirty(DB);
     return json({ok:true,dropped});
   }
   // ----- file storage + backups (admin Settings → Storage & backups) -----
@@ -1137,7 +1139,7 @@ async function routePortal(request, url, ctx, meta) {
     let orderIds;
     try { orderIds = orderIdList(body.orderIds) || []; await checkOrders(DB, clientId, orderIds); } catch (e) { return json({ ok: false, error: e.message }, 400); }
     const row = await DB.prepare('INSERT INTO client_payments (client_id, amount, method, note, paid_at, created_at) VALUES (?,?,?,?,?,?) RETURNING id').bind(clientId, amount, text(body.method, 60), text(body.note, 500), Number.isFinite(paidAt) ? paidAt : now(), now()).first();
-    if (orderIds.length) await setPaymentOrders(DB, Number(row.id), clientId, orderIds, { log: false });
+    if (orderIds.length) { await setPaymentOrders(DB, Number(row.id), clientId, orderIds, { log: false }); await markPaidDirty(DB); }
     return json({ ok: true, id: row.id });
   }
   // Edit a recorded payment (amount, date, method, note). The old values are kept in payment_edits.
@@ -1164,7 +1166,7 @@ async function routePortal(request, url, ctx, meta) {
       if (orderIds) await checkOrders(DB, Number(old.client_id), orderIds, { paymentId: id, keep: (await paymentOrderIds(DB, Number(old.client_id))).get(id) || [] });
     } catch (e) { return json({ ok: false, error: e.message }, 400); }
     const linkChange = orderIds ? await setPaymentOrders(DB, id, Number(old.client_id), orderIds) : { added: 0, removed: 0 };
-    if (linkChange.added || linkChange.removed) changes.push(['orders']);
+    if (linkChange.added || linkChange.removed) { changes.push(['orders']); await markPaidDirty(DB); }
     if (changes.some(c => c[0] !== 'orders')) {
       await DB.prepare('UPDATE client_payments SET amount=?, method=?, note=?, paid_at=? WHERE id=?').bind(amount, methodText, note, paidAt, id).run();
       for (const [field, a, b] of changes.filter(c => c[0] !== 'orders')) await DB.prepare('INSERT INTO payment_edits (payment_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?)').bind(id, field, String(a), String(b), now()).run();
@@ -1174,6 +1176,7 @@ async function routePortal(request, url, ctx, meta) {
   const payDel = /^\/admin\/payments\/(\d+)\/delete$/.exec(path);
   if (payDel && method === 'POST') {
     await DB.prepare('UPDATE client_payments SET archived=TRUE WHERE id = ?').bind(Number(payDel[1])).run();
+    await markPaidDirty(DB);
     return json({ ok: true });
   }
   if (path === '/admin/users' && method === 'POST') {
