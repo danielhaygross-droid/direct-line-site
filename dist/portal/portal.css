@@ -309,11 +309,15 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .cpay-main{display:grid;gap:2px}.cpay-main b{font-size:18px}.cpay-main small{color:var(--muted);font-size:13px}.cpay-receipt{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
 .month-receipts{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}.month-receipts .field{margin:0}
 @media(max-width:700px){.cpay-row{grid-template-columns:1fr;gap:8px;padding:14px 16px}.cpay-receipt{justify-content:flex-start}}
-/* Order lines: one per product or colour — link, how many, colour / size (Pauline, 22 Oct 2026). */
-.item-list{display:grid;gap:10px}
-.item-row{position:relative;display:grid;grid-template-columns:minmax(0,1.7fr) 110px minmax(0,1.3fr) auto;gap:8px 10px;align-items:end}
-.item-list.many .item-row{padding:12px 12px 12px 40px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2)}
-[dir=rtl] .item-list.many .item-row{padding:12px 40px 12px 12px}
-.item-no{display:none}.item-list.many .item-no{display:grid;place-items:center;position:absolute;inset-inline-start:10px;top:14px;width:22px;height:22px;border-radius:50%;background:var(--gold-2);color:#fff;font-size:12px;font-weight:700}
-.item-row .field{margin:0}.item-remove{min-width:40px;font-size:18px;align-self:end;margin-bottom:4px}
-@media(max-width:700px){.item-row{grid-template-columns:84px minmax(0,1fr)}.item-row .item-link{grid-column:1/-1}.item-row .field small{display:none}.item-remove{position:absolute;inset-inline-end:6px;top:6px;margin:0}}
+/* What the customer ordered: a box per product (link), a row per colour / size (Pauline, 22 Oct 2026). */
+.prod-list{display:grid;gap:12px}
+.prod-block{display:grid;gap:10px}
+.prod-list.many .prod-block{padding:12px 14px;border:1px solid var(--line-2);border-radius:var(--radius-sm);background:var(--surface-2)}
+.prod-head{display:none}.prod-list.many .prod-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.prod-no{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--gold-2);text-transform:uppercase;letter-spacing:.05em}
+.var-list{display:grid;gap:8px}
+.var-row{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:8px 10px;align-items:end}
+.var-row+.var-row .field>span{display:none}
+.var-row .field,.prod-block .item-link{margin:0}.var-remove{min-width:40px;font-size:18px;margin-bottom:4px}
+.prod-block [data-var-add]{justify-self:start}
+@media(max-width:700px){.var-row{grid-template-columns:84px minmax(0,1fr) auto}.var-row .field small{display:none}}

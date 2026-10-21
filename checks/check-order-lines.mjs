@@ -38,74 +38,82 @@ const session = async (cookie, width) => { const ctx = await browser.newContext(
 const { admin, client, id } = await seed();
 const ok = r => { assert.ok(r.status === 200, JSON.stringify(r.data)); return r.data; };
 const fixture = new URL('./fixtures/en-1440-light-agreement.png', import.meta.url), fixturePath = decodeURIComponent(fixture.pathname).replace(/^\/([A-Za-z]:)/, '$1');
-const LINK = 'https://www.etsy.com/listing/4588909425/wooden-wall-hook-rack-walnut-or-beech';
-const fillOrder = async (page, ref) => {
+const LINK = 'https://www.etsy.com/listing/4588909425/wooden-wall-hook-rack-walnut-or-beech', LINK2 = 'https://www.etsy.com/listing/1111111111/oak-shelf';
+const prod = (page, n) => page.locator('#order-form [data-prod]').nth(n), vrow = (page, n, m) => prod(page, n).locator('[data-var]').nth(m);
+const fillVar = async (page, n, m, qty, text) => { await vrow(page, n, m).locator('[data-qty]').fill(String(qty)); await vrow(page, n, m).locator('[data-variant]').fill(text); };
+// Pauline's order: one product in two variations; then a second product, also in two variations.
+const fillOrder = async (page, ref, second = true) => {
   const f = page.locator('#order-form');
   await f.locator('[name=orderRef]').fill(ref);
-  const row = n => f.locator('[data-item]').nth(n);
-  await row(0).locator('[data-link]').fill(LINK); await row(0).locator('[data-qty]').fill('3'); await row(0).locator('[data-variant]').fill('Black Walnut, 7 Hooks');
-  await f.locator('[data-item-add]').click();
-  assert.equal(await row(1).locator('[data-link]').inputValue(), LINK, 'the link is copied to the new line');
-  assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-variant]')), true, 'the cursor is in the new colour box');
-  await row(1).locator('[data-variant]').fill('Beech, 5 Hooks'); await row(1).locator('[data-qty]').fill('2');
+  await prod(page, 0).locator('[data-link]').fill(LINK); await fillVar(page, 0, 0, 3, 'Black Walnut, 7 Hooks');
+  await prod(page, 0).locator('[data-var-add]').click();
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-variant]')), true, 'the cursor is in the new variation');
+  await fillVar(page, 0, 1, 2, 'Black Walnut, 6 Hooks');
+  if (second) {
+    await f.locator('[data-prod-add]').click();
+    assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-link]')), true, 'a new product starts with its link');
+    await prod(page, 1).locator('[data-link]').fill(LINK2); await fillVar(page, 1, 0, 1, 'Oak');
+    await prod(page, 1).locator('[data-var-add]').click(); await fillVar(page, 1, 1, 2, 'Walnut');
+  }
   await f.locator('[name=buyerName]').fill('Sample Buyer'); await f.locator('[name=address1]').fill('1 Sample Street, Springfield IL 62701, +1 555 0100');
   await f.locator('[name=destination]').selectOption('US');
 };
+const TEXT1 = '3 × Black Walnut, 7 Hooks\n2 × Black Walnut, 6 Hooks', TEXT2 = 'Product 1:\n' + TEXT1 + '\nProduct 2:\n1 × Oak\n2 × Walnut';
 
 try {
   // ---- 1. The flow once (English, desktop) ----
   {
     const ctx = await session(client, 1440), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.goto(`${base}/portal/?lang=en#/new`); await page.reload(); await page.waitForSelector('#order-form [data-item]');
-    assert.equal(await page.locator('[data-item]').count(), 1); assert.equal(await page.locator('[data-item-remove]:visible').count(), 0, 'one line: nothing to remove');
+    await page.goto(`${base}/portal/?lang=en#/new`); await page.reload(); await page.waitForSelector('#order-form [data-prod]');
+    assert.equal(await page.locator('[data-prod]').count(), 1); assert.equal(await page.locator('[data-var]').count(), 1);
+    assert.equal(await page.locator('[data-var-remove]:visible, [data-prod-remove]:visible').count(), 0, 'one row: nothing to remove');
     await fillOrder(page, 'PAULINE-1');
-    assert.match(await page.locator('[data-sum]').innerText(), /1 link · 5 items/, 'the total is the sum of the lines');
-    // A line without "how many" is refused, and marked.
-    await page.locator('[data-item]').nth(1).locator('[data-qty]').fill('');
+    assert.match(await page.locator('[data-sum]').innerText(), /2 products · 8 items/, 'the total is the sum of every variation');
+    // A variation without "how many" is refused, and marked.
+    await vrow(page, 1, 0).locator('[data-qty]').fill('');
     await page.locator('[data-submit]').click(); await page.waitForTimeout(300);
-    assert.match(await page.locator('#order-form').innerText(), /how many \(each line\)/); assert.equal(await page.locator('[data-item] .item-qty.bad').count(), 1);
-    await page.locator('[data-item]').nth(1).locator('[data-qty]').fill('2');
+    assert.match(await page.locator('#order-form').innerText(), /how many \(each variation\)/); assert.equal(await page.locator('[data-var] .item-qty.bad').count(), 1);
+    await vrow(page, 1, 0).locator('[data-qty]').fill('1');
     await page.locator('[data-pick-input]').setInputFiles(fixturePath); await page.waitForTimeout(500);
     await page.locator('[data-submit]').click(); await page.waitForFunction(() => location.hash.startsWith('#/orders'), null, { timeout: 15000 });
     const o = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.orderRef === 'PAULINE-1');
-    assert.equal(o.quantity, 5); assert.equal(o.variant, '3 × Black Walnut, 7 Hooks\n2 × Beech, 5 Hooks'); assert.equal(o.etsyUrl, LINK);
-    assert.deepEqual(o.items, [{ link: LINK, quantity: 3, variant: 'Black Walnut, 7 Hooks' }, { link: LINK, quantity: 2, variant: 'Beech, 5 Hooks' }]);
-    // Editing shows the lines again; a line can be removed (one line = as before).
-    await page.goto(`${base}/portal/?lang=en#/edit/${o.id}`); await page.reload(); await page.waitForSelector('#order-form [data-item]');
-    assert.deepEqual(await page.locator('[data-item] [data-qty]').evaluateAll(i => i.map(x => x.value)), ['3', '2']);
-    await page.locator('[data-item-remove]').nth(1).click(); await page.locator('[data-item] [data-qty]').fill('4'); await page.locator('[data-submit]').click();
+    assert.equal(o.quantity, 8); assert.equal(o.variant, TEXT2); assert.equal(o.etsyUrl, LINK + '\n' + LINK2);
+    assert.deepEqual(o.items.map(i => [i.link === LINK ? 1 : 2, i.quantity, i.variant]), [[1, 3, 'Black Walnut, 7 Hooks'], [1, 2, 'Black Walnut, 6 Hooks'], [2, 1, 'Oak'], [2, 2, 'Walnut']]);
+    // Editing shows the boxes again; removing the second product leaves Pauline's order.
+    await page.goto(`${base}/portal/?lang=en#/edit/${o.id}`); await page.reload(); await page.waitForSelector('#order-form [data-prod]');
+    assert.equal(await page.locator('[data-prod]').count(), 2); assert.deepEqual(await page.locator('[data-var] [data-qty]').evaluateAll(i => i.map(x => x.value)), ['3', '2', '1', '2']);
+    await prod(page, 1).locator('[data-prod-remove]').click(); await page.locator('[data-submit]').click();
     await page.waitForFunction(() => location.hash.startsWith('#/orders'), null, { timeout: 15000 });
     const o2 = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === o.id);
-    assert.equal(o2.quantity, 4); assert.equal(o2.variant, 'Black Walnut, 7 Hooks'); assert.equal(o2.items.length, 1);
+    assert.equal(o2.quantity, 5); assert.equal(o2.variant, TEXT1); assert.equal(o2.items.length, 2);
     assert.deepEqual(errors, []); await ctx.close();
   }
-  // The order everyone looks at in the screenshots: two colours of one product.
+  // The order everyone looks at in the screenshots: two products, each in two variations.
   const png = await readFile(fixture), photo = { filename: 'p.png', data: 'data:image/png;base64,' + png.toString('base64') };
   const store = ok(await call('/client-stores', 'GET', null, client)).stores[0];
   const shown = ok(await call('/orders', 'POST', { storeId: store.id, orderRef: 'PAULINE-2', buyerName: 'Sample Buyer', address1: '1 Sample Street', destination: 'US', photos: [photo],
-    items: [{ link: LINK, quantity: 3, variant: 'Black Walnut, 7 Hooks' }, { link: LINK, quantity: 2, variant: 'Beech, 5 Hooks' }] }, client)).order;
-  assert.equal(shown.quantity, 5);
+    items: [{ link: LINK, quantity: 3, variant: 'Black Walnut, 7 Hooks' }, { link: LINK, quantity: 2, variant: 'Black Walnut, 6 Hooks' }, { link: LINK2, quantity: 1, variant: 'Oak' }, { link: LINK2, quantity: 2, variant: 'Walnut' }] }, client)).order;
+  assert.equal(shown.quantity, 8); assert.equal(shown.variant, TEXT2);
   assert.equal((await call('/orders', 'POST', { storeId: store.id, orderRef: 'BAD', buyerName: 'X', address1: '1 St', destination: 'US', photos: [photo], items: [{ link: LINK, quantity: 1 }, { link: '', quantity: 1 }] }, client)).status, 400, 'each line needs a link');
-  // An admin edit without lines keeps the text of the lines and drops the lines.
   ok(await call('/orders/' + shown.id, 'PUT', { productCost: 40, shippingFee: 0 }, admin));
-  assert.equal(ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === shown.id).items.length, 2, 'a cost change keeps the lines');
+  assert.equal(ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === shown.id).items.length, 4, 'a cost change keeps the lines');
 
   // ---- 2. Screenshots: English + Hebrew, desktop + phone ----
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
     const tag = `${lang}-${width}`;
     let ctx = await session(client, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.goto(`${base}/portal/?lang=${lang}#/new`); await page.reload(); await page.waitForSelector('#order-form [data-item]');
+    await page.goto(`${base}/portal/?lang=${lang}#/new`); await page.reload(); await page.waitForSelector('#order-form [data-prod]');
     await fillOrder(page, 'SAMPLE-' + tag);
-    await page.locator('[data-items]').scrollIntoViewIfNeeded(); await page.waitForTimeout(200); await page.screenshot({ path: path.join(out, `${tag}-form.png`) });
+    await page.locator('[data-prods]').scrollIntoViewIfNeeded(); await page.waitForTimeout(200); await page.screenshot({ path: path.join(out, `${tag}-form.png`), fullPage: width === 390 });
     await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector(`[data-open-order="${shown.id}"]`); await page.locator(`[data-open-order="${shown.id}"]`).first().click();
     await page.waitForSelector('.drawer.open'); await page.waitForTimeout(400);
-    const dd = page.locator('.drawer.open dd', { hasText: 'Beech' }); assert.equal(await dd.count(), 1, tag); await dd.scrollIntoViewIfNeeded();
+    const dd = page.locator('.drawer.open dd', { hasText: 'Walnut' }); assert.ok(await dd.count() >= 1, tag); await dd.first().scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(out, `${tag}-order.png`) });
     assert.deepEqual(errors, [], tag); await ctx.close();
     ctx = await session(admin, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=orders]');
     await ui.locator('[data-tab=orders]').click(); await ui.locator(`[data-open-order="${shown.id}"]`).first().click(); await ui.waitForSelector('.drawer.open'); await page.waitForTimeout(400);
-    const add = ui.locator('.drawer.open dd', { hasText: 'Beech' }); assert.equal(await add.count(), 1, tag); await add.scrollIntoViewIfNeeded();
+    const add = ui.locator('.drawer.open dd', { hasText: 'Product 2:' }); assert.equal(await add.count(), 1, tag); await add.scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(out, `${tag}-admin-order.png`) });
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
   }

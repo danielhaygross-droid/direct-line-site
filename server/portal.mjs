@@ -515,8 +515,10 @@ export function orderItems(value) {
 }
 export function itemsSummary(items) {
   const links = [...new Set(items.map(i => i.link).filter(Boolean))];
-  const line = i => (links.length > 1 && i.link ? `Product ${links.indexOf(i.link) + 1} · ` : '') + (i.variant ? `${i.quantity} × ${i.variant}` : `${i.quantity} pcs`);
-  return { etsyUrl: links.join('\n'), quantity: items.reduce((n, i) => n + i.quantity, 0), variant: items.length === 1 ? items[0].variant : items.map(line).join('\n') };
+  const line = i => i.variant ? `${i.quantity} × ${i.variant}` : `${i.quantity} pcs`;
+  // One product: a line per colour. Several products: "Product 1:" then its colours, "Product 2:" … (numbered like the links).
+  const text = links.length > 1 ? links.map((l, n) => [`Product ${n + 1}:`, ...items.filter(i => i.link === l).map(line)].join('\n')).join('\n') : items.map(line).join('\n');
+  return { etsyUrl: links.join('\n'), quantity: items.reduce((n, i) => n + i.quantity, 0), variant: items.length === 1 ? items[0].variant : text };
 }
 function itemsOut(v) {
   try { const a = v ? JSON.parse(v) : null; return Array.isArray(a) && a.length ? a.map(i => ({ link: String(i.link || ''), quantity: Number(i.quantity) || 1, variant: String(i.variant || '') })) : null; } catch { return null; }
