@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { storedBytes } from './file-storage.mjs';
+import { orderIdList, checkOrders, setPaymentOrders, setTransferOrders, transferOrderIds, stillOpen } from './payment-orders.mjs';
 
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const FILE_SCHEMA = [
@@ -40,27 +41,45 @@ export function transferInput(body) {
   if (!date) throw new Error('Choose a valid transfer date.');
   return { ...uploadedFile(body?.file), amount:Math.round(amount*100)/100, date };
 }
-const fileOut = r => ({ id:Number(r.id), clientId:Number(r.client_id), filename:r.filename, mime:r.mime, amount:Number(r.amount), date:r.document_date,
-  createdAt:Number(r.created_at), paymentId:r.payment_id==null?null:Number(r.payment_id), status:r.payment_id ? r.payment_archived?'archived':'recorded':'pending' });
+const fileOut = (r, orderIds=[]) => ({ id:Number(r.id), clientId:Number(r.client_id), filename:r.filename, mime:r.mime, amount:Number(r.amount), date:r.document_date,
+  createdAt:Number(r.created_at), paymentId:r.payment_id==null?null:Number(r.payment_id), status:r.payment_id ? r.payment_archived?'archived':'recorded':'pending', orderIds });
 export async function transfers(DB, clientId) {
   const rows=(await DB.prepare("SELECT f.id,f.client_id,f.filename,f.mime,f.amount,f.document_date,f.created_at,p.id AS payment_id,p.archived AS payment_archived FROM portal_files f LEFT JOIN client_payments p ON p.confirmation_id=f.id WHERE f.client_id=? AND f.kind='confirmation' AND NOT f.archived ORDER BY f.created_at DESC,f.id DESC").bind(clientId).all()).results || [];
-  return rows.map(fileOut);
+  const picked=await transferOrderIds(DB,clientId);
+  return rows.map(r=>fileOut(r,picked.get(Number(r.id))||[]));
 }
 export async function saveTransfer(DB, clientId, body) {
+  // Optional: the orders this transfer is for (the client ticks them; the admin can still change them when recording).
+  const orderIds=orderIdList(body?.orderIds)||[];
+  await checkOrders(DB,clientId,orderIds);
   const f=transferInput(body), fingerprint=createHash('sha256').update(f.digest+'|'+f.amount+'|'+f.date).digest('hex');
   const row=await DB.prepare("INSERT INTO portal_files(client_id,kind,filename,mime,content,bytes,amount,document_date,fingerprint,created_at) VALUES (?,'confirmation',?,?,?,?,?,?,?,?) ON CONFLICT(client_id,kind,fingerprint) DO UPDATE SET fingerprint=EXCLUDED.fingerprint RETURNING id")
     .bind(clientId,f.filename,f.mime,f.content,f.bytes,f.amount,f.date,fingerprint,Math.floor(Date.now()/1000)).first();
-  return (await transfers(DB,clientId)).find(x=>x.id===Number(row.id));
+  const saved=(await transfers(DB,clientId)).find(x=>x.id===Number(row.id));
+  if(saved?.status==='pending'){await setTransferOrders(DB,saved.id,clientId,orderIds);saved.orderIds=orderIds;}
+  return saved;
 }
-export async function recordTransfer(DB, id) {
+// Records a transfer confirmation as a payment. The admin may correct the amount / date / method / note
+// (e.g. bank fees) and choose the orders; without orderIds, the client's ticked orders that are still open are used.
+export async function recordTransfer(DB, id, body={}) {
   const f=await DB.prepare("SELECT * FROM portal_files WHERE id=? AND kind='confirmation' AND NOT archived").bind(id).first();
   if (!f) return null;
   const client=await DB.prepare("SELECT id FROM users WHERE id=? AND role='client' AND NOT archived").bind(f.client_id).first();
   if (!client) return null;
+  const clientId=Number(f.client_id);
+  if (await DB.prepare('SELECT id FROM client_payments WHERE confirmation_id=?').bind(id).first()) return (await transfers(DB,clientId)).find(x=>x.id===Number(id));
+  const orderIds=orderIdList(body.orderIds) ?? await stillOpen(DB,clientId,(await transferOrderIds(DB,clientId)).get(Number(id))||[]);
+  await checkOrders(DB,clientId,orderIds);
+  const amount=body.amount===undefined||body.amount===''?Number(f.amount):Number(body.amount);
+  if (!(amount>0) || amount>=1e7 || Math.abs(amount*100-Math.round(amount*100))>1e-7) throw new Error('Amount must be more than 0');
+  const day=body.paidAt===undefined||body.paidAt===''?f.document_date:documentDate(body.paidAt);
+  if (!day) throw new Error('Date: use a valid date');
+  const method=body.method===undefined?'Bank transfer':String(body.method).trim().slice(0,60), note=body.note===undefined||String(body.note).trim()===''?'Transfer confirmation #'+id:String(body.note).trim().slice(0,500);
   // The unique confirmation_id constraint makes concurrent requests credit once.
-  await DB.prepare("INSERT INTO client_payments(client_id,amount,method,note,paid_at,created_at,confirmation_id) VALUES (?,?,'Bank transfer',?,?,?,?) ON CONFLICT(confirmation_id) DO NOTHING")
-    .bind(f.client_id,f.amount,'Transfer confirmation #'+id,Math.floor(Date.parse(f.document_date+'T12:00:00Z')/1000),Math.floor(Date.now()/1000),id).run();
-  return (await transfers(DB,f.client_id)).find(x=>x.id===Number(id));
+  const row=await DB.prepare("INSERT INTO client_payments(client_id,amount,method,note,paid_at,created_at,confirmation_id) VALUES (?,?,?,?,?,?,?) ON CONFLICT(confirmation_id) DO NOTHING RETURNING id")
+    .bind(clientId,Math.round(amount*100)/100,method,note,Math.floor(Date.parse(day+'T12:00:00Z')/1000),Math.floor(Date.now()/1000),id).first();
+  if (row && orderIds.length) await setPaymentOrders(DB,Number(row.id),clientId,orderIds,{log:false});
+  return (await transfers(DB,clientId)).find(x=>x.id===Number(id));
 }
 export async function downloadFile(DB, id, who, url, env={}) {
   const row=await DB.prepare('SELECT * FROM portal_files WHERE id=? AND NOT archived').bind(id).first();

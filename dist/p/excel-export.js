@@ -70,7 +70,7 @@
       const date = o.orderDate || (o.createdAt ? new Date(o.createdAt * 1000).toISOString().slice(0, 10) : ''), ds = serial(date);
       const product = [o.itemTitle, o.variant].filter(Boolean).join(' · ') || '—';
       const total = cancelled ? str('G' + r, t('Cancelled'), 10) : priced ? num('G' + r, Math.round(Number(o.price || 0) * 100) / 100, 5) : str('G' + r, t('Not priced yet'), 10);
-      rows.push(`<row r="${r}">${str('A' + r, o.orderRef || '#' + o.id, 4)}${ds != null ? num('B' + r, ds, 6) : str('B' + r, date, 4)}${str('C' + r, o.buyerName || '—', 4)}${str('D' + r, product, 4)}${num('E' + r, Number(o.quantity || 1), 7)}${str('F' + r, statusLabel(o.status), cancelled ? 10 : 4)}${total}${cancelled ? str('H' + r, '', 7) : str('H' + r, NO, 7)}</row>`);
+      rows.push(`<row r="${r}">${str('A' + r, o.orderRef || '#' + o.id, 4)}${ds != null ? num('B' + r, ds, 6) : str('B' + r, date, 4)}${str('C' + r, o.buyerName || '—', 4)}${str('D' + r, product, 4)}${num('E' + r, Number(o.quantity || 1), 7)}${str('F' + r, statusLabel(o.status), cancelled ? 10 : 4)}${total}${cancelled ? str('H' + r, '', 7) : str('H' + r, o.paymentId ? YES : NO, 7)}</row>`);
     });
     const last = first + Math.max(list.length, 1) - 1, s = last + 2;
     // Summary: totals of the priced, not cancelled orders; "Paid" follows the Yes / No in column H.
@@ -78,7 +78,7 @@
     rows.push(`<row r="${s}">${str('F' + s, t('Total'), 8)}${formula('G' + s, `SUM(${range})`, 9)}</row>`);
     rows.push(`<row r="${s + 1}">${str('F' + (s + 1), t('Paid'), 8)}${formula('G' + (s + 1), `SUMIF(${paid},"${YES}",${range})`, 9)}</row>`);
     rows.push(`<row r="${s + 2}">${str('F' + (s + 2), t('Not paid yet'), 8)}${formula('G' + (s + 2), `G${s}-G${s + 1}`, 9)}</row>`);
-    rows.push(`<row r="${s + 4}">${str('A' + (s + 4), t('Set "Paid" to Yes for each order you have paid; the totals update by themselves. Cancelled and not-priced orders are not counted.'), 12)}</row>`);
+    rows.push(`<row r="${s + 4}">${str('A' + (s + 4), t('"Paid" says Yes for the orders Direct Line has recorded as paid. You can change it; the totals update by themselves. Cancelled and not-priced orders are not counted.'), 12)}</row>`);
     const widths = [17, 12, 24, 44, 8, 22, 14, 10];
     const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
       + `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:H${s + 4}"/>`

@@ -81,7 +81,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 const session = async width => { const ctx = await browser.newContext({ viewport: { width, height: 950 } }); await ctx.addCookies([{ name: 'dl_session', value: decodeURIComponent(client.split('=').slice(1).join('=')), url: base, httpOnly: true, sameSite: 'Lax' }]); return ctx; };
 
 const HE = { earned: 'הרווחת', cost: 'עלות', profit: 'רווח' };
-const cells = async (page, ref) => { const row = page.locator('tr[data-open-order]').filter({ hasText: ref }); const n = i => row.locator('td.num').nth(i).innerText().then(t => t.trim()); return { earned: await n(0), cost: await n(1), profit: await n(2), net: await n(2), netClass: await row.locator('td.num').nth(2).getAttribute('class') }; };
+const cells = async (page, ref) => { const row = page.locator('tr[data-open-order]').filter({ hasText: ref }); const n = i => row.locator('td.num').nth(i).innerText().then(t => t.trim()); const pay = row.locator('td.num').nth(1).locator('.pay-tag'); return { earned: await n(0), cost: (await n(1)).split(String.fromCharCode(10))[0], pay: await pay.count() ? (await pay.getAttribute('class')).replace('pay-tag ', '') : '', profit: await n(2), net: await n(2), netClass: await row.locator('td.num').nth(2).getAttribute('class') }; };
 try {
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
     const tag = `${lang} ${width}px`, ctx = await session(width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
@@ -98,7 +98,7 @@ try {
     // the tracker rows: the net profit equals the tracker's Profit to the cent
     for (const [i, [paid, , cost, profit]] of TRACKER.entries()) {
       const c = await cells(page, 'TRACKER-' + (i + 1));
-      assert.equal(c.earned, `$${(Math.round(paid * 100 - TRACKER[i][1] * 100) / 100).toFixed(2)}`, tag + ' tracker earned'); assert.equal(c.cost, `$${cost.toFixed(2)}`, tag + ' tracker cost'); assert.equal(c.net, `$${profit.toFixed(2)}`, tag + ' tracker net profit ' + (i + 1)); assert.match(c.netClass, /pos/);
+      assert.equal(c.earned, `$${(Math.round(paid * 100 - TRACKER[i][1] * 100) / 100).toFixed(2)}`, tag + ' tracker earned'); assert.equal(c.cost, `$${cost.toFixed(2)}`, tag + ' tracker cost'); assert.equal(c.pay, 'unpaid', tag + ' billed, no payment yet: Not paid'); assert.equal(c.net, `$${profit.toFixed(2)}`, tag + ' tracker net profit ' + (i + 1)); assert.match(c.netClass, /pos/);
     }
     const nf = await cells(page, 'NO-FEE'), np = await cells(page, 'NO-PRICE'), eu = await cells(page, 'EURO'), ub = await cells(page, 'UNBILLED'), ca = await cells(page, 'CANCELLED');
     const addFee = lang === 'en' ? 'Add Etsy fee' : 'להוסיף עמלת Etsy', pending = lang === 'en' ? 'Pending' : 'ממתינה';

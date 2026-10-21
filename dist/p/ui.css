@@ -291,3 +291,40 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .list-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .list-tools .store-pick{flex:1;min-width:0}
 @media(max-width:560px){.sort-pick{width:100%}.sort-pick select{flex:1;max-width:none}.list-tools{flex-direction:column;align-items:stretch}}
+/* Which orders a payment is for (payment-orders.js): checklist, running total, paid tags. */
+.po-box{border:1px solid var(--line-2);border-radius:var(--radius-sm);background:var(--surface);overflow:hidden}
+.po-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+.po-sum{font-size:14px}.po-tools{display:flex;flex-wrap:wrap;gap:6px}
+.po-list{max-height:330px;overflow:auto;overscroll-behavior:contain}
+.po-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;color:inherit;text-decoration:none}
+.po-row:last-child{border-bottom:0}.po-row:hover{background:var(--surface-2)}
+.po-row input{width:18px;height:18px;margin:0;accent-color:var(--gold-2)}
+.po-row:has(input:checked){background:color-mix(in srgb,var(--gold) 9%,transparent)}
+.po-list.read .po-row{grid-template-columns:minmax(0,1fr) auto}
+.po-main{display:flex;flex-direction:column;min-width:0}.po-main b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.po-main small{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.po-amt{font-variant-numeric:tabular-nums;white-space:nowrap}
+.po-gap{margin:0;padding:0 12px;font-size:13px;font-weight:600}.po-gap:empty{display:none}.po-gap:not(:empty){padding:9px 12px;border-top:1px solid var(--line)}
+.po-gap.ok{color:var(--mint)}.po-gap.warn{color:var(--orange)}
+.po-empty{margin:0;padding:12px}.po-note{margin:0;padding:0 12px 10px}
+.po-tag{display:inline-flex;align-items:center;padding:1px 7px;border-radius:7px;background:var(--surface-3);color:var(--muted);font-size:11.5px;font-weight:600;white-space:nowrap}
+.po-tag.ok{background:color-mix(in srgb,var(--mint) 14%,transparent);color:var(--mint)}.po-tag.warn{background:color-mix(in srgb,var(--orange) 15%,transparent);color:var(--orange)}
+.po-linked summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;list-style:none}.po-linked summary::-webkit-details-marker{display:none}
+.po-linked summary>span:first-child{text-decoration:underline dotted;text-underline-offset:3px}
+.po-names{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;max-height:140px;overflow:auto}
+.po-name{font-size:12px;padding:1px 7px;border-radius:7px;background:var(--surface-3);cursor:pointer;white-space:nowrap}
+.pay-tag{display:inline-block;margin-inline-start:6px;padding:0 7px;border-radius:7px;font-size:11.5px;font-weight:700;line-height:18px;white-space:nowrap;vertical-align:middle}
+.pay-line{margin-top:4px}.pay-line .pay-tag{margin:0}
+.pay-tag.paid{background:color-mix(in srgb,var(--mint) 15%,transparent);color:var(--mint)}.pay-tag.unpaid{background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange)}
+.pay-sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.pay-sum>div{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2)}
+.pay-sum small{color:var(--muted);font-size:12px}.pay-sum b{font-size:18px}.pay-sum em{font-style:normal;color:var(--muted);font-size:12px}
+.pay-warn{margin:12px 0 0;padding:9px 12px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--orange) 12%,transparent);color:var(--text);font-size:13.5px}
+.pay-from{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px;padding:9px 12px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--gold) 12%,transparent);font-size:14px}
+.unpaid-card>summary{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px;cursor:pointer;list-style:none}.unpaid-card>summary::-webkit-details-marker{display:none}
+.unpaid-card>summary .sec-title{margin:0}.unpaid-card[open]>summary{margin-bottom:10px}
+.unpaid-card .po-box,.unpaid-card .po-list{border:1px solid var(--line);border-radius:var(--radius-sm)}
+@media(max-width:560px){.pay-sum{grid-template-columns:repeat(2,minmax(0,1fr))}.po-tools{width:100%}.po-tools .btn{flex:1}.po-row{gap:8px;padding:9px 10px}}
+.bill-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.bill-head .sec-title{margin:0}
+.bill-view{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2)}.bill-view p{margin:0 0 6px}.bill-view p:last-of-type{margin-bottom:2px}
+.bill-card .note{margin:6px 0 12px}

@@ -12,7 +12,7 @@ export async function invoices(DB,clientId) {
 export async function saveInvoice(DB,body) {
  const clientId=Number(body.clientId),paymentId=body.paymentId?Number(body.paymentId):null;
  const orderIds=[...new Set(Array.isArray(body.orderIds)?body.orderIds.map(Number):[])].sort((a,b)=>a-b);
- if(!Number.isSafeInteger(clientId)||clientId<=0||paymentId!==null&&(!Number.isSafeInteger(paymentId)||paymentId<=0)||orderIds.length>100||orderIds.some(n=>!Number.isSafeInteger(n)||n<=0))throw new Error('Choose valid payment and order links.');
+ if(!Number.isSafeInteger(clientId)||clientId<=0||paymentId!==null&&(!Number.isSafeInteger(paymentId)||paymentId<=0)||orderIds.length>500||orderIds.some(n=>!Number.isSafeInteger(n)||n<=0))throw new Error('Choose valid payment and order links.');
  if(!paymentId&&!orderIds.length)throw new Error('Link the invoice to a payment or at least one order.');
  const client=await DB.prepare("SELECT id FROM users WHERE id=? AND role='client' AND NOT archived").bind(clientId).first();if(!client)throw new Error('Unknown client');
  if(paymentId&&!await DB.prepare('SELECT id FROM client_payments WHERE id=? AND client_id=?').bind(paymentId,clientId).first())throw new Error('Choose a payment belonging to this client.');
