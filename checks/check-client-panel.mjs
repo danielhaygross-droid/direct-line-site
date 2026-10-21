@@ -91,6 +91,8 @@ try {
     await group(0).click(); await page.waitForTimeout(200);
     assert.equal(await ui.locator('[data-fold=perf][open]').count(), 0);
     assert.equal(await ui.locator('.drawer .ord-row').count(), 18);
+    assert.equal(await ui.locator('.drawer .ord-row .ord-date').count(), 18, tag + ' every order row shows its date');
+    assert.match(await ui.locator('.drawer .ord-row .ord-date').first().innerText(), /2026/, tag + ' a real date');
     await ui.locator('[data-client-store]').selectOption(String(stores[1].id)); await page.waitForTimeout(300);
     assert.equal(await ui.locator('.drawer .ord-row').count(), 6, 'one store');
     await page.screenshot({ path: path.join(out, `${tag}-orders-one-store.png`) });
