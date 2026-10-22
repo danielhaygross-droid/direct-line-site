@@ -414,17 +414,25 @@ function clientOrder(o) {
   return out;
 }
 // Adds message counts to orders: messages, unread (for the viewer's side).
+// Order lists have no row limit, so IN (...) lookups go in parts to stay well under the database's bind limit.
+const ID_PART = 300;
+async function byIdParts(ids, query) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += ID_PART) out.push(...await query(ids.slice(i, i + ID_PART)));
+  return out;
+}
 async function withMessages(DB, orders, forAdmin) {
   if (!orders.length) return orders;
   const ids = orders.map(o => o.id);
-  const rows = (await DB.prepare(`SELECT order_id, COUNT(*) AS total,
+  const rows = await byIdParts(ids, async part => (await DB.prepare(`SELECT order_id, COUNT(*) AS total,
       COUNT(*) FILTER (WHERE author = 'client' AND NOT read_by_admin) AS unread_admin,
       COUNT(*) FILTER (WHERE author = 'admin' AND NOT read_by_client) AS unread_client,
       MAX(created_at) AS last_at
-    FROM order_messages WHERE order_id IN (${ids.map(() => '?').join(',')}) GROUP BY order_id`).bind(...ids).all()).results || [];
+    FROM order_messages WHERE order_id IN (${part.map(() => '?').join(',')}) GROUP BY order_id`).bind(...part).all()).results || []);
   const by = new Map(rows.map(r => [Number(r.order_id), r]));
-  const last = rows.length ? (await DB.prepare(`SELECT DISTINCT ON (order_id) order_id, author, body FROM order_messages
-    WHERE order_id IN (${ids.map(() => '?').join(',')}) ORDER BY order_id, created_at DESC, id DESC`).bind(...ids).all()).results || [] : [];
+  const withMsgs = rows.map(r => Number(r.order_id));
+  const last = await byIdParts(withMsgs, async part => (await DB.prepare(`SELECT DISTINCT ON (order_id) order_id, author, body FROM order_messages
+    WHERE order_id IN (${part.map(() => '?').join(',')}) ORDER BY order_id, created_at DESC, id DESC`).bind(...part).all()).results || []);
   const lastBy = new Map(last.map(r => [Number(r.order_id), r]));
   return orders.map(o => {
     const r = by.get(o.id), m = lastBy.get(o.id);
@@ -477,7 +485,7 @@ const photoOut = r => ({ id: Number(r.id), orderId: Number(r.order_id), width: r
 async function withPhotos(DB, orders) {
   if (!orders.length) return orders;
   const ids = orders.map(o => o.id);
-  const rows = (await DB.prepare(`SELECT id, order_id, width, height, added_by, created_at FROM order_photos WHERE order_id IN (${ids.map(() => '?').join(',')}) ORDER BY order_id, id`).bind(...ids).all()).results || [];
+  const rows = await byIdParts(ids, async part => (await DB.prepare(`SELECT id, order_id, width, height, added_by, created_at FROM order_photos WHERE order_id IN (${part.map(() => '?').join(',')}) ORDER BY order_id, id`).bind(...part).all()).results || []);
   const by = new Map();
   for (const r of rows) { const k = Number(r.order_id); if (!by.has(k)) by.set(k, []); by.get(k).push(photoOut(r)); }
   return orders.map(o => ({ ...o, photos: by.get(o.id) || [] }));
@@ -1083,7 +1091,7 @@ async function routePortal(request, url, ctx, meta) {
   }
   if (path === '/admin/orders' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0), archived = url.searchParams.get('archived') === '1';
-    const rows = (await DB.prepare(`SELECT * FROM client_orders WHERE archived=? ${clientId ? 'AND client_id=?' : 'AND client_id NOT IN (SELECT id FROM users WHERE archived)'} ORDER BY created_at DESC, id DESC LIMIT 500`).bind(archived,...(clientId ? [clientId] : [])).all()).results;
+    const rows = (await DB.prepare(`SELECT * FROM client_orders WHERE archived=? ${clientId ? 'AND client_id=?' : 'AND client_id NOT IN (SELECT id FROM users WHERE archived)'} ORDER BY created_at DESC, id DESC`).bind(archived,...(clientId ? [clientId] : [])).all()).results;
     return json({ ok: true, orders: await withPaid(DB, await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)), clientId || null) });
   }
   if(path==='/admin/client-stores'&&method==='GET'){const clientId=url.searchParams.has('clientId')?Number(url.searchParams.get('clientId')):null;return json({ok:true,stores:await clientStores(DB,clientId)});}
