@@ -164,3 +164,12 @@ details.fold>summary small{margin-inline-start:auto}
 .pay-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.pay-actions .form-msg{margin:0}.pay-spacer{flex:1}
 .bill-to{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface)}.bill-to p{margin:2px 0}
 @media(max-width:560px){.pay-inline.form-grid,.pay-form.form-grid{grid-template-columns:minmax(0,1fr)}.pay-inline .field input,.pay-inline .field select{min-width:0;width:100%}.pay-card{padding:14px}.pay-line{grid-template-columns:1fr;gap:4px}.pay-amt{font-size:20px}.pay-spacer{display:none}}
+/* Clickable cards above the tabs (23 Oct 2026): each one opens the list behind its number. */
+.kpis .stat-go{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;width:100%;text-align:start;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s}
+.kpis .stat-go:hover{border-color:color-mix(in srgb,var(--tone) 45%,var(--line));box-shadow:var(--shadow);transform:translateY(-1px)}.kpis .stat-go.hero:hover{border-color:transparent}
+.kpis .stat-go:focus-visible{outline:2px solid var(--tone);outline-offset:2px}
+.kpis .stat-go.owe strong{color:var(--red)}
+.kpis .stat-note{color:var(--red);font-size:12px}.kpis .stat-go.hero .stat-note{color:#e8a79e}
+.kpis .stat-more{display:inline-flex;align-items:center;gap:2px;margin-top:auto;padding-top:10px;font-size:12.5px;align-self:flex-start;font-weight:600;color:var(--gold-2)}[data-theme=dark] .kpis .stat-more{color:var(--gold)}.kpis .stat-go.hero .stat-more{color:#d4bc84}
+.kpis .stat-more svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2}[dir=rtl] .kpis .stat-more svg{transform:scaleX(-1)}
+@media(max-width:480px){.kpis .stat-go{padding:14px}.kpis .stat-more{padding-top:6px;font-size:12px}}

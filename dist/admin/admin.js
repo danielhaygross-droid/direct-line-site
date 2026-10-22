@@ -116,24 +116,24 @@
     const t = S.ov.totals, cl = S.ov.clients, M = window.DLClientStoreMath, UIS = window.DLClientStoreUI;
     const months = M.monthsOf(S.orders), month = months.includes(kpiMonth()) ? kpiMonth() : 'all', sel = $('[data-kpi-month]');
     if (sel) sel.innerHTML = `<option value="all">All time</option>` + months.map(k => `<option value="${k}"${k === month ? ' selected' : ''} data-no-i18n>${esc(UIS.monthName(k))}</option>`).join('');
-    if (month !== 'all') {
-      const os = S.orders.filter(o => M.dateKey(o).slice(0, 7) === month && o.status !== 'cancelled'), cents = n => Math.round(Number(n || 0) * 100);
-      const billed = os.reduce((n, o) => n + cents(o.price), 0) / 100, fees = os.reduce((n, o) => n + cents(o.commission), 0) / 100, name = UIS.monthName(month);
-      $('[data-kpis]').innerHTML = [
-        ['Active clients', new Set(os.map(o => o.clientId)).size, `with orders in ${name}`, 'users', 'var(--blue)'],
-        ['Client orders', os.length, `${os.filter(o => o.status === 'pending').length} waiting to be processed`, 'orders', 'var(--orange)'],
-        ['Billed', money(billed), `Outstanding overall ${money(t.outstanding)}`, 'money', 'var(--blue)'],
-        ['Our earnings', money(fees), `Fees on ${os.length} order${os.length === 1 ? '' : 's'} in ${name}`, 'check', 'var(--gold)'],
-      ].map(([k, v, sub, icon, tone], i) => `<div class="stat${i === 3 ? ' hero' : ''}" style="--tone:${tone}"><span class="stat-ic">${ic(icon)}</span><small>${k}</small><strong>${v}</strong><em>${esc(sub)}</em></div>`).join('');
-      const unread0 = S.orders.filter(o => o.unreadMessages).length, b0 = $('[data-tab-badge="orders"]'); if (b0) b0.innerHTML = unread0 ? `<span class="badge-new">${unread0}</span>` : '';
-      return;
-    }
-    $('[data-kpis]').innerHTML = [
-      ['Active clients', cl.filter(c => c.active).length, `${cl.length} account${cl.length === 1 ? '' : 's'}`, 'users', 'var(--blue)'],
-      ['Client orders', S.orders.filter(o=>o.status!=='cancelled').length, `${S.orders.filter(o => o.status === 'pending').length} waiting to be processed`, 'orders', 'var(--orange)'],
-      ['Outstanding', money(t.outstanding), `Billed ${money(t.billed)} · paid ${money(t.paid)}`, 'money', t.outstanding > 0 ? 'var(--red)' : 'var(--mint)'],
-      ['Our earnings', money(t.ourShare), `Fees collected ${money(t.commission)}`, 'check', 'var(--gold)'],
-    ].map(([k, v, sub, icon, tone], i) => `<div class="stat${i === 3 ? ' hero' : ''}" style="--tone:${tone}"><span class="stat-ic">${ic(icon)}</span><small>${k}</small><strong>${v}</strong><em>${esc(sub)}</em></div>`).join('');
+    // Four clickable cards (Erwin, 23 Oct 2026). "Not paid yet" is what clients owe right now (billed orders with no
+    // payment linked), not billed + paid totals; it ignores the month because unpaid money is owed whatever month.
+    const PO = window.DLPayOrders, cents = n => Math.round(Number(n || 0) * 100), plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    const live = S.orders.filter(o => !o.archived), inMonth = month === 'all' ? live : live.filter(o => M.dateKey(o).slice(0, 7) === month), name = month === 'all' ? '' : UIS.monthName(month);
+    const os = inMonth.filter(o => o.status !== 'cancelled'), pending = os.filter(o => o.status === 'pending').length, noCost = os.filter(needsCost).length;
+    const unpaid = live.filter(o => PO.state(o) === 'unpaid'), owed = unpaid.reduce((n, o) => n + PO.dueCents(o), 0);
+    const owing = new Set(unpaid.map(o => o.clientId)).size, oldest = unpaid.map(o => M.dateKey(o)).filter(Boolean).sort()[0];
+    // Payments not linked to orders make the account balance differ from the unpaid orders: say so instead of hiding it.
+    const gap = cents(t.outstanding) - owed;
+    const fees = month === 'all' ? t.ourShare : os.reduce((n, o) => n + cents(o.commission), 0) / 100;
+    const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
+    const cards = [
+      { k: 'Clients', v: clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)', go: 'data-go-tab="clients"', hint: 'Open clients' },
+      { k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: pending || noCost ? [pending ? `${pending} waiting to be processed` : '', noCost ? `${noCost} need cost` : ''].filter(Boolean) : ['Nothing waiting'], icon: 'orders', tone: 'var(--orange)', go: `data-go-filter="${pending ? 'pending' : noCost ? 'needscost' : 'all'}"`, hint: pending ? 'Show waiting orders' : noCost ? 'Show orders that need cost' : 'Show orders' },
+      { k: 'Not paid yet', v: money(owed / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(gap) >= 1 ? `Account balance ${money(t.outstanding)}: some payments aren’t linked to orders` : '', icon: 'money', tone: owed > 0 ? 'var(--red)' : 'var(--mint)', go: 'data-go-filter="unpaid"', hint: 'Show unpaid orders', owe: owed > 0 },
+      { k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(fees), sub: [month === 'all' ? `Fees collected ${money(t.commission)}` : `Fees on ${plural(os.length, 'order')}`], icon: 'check', tone: 'var(--gold)', go: 'data-go-tab="clients"', hint: 'Earnings per client', hero: true },
+    ];
+    $('[data-kpis]').innerHTML = cards.map(c => `<button type="button" class="stat stat-go${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}" style="--tone:${c.tone}" ${c.go} title="${esc(c.hint)}"><span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}<span class="stat-more">${esc(c.hint)}${ic('chev')}</span></button>`).join('');
     const unread = S.orders.filter(o => o.unreadMessages).length;
     const b = $('[data-tab-badge="orders"]'); if (b) b.innerHTML = unread ? `<span class="badge-new">${unread}</span>` : '';
   }
