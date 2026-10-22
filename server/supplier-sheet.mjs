@@ -5,7 +5,9 @@
 //   Q  Tracking number   — copied to the order.
 //   R  Courier           — e.g. China Post, Yanwen (dropdown from Fees & settings; other names can be typed). Shown to the client.
 //   S  Shipping status   — "Shipped" moves the order to Shipped (client is notified).
-// The website never writes P, and writes Q/R/S only when an admin changes tracking/courier/status on the website.
+//   T  Delayed?          — "Possibly delayed" marks the order as possibly delayed (client is notified, with U).
+//   U  Delay reason      — short reason shown to the client (e.g. "Wrong variant from the factory, being remade").
+// The website never writes P, T or U, and writes Q/R/S only when an admin changes tracking/courier/status on the website.
 // L Tax number (e.g. Etsy's IOSS number) and M Gift message are the customer's, kept apart from the Notes (N).
 // O Competitor price: what other shops charge, typed by the client in their portal (order form / Your numbers);
 //   the website writes it like A–N. Values typed in the sheet before that were copied to the orders once (layout 4).
@@ -29,6 +31,11 @@ export const SUPPLIER_SHEET_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_shipped TEXT',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS courier TEXT',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_courier TEXT',
+  // Possibly delayed (set by the supplier in T/U): delayed_at is set while the flag is on.
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS delayed_at INTEGER',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS delay_reason TEXT',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_delayed TEXT',
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_delay_reason TEXT',
 ];
 
 export const WQ = 'Work Queue';
@@ -46,12 +53,12 @@ export async function tabNames(DB) {
 const BACKUP_TITLE = 'Work Queue (old formulas)';
 export const FIRST_ROW = 6;
 export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Photo 1', 'Product link', 'Qty', 'Product / variation',
-  'Customer', 'Delivery address & phone', 'Tax number', 'Gift message', 'Notes', 'Competitor price', 'Total cost (USD)', 'Tracking number', 'Courier', 'Shipping status', 'Client paid',
+  'Customer', 'Delivery address & phone', 'Tax number', 'Gift message', 'Notes', 'Competitor price', 'Total cost (USD)', 'Tracking number', 'Courier', 'Shipping status', 'Delayed?', 'Delay reason', 'Client paid',
   'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID'];
-export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped';
+export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'Cancelled' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '5';
-// Set when a payment changes; the next poll rewrites the Client paid column (T) in one write.
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '6';
+// Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 export const markPaidDirty = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
 export const DEFAULT_COURIERS = 'China Post\nYanwen';
@@ -63,6 +70,8 @@ const norm = v => (v === null || v === undefined ? '' : String(v).trim());
 const txt = v => { const s = norm(v); return /^[=+\-@0-9]/.test(s) ? "'" + s : s; };
 const q = s => String(s).replace(/"/g, '""');
 const isShipped = v => /^shipped$/i.test(norm(v));
+// T "Delayed?": the dropdown value, or anything that clearly means yes (a ticked checkbox, "yes", "delayed").
+export const isDelayed = v => v === true || /^(possibly delayed|delayed|yes|y|true)$/i.test(norm(v));
 
 // "12.5", "$1,234.50", "12,50" → number; anything else (or negative / huge) → null.
 export function parseCost(value) {
@@ -99,7 +108,7 @@ export function savedPriceFlag(o) {
   if (o.price_source !== 'saved' || !['pending', 'processing'].includes(o.status)) return '';
   return 'Total cost filled in from an earlier order (same product, variation, country and quantity). Change it if this one is different.\n';
 }
-// Website-owned cells: A–O and T–AD (P–S are the supplier's; T is Client paid). Column C is the shop the order came from — suppliers don't see who our clients are.
+// Website-owned cells: A–O and V–AF (P–U are the supplier's; V is Client paid). Column C is the shop the order came from — suppliers don't see who our clients are.
 export function websiteCells(env, o, photos, shopName) {
   const urls = photos.map(p => sheetPhotoUrl(env, o.id, p.id));
   const links = String(o.etsy_url || '').split(/\s+/).filter(Boolean);
@@ -125,13 +134,13 @@ async function workQueueSheetId(env, fetchImpl, fresh, wq = WQ) {
   return sheetIdCache.id;
 }
 async function idColumn(env, fetchImpl, wq) {
-  const data = await sheetsRequest(env, '/values/' + encodeURIComponent(`${wq}!AC${FIRST_ROW}:AD`) + '?majorDimension=ROWS', {}, fetchImpl);
+  const data = await sheetsRequest(env, '/values/' + encodeURIComponent(`${wq}!AE${FIRST_ROW}:AF`) + '?majorDimension=ROWS', {}, fetchImpl);
   return (data.values || []).map((r, i) => ({ row: FIRST_ROW + i, orderId: Number(r?.[0]), clientId: Number(r?.[1]) }));
 }
 const batchValues = (env, data, fetchImpl) => sheetsRequest(env, '/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data }) }, fetchImpl);
 const batch = (env, requests, fetchImpl) => sheetsRequest(env, ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests }) }, fetchImpl);
-// Column widths (px) for A–AD, sized to their content. AC–AD (ids) are hidden; U–AB (more photos/links) are grouped.
-export const WIDTHS = [95, 125, 135, 110, 130, 80, 115, 55, 170, 140, 230, 150, 220, 260, 150, 115, 180, 120, 125, 100, 80, 80, 80, 80, 80, 80, 80, 220, 60, 60];
+// Column widths (px) for A–AF, sized to their content. AE–AF (ids) are hidden; W–AD (more photos/links) are grouped.
+export const WIDTHS = [95, 125, 135, 110, 130, 80, 115, 55, 170, 140, 230, 150, 220, 260, 150, 115, 180, 120, 125, 125, 220, 100, 80, 80, 80, 80, 80, 80, 80, 220, 60, 60];
 // Row height that fits the wrapped text of a row (about 7 px per character at the default font), at least
 // 100 px for the photo preview.
 export function rowPx(cells) {
@@ -162,7 +171,7 @@ export async function removeClientFromWorkQueue(DB, env, clientId, fetchImpl = f
 // ---------- layout ----------
 const getSetting = async (DB, key) => (await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(key).first())?.value;
 const putSetting = (DB, key, value) => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key, value).run();
-const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Other columns are filled in by Direct Line.';
+const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Other columns are filled in by Direct Line.';
 // Competitor price (O): light blue, open for anyone with the sheet to type in.
 const COMP = 14, blue = { red: 0.85, green: 0.92, blue: 1 }, blueHead = { red: 0.62, green: 0.79, blue: 0.97 };
 const competitorFormat = sheetId => [
@@ -171,25 +180,36 @@ const competitorFormat = sheetId => [
   { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { note: 'What other shops charge for this product (e.g. "$24.90 on Etsy shop X"). Our client enters it in their portal; the website fills it in.' }, fields: 'note' } },
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: COMP, endIndex: COMP + 1 }, properties: { pixelSize: WIDTHS[COMP] }, fields: 'pixelSize' } },
 ];
-// Client paid (T): green Paid / orange Not paid, and totals of the supplier's Total cost in row 4, worked out by the sheet.
-const PAIDCOL = 19, green = { red: 0.85, green: 0.94, blue: 0.87 }, orange = { red: 1, green: 0.9, blue: 0.8 };
+// Client paid (V): green Paid / orange Not paid, and totals of the supplier's Total cost in row 4, worked out by the sheet.
+const PAIDCOL = 21, green = { red: 0.85, green: 0.94, blue: 0.87 }, orange = { red: 1, green: 0.9, blue: 0.8 };
 const paidFormat = sheetId => [
   ...[[PAID, green], [NOT_PAID, orange]].map(([v, bg], i) => ({ addConditionalFormatRule: { index: i, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: v }] }, format: { backgroundColor: bg, textFormat: { bold: true } } } } } })),
   { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }, cell: { note: 'Paid = our client has paid Direct Line for this order. Not paid = billed, not paid yet. Empty = no bill yet. Filled in by the website.' }, fields: 'note' } },
-  { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 14, endColumnIndex: 20 }, cell: { userEnteredFormat: { textFormat: { bold: true }, verticalAlignment: 'MIDDLE', wrapStrategy: 'OVERFLOW_CELL' } }, fields: 'userEnteredFormat(textFormat,verticalAlignment,wrapStrategy)' } },
+  { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 14, endColumnIndex: PAIDCOL + 1 }, cell: { userEnteredFormat: { textFormat: { bold: true }, verticalAlignment: 'MIDDLE', wrapStrategy: 'OVERFLOW_CELL' } }, fields: 'userEnteredFormat(textFormat,verticalAlignment,wrapStrategy)' } },
   { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 14, endColumnIndex: 15 }, cell: { userEnteredFormat: { horizontalAlignment: 'RIGHT' } }, fields: 'userEnteredFormat.horizontalAlignment' } },
   { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 15, endColumnIndex: 16 }, cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: PAIDCOL, endIndex: PAIDCOL + 1 }, properties: { pixelSize: WIDTHS[PAIDCOL] }, fields: 'pixelSize' } },
 ];
-const totalsRow = wq => ({ range: `${wq}!O4:T4`, values: [['Totals (USD):', `=SUM(P${FIRST_ROW}:P)`, `="Paid by clients: "&TEXT(SUMIF(T${FIRST_ROW}:T,"${PAID}",P${FIRST_ROW}:P),"$#,##0.00")`,
-  `="Not paid yet: "&TEXT(SUMIF(T${FIRST_ROW}:T,"${NOT_PAID}",P${FIRST_ROW}:P),"$#,##0.00")`, '', `=COUNTIF(T${FIRST_ROW}:T,"${NOT_PAID}")&" not paid"`]] });
-// Rewrites the Client paid column (T) from the website in one write (after payments change).
+const totalsRow = wq => ({ range: `${wq}!O4:V4`, values: [['Totals (USD):', `=SUM(P${FIRST_ROW}:P)`, `="Paid by clients: "&TEXT(SUMIF(V${FIRST_ROW}:V,"${PAID}",P${FIRST_ROW}:P),"$#,##0.00")`,
+  `="Not paid yet: "&TEXT(SUMIF(V${FIRST_ROW}:V,"${NOT_PAID}",P${FIRST_ROW}:P),"$#,##0.00")`, '', `=COUNTIF(T${FIRST_ROW}:T,"${DELAYED}")&" delayed"`, '', `=COUNTIF(V${FIRST_ROW}:V,"${NOT_PAID}")&" not paid"`]] });
+// Delayed? (T) dropdown + Delay reason (U): yellow supplier columns; a delayed row's T turns orange.
+const DELAY = 19;
+const delayFormat = (sheetId, email) => [
+  { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: DELAY, endColumnIndex: DELAY + 1 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: ON_TIME }, { userEnteredValue: DELAYED }] }, inputMessage: 'Will this order be late? Pick Possibly delayed and write the reason in the next column. Our client sees both.', strict: false, showCustomUi: true } } },
+  { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: DELAY + 1, endColumnIndex: DELAY + 2 } } },
+  { repeatCell: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: DELAY + 1, endColumnIndex: DELAY + 2 }, cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' }, wrapStrategy: 'WRAP', horizontalAlignment: 'LEFT' } }, fields: 'userEnteredFormat(numberFormat,wrapStrategy,horizontalAlignment)' } },
+  { addConditionalFormatRule: { index: 0, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: DELAY, endColumnIndex: DELAY + 1 }], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: DELAYED }] }, format: { backgroundColor: { red: 0.98, green: 0.72, blue: 0.5 }, textFormat: { bold: true } } } } } },
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: DELAY, endColumnIndex: DELAY + 1 }, cell: { note: 'Possibly delayed = this order will be late. Write a short reason in Delay reason; our client sees both in their portal. Set it back to On time (or empty) when it is moving again.' }, fields: 'note' } },
+  ...(email ? [{ addProtectedRange: { protectedRange: { range: { sheetId, startRowIndex: 0, endRowIndex: 5, startColumnIndex: DELAY, endColumnIndex: DELAY + 2 }, description: 'Column headers', editors: { users: [email] } } } }] : []),
+  ...[DELAY, DELAY + 1].map(i => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: WIDTHS[i] }, fields: 'pixelSize' } })),
+];
+// Rewrites the Client paid column (V) from the website in one write (after payments change).
 export async function refreshPaidColumn(DB, env, fetchImpl = fetch) {
   if (!googleSheetsConfigured(env) || !await supplierSheetEnabled(DB) || await getSetting(DB, LAYOUT) !== LAYOUT_NOW) return false;
   const { wq } = await tabNames(DB), rows = await idColumn(env, fetchImpl, wq);
   if (!rows.length) return true;
   const labels = await paidLabels(DB, rows.map(r => r.orderId).filter(id => id > 0));
-  await batchValues(env, [{ range: `${wq}!T${FIRST_ROW}:T${rows.at(-1).row}`, values: rows.map(r => [labels.get(r.orderId) || '']) }], fetchImpl);
+  await batchValues(env, [{ range: `${wq}!V${FIRST_ROW}:V${rows.at(-1).row}`, values: rows.map(r => [labels.get(r.orderId) || '']) }], fetchImpl);
   return true;
 }
 const courierRule = (sheetId, couriers) => ({ setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 17, endColumnIndex: 18 }, rule: {
@@ -219,7 +239,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     const { wq } = await tabNames(DB);
     const sheetId = await workQueueSheetId(env, fetchImpl, true, wq);
     if (sheetId == null) throw new Error('Work Queue tab not found');
-    const header = async () => (await sheetsRequest(env, '/values/' + encodeURIComponent(`${wq}!A5:AD5`), {}, fetchImpl)).values?.[0]?.map(norm) || [];
+    const header = async () => (await sheetsRequest(env, '/values/' + encodeURIComponent(`${wq}!A5:AF5`), {}, fetchImpl)).values?.[0]?.map(norm) || [];
     let h = await header();
     // 1) Country (L) becomes Tax number, and Gift message is added after it. The column is inserted inside the
     //    website's protected columns (A–M), so it stays protected. Nothing is deleted.
@@ -234,16 +254,22 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     // 5) Client paid after Shipping status (Erwin, 22 Oct 2026): the supplier sees which orders our client has paid. The
     //    photos, links and ids move one column to the right (U–AD); the column is website-written and protected.
     const addPaid = h[18] === 'Shipping status' && h[19] === 'Photo 2';
-    if (addPaid) { await batch(env, [{ insertDimension: { range: { sheetId, dimension: 'COLUMNS', startIndex: PAIDCOL, endIndex: PAIDCOL + 1 }, inheritFromBefore: false } }], fetchImpl); h = await header(); }
-    await batchValues(env, [{ range: `${wq}!A5:AD5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
+    if (addPaid) { await batch(env, [{ insertDimension: { range: { sheetId, dimension: 'COLUMNS', startIndex: 19, endIndex: 20 }, inheritFromBefore: false } }], fetchImpl); h = await header(); }
+    // 6) Delayed? + Delay reason after Shipping status (Erwin, 22 Oct 2026): the supplier marks orders that will be late.
+    //    Inserted next to the supplier's yellow columns (same look, not protected); Client paid, photos and ids move two
+    //    columns to the right (V–AF). Google moves the protected ranges, rules, filter and groups with them.
+    const addDelay = h[18] === 'Shipping status' && (h[19] === 'Client paid' || addPaid);
+    if (addDelay) { await batch(env, [{ insertDimension: { range: { sheetId, dimension: 'COLUMNS', startIndex: DELAY, endIndex: DELAY + 2 }, inheritFromBefore: true } }], fetchImpl); h = await header(); }
+    await batchValues(env, [{ range: `${wq}!A5:AF5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
-    const idCol = h[19] === 'Client paid' ? 'AC' : 'AB';
+    const idCol = colName(h.indexOf('Order ID') >= 0 ? h.indexOf('Order ID') : 27);
     const ranges = [`${wq}!O${FIRST_ROW}:O`, `${wq}!${idCol}${FIRST_ROW}:${idCol}`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
     const [vals, ids] = ((await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS', {}, fetchImpl)).valueRanges || []).map(x => x.values || []);
     for (const [i, r] of (ids || []).entries()) { const v = norm(vals?.[i]?.[0]).slice(0, 200), id = Number(r?.[0]); if (id > 0 && v) await DB.prepare("UPDATE client_orders SET competitor_price=? WHERE id=? AND competitor_price=''").bind(v, id).run(); }
     await batch(env, [courierRule(sheetId, courierList(await getSetting(DB, 'couriers'))), ...competitorFormat(sheetId),
       ...[11, 12, 17].map(i => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: WIDTHS[i] }, fields: 'pixelSize' } })),
-      ...(addPaid ? [...paidFormat(sheetId), { addProtectedRange: { protectedRange: { range: { sheetId, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }, description: 'Filled in by the Direct Line website', editors: { users: [googleSheetsConfig(env).email] } } } }] : [])], fetchImpl);
+      ...(addPaid ? [...paidFormat(sheetId), { addProtectedRange: { protectedRange: { range: { sheetId, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }, description: 'Filled in by the Direct Line website', editors: { users: [googleSheetsConfig(env).email] } } } }] : []),
+      ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : [])], fetchImpl);
     if (addPaid) await markPaidDirty(DB);
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL)").run();
@@ -303,7 +329,7 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
   order.client_paid = (await paidLabels(DB, [Number(order.id)])).get(Number(order.id)) || '';
   const { am, qz } = websiteCells(env, order, photos, shop?.name || '');
   if (found.length) {
-    const r = found[0].row, data = [{ range: `${wq}!A${r}:O${r}`, values: [am] }, { range: `${wq}!T${r}:AD${r}`, values: [qz] }];
+    const r = found[0].row, data = [{ range: `${wq}!A${r}:O${r}`, values: [am] }, { range: `${wq}!V${r}:AF${r}`, values: [qz] }];
     const sets = [];
     // An admin changed tracking / shipped on the website since the sheet last showed it: show it in the sheet too.
     if (norm(order.tracking_number) && norm(order.tracking_number) !== norm(order.sheet_tracking)) {
@@ -321,16 +347,24 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
     if (sheetId != null) await batch(env, [rowHeight(sheetId, r, rowPx(am))], fetchImpl);
     return { enabled: true, row: r };
   }
-  const supplier = [order.supplier_cost == null ? '' : Number(order.supplier_cost), txt(order.tracking_number), txt(order.courier), ['shipped', 'delivered'].includes(order.status) ? SHIPPED : NOT_SHIPPED];
-  const res = await sheetsRequest(env, '/values/' + encodeURIComponent(`${wq}!A${FIRST_ROW}:AD`) + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+  const supplier = supplierCells(order);
+  const res = await sheetsRequest(env, '/values/' + encodeURIComponent(`${wq}!A${FIRST_ROW}:AF`) + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
     method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values: [[...am, ...supplier, ...qz]] }),
   }, fetchImpl);
-  await DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_courier=?, sheet_shipped=? WHERE id=?').bind(norm(supplier[0]), norm(order.tracking_number), norm(order.courier), supplier[3], order.id).run();
+  await rememberSupplierCells(DB, order, supplier);
   const row = Number(/![A-Z]+(\d+)/.exec(res?.updates?.updatedRange || '')?.[1]);
   const sheetId = await workQueueSheetId(env, fetchImpl, false, wq);
   if (row && sheetId != null) await batch(env, [rowHeight(sheetId, row, rowPx(am))], fetchImpl);
   return { enabled: true, row, added: true };
 }
+
+// The supplier's columns P–U for a new row: what the website knows about the order.
+const supplierCells = o => [o.supplier_cost == null ? '' : Number(o.supplier_cost), txt(o.tracking_number), txt(o.courier), ['shipped', 'delivered'].includes(o.status) ? SHIPPED : NOT_SHIPPED,
+  o.delayed_at ? DELAYED : '', o.delayed_at ? txt(o.delay_reason) : ''];
+// What the website last wrote to P-U, so only the supplier's own later edits are applied.
+const rememberSupplierCells = (DB, o, s) => DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_courier=?, sheet_shipped=?, sheet_delayed=?, sheet_delay_reason=? WHERE id=?')
+  .bind(norm(s[0]), norm(o.tracking_number), norm(o.courier), s[3], s[4], o.delayed_at ? norm(o.delay_reason) : '', o.id).run();
+const colName = i => { let s = ''; i += 1; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
 
 // ---------- sheet → website ----------
 async function event(DB, o, kind, detail, t) {
@@ -375,6 +409,22 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
     }
     await DB.prepare('UPDATE client_orders SET sheet_shipped=? WHERE id=?').bind(shipped, order.id).run();
   }
+  // Possibly delayed (T) + reason (U): the client is told when it is set, when the reason changes and when it is cleared.
+  if (cells.delayed !== undefined) {
+    const flag = typeof cells.delayed === 'boolean' ? String(cells.delayed) : norm(cells.delayed), reason = norm(cells.reason).slice(0, 300);
+    if (flag !== norm(order.sheet_delayed) || reason !== norm(order.sheet_delay_reason)) {
+      if (isDelayed(cells.delayed)) {
+        if (!order.delayed_at || reason !== norm(order.delay_reason)) {
+          await DB.prepare('UPDATE client_orders SET delayed_at=COALESCE(delayed_at,?), delay_reason=?, updated_at=? WHERE id=?').bind(t, reason || null, t, order.id).run();
+          await event(DB, order, 'delayed', reason, t); done.push(order.delayed_at ? 'delay reason' : 'delayed');
+        }
+      } else if (order.delayed_at) {
+        await DB.prepare('UPDATE client_orders SET delayed_at=NULL, delay_reason=NULL, updated_at=? WHERE id=?').bind(t, order.id).run();
+        await event(DB, order, 'delay_cleared', '', t); done.push('delay cleared');
+      }
+      await DB.prepare('UPDATE client_orders SET sheet_delayed=?, sheet_delay_reason=? WHERE id=?').bind(flag, reason, order.id).run();
+    }
+  }
   return { done, skipped };
 }
 
@@ -395,23 +445,24 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
     // Once: orders whose tax number / gift message were typed into the notes before those fields existed.
     for (const id of await splitOldNotes(DB)) { const sync = syncPortalOrderToGoogleSheet(DB, env, id, fetchImpl).catch(e => console.error('Sheet refresh after notes split failed', e)); if (waitUntil) waitUntil(sync); else await sync; }
     if (await getSetting(DB, PAID_DIRTY)) { const seen = await getSetting(DB, PAID_DIRTY); await refreshPaidColumn(DB, env, fetchImpl); await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(PAID_DIRTY, seen).run(); }
-    const ranges = [`${wq}!P${FIRST_ROW}:S`, `${wq}!AC${FIRST_ROW}:AC`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+    const ranges = [`${wq}!P${FIRST_ROW}:U`, `${wq}!AE${FIRST_ROW}:AE`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
     const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
     const [inputs, ids] = (data.valueRanges || []).map(v => v.values || []);
-    const rows = (ids || []).map((r, i) => ({ orderId: Number(r?.[0]), cost: inputs?.[i]?.[0] ?? '', tracking: inputs?.[i]?.[1] ?? '', courier: inputs?.[i]?.[2] ?? '', shipped: inputs?.[i]?.[3] ?? '' }))
+    const rows = (ids || []).map((r, i) => ({ orderId: Number(r?.[0]), cost: inputs?.[i]?.[0] ?? '', tracking: inputs?.[i]?.[1] ?? '', courier: inputs?.[i]?.[2] ?? '', shipped: inputs?.[i]?.[3] ?? '', delayed: inputs?.[i]?.[4] ?? '', reason: inputs?.[i]?.[5] ?? '' }))
       .filter(r => Number.isSafeInteger(r.orderId) && r.orderId > 0);
     result.checked = rows.length;
     // One query for what the website last saw in each row; only rows that differ are loaded and applied.
     const seen = new Map();
     for (let i = 0; i < rows.length; i += 200) {
       const ids = rows.slice(i, i + 200).map(r => r.orderId);
-      const found = (await DB.prepare(`SELECT id, sheet_cost, sheet_tracking, sheet_courier, sheet_shipped FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
+      const found = (await DB.prepare(`SELECT id, sheet_cost, sheet_tracking, sheet_courier, sheet_shipped, sheet_delayed, sheet_delay_reason FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
       for (const f of found) seen.set(Number(f.id), f);
     }
-    const cellText = v => (typeof v === 'number' ? String(v) : norm(v));
+    const cellText = v => (typeof v === 'number' || typeof v === 'boolean' ? String(v) : norm(v));
     for (const r of rows) {
       const s = seen.get(r.orderId);
-      if (!s || (cellText(r.cost) === norm(s.sheet_cost) && cellText(r.tracking) === norm(s.sheet_tracking) && cellText(r.courier) === norm(s.sheet_courier) && cellText(r.shipped) === norm(s.sheet_shipped))) continue;
+      if (!s || (cellText(r.cost) === norm(s.sheet_cost) && cellText(r.tracking) === norm(s.sheet_tracking) && cellText(r.courier) === norm(s.sheet_courier) && cellText(r.shipped) === norm(s.sheet_shipped)
+        && cellText(r.delayed) === norm(s.sheet_delayed) && cellText(r.reason).slice(0, 300) === norm(s.sheet_delay_reason))) continue;
       const order = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(r.orderId).first();
       if (!order) continue;
       const out = await applySupplierRow(DB, order, r, t);
@@ -461,7 +512,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   const temp = await batch(env, [{ addSheet: { properties: { title: 'Updating… ' + Date.now() } } }], fetchImpl);
   const tempId = temp?.replies?.[0]?.addSheet?.properties?.sheetId;
   if (current) await batch(env, [{ deleteSheet: { sheetId: oldId } }], fetchImpl);
-  const add = { addSheet: { properties: { title: wq, index: 0, gridProperties: { rowCount: 1000, columnCount: 30, frozenRowCount: 5 }, ...(oldId != null ? { sheetId: oldId } : {}) } } };
+  const add = { addSheet: { properties: { title: wq, index: 0, gridProperties: { rowCount: 1000, columnCount: 32, frozenRowCount: 5 }, ...(oldId != null ? { sheetId: oldId } : {}) } } };
   let created;
   try { created = await batch(env, [add], fetchImpl); }
   catch (e) { delete add.addSheet.properties.sheetId; created = await batch(env, [add], fetchImpl); }
@@ -480,15 +531,15 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     const photos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(o.id).all()).results || [];
     o.client_paid = paid.get(Number(o.id)) || '';
     const { am, qz } = websiteCells(env, o, photos, o.shop_name || '');
-    const supplier = [o.supplier_cost == null ? '' : Number(o.supplier_cost), txt(o.tracking_number), txt(o.courier), ['shipped', 'delivered'].includes(o.status) ? SHIPPED : NOT_SHIPPED];
+    const supplier = supplierCells(o);
     rows.push([...am, ...supplier, ...qz]);
-    await DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_courier=?, sheet_shipped=? WHERE id=?').bind(norm(supplier[0]), norm(o.tracking_number), norm(o.courier), supplier[3], o.id).run();
+    await rememberSupplierCells(DB, o, supplier);
   }
   const last = FIRST_ROW + Math.max(rows.length, 1) - 1;
   await batchValues(env, [
     { range: `${wq}!A2:A3`, values: [['Direct Line — Orders'], [instructions]] },
-    { range: `${wq}!A5:AD5`, values: [HEADERS] }, totalsRow(wq),
-    ...(rows.length ? [{ range: `${wq}!A${FIRST_ROW}:AD${last}`, values: rows }] : []),
+    { range: `${wq}!A5:AF5`, values: [HEADERS] }, totalsRow(wq),
+    ...(rows.length ? [{ range: `${wq}!A${FIRST_ROW}:AF${last}`, values: rows }] : []),
   ], fetchImpl);
 
   const { email } = googleSheetsConfig(env);
@@ -496,28 +547,28 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   const yellow = { red: 1, green: 0.95, blue: 0.7 }, header = { red: 0.93, green: 0.93, blue: 0.93 };
   await batch(env, [
     { repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 16 } } }, fields: 'userEnteredFormat.textFormat' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 30 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment)' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 0, endColumnIndex: 30 }, cell: { userEnteredFormat: { backgroundColor: header, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 15, endColumnIndex: 19 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
-    { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 15, endColumnIndex: 19 }, cell: { userEnteredFormat: { backgroundColor: yellow } }, fields: 'userEnteredFormat.backgroundColor' } },
+    { repeatCell: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 32 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment)' } },
+    { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 0, endColumnIndex: 32 }, cell: { userEnteredFormat: { backgroundColor: header, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
+    { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: 15, endColumnIndex: 21 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
+    { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 15, endColumnIndex: 21 }, cell: { userEnteredFormat: { backgroundColor: yellow } }, fields: 'userEnteredFormat.backgroundColor' } },
     { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 15, endColumnIndex: 16 }, cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
     { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: 16, endColumnIndex: 18 }, cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } }, fields: 'userEnteredFormat.numberFormat' } },
     { setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: 15, endColumnIndex: 16 }, rule: { condition: { type: 'NUMBER_GREATER_THAN_EQ', values: [{ userEnteredValue: '0' }] }, inputMessage: 'Total cost for the whole order in USD, product + shipping.', strict: true, showCustomUi: true } } },
     courierRule(sheetId, courierList(await getSetting(DB, 'couriers'))),
     { setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: 18, endColumnIndex: 19 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: NOT_SHIPPED }, { userEnteredValue: SHIPPED }] }, strict: true, showCustomUi: true } } },
     ...WIDTHS.map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
-    { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 28, endIndex: 30 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
+    { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 30, endIndex: 32 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
     rowHeight(sheetId, 5, 44),
     { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: FIRST_ROW - 1, endIndex: 1000 }, properties: { pixelSize: 100 }, fields: 'pixelSize' } },
     ...rows.map((row, i) => rowHeight(sheetId, FIRST_ROW + i, rowPx(row))),
-    { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 20, endIndex: 28 } } },
-    { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 20, endIndex: 28 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
-    { setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 28 } } } },
-    ...competitorFormat(sheetId), ...paidFormat(sheetId),
+    { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 } } },
+    { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
+    { setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 30 } } } },
+    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null),
     // Only the supplier columns (and Competitor price) are editable by others; the rest is written by the website.
     { addProtectedRange: { protectedRange: { range: cols(0, 14), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
-    { addProtectedRange: { protectedRange: { range: cols(19, 30), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
-    { addProtectedRange: { protectedRange: { range: { sheetId, startRowIndex: 0, endRowIndex: 5, startColumnIndex: 14, endColumnIndex: 19 }, description: 'Column headers', editors: { users: [email] } } } },
+    { addProtectedRange: { protectedRange: { range: cols(21, 32), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
+    { addProtectedRange: { protectedRange: { range: { sheetId, startRowIndex: 0, endRowIndex: 5, startColumnIndex: 14, endColumnIndex: 21 }, description: 'Column headers', editors: { users: [email] } } } },
   ], fetchImpl);
 
   await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(SETTING, '1').run();

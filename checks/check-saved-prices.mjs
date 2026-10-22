@@ -59,7 +59,7 @@ const wq = grid('Work Queue'); wq[4] = ['Date'];
 const store = (await call('/client-stores', 'GET', null, client)).data.stores[0];
 const other = (await call('/client-stores', 'POST', { name: 'Second shop', platform: 'Etsy', link: 'https://example.com/s2' }, client)).data.store;
 const mk = async (ref, extra = {}) => { const r = await call('/orders', 'POST', { clientId: id, storeId: store.id, orderRef: ref, buyerName: 'B', destination: 'US', address1: '1 Main St', etsyUrl: 'https://www.etsy.com/listing/111222333/black-bag?ref=shop_home', variant: 'Black', quantity: 1, ...extra }, admin); assert.equal(r.status, 200, JSON.stringify(r.data)); await settle(); return r.data.order; };
-const row = oid => wq.findIndex(x => x && x[28] === String(oid));
+const row = oid => wq.findIndex(x => x && x[30] === String(oid));
 const db = oid => DB.prepare('SELECT price, product_cost, supplier_cost, price_source FROM client_orders WHERE id=?').bind(oid).first();
 const poll = async () => { const p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p)); await settle(); return p; };
 

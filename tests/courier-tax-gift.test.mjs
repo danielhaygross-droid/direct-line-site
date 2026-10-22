@@ -7,7 +7,7 @@ import { SCHEMA, CUSTOMER_BODY_KEYS } from '../server/portal.mjs';
 const read = p => readFile(new URL('../' + p, import.meta.url), 'utf8');
 
 test('sheet layout: Tax number and Gift message instead of Country, Courier between tracking and status', () => {
-  assert.equal(HEADERS.length, 30); assert.equal(WIDTHS.length, 30); assert.equal(HEADERS[19], 'Client paid', 'T: Client paid, after Shipping status');
+  assert.equal(HEADERS.length, 32); assert.equal(WIDTHS.length, 32); assert.deepEqual(HEADERS.slice(19, 22), ['Delayed?', 'Delay reason', 'Client paid'], 'T/U: delay, V: Client paid');
   assert.deepEqual(HEADERS.slice(10, 19), ['Delivery address & phone', 'Tax number', 'Gift message', 'Notes', 'Competitor price', 'Total cost (USD)', 'Tracking number', 'Courier', 'Shipping status']);
   assert.deepEqual(HEADERS.slice(-2), ['Order ID', 'Client ID']);
   const o = { id: 3, client_id: 1, order_date: '2026-10-14', status: 'processing', quantity: 1, buyer_name: 'L', address_line_1: '10 Rue\n34170 Castelnau', destination: 'FR', tax_number: 'IOSS IM3720000224', gift_message: '=Hi', notes: 'n', etsy_url: '' };

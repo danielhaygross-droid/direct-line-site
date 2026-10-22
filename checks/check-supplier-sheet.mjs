@@ -81,10 +81,10 @@ Object.assign(env, {
 });
 const settle = () => new Promise(r => setTimeout(r, 300)); // background sheet syncs (waitUntil absent → awaited, but be safe)
 const cron = async () => (await route(new Request('http://x/api/cron/supplier-sheet', { headers: { authorization: 'Bearer cron-test' } }), { db: DB, env })).json();
-const wq = () => { const g = sheets.get(WQ).grid; const ids = {}; for (let r = FIRST_ROW - 1; r < g.length; r++) if (g[r]?.[28]) ids[Number(g[r][28])] = r; return ids; };
+const wq = () => { const g = sheets.get(WQ).grid; const ids = {}; for (let r = FIRST_ROW - 1; r < g.length; r++) if (g[r]?.[30]) ids[Number(g[r][30])] = r; return ids; };
 const cell = (orderId, c) => sheets.get(WQ).grid[wq()[orderId]][c];
 const supplierTypes = (orderId, c, v) => { sheets.get(WQ).grid[wq()[orderId]][c] = v; };
-const N = 15, O = 16, P = 18, D = 3; // layout 3: O Competitor price, P Total cost, Q Tracking, S Shipping status (AB = order id)
+const N = 15, O = 16, P = 18, D = 3; // layout 3: O Competitor price, P Total cost, Q Tracking, S Shipping status (AE = order id)
 const order = async id => (await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(id).first());
 const events = async (id, kind) => (await DB.prepare('SELECT * FROM order_events WHERE order_id=? AND kind=? ORDER BY id').bind(id, kind).all()).results;
 
@@ -108,7 +108,7 @@ assert.deepEqual(Object.keys(wq()).map(Number).sort((a, b) => a - b), [A.id, B.i
 assert.equal(cell(A.id, P), NOT_SHIPPED); assert.equal(cell(A.id, N) ?? '', '');
 assert.equal(cell(A.id, 13), '=HYPERLINK("http://evil","x")', 'client text is stored as text, never run as a formula');
 assert.match(String(cell(A.id, 6)), /^=HYPERLINK\("https:\/\/example.com\/a","Open product 1"\)$/, 'two links: numbered');
-assert.equal(cell(A.id, 27), 'Product 2: https://example.com/b', 'more product links in AB, numbered');
+assert.equal(cell(A.id, 29), 'Product 2: https://example.com/b', 'more product links in AD, numbered');
 assert.equal(cell(A.id, 14) ?? '', '', 'Competitor price starts empty');
 const shopName = (await DB.prepare('SELECT s.name FROM client_stores s JOIN client_orders o ON o.store_id=s.id WHERE o.id=?').bind(A.id).first()).name;
 assert.equal(cell(A.id, 2), shopName, 'column C shows the shop, not the client');
@@ -220,7 +220,7 @@ assert.equal((await DB.prepare('SELECT value FROM portal_settings WHERE key=?').
 assert.ok(!sheets.has(WQ) && sheets.get(WQ_NEW).sheetId === 2026101301, 'the supplier tab is now "Orders" (same tab id, links still open it)');
 assert.equal(sheets.get(LOG_NEW).sheetId, logId); assert.equal(sheets.get(WQ_NEW).grid[1][0], 'Direct Line — Orders');
 assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t), [WQ_NEW], 'only "Orders" is visible');
-const rowOf = id => sheets.get(WQ_NEW).grid.findIndex(r => r && Number(r[28]) === id);
+const rowOf = id => sheets.get(WQ_NEW).grid.findIndex(r => r && Number(r[30]) === id);
 const T = await mk('T-TABS'); await settle();
 assert.ok(rowOf(T.id) > 0, 'a new order lands in "Orders"');
 assert.ok(sheets.get(LOG_NEW).grid.some(r => r && String(r[0]) === String(T.id)), 'and in the website log "Order Log"');
@@ -232,10 +232,10 @@ assert.equal(sheets.get(LOG_NEW).sheetId, logId, 'the website log is not touched
 console.log('PASS tab names: "Orders" for the supplier tab, "Order Log" for the website log, in two safe steps; writes, reads and setup follow');
 
 // ---------- Client paid (T) and the totals in row 4: the supplier sees which orders our client has paid ----------
-const paidCell = id => sheets.get(WQ_NEW).grid[rowOf(id)][19];
+const paidCell = id => sheets.get(WQ_NEW).grid[rowOf(id)][21];
 const tabNow = sheets.get(WQ_NEW).grid;
-assert.equal(tabNow[4][19], 'Client paid'); assert.deepEqual(tabNow[3].slice(14, 16), ['Totals (USD):', '=SUM(P6:P)'], 'row 4: totals worked out by the sheet');
-assert.match(tabNow[3][16], /SUMIF\(T6:T,"Paid",P6:P\)/); assert.match(tabNow[3][17], /SUMIF\(T6:T,"Not paid",P6:P\)/);
+assert.equal(tabNow[4][21], 'Client paid'); assert.deepEqual(tabNow[3].slice(14, 16), ['Totals (USD):', '=SUM(P6:P)'], 'row 4: totals worked out by the sheet');
+assert.match(tabNow[3][16], /SUMIF\(V6:V,"Paid",P6:P\)/); assert.match(tabNow[3][17], /SUMIF\(V6:V,"Not paid",P6:P\)/);
 assert.equal(paidCell(T.id), 'Not paid', 'billed, no payment yet');
 const pay = await call('/admin/payments', 'POST', { clientId, amount: 14, orderIds: [T.id] }, admin); assert.equal(pay.status, 200, JSON.stringify(pay.data));
 assert.ok(await DB.prepare("SELECT 1 AS x FROM portal_settings WHERE key='supplier_sheet_paid_dirty'").first(), 'the column is marked for the next poll');

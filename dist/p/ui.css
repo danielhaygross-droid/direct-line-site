@@ -328,3 +328,12 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .bill-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.bill-head .sec-title{margin:0}
 .bill-view{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2)}.bill-view p{margin:0 0 6px}.bill-view p:last-of-type{margin-bottom:2px}
 .bill-card .note{margin:6px 0 12px}
+/* Possibly delayed (set by the supplier in the sheet) */
+.delay-tag{display:inline-flex;align-items:center;gap:5px;margin-inline-start:6px;padding:3px 9px;border-radius:999px;background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange);font-size:12px;font-weight:700;white-space:nowrap;vertical-align:middle}
+.delay-tag::before{content:"!";display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;background:var(--orange);color:#fff;font-size:10px;font-weight:800;line-height:1}
+td .delay-tag{margin:6px 0 0;margin-inline-start:0}
+.delay-note{display:grid;gap:4px;margin:0 0 14px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--orange) 45%,transparent);border-radius:var(--radius-sm,12px);background:color-mix(in srgb,var(--orange) 9%,var(--surface,#fff));overflow-wrap:anywhere}
+.delay-note b{color:var(--orange)}.delay-note small{color:var(--muted);font-size:12px}
+.ship-warn{display:block;margin-top:4px;color:var(--orange);font-size:12px;font-weight:600;white-space:normal}
+.ship-warn-box{margin:12px 0 0;padding:10px 12px;border-radius:var(--radius-sm,12px);background:color-mix(in srgb,var(--orange) 9%,var(--surface,#fff));color:var(--text);font-size:13.5px;line-height:1.5}
+.ship-warn-box b{color:var(--orange)}
