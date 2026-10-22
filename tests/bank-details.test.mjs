@@ -14,7 +14,7 @@ test('bank details have defaults from Shahar\'s list and are editable settings',
   assert.ok(server.includes('...Object.fromEntries(BANK_FIELDS.map'), 'client /me gets bank fields');
 });
 
-test('payments page has a How to pay box with Copy buttons; bank values are not translated', () => {
-  assert.ok(portal.includes('function howToPay()') && portal.includes('${howToPay()}'));
+test('payments page shows the bank details with Copy buttons in "Pay for your orders"; bank values are not translated', () => {
+  assert.ok(portal.includes('function bankRows()') && portal.includes('bank = bankRows()') && portal.includes('${payFlow()}'));
   assert.ok(/<b data-no-i18n>\$\{esc\(shown\)\}<\/b><button type="button" class="btn btn-sm" data-copy=/.test(portal));
 });

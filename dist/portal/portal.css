@@ -321,3 +321,16 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .var-row .field,.prod-block .item-link{margin:0}.var-remove{min-width:40px;font-size:18px;margin-bottom:4px}
 .prod-block [data-var-add]{justify-self:start}
 @media(max-width:700px){.var-row{grid-template-columns:84px minmax(0,1fr) auto}.var-row .field small{display:none}}
+
+/* Payments -> "Pay for your orders" (23 Oct 2026): tick orders, send the total, upload the confirmation. */
+.pay-flow .sec-title{margin-bottom:6px}
+.pf-steps{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:0}
+.pf-step{display:grid;grid-template-columns:34px minmax(0,1fr);gap:14px;padding:16px 0;border-top:1px solid var(--line)}.pf-step:first-child{border-top:0;padding-top:8px}
+.pf-n{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:color-mix(in srgb,var(--gold) 16%,transparent);color:var(--gold-2);font-weight:700;font-size:14px}[data-theme=dark] .pf-n{color:var(--gold)}
+.pf-body{min-width:0;display:grid;gap:10px}.pf-body h4{margin:4px 0 0;font-size:15.5px;font-weight:600;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px}
+.pf-total{font-size:20px;font-variant-numeric:tabular-nums;color:var(--gold-2)}[data-theme=dark] .pf-total{color:var(--gold)}
+.pf-copy{margin:-4px 0 0}.pf-body .form-grid{margin:0}.pf-body .po-gap.full{grid-column:1/-1;padding:0;border:0}
+.pay-strip{display:flex;align-items:center;gap:12px;padding:12px 16px;border:1px solid color-mix(in srgb,var(--orange) 35%,var(--line));border-radius:var(--radius);background:color-mix(in srgb,var(--orange) 8%,var(--surface));color:inherit;text-decoration:none;box-shadow:var(--shadow-sm)}
+.pay-strip:hover{border-color:var(--orange)}.pay-strip-ic{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange);flex:none}
+.pay-strip-ic svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8}.pay-strip-txt{display:grid;min-width:0;flex:1}.pay-strip-txt small{color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px}
+@media (max-width:640px){.pf-step{grid-template-columns:28px minmax(0,1fr);gap:10px}.pf-n{width:26px;height:26px;font-size:13px}.pay-strip{padding:10px 12px;gap:10px}}

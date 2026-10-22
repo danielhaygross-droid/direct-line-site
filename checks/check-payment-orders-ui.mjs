@@ -59,22 +59,23 @@ try {
   {
     let ctx = await session(client, 1440), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/portal/?lang=en#/payments`); await page.reload(); await page.waitForSelector('#transfer-form');
-    assert.match(await page.locator('[data-unpaid] summary').innerText(), /3\s*orders\s*·\s*\$75\.00/, 'not paid yet: A + B + C (D has no cost yet)');
+    assert.equal(await page.locator('#transfer-form [data-pf-total]').innerText(), '$75.00', 'pay for orders: A + B + C ticked to start (D has no cost yet)');
     // Billing details: refused without contact, then saved.
     const bf = page.locator('#billing-form');
     await bf.locator('[name=name]').fill('Sample Person'); await bf.locator('[name=company]').fill('Sample Shop Ltd'); await bf.locator('[name=address]').fill('1 Sample Street\nTel Aviv');
     await bf.locator('[type=submit]').click(); await page.waitForSelector('[data-billing-msg]:has-text("email or a phone")');
     await bf.locator('[name=email]').fill('billing@example.com'); await bf.locator('[type=submit]').click();
     await page.waitForSelector('.bill-view:has-text("Sample Shop Ltd")');
-    // The client ticks the orders their transfer is for.
+    // The client unticks the order they are not paying for: total and amount follow the ticks.
     const tf = page.locator('#transfer-form');
-    await tf.locator('[name=amount]').fill('45'); await tf.locator('[name=file]').setInputFiles(fixturePath);
-    await tf.locator('[data-po-oldest]').click();
-    assert.deepEqual(await tf.locator('[name=poOrder]:checked').evaluateAll(i => i.map(x => Number(x.value))), [A, B], 'oldest first, as many as $45 covers');
+    assert.equal(await tf.locator('[name=amount]').inputValue(), '75.00');
+    await tf.locator(`[name=poOrder][value="${C}"]`).uncheck();
+    assert.deepEqual(await tf.locator('[name=poOrder]:checked').evaluateAll(i => i.map(x => Number(x.value))), [A, B]);
     assert.equal(await tf.locator('[data-po-sum]').innerText(), '2 orders ticked · $45.00');
-    assert.equal(await tf.locator('[data-po-gap]').innerText(), 'The amount matches the ticked orders.');
-    await tf.locator('[name=amount]').fill('50'); assert.equal(await tf.locator('[data-po-gap]').innerText(), 'The amount is $5.00 more than the ticked orders.');
-    await tf.locator('[name=amount]').fill('45');
+    assert.equal(await tf.locator('[data-pf-total]').innerText(), '$45.00'); assert.equal(await tf.locator('[data-pf-copy]').getAttribute('data-copy'), '45.00');
+    assert.equal(await tf.locator('[name=amount]').inputValue(), '45.00'); assert.equal(await tf.locator('[data-pf-gap]').innerText(), '');
+    await tf.locator('[name=amount]').fill('50'); assert.equal(await tf.locator('[data-pf-gap]').innerText(), 'The amount is $5.00 more than the ticked orders.');
+    await tf.locator('[name=amount]').fill('45'); await tf.locator('[name=file]').setInputFiles(fixturePath);
     await tf.locator('[type=submit]').click(); await page.waitForSelector('.confirmation-row:has-text("Orders you ticked")');
     assert.deepEqual(errors, []); await ctx.close();
 
@@ -140,9 +141,8 @@ try {
     const tag = `${lang}-${width}`;
     let ctx = await session(client, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/portal/?lang=${lang}#/payments`); await page.reload(); await page.waitForSelector('#transfer-form');
-    await page.locator('[data-unpaid] summary').click(); await page.waitForTimeout(200);
     await page.screenshot({ path: path.join(out, `${tag}-portal-payments.png`) });
-    await page.locator('#transfer-form [name=amount]').fill('30'); await page.locator('#transfer-form [data-po-oldest]').click(); await page.waitForTimeout(150);
+    await page.locator('#transfer-form [name=amount]').fill('30'); await page.waitForTimeout(150);
     await page.locator('#transfer-form [data-po]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-portal-transfer.png`) });
     await page.locator('[data-billing]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-portal-billing.png`) });
     assert.equal(await page.locator('.po-linked .po-tag').count(), 0, tag + ' clients see which orders, not the gap');

@@ -61,10 +61,8 @@
       </section>
       ${S.storeId ? `<section class="card card-pad"><span>Billed for this store</span>: <b>${money(window.DLClientStoreMath.performance(S.stores,S.orders,S.adjustments).rows.find(s=>s.id===S.storeId)?.billed||0)}</b><p class="muted">Payments cover all stores in this account.</p></section>` : ''}
       ${adjustments.length ? `<section class="card card-pad"><h3 class="sec-title">Balance adjustments</h3>${adjustments.map(a=>`<div class="confirmation-row"><a href="#/orders" data-open-order="${a.orderId}">${esc(a.orderRef || '#'+a.orderId)}</a><span>${esc(a.note)}</span><b>${money(a.amount)}</b></div>`).join('')}</section>` : ''}
-      ${unpaidCard()}
+      ${payFlow()}
       ${S.billing ? '' : billingCard()}
-      ${howToPay()}
-      ${transferForm()}
       <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3><form id="invoice-month-form" class="month-receipts"><label class="field"><span>Receipts for a month</span><input type="month" name="month" value="${localDay().slice(0,7)}" required></label><button class="btn btn-sm" type="submit">Download all</button><p data-month-msg class="form-msg"></p></form></div>
         ${S.payments.length ? `<div class="cpay-list">${S.payments.map(paymentRow).join('')}</div>` : empty('wallet', 'No payments yet', 'When we receive a payment from you, we record it here.')}
       </section>

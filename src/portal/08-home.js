@@ -22,6 +22,7 @@
         </ol>
         <div class="how-actions"><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a></div></section>` : ''}
       ${statCardsHTML()}
+      ${payStrip()}
       <div class="home-grid">
         <section class="card span2"><div class="card-head"><h3>Your latest orders</h3><a class="link" href="#/orders">See all ${all.length ? '(' + all.length + ')' : ''}</a></div>
           ${all.length ? `<div class="table-wrap">${ordersTable(all.slice(0, 5), true)}</div>` : empty('orders', 'No orders yet', 'When you get a sale in your store, send it to us here. We take care of the rest.', '<a class="btn btn-primary" href="#/new">Send a new order</a>')}

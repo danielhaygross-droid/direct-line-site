@@ -7,6 +7,7 @@
     const selected=new URLSearchParams(query).get('store');if(selected!==null){S.storeId=Number(selected)||0;if(S.storeId&&!S.stores.some(s=>s.id===S.storeId))S.storeId=0;store.set('dl-client-store-'+S.me.id,S.storeId);}
     if (r === 'import') { location.replace('#/home'); return; }
     S.route = ROUTES[r] ? r : 'home'; S.id = id ? Number(id) : null;
+    S.payOpen = S.route === 'payments' && new URLSearchParams(query).get('pay') === '1';
     if (S.route === 'edit' && !S.orders.some(o => o.id === S.id && editable(o))) { location.hash = '#/orders'; return; }
     // Admin preview is view only: no forms for adding or editing orders.
     if (S.me?.preview && ['new', 'edit'].includes(S.route)) { location.hash = '#/home'; return; }
