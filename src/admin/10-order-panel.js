@@ -22,7 +22,7 @@
   }
   function fillOrder(o, soft) {
     const d = UI.getDrawer(), back = S.drawer?.back;
-    d.head.innerHTML = `${back ? `<button type="button" class="back" data-back>${ic('back')}${esc(clientName(back))}</button>` : ''}<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}</div><p>${esc(clientName(o.clientId))} · ordered ${esc(o.orderDate || fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p><p><span>Added</span> ${esc(fullDate(o.createdAt))}</p>`;
+    d.head.innerHTML = `${back ? `<button type="button" class="back" data-back>${ic('back')}${esc(clientName(back))}</button>` : ''}<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}${UI.delayTag(o)}</div><p>${esc(clientName(o.clientId))} · ordered ${esc(o.orderDate || fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p><p><span>Added</span> ${esc(fullDate(o.createdAt))}</p>`;
     const info = $('[data-d-info]', d.body); if (!info) return;
     if (soft && $('[name=invoiceFile]',info)?.files.length) return;
     if (soft && info.contains(document.activeElement) && document.activeElement.matches('input')) return;
@@ -32,7 +32,7 @@
       return;
     }
     info.innerHTML = `
-      <section class="card card-pad">${UI.tracker(o, events)}</section>${UI.activity(events)}
+      <section class="card card-pad">${UI.delayNote(o)}${UI.tracker(o, events)}</section>${UI.activity(events)}
       <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o, { removable: true, canAdd: (o.photos || []).length < 8 })}</section>
       <section class="card card-pad"><h3 class="sec-title">Update status</h3>
         ${o.status==='cancelled' ? '<p class="note">This order is cancelled. Choose a status to reopen it; its cancellation fee is then removed.</p>' : ''}

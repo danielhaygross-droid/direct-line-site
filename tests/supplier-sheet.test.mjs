@@ -13,7 +13,7 @@ test('Work Queue cells: website columns only, client text can never run as a for
   const o = { id: 7, client_id: 3, order_ref: '=IMPORTXML("x")', order_date: '2026-10-11', status: 'processing', quantity: 2, item_title: 'Mug', variant: '+Gold',
     buyer_name: '@me', address_line_1: '1030 Winterton St', buyer_phone: '+1 555', destination: 'US', notes: '-note', etsy_url: 'https://a.com/x"y\nhttps://b.com/z' };
   const { am, qz } = websiteCells({ APP_SESSION_SECRET: 's' }, o, [{ id: 9 }], 'Client "A"');
-  assert.equal(am.length + 4 + qz.length, HEADERS.length, 'A–O (O = Competitor price) + 4 supplier columns + T–AD (T = Client paid)');
+  assert.equal(am.length + 6 + qz.length, HEADERS.length, 'A–O (O = Competitor price) + 6 supplier columns (P–U) + V–AF (V = Client paid)');
   assert.equal(am[1], "'=IMPORTXML(\"x\")"); assert.equal(am[8], 'Mug · +Gold'); assert.equal(am[9], "'@me"); assert.equal(am[13], "'-note");
   assert.equal(am[0], "'2026-10-11", 'date stays text'); assert.equal(am[3], 'In Progress');
   assert.match(am[6], /^=HYPERLINK\("https:\/\/a\.com\/x""y","Open product 1"\)$/, 'quotes in links are escaped; numbered when there are several');
@@ -67,5 +67,5 @@ test('rows grow to fit wrapped text (min 100 px for the photo); widths cover eve
   const notes = [...base]; notes[12] = 'x'.repeat(2000);
   assert.equal(rowPx(notes), 600, 'capped');
   const src = await readFile(new URL('../server/supplier-sheet.mjs', import.meta.url), 'utf8');
-  assert.match(src, /startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 30 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' }/, 'row 5 down: wrapped and centred');
+  assert.match(src, /startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 32 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' }/, 'row 5 down: wrapped and centred');
 });

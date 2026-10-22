@@ -234,6 +234,8 @@
       const words = { processing: 'We’re working on it now.', shipped: 'It’s on its way to your customer.', delivered: 'It was delivered to your customer.', cancelled: 'This order was cancelled.', pending: 'It’s back to pending.' };
       it = { ...base, icon: e.detail === 'cancelled' ? 'alert' : e.detail === 'delivered' ? 'check' : 'status', tone: { processing: 'blue', shipped: 'gold', delivered: 'mint', cancelled: 'red' }[e.detail] || 'orange', title: `${ref} is now ${e.detail}`, text: words[e.detail] || '' };
     } else if (e.kind === 'billed') it = { ...base, icon: 'wallet', tone: 'gold', title: 'Order billed', text: `${ref} · ${money(e.detail)}` };
+    else if (e.kind === 'delayed') it = { ...base, icon: 'alert', tone: 'orange', title: 'Order possibly delayed', text: e.detail ? `${ref} · ${e.detail}` : ref };
+    else if (e.kind === 'delay_cleared') it = { ...base, icon: 'check', tone: 'mint', title: 'Order no longer delayed', text: ref };
     else if (e.kind === 'tracking') it = { ...base, icon: 'status', tone: 'mint', title: 'Tracking number added', text: `${ref} · ${e.detail}` };
     else if (e.kind === 'message') it = { ...base, icon: 'message', tone: 'blue', focus: 'chat', action: 'Reply', title: 'Direct Line replied', text: `${ref}: ${e.detail}` };
     else if (e.kind === 'created') it = { ...base, icon: 'order', tone: 'gold', title: 'We added an order for you', text: ref };
@@ -441,11 +443,11 @@
         <td class="wide"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small></span></div></td>
         <td data-label="Customer"><span data-no-i18n>${esc(o.buyerName) || '—'}</span></td>
         <td data-label="Store">${window.DLClientStoreUI.label(S.stores.find(s=>s.id===o.storeId))}</td>${compact ? '' : `<td data-label="Destination">${esc(place(o.destination))}</td>
-        <td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>${o.courier ? `<br><small class="dim" data-no-i18n>${esc(o.courier)}</small>` : ''}` : '<span class="dim">Not yet</span>'}</td>`}
+        <td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>${o.courier ? `<br><small class="dim" data-no-i18n>${esc(o.courier)}</small>` : ''}${UI.notShippedYet(o) ? '<small class="ship-warn">Not shipped yet</small>' : ''}` : '<span class="dim">Not yet</span>'}</td>`}
         <td data-label="Earned" class="num">${earnedCell(o)}</td>
         <td data-label="Cost" class="num">${o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : `<b>${money(o.price)}</b>`}${window.DLPayOrders.tag(o, S.adjustments, true)}</td>
         <td data-label="Profit" class="num ${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}">${profitCell(o)}</td>
-        <td data-label="Status">${UI.pill(o.status)}</td>
+        <td data-label="Status">${UI.pill(o.status)}${UI.delayTag(o)}</td>
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
   }
@@ -507,13 +509,13 @@
   function fillDrawer(o, keepFoot) {
     if(keepFoot && ($('#claim-form')?.dataset.dirty || $('#customer-form')?.dataset.dirty || $('#numbers-form')?.dataset.dirty))return;
     const d = UI.getDrawer();
-    d.head.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}</div><p>Added ${esc(fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p>`;
+    d.head.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}${UI.delayTag(o)}</div><p>Added ${esc(fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p>`;
     $('[data-d-info]', d.body).innerHTML = `
-      <section class="card card-pad">${UI.tracker(o, drawerEvents)}</section>${UI.activity(drawerEvents)}
+      <section class="card card-pad">${UI.delayNote(o)}${UI.tracker(o, drawerEvents)}</section>${UI.activity(drawerEvents)}
       ${claimCard(S.claims.find(c=>c.orderId===o.id))}
       <section class="card card-pad"><h3 class="sec-title">Receipts</h3>${invoiceLinks(S.invoices.filter(f=>f.orderIds.includes(o.id)))}</section>
       <section class="card card-pad"><h3 class="sec-title">Tracking</h3>${o.trackingNumber
-        ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="tracking" style="font-size:16px;font-weight:600">${esc(o.trackingNumber)}</span>${o.courier ? `<span class="courier-tag"><small>Courier</small> <b data-no-i18n>${esc(o.courier)}</b></span>` : ''}<span style="flex:1"></span><button type="button" class="btn btn-sm" data-copy="${esc(o.trackingNumber)}">${ic('copy')}Copy</button><a class="btn btn-sm" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track parcel</a></div>`
+        ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="tracking" style="font-size:16px;font-weight:600">${esc(o.trackingNumber)}</span>${o.courier ? `<span class="courier-tag"><small>Courier</small> <b data-no-i18n>${esc(o.courier)}</b></span>` : ''}<span style="flex:1"></span><button type="button" class="btn btn-sm" data-copy="${esc(o.trackingNumber)}">${ic('copy')}Copy</button><a class="btn btn-sm" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track parcel</a></div>${UI.notShippedYet(o) ? '<p class="ship-warn-box"><b>Not shipped yet.</b> <span>Please don’t add this tracking number to Etsy until the status here says Shipped.</span></p>' : ''}`
         : '<p class="muted" style="margin:0">No tracking number yet. Direct Line will add it after the parcel ships.</p>'}</section>
       <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o)}</section>
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">

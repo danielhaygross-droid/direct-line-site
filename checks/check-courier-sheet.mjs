@@ -68,8 +68,8 @@ await DB.prepare('UPDATE client_orders SET notes=? WHERE id=?').bind(FR_NOTES, a
 let p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
 assert.ok(p.ok, JSON.stringify(p));
 assert.deepEqual(wq[4].slice(0, HEADERS.length), HEADERS, 'header is the new layout');
-assert.equal(wq[4].length, 30);
-assert.deepEqual(calls.filter(c => c.startsWith('insert')), ['insert 12', 'insert 16', 'insert 14', 'insert 19'], 'gift message, courier, competitor price, then client paid');
+assert.equal(wq[4].length, 32);
+assert.deepEqual(calls.filter(c => c.startsWith('insert')), ['insert 12', 'insert 16', 'insert 14', 'insert 19', 'insert 19'], 'gift message, courier, competitor price, client paid, then delayed + reason');
 assert.equal(wq[6][11], '', 'old country code cleared from Tax number'); assert.equal(wq[6][12], ''); assert.equal(wq[6][13], 'old note');
 // the old notes were split: own columns in the sheet, notes cleaned
 assert.equal(wq[5][11], "Etsy's IOSS number: IM3720000224 EUR 72.37"); assert.match(wq[5][12], /^Un petit cadeau.*Clara$/s); assert.equal(wq[5][13], '', 'notes no longer repeat them');
@@ -78,8 +78,8 @@ assert.equal(fr.notes, ''); assert.equal(fr.tax_number, "Etsy's IOSS number: IM3
 console.log('PASS old notes split into Tax number / Gift message');
 assert.equal(wq[5][15], 55.9, 'cost moved to P'); assert.equal(wq[5][16], 'UL602450763YP', 'tracking moved to Q'); assert.equal(wq[5][14], '', 'competitor price O empty');
 assert.equal(wq[5][17], '', 'empty courier'); assert.equal(wq[5][18], 'Not shipped', 'status moved to S');
-assert.equal(wq[5][28], String(a.id), 'order id in AC'); assert.equal(wq[5][29], String(id), 'client id in AD');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '5', 'up to date: layout 5 (Client paid)');
+assert.equal(wq[5][30], String(a.id), 'order id in AE'); assert.equal(wq[5][31], String(id), 'client id in AF');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '6', 'up to date: layout 6 (Delayed? + Delay reason)');
 const o1 = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(a.id).first();
 assert.equal(o1.tracking_number, '', 'nothing applied from the wrong columns'); assert.equal(o1.courier, null);
 console.log('PASS switch: header, columns moved, old country cleared, ids found, nothing misapplied');
@@ -138,4 +138,44 @@ assert.equal(no.notes, 'Fragile, please wrap'); assert.match(no.taxNumber, /IM37
 const k = (await call('/orders', 'POST', { clientId: id, orderRef: 'FR-4', buyerName: 'X', destination: 'FR', address1: '1 Rue', etsyUrl: 'https://example.com/i', taxNumber: 'IOSS IM1', notes: FR_NOTES }, admin)).data.order;
 assert.equal(k.taxNumber, 'IOSS IM1'); assert.ok(k.notes.includes('IM3720000224'), 'a typed field is never overwritten; the notes keep the text');
 console.log('PASS new orders: pasted IOSS/gift message moved to their fields; typed fields win');
+// 8) Possibly delayed: the supplier picks it in T and writes a reason in U; the client sees both and is notified.
+wq[6][19] = 'Possibly delayed'; wq[6][20] = 'Wrong variant from the factory, being remade';
+p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
+let late = (await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === b.id);
+assert.ok(late.delayedAt > 0, 'flagged'); assert.equal(late.delayReason, 'Wrong variant from the factory, being remade');
+let notes = (await call('/notifications', 'GET', null, client)).data.items.filter(x => x.orderId === b.id && x.kind === 'delayed');
+assert.equal(notes.length, 1); assert.equal(notes[0].detail, 'Wrong variant from the factory, being remade');
+calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(p.changed.length, 0, 'no repeat while nothing changes');
+assert.equal(wq[6][19], 'Possibly delayed', 'the website never overwrites the supplier delay cells'); assert.equal(wq[6][20], 'Wrong variant from the factory, being remade');
+// A new reason: the client is told again; the "since" time stays.
+const since = late.delayedAt; wq[6][20] = 'Remade, arriving at the warehouse Friday';
+p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok);
+late = (await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === b.id);
+assert.equal(late.delayReason, 'Remade, arriving at the warehouse Friday'); assert.equal(late.delayedAt, since);
+// Back on time: flag cleared, client told.
+wq[6][19] = 'On time';
+p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok);
+late = (await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === b.id);
+assert.equal(late.delayedAt, null); assert.equal(late.delayReason, '');
+notes = (await call('/notifications', 'GET', null, client)).data.items.filter(x => x.orderId === b.id);
+assert.deepEqual(notes.filter(x => /delay/.test(x.kind)).map(x => x.kind), ['delay_cleared', 'delayed', 'delayed']);
+// A ticked checkbox or "yes" also counts; a reason alone does not.
+wq[5][20] = 'just a note'; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+assert.equal((await DB.prepare('SELECT delayed_at FROM client_orders WHERE id=?').bind(a.id).first()).delayed_at, null);
+wq[5][19] = 'yes'; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+assert.ok((await DB.prepare('SELECT delayed_at FROM client_orders WHERE id=?').bind(a.id).first()).delayed_at > 0);
+console.log('PASS possibly delayed: set, reason changed, cleared; the client sees it and is notified');
+// 9) The live sheet today (layout 5: no delay columns, Client paid in T): switched once, nothing lost or misapplied.
+for (const row of wq) if (row) row.splice(19, 2);
+await DB.prepare('UPDATE client_orders SET delayed_at=NULL, delay_reason=NULL, sheet_delayed=NULL, sheet_delay_reason=NULL').run(); // as on the live site before this change
+const costBefore = wq[5][15], trackBefore = wq[6][16], courierBefore = wq[5][17];
+await DB.prepare("UPDATE portal_settings SET value='5' WHERE key='supplier_sheet_layout'").run();
+calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
+assert.deepEqual(calls.filter(c => c.startsWith('insert')), ['insert 19'], 'only the two delay columns are added');
+assert.deepEqual(wq[4].slice(0, HEADERS.length), HEADERS);
+assert.equal(wq[5][15], costBefore, 'cost stays in P'); assert.equal(wq[6][16], trackBefore, 'tracking stays in Q');
+assert.equal(wq[5][17], courierBefore, 'courier stays in R'); assert.equal(wq[5][19], '', 'new Delayed? cell is empty'); assert.equal(wq[5][30], String(a.id), 'ids moved to AE');
+assert.equal(p.changed.length, 0, 'nothing applied by the switch');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '6');
+console.log('PASS live layout 5 -> 6: two columns added after Shipping status, everything else moved with its data');
 await pg.close();

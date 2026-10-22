@@ -27,13 +27,13 @@
   function fillDrawer(o, keepFoot) {
     if(keepFoot && ($('#claim-form')?.dataset.dirty || $('#customer-form')?.dataset.dirty || $('#numbers-form')?.dataset.dirty))return;
     const d = UI.getDrawer();
-    d.head.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}</div><p>Added ${esc(fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p>`;
+    d.head.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2>${esc(orderName(o))}</h2>${UI.pill(o.status)}${UI.delayTag(o)}</div><p>Added ${esc(fullDate(o.createdAt))} · to ${esc(place(o.destination))}</p>`;
     $('[data-d-info]', d.body).innerHTML = `
-      <section class="card card-pad">${UI.tracker(o, drawerEvents)}</section>${UI.activity(drawerEvents)}
+      <section class="card card-pad">${UI.delayNote(o)}${UI.tracker(o, drawerEvents)}</section>${UI.activity(drawerEvents)}
       ${claimCard(S.claims.find(c=>c.orderId===o.id))}
       <section class="card card-pad"><h3 class="sec-title">Receipts</h3>${invoiceLinks(S.invoices.filter(f=>f.orderIds.includes(o.id)))}</section>
       <section class="card card-pad"><h3 class="sec-title">Tracking</h3>${o.trackingNumber
-        ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="tracking" style="font-size:16px;font-weight:600">${esc(o.trackingNumber)}</span>${o.courier ? `<span class="courier-tag"><small>Courier</small> <b data-no-i18n>${esc(o.courier)}</b></span>` : ''}<span style="flex:1"></span><button type="button" class="btn btn-sm" data-copy="${esc(o.trackingNumber)}">${ic('copy')}Copy</button><a class="btn btn-sm" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track parcel</a></div>`
+        ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="tracking" style="font-size:16px;font-weight:600">${esc(o.trackingNumber)}</span>${o.courier ? `<span class="courier-tag"><small>Courier</small> <b data-no-i18n>${esc(o.courier)}</b></span>` : ''}<span style="flex:1"></span><button type="button" class="btn btn-sm" data-copy="${esc(o.trackingNumber)}">${ic('copy')}Copy</button><a class="btn btn-sm" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track parcel</a></div>${UI.notShippedYet(o) ? '<p class="ship-warn-box"><b>Not shipped yet.</b> <span>Please don’t add this tracking number to Etsy until the status here says Shipped.</span></p>' : ''}`
         : '<p class="muted" style="margin:0">No tracking number yet. Direct Line will add it after the parcel ships.</p>'}</section>
       <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o)}</section>
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
