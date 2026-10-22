@@ -58,9 +58,9 @@ try {
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpi-month] option[value="all"]', { state: 'attached' });
     assert.deepEqual(await ui.locator('[data-kpi-month] option').evaluateAll(o => o.map(x => x.value)), ['all', thisMonth, prevMonth]);
     const cards = async () => ui.locator('[data-kpis] .stat strong').allInnerTexts();
-    assert.equal((await cards())[1], '3', tag + ' all time: 3 orders');
+    const allTime = await cards(); assert.equal(allTime[1], '3', tag + ' all time: 3 orders');
     await ui.locator('[data-kpi-month]').selectOption(prevMonth); await page.waitForTimeout(200);
-    const c = await cards(); assert.equal(c[0], '1'); assert.equal(c[1], '2', tag + ' last month: 2 orders'); assert.equal(c[2], '$45.00', tag + ' billed 20 + 25 (fee included in the bill)'); assert.equal(c[3], '$4.00', tag + ' fees 2 x $2');
+    const c = await cards(); assert.equal(c[0], '1'); assert.equal(c[1], '2', tag + ' last month: 2 orders'); assert.equal(c[2], allTime[2], tag + ' "Not paid yet" is what is owed now, whatever the month'); assert.equal(c[3], '$4.00', tag + ' fees 2 x $2');
     await page.screenshot({ path: path.join(out, `${tag}-admin.png`) });
     await page.reload(); const ui2 = page.frame({ name: 'admin' }); await ui2.waitForSelector('[data-kpi-month] option[value="all"]', { state: 'attached' });
     assert.equal(await ui2.locator('[data-kpi-month]').inputValue(), prevMonth, 'remembered');
