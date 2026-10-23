@@ -20,6 +20,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   try {
     if (url.pathname === '/test-admin.html') { res.writeHead(200, { 'content-type': 'text/html' }); res.end(`<html data-theme=light><body style=margin:0><iframe name=admin src="/admin/?lang=${url.searchParams.get('lang') || 'en'}" style="width:100%;height:100vh;border:0"></iframe></body></html>`); return; }
+    if (url.pathname === '/test-control.html') { res.writeHead(200, { 'content-type': 'text/html' }); res.end(`<html data-theme=light><body style=margin:0><nav><button class="nav-item" data-client-tab="claims">Claims</button></nav><iframe name=admin src="/admin/?lang=en" style="width:100%;height:100vh;border:0"></iframe></body></html>`); return; }
     if (url.pathname.startsWith('/api/')) {
       const chunks = []; for await (const c of req) chunks.push(c);
       const resp = await route(new Request(url, { method: req.method, headers: req.headers, ...(!['GET', 'HEAD'].includes(req.method) ? { body: Buffer.concat(chunks) } : {}) }), { db: DB, env });
@@ -59,14 +60,16 @@ try {
     const ctx = await session(admin, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpis] .stat-go');
     const cards = ui.locator('[data-kpis] .stat-go');
-    assert.equal(await cards.count(), 4, tag);
-    const notPaid = cards.nth(2);
+    assert.equal(await cards.count(), 2, tag + ': only Orders and Not paid yet open a list');
+    assert.equal(await ui.locator('[data-kpis] .stat-plain').count(), 2, tag + ': Clients and Our earnings are plain');
+    assert.equal(await ui.locator('[data-kpis] .stat-more').count(), 0, tag + ': no extra link lines');
+    const notPaid = cards.nth(1);
     assert.equal(await notPaid.locator('strong').innerText(), usd(pb + pc), tag + ': only B and C are owed (A is paid)');
     if (lang === 'en') {
       assert.match(await notPaid.innerText(), /2 orders · 1 client · oldest 9 Oct 2026/, tag);
       assert.match(await notPaid.innerText(), new RegExp(`Account balance \\${usd(pb + pc - 5)}: some payments aren’t linked to orders`), tag + ': unlinked payment explained');
       assert.doesNotMatch(await ui.locator('[data-kpis]').innerText(), /Billed|paid \$/, tag + ': no billed / paid totals');
-      assert.match(await cards.nth(1).innerText(), /4 waiting to be processed · 1 need cost/, tag);
+      assert.match(await cards.nth(0).innerText(), /4 waiting to be processed · 1 need cost/, tag);
     } else {
       assert.match(await notPaid.innerText(), /עוד לא שולם/, tag);
       assert.match(await notPaid.innerText(), /2 הזמנות · לקוח אחד · הישנה ביותר/, tag);
@@ -81,19 +84,25 @@ try {
     const rows = await ui.locator('[data-list]').innerText();
     assert.ok(rows.includes('CARD-B') && rows.includes('CARD-C') && !rows.includes('CARD-A'), tag + ': the unpaid orders');
     await page.screenshot({ path: path.join(out, `${tag}-unpaid-list.png`) });
-    await cards.nth(1).click(); await ui.waitForSelector('.chip.t-pending.on');
-    await cards.nth(0).click(); await ui.waitForSelector('[data-tab="clients"][aria-selected="true"]');
-    await ui.locator('[data-tab="overview"]').click();
-    await cards.nth(3).click(); await ui.waitForSelector('[data-tab="clients"][aria-selected="true"]');
+    await cards.nth(0).click(); await ui.waitForSelector('.chip.t-pending.on');
     // Hover shows the card is clickable.
     if (width === 1440) { await notPaid.hover(); await page.waitForTimeout(250); await page.screenshot({ path: path.join(out, `${tag}-hover.png`), clip: { x: 0, y: 150, width: 1440, height: 330 } }); }
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
+  }
+  // Inside the Control page (its sidebar has [data-client-tab]) the sidebar is the navigation: no inner tab bar,
+  // and the sidebar can open Claims and Products too. On its own (test-admin.html above) the tabs stay.
+  {
+    const ctx = await session(admin, 1440), page = await ctx.newPage(); await page.goto(`${base}/test-control.html`);
+    const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpis] .stat');
+    assert.equal(await ui.locator('[data-main-tabs]').isVisible(), false, 'no second row of tabs inside Control');
+    for (const tab of ['claims', 'products', 'orders']) { await page.evaluate(t => frames[0].postMessage({ type: 'dl-set-tab', tab: t }, location.origin), tab); await ui.waitForFunction(t => document.querySelector(`[data-tab="${t}"]`)?.classList.contains('on'), tab); }
+    await ctx.close(); console.log('PASS inside Control: sidebar only, Claims and Products reachable');
   }
   // Everything paid: the card says so and is no longer red.
   ok(await call('/admin/payments', 'POST', { clientId: id, amount: pb + pc, paidAt: '2026-10-22', method: 'Bank transfer', orderIds: [b.id, c.id] }, admin));
   const ctx = await session(admin, 1440), page = await ctx.newPage();
   await page.goto(`${base}/test-admin.html?lang=en`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpis] .stat-go');
-  const notPaid = ui.locator('[data-kpis] .stat-go').nth(2);
+  const notPaid = ui.locator('[data-kpis] .stat-go').nth(1);
   assert.equal(await notPaid.locator('strong').innerText(), '$0.00');
   assert.match(await notPaid.innerText(), /Every billed order is paid/);
   assert.ok(!(await notPaid.evaluate(el => el.classList.contains('owe'))));

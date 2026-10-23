@@ -7,7 +7,7 @@
   if (!section || !buttons.length) return;
   const frame = section.querySelector('iframe');
   const HASH = '#client-orders';
-  const TABS = ['overview', 'orders', 'clients', 'settings'];
+  const TABS = ['overview', 'orders', 'clients', 'claims', 'products', 'settings'];
   let ready = false, queue = [], current = 'overview', childDrawerOpen=false;
   const send = m => { if (ready) frame.contentWindow.postMessage(m, location.origin); else queue.push(m); };
 

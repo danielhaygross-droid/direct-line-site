@@ -291,7 +291,7 @@
     const m = e.data || {};
     if (m.type === 'dl-open-client' && clientOf(m.id)) openClient(m.id);
     if (m.type === 'dl-add-admin') openAddAccount('admin');
-    if (m.type === 'dl-set-tab' && ['overview', 'orders', 'clients', 'settings'].includes(m.tab) && m.tab !== S.tab) { S.tab = m.tab; if (S.ov) renderTab(); }
+    if (m.type === 'dl-set-tab' && ['overview', 'orders', 'clients', 'claims', 'products', 'settings'].includes(m.tab) && m.tab !== S.tab) { S.tab = m.tab; if (S.ov) renderTab(); }
     if(m.type==='dl-open-products'){S.tab='products';loadAll().then(renderTab);return;}
     if (m.type === 'dl-open-order') {
       const go = () => { if (S.orders.some(o => o.id === m.id)) openOrder(m.id, m.focus); };
