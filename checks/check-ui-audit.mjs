@@ -113,6 +113,14 @@ function audit(only) {
     const ox = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left), oy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
     if (ox > 4 && oy > 4) out.push(['controls-overlap', name(a) + ' / ' + name(b)]);
   }
+  // An icon alone in a small circle / square must sit in its middle (Erwin, 23 Oct: feed icons stuck in the corner).
+  for (const svg of document.querySelectorAll('svg')) {
+    const box = svg.parentElement; if (!box || !vis(svg) || !vis(box) || !scope(box) || box.children.length !== 1 || (box.innerText || '').trim()) continue;
+    const b = box.getBoundingClientRect(), r = svg.getBoundingClientRect();
+    if (b.width > 64 || b.height > 64 || b.width < r.width + 6 || b.height < r.height + 6) continue;
+    const dx = (r.left + r.width / 2) - (b.left + b.width / 2), dy = (r.top + r.height / 2) - (b.top + b.height / 2);
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) out.push(['icon-off-centre', box.tagName.toLowerCase() + '.' + String(box.className).split(' ')[0] + ' ' + Math.round(dx) + ',' + Math.round(dy) + 'px']);
+  }
   // Buttons side by side in one row should line up: same height and same top (Erwin: "misaligned CTAs").
   const rowBtns = new Map();
   for (const b of document.querySelectorAll('.btn')) { if (vis(b) && scope(b) && !b.closest('.chips,.status-btns,.seg,.gtabs,.subtabs')) { const k = b.parentElement; (rowBtns.get(k) || rowBtns.set(k, []).get(k)).push(b); } }
