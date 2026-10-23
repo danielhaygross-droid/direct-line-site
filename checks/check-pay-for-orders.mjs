@@ -102,7 +102,7 @@ try {
   ok(await call('/admin/payments', 'POST', { clientId: id, amount: 75, paidAt: '2026-10-22', method: 'Bank transfer', orderIds: [A, B, C] }, admin));
   {
     const ctx = await session(client, 1440), page = await ctx.newPage();
-    await page.goto(`${base}/portal/?lang=en#/home`); await page.reload(); await page.waitForSelector('.hello');
+    await page.goto(`${base}/portal/?lang=en#/home`); await page.reload(); await page.waitForSelector('[data-home-hello]');
     assert.equal(await page.locator('.pay-strip').count(), 0);
     await page.goto(`${base}/portal/?lang=en#/payments`); await page.waitForSelector('#pay-flow');
     assert.match(await page.locator('#pay-flow .sec-title').innerText(), /Pay Direct Line/i);

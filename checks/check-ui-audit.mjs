@@ -99,8 +99,8 @@ function audit(only) {
     if (!vis(b) || !scope(b) || b.closest('.status-btns,.chips,.seg,.gtabs,.subtabs,nav,.tabs')) continue;
     const r = b.getBoundingClientRect(), txt = (b.innerText || '').trim();
     if (!txt) continue;
-    if (vw >= 1000 && r.width > 380 && txt.length < 40 && !b.closest('.ord-row,.ord-list,.todo,.feed,.po-row,.pay-strip,.login-card')) out.push(['oversized-button', Math.round(r.width) + 'px wide: ' + name(b)]);
-    if (r.height > 60 && txt.length < 40 && !b.closest('.stat,.ord-row,.todo,.feed,.pay-strip,.kpis,.prod-row,.dl-card')) out.push(['too-tall-button', Math.round(r.height) + 'px tall: ' + name(b)]);
+    if (vw >= 1000 && r.width > 380 && txt.length < 40 && !b.closest('.ord-row,.ord-list,.todo,.feed,[data-home-feed],.po-row,.pay-strip,.login-card')) out.push(['oversized-button', Math.round(r.width) + 'px wide: ' + name(b)]);
+    if (r.height > 60 && txt.length < 40 && !b.closest('.stat,.ord-row,.todo,.feed,[data-home-feed],.pay-strip,.kpis,.prod-row,.dl-card')) out.push(['too-tall-button', Math.round(r.height) + 'px tall: ' + name(b)]);
     if (b.scrollWidth > b.clientWidth + 2 && getComputedStyle(b).overflow !== 'visible') out.push(['button-text-cut-off', name(b)]);
     if (vw < 500 && r.height < 28 && !b.closest('.pay-row,.po-head')) out.push(['small-tap-target', Math.round(r.width) + 'x' + Math.round(r.height) + ': ' + name(b)]);
   }

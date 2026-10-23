@@ -1,0 +1,48 @@
+/* Tailwind for the Direct Line screens (moved one screen at a time; Erwin, 23 Oct 2026).
+   Built into dist/p/tw.css by  node scripts/build-css.mjs  (npm test fails if it is not rebuilt).
+   - Every class starts with  tw:  (tw:flex, tw:max-md:hidden) so it never clashes with the old class names.
+   - Utilities only: no Tailwind reset ("preflight"), so screens not moved yet look exactly as before.
+   - No Tailwind default colours / sizes: the theme below only points at the site's own tokens from
+     dist/p/ui.css, so light and dark mode keep working through those variables.
+   - Borders: without the reset, write  tw:border tw:border-solid tw:border-line  (the style is not set for you). */
+@import "tailwindcss/theme.css" prefix(tw);
+@import "tailwindcss/utilities.css" source(none);
+@source "../src/portal/*.js";
+
+@theme inline {
+  --*: initial;
+  --spacing: 4px;
+  /* Same breakpoints as the old CSS (max-width rules): max-sm = up to 560px, max-md = up to 860px. */
+  --breakpoint-sm: 561px;
+  --breakpoint-md: 861px;
+  --breakpoint-lg: 1101px;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-dim: var(--dim);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-gold: var(--gold);
+  --color-gold-2: var(--gold-2);
+  --color-mint: var(--mint);
+  --color-red: var(--red);
+  --color-orange: var(--orange);
+  --color-blue: var(--blue);
+  --color-violet: var(--violet);
+  --color-white: #fff;
+  --color-transparent: transparent;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-15: 15px;
+  --text-17: 17px;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --radius-xl: 12px;
+  --radius-2xl: 14px;
+  --radius-card: var(--radius);
+}

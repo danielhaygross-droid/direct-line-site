@@ -35,13 +35,6 @@
 @keyframes rise{from{opacity:0;transform:translateY(6px)}}
 
 /* home */
-.hello{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap}
-.hello h2{margin-top:8px;font-size:clamp(26px,3vw,36px);font-weight:600;letter-spacing:-.02em}
-.hello h2 span{color:var(--gold)}
-.hello p{margin:4px 0 0;color:var(--muted)}
-.hello-actions{display:flex;gap:8px;flex-wrap:wrap}
-.home-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:16px}
-.home-grid .span2{grid-column:1/-1}
 .pipe{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:18px 22px 6px}
 .pipe button{display:grid;gap:6px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);text-align:start;cursor:pointer;transition:border-color .15s,transform .15s}
 .pipe button:hover{border-color:var(--tone);transform:translateY(-2px)}
@@ -51,14 +44,6 @@
 .pipe-bar{display:flex;height:8px;margin:12px 22px 20px;border-radius:99px;overflow:hidden;background:var(--surface-3)}
 .pipe-bar i{display:block;height:100%;background:var(--tone);transition:width .5s var(--ease)}
 .pipe-note{margin:-8px 22px 18px;color:var(--dim);font-size:12.5px}
-.feed{display:grid;padding:8px 10px 12px}
-.feed button{display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;padding:10px 12px;border:0;border-radius:12px;background:transparent;text-align:start;cursor:pointer}
-.feed button:hover{background:var(--surface-2)}
-.feed .dln-ic{width:36px;height:36px}
-.feed b{display:block;font-size:14px;font-weight:600}
-.feed span:not(.dln-ic){display:block;color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.feed time{display:block;color:var(--dim);font-size:12px}
-.feed .unread b::after{content:"";display:inline-block;width:7px;height:7px;margin-inline-start:7px;border-radius:50%;background:var(--gold);vertical-align:middle}
 .chart{padding:14px 22px 20px}
 .chart svg{width:100%;height:190px;overflow:visible}
 .chart .bar{fill:color-mix(in srgb,var(--gold) 75%,transparent)}
@@ -125,7 +110,7 @@
 /* phone bottom tabs */
 .tabs{display:none}
 .scrim{display:none}
-@media(max-width:1100px){.home-grid{grid-template-columns:1fr}.form-layout{grid-template-columns:1fr}.form-side{position:static}.rates-grid{grid-template-columns:1fr}}
+@media(max-width:1100px){.form-layout{grid-template-columns:1fr}.form-side{position:static}.rates-grid{grid-template-columns:1fr}}
 @media(max-width:860px){
   .app{grid-template-columns:1fr}
   .side{position:fixed;inset-block:0;inset-inline-start:0;width:270px;transform:translateX(-102%);transition:transform .25s var(--ease)}
@@ -145,7 +130,6 @@
   .tabs .fab span{display:grid;place-items:center;width:52px;height:52px;border-radius:17px;background:linear-gradient(180deg,var(--gold),var(--gold-2));color:#fff;box-shadow:0 10px 26px color-mix(in srgb,var(--gold) 45%,transparent)}
   .tabs .badge-new{position:absolute;top:2px;inset-inline-start:calc(50% + 6px);min-width:17px;height:17px;font-size:10.5px}
   .pipe{grid-template-columns:repeat(2,1fr)}
-  .hello-actions{display:none}
 }
 @media(max-width:560px){.stats{grid-template-columns:1fr 1fr}.stat strong{font-size:22px}.stat .stat-ic{display:none}.stats .stat.hero{grid-column:1/-1}.form-grid{grid-template-columns:1fr}.top-actions .theme-btn{display:none}}
 .me button+button{margin-inline-start:0}
@@ -200,13 +184,6 @@
 
 /* ---- simpler portal (for non-technical clients) ---- */
 .btn-big{min-height:48px;padding:0 22px;font-size:15.5px}
-.how h3{margin:0 0 14px;font-size:17px}
-.how-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:0;padding:0;list-style:none}
-.how-steps li{display:flex;gap:12px;align-items:flex-start;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
-.how-steps b{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--gold);color:#fff;font-size:14px}
-.how-steps strong{display:block;margin-bottom:3px;font-size:14.5px}
-.how-steps span{color:var(--muted);font-size:13.5px;line-height:1.45}
-.how-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
 .stats-3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .field .help{display:block;margin:2px 0 0;padding:0;border:0;background:none!important;color:var(--dim);font-size:12.5px;font-style:normal;font-weight:400;line-height:1.4}
 #order-form .form-grid{align-items:start}
@@ -220,12 +197,10 @@ details.more>summary .form-sec{margin:0}
 details.more>summary small{margin-inline-start:6px;color:var(--dim);font-size:12.5px;font-weight:500}
 details.more[open]>summary{margin-bottom:16px}
 details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{content:"−";font-size:15px}
-@media(max-width:900px){.how-steps{grid-template-columns:1fr}.how-actions .btn{flex:1 1 100%;justify-content:center}}
 @media(max-width:560px){.stats-3{grid-template-columns:1fr 1fr}.stats-3 .stat.hero{grid-column:1/-1}}
 .tabs .fab{font-size:10.5px}
 
 /* Payments → How to pay (item #5) */
-.how-pay .muted{margin:0 0 12px;font-size:14px}
 .pay-rows{display:grid;gap:0}
 .pay-row{display:grid;grid-template-columns:minmax(140px,190px) 1fr auto;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--line)}
 .pay-row:first-child{border-top:0}
