@@ -11,7 +11,8 @@ test('admin order panel: every status, a direct cancel with fee, reopen hint and
   assert.ok(admin.includes("if(!direct.dataset.armed)"), 'cancelling needs a second click');
   assert.ok(admin.includes("o.status==='cancelled' ? '<p class=\"note\">This order is cancelled. Choose a status to reopen it"));
   assert.ok(admin.includes('data-fees-form') && admin.includes("body: { commission: ff.commission.value }"));
-  assert.ok(admin.includes("['cancelled','cancellation_requested'].includes(o.status) ? '' : `<section class=\"card card-pad\"><h3 class=\"sec-title\">Cancel this order"), 'no cancel card on cancelled orders');
+  assert.ok(admin.includes("${['cancelled', 'cancellation_requested'].includes(o.status) ? '' : `<div class=\"cancel-box\" data-cancel-box hidden>"), 'no cancel box on cancelled orders');
+  assert.ok(admin.includes("data-cancel-open aria-expanded") && admin.includes("box.hidden=!open"), '"Cancelled" in the status row opens the cancel box');
 });
 
 test('server: status changes take fee and reason, per-order fee is validated, reopening zeroes the cancellation fee', async () => {

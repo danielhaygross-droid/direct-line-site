@@ -173,3 +173,8 @@ details.fold>summary small{margin-inline-start:auto}
 .kpis .stat-more{display:inline-flex;align-items:center;gap:2px;margin-top:auto;padding-top:10px;font-size:12.5px;align-self:flex-start;font-weight:600;color:var(--gold-2)}[data-theme=dark] .kpis .stat-more{color:var(--gold)}.kpis .stat-go.hero .stat-more{color:#d4bc84}
 .kpis .stat-more svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2}[dir=rtl] .kpis .stat-more svg{transform:scaleX(-1)}
 @media(max-width:480px){.kpis .stat-go{padding:14px}.kpis .stat-more{padding-top:6px;font-size:12px}}
+/* Order panel: "Cancelled" in the status row opens this box (23 Oct 2026). */
+.cancel-box{margin-top:12px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--red) 35%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--red) 6%,var(--surface))}.cancel-box[hidden]{display:none}
+.cancel-box>p{margin:0 0 10px;font-size:13.5px;color:var(--muted)}
+.cancel-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}.cancel-row .field{flex:0 1 190px;margin:0;min-width:140px}.cancel-row .btn{min-height:42px}
+@media(max-width:480px){.cancel-row .field{flex:1 1 100%}.cancel-row .btn{flex:1 1 auto}}

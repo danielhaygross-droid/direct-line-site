@@ -21,7 +21,7 @@ function parse(range) {
 }
 const read = range => { const { tab, c1, r1, c2, r2 } = parse(range), g = grid(tab), out = []; for (let r = r1; r <= Math.min(r2, g.length - 1); r++) out.push((g[r] || []).slice(c1, c2 + 1).map(v => v ?? '')); while (out.length && out.at(-1).every(v => v === '')) out.pop(); return out; };
 const write = (range, values) => { const { tab, c1, r1 } = parse(range), g = grid(tab); values.forEach((row, i) => { g[r1 + i] = g[r1 + i] || []; row.forEach((v, j) => { g[r1 + i][c1 + j] = v; }); }); };
-const calls = [];
+const calls = [], rules = [];
 const WQ_ID = 77;
 async function fakeFetch(url, opts = {}) {
   const ok = data => ({ ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) });
@@ -31,6 +31,7 @@ async function fakeFetch(url, opts = {}) {
   calls.push(path.split('?')[0]);
   if (path.startsWith('?fields=sheets.properties')) return ok({ sheets: [...new Set(['Work Queue', ...tabs.keys()])].map((title, i) => ({ properties: { title, sheetId: title === 'Work Queue' ? WQ_ID : 100 + i } })) });
   if (path.startsWith(':batchUpdate')) {
+    for (const r of body.requests) if (r.addConditionalFormatRule) rules.push(r.addConditionalFormatRule.rule);
     for (const r of body.requests) if (r.insertDimension) {
       assert.equal(r.insertDimension.range.sheetId, WQ_ID); const { startIndex, endIndex } = r.insertDimension.range;
       for (const row of grid('Work Queue')) if (row) row.splice(startIndex, 0, ...Array(endIndex - startIndex).fill(''));
@@ -79,7 +80,7 @@ console.log('PASS old notes split into Tax number / Gift message');
 assert.equal(wq[5][15], 55.9, 'cost moved to P'); assert.equal(wq[5][16], 'UL602450763YP', 'tracking moved to Q'); assert.equal(wq[5][14], '', 'competitor price O empty');
 assert.equal(wq[5][17], '', 'empty courier'); assert.equal(wq[5][18], 'Not shipped', 'status moved to S');
 assert.equal(wq[5][30], String(a.id), 'order id in AE'); assert.equal(wq[5][31], String(id), 'client id in AF');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '6', 'up to date: layout 6 (Delayed? + Delay reason)');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '7', 'up to date: layout 7 (Delayed? + Delay reason, red cancelled rows)');
 const o1 = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(a.id).first();
 assert.equal(o1.tracking_number, '', 'nothing applied from the wrong columns'); assert.equal(o1.courier, null);
 console.log('PASS switch: header, columns moved, old country cleared, ids found, nothing misapplied');
@@ -176,6 +177,29 @@ assert.deepEqual(wq[4].slice(0, HEADERS.length), HEADERS);
 assert.equal(wq[5][15], costBefore, 'cost stays in P'); assert.equal(wq[6][16], trackBefore, 'tracking stays in Q');
 assert.equal(wq[5][17], courierBefore, 'courier stays in R'); assert.equal(wq[5][19], '', 'new Delayed? cell is empty'); assert.equal(wq[5][30], String(a.id), 'ids moved to AE');
 assert.equal(p.changed.length, 0, 'nothing applied by the switch');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '6');
-console.log('PASS live layout 5 -> 6: two columns added after Shipping status, everything else moved with its data');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '7');
+console.log('PASS live layout 5 -> 7: two columns added after Shipping status, everything else moved with its data');
+
+// 10) Layout 6 -> 7 (the live sheet on 23 Oct): only the red / orange row rules are added, no columns move.
+const cancelRules = () => rules.filter(x => /^=\$D6="(CANCELLED - do not ship|Cancellation requested)"$/.test(x.booleanRule?.condition?.values?.[0]?.userEnteredValue || ''));
+await DB.prepare("UPDATE portal_settings SET value='6' WHERE key='supplier_sheet_layout'").run();
+calls.length = 0; rules.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
+assert.deepEqual(calls.filter(c => c.startsWith('insert')), [], 'no columns added');
+assert.equal(cancelRules().length, 3, 'status cell + whole red row + orange row for requests');
+const redRow = cancelRules().find(x => x.ranges[0].startColumnIndex === 0 && x.booleanRule.format.textFormat.strikethrough);
+assert.equal(redRow.ranges[0].endColumnIndex, 30, 'the whole row up to the photos'); assert.equal(redRow.ranges[0].startRowIndex, 5, 'from the first order row');
+assert.match(wq[3][18], /COUNTIF\(D6:D,"CANCELLED - do not ship"\)&" cancelled"/, 'row 4 counts cancelled orders');
+assert.match(wq[2][0], /RED rows are cancelled orders: do not buy or ship them/, 'the instructions say so');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '7');
+// Running it again adds nothing.
+rules.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(cancelRules().length, 0, 'rules added once');
+// Cancelling an order: its Status cell says so, in the text the rules look for.
+const rowOf = o => wq.findIndex(row => row && row[30] === String(o.id));
+assert.equal((await call('/orders/' + b.id, 'PUT', { status: 'cancelled', fee: 0 }, admin)).status, 200);
+await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch);
+assert.equal(wq[rowOf(b)][3], 'CANCELLED - do not ship');
+assert.equal((await call('/orders/' + b.id, 'PUT', { status: 'processing' }, admin)).status, 200);
+await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch);
+assert.equal(wq[rowOf(b)][3], 'In Progress', 'reopened: back to normal');
+console.log('PASS layout 6 -> 7: cancelled rows turn red (whole row), requests orange, counted in row 4');
 await pg.close();

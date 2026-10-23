@@ -124,6 +124,8 @@
       catch (ex) { toast(ex.message); rr.disabled = false; }
       return;
     }
+    // "Cancelled" in the status row opens the cancel box under it (fee, $4, Cancel this order).
+    const co=t.closest('[data-cancel-open],[data-cancel-close]');if(co){const box=$('[data-cancel-box]'),open=co.hasAttribute('data-cancel-open')&&box.hidden;box.hidden=!open;$('[data-cancel-open]')?.classList.toggle('on',open);$('[data-cancel-open]')?.setAttribute('aria-expanded',String(open));if(open)$('[name=directCancelFee]').focus();return;}
     if(t.closest('[data-cancel-four-direct]')){$('[name=directCancelFee]').value='4';return;}
     const direct=t.closest('[data-cancel-direct]');
     if(direct){
