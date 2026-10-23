@@ -121,8 +121,8 @@ try {
     assert.equal((await cells(page, 'NO-FEE')).net, '$14.50', tag + ' 40.00 - 5.50 - 20.00'); assert.equal(Number((await DB.prepare('SELECT etsy_fee FROM client_orders WHERE id=?').bind(noFee.id).first()).etsy_fee), 5.5);
     await DB.prepare('UPDATE client_orders SET etsy_fee=NULL WHERE id=?').bind(noFee.id).run(); // reset for the next round
     // Home: the short list keeps the three columns (no Net profit there)
-    await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('.home-grid tr[data-open-order]');
-    assert.equal(await page.locator('.home-grid tr[data-open-order]').first().locator('td.num:not(.hide-sm)').count(), 3, tag + ' home money cells');
+    await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('[data-home-grid] tr[data-open-order]');
+    assert.equal(await page.locator('[data-home-grid] tr[data-open-order]').first().locator('td.num:not(.hide-sm)').count(), 3, tag + ' home money cells');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' home: no sideways scroll');
     assert.deepEqual(errors, [], tag); console.log(`PASS ${tag}: headers, tracker rows equal to the cent, missing fee/price/USD/unbilled/cancelled, panel lines, entering the fee`);
     await ctx.close();
