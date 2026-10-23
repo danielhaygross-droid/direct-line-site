@@ -12,6 +12,7 @@ import { SCHEMA as PORTAL_SCHEMA, handlePortal, signIn, createSessionCookie, rea
 import { syncFileStorage } from '../server/file-storage.mjs';
 import { runBackup } from '../server/backup.mjs';
 import { pollSupplierSheet } from '../server/supplier-sheet.mjs';
+import { retryPendingGoogleSheetOrders } from '../server/google-sheets.mjs';
 
 const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 const DB = databaseUrl ? createD1(databaseUrl, undefined, PORTAL_SCHEMA) : undefined;
@@ -35,7 +36,13 @@ export function cronAuthorized(request, secret) {
 const CRON_JOBS = {
   '/api/cron/file-storage': (db, env) => syncFileStorage(db, env),
   '/api/cron/backup': (db, env) => runBackup(db, env),
-  '/api/cron/supplier-sheet': (db, env) => pollSupplierSheet(db, env),
+  // Every minute: read the supplier's columns, then rewrite rows still waiting for the sheet (after a layout change or
+  // a failed write). Before 23 Oct 2026 only an open, visible admin dashboard rewrote them.
+  '/api/cron/supplier-sheet': async (db, env) => {
+    const result = await pollSupplierSheet(db, env);
+    const retry = await retryPendingGoogleSheetOrders(db, env).catch(e => ({ error: e.message }));
+    return { ...result, retry };
+  },
 };
 
 export async function route(request, { db = DB, env: baseEnv = process.env } = {}) {

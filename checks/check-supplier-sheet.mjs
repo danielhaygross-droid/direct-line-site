@@ -245,6 +245,16 @@ await call('/admin/payments/' + pay.data.id + '/delete', 'POST', {}, admin); ass
 assert.equal(paidCell(T.id), 'Not paid', 'an archived payment does not count');
 console.log('PASS Client paid column follows the payments; row 4 adds up the supplier’s Total cost (all / paid / not paid)');
 
+// Rows waiting for the sheet are rewritten by the cron too, with no admin screen open.
+const W = (await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === T.id);
+const gW = sheets.get(WQ_NEW).grid, rW = rowOf(W.id); gW[rW][D] = 'stale';
+await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting', sheet_next_try=0 WHERE id=?").bind(W.id).run();
+await DB.prepare("DELETE FROM portal_settings WHERE key='sheet_retry_until'").run();
+const c = await cron(); assert.equal(c.ok, true); assert.ok(c.retry.attempted >= 1, JSON.stringify(c.retry));
+assert.notEqual(gW[rW][D], 'stale', 'the cron rewrote the waiting row');
+assert.equal((await order(W.id)).sheet_sync_status, 'synced');
+console.log('PASS the minute cron also rewrites rows waiting for the sheet');
+
 // Cron needs the secret.
 assert.equal((await route(new Request('http://x/api/cron/supplier-sheet'), { db: DB, env })).status, 401);
 console.log('PASS cron refuses calls without the secret');
