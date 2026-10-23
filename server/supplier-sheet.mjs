@@ -56,8 +56,8 @@ export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Pho
   'Customer', 'Delivery address & phone', 'Tax number', 'Gift message', 'Notes', 'Competitor price', 'Total cost (USD)', 'Tracking number', 'Courier', 'Shipping status', 'Delayed?', 'Delay reason', 'Client paid',
   'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID'];
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
-const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'Cancelled' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '6';
+const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'CANCELLED - do not ship' };
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '7';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 export const markPaidDirty = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
@@ -171,7 +171,7 @@ export async function removeClientFromWorkQueue(DB, env, clientId, fetchImpl = f
 // ---------- layout ----------
 const getSetting = async (DB, key) => (await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(key).first())?.value;
 const putSetting = (DB, key, value) => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key, value).run();
-const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Other columns are filled in by Direct Line.';
+const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). RED rows are cancelled orders: do not buy or ship them. Orange rows: the client asked to cancel, wait for Direct Line. Other columns are filled in by Direct Line.';
 // Competitor price (O): light blue, open for anyone with the sheet to type in.
 const COMP = 14, blue = { red: 0.85, green: 0.92, blue: 1 }, blueHead = { red: 0.62, green: 0.79, blue: 0.97 };
 const competitorFormat = sheetId => [
@@ -191,7 +191,7 @@ const paidFormat = sheetId => [
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: PAIDCOL, endIndex: PAIDCOL + 1 }, properties: { pixelSize: WIDTHS[PAIDCOL] }, fields: 'pixelSize' } },
 ];
 const totalsRow = wq => ({ range: `${wq}!O4:V4`, values: [['Totals (USD):', `=SUM(P${FIRST_ROW}:P)`, `="Paid by clients: "&TEXT(SUMIF(V${FIRST_ROW}:V,"${PAID}",P${FIRST_ROW}:P),"$#,##0.00")`,
-  `="Not paid yet: "&TEXT(SUMIF(V${FIRST_ROW}:V,"${NOT_PAID}",P${FIRST_ROW}:P),"$#,##0.00")`, '', `=COUNTIF(T${FIRST_ROW}:T,"${DELAYED}")&" delayed"`, '', `=COUNTIF(V${FIRST_ROW}:V,"${NOT_PAID}")&" not paid"`]] });
+  `="Not paid yet: "&TEXT(SUMIF(V${FIRST_ROW}:V,"${NOT_PAID}",P${FIRST_ROW}:P),"$#,##0.00")`, `=COUNTIF(D${FIRST_ROW}:D,"${STATUS.cancelled}")&" cancelled"`, `=COUNTIF(T${FIRST_ROW}:T,"${DELAYED}")&" delayed"`, '', `=COUNTIF(V${FIRST_ROW}:V,"${NOT_PAID}")&" not paid"`]] });
 // Delayed? (T) dropdown + Delay reason (U): yellow supplier columns; a delayed row's T turns orange.
 const DELAY = 19;
 const delayFormat = (sheetId, email) => [
@@ -203,6 +203,18 @@ const delayFormat = (sheetId, email) => [
   ...(email ? [{ addProtectedRange: { protectedRange: { range: { sheetId, startRowIndex: 0, endRowIndex: 5, startColumnIndex: DELAY, endColumnIndex: DELAY + 2 }, description: 'Column headers', editors: { users: [email] } } } }] : []),
   ...[DELAY, DELAY + 1].map(i => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: WIDTHS[i] }, fields: 'pixelSize' } })),
 ];
+// Cancelled orders (Erwin, 23 Oct 2026): the whole row turns red and is struck through, and the Status cell (D) is
+// bold white on red, so the supplier can't miss them. "Cancellation requested" rows turn orange. Rules on the status
+// text in D; they come first (index 0-2), so they win over the paid / delayed colours on those rows.
+const cancelFormat = sheetId => {
+  const rows = (c1, c2) => [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: c1, endColumnIndex: c2 }];
+  const is = v => ({ type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=$D${FIRST_ROW}="${v}"` }] });
+  return [
+    { addConditionalFormatRule: { index: 0, rule: { ranges: rows(3, 4), booleanRule: { condition: is(STATUS.cancelled), format: { backgroundColor: { red: 0.8, green: 0.13, blue: 0.13 }, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } } } } } } },
+    { addConditionalFormatRule: { index: 1, rule: { ranges: rows(0, 30), booleanRule: { condition: is(STATUS.cancelled), format: { backgroundColor: { red: 0.98, green: 0.78, blue: 0.78 }, textFormat: { strikethrough: true, foregroundColor: { red: 0.55, green: 0.1, blue: 0.1 } } } } } } },
+    { addConditionalFormatRule: { index: 2, rule: { ranges: rows(0, 30), booleanRule: { condition: is(STATUS.cancellation_requested), format: { backgroundColor: { red: 1, green: 0.87, blue: 0.7 }, textFormat: { bold: true } } } } } },
+  ];
+};
 // Rewrites the Client paid column (V) from the website in one write (after payments change).
 export async function refreshPaidColumn(DB, env, fetchImpl = fetch) {
   if (!googleSheetsConfigured(env) || !await supplierSheetEnabled(DB) || await getSetting(DB, LAYOUT) !== LAYOUT_NOW) return false;
@@ -260,6 +272,9 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     //    columns to the right (V–AF). Google moves the protected ranges, rules, filter and groups with them.
     const addDelay = h[18] === 'Shipping status' && (h[19] === 'Client paid' || addPaid);
     if (addDelay) { await batch(env, [{ insertDimension: { range: { sheetId, dimension: 'COLUMNS', startIndex: DELAY, endIndex: DELAY + 2 }, inheritFromBefore: true } }], fetchImpl); h = await header(); }
+    // 7) Cancelled rows in red (Erwin, 23 Oct 2026): every sheet before layout 7 gets the rules once; the status
+    //    text changes to "CANCELLED - do not ship", so cancelled rows are written again below.
+    const addCancel = String(v || '').startsWith('migrating:') || Number(v || 0) < 7;
     await batchValues(env, [{ range: `${wq}!A5:AF5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
     const idCol = colName(h.indexOf('Order ID') >= 0 ? h.indexOf('Order ID') : 27);
@@ -269,10 +284,10 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     await batch(env, [courierRule(sheetId, courierList(await getSetting(DB, 'couriers'))), ...competitorFormat(sheetId),
       ...[11, 12, 17].map(i => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: WIDTHS[i] }, fields: 'pixelSize' } })),
       ...(addPaid ? [...paidFormat(sheetId), { addProtectedRange: { protectedRange: { range: { sheetId, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }, description: 'Filled in by the Direct Line website', editors: { users: [googleSheetsConfig(env).email] } } } }] : []),
-      ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : [])], fetchImpl);
+      ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : []), ...(addCancel ? cancelFormat(sheetId) : [])], fetchImpl);
     if (addPaid) await markPaidDirty(DB);
     // Every active row is written again so the new columns get their values.
-    await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL)").run();
+    await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested'))").run();
     await putSetting(DB, LAYOUT, LAYOUT_NOW);
     return true;
   } catch (e) {
@@ -564,7 +579,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 } } },
     { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
     { setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 30 } } } },
-    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null),
+    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId),
     // Only the supplier columns (and Competitor price) are editable by others; the rest is written by the website.
     { addProtectedRange: { protectedRange: { range: cols(0, 14), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
     { addProtectedRange: { protectedRange: { range: cols(21, 32), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },

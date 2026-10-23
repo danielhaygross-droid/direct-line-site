@@ -101,12 +101,16 @@ try {
     await ui.locator('[data-fees-form] [name=commission]').fill('5');
     await ui.locator('[data-fees-form] [type=submit]').click(); await page.waitForTimeout(900);
     assert.equal(Number((await row(o)).commission), 5, tag + ' fee on this order');
-    // Cancel: the first click only asks.
-    await ui.locator('[name=directCancelFee]').fill('4');
+    // Cancel: "Cancelled" in the status row opens the cancel box; the first click on Cancel this order only asks.
+    assert.equal(await ui.locator('[data-cancel-box]').isVisible(), false, tag + ' cancel box closed at first');
+    await ui.locator('[data-cancel-open]').click(); await ui.waitForSelector('[data-cancel-box]:not([hidden])');
+    await ui.locator('[data-cancel-close]').click(); assert.equal(await ui.locator('[data-cancel-box]').isVisible(), false, tag + ' Keep the order closes it');
+    await ui.locator('[data-cancel-open]').click(); await ui.waitForSelector('[data-cancel-box]:not([hidden])');
+    await ui.locator('[data-cancel-four-direct]').click(); assert.equal(await ui.locator('[name=directCancelFee]').inputValue(), '4', tag + ' $4 fills the fee');
     await ui.locator('[data-cancel-direct]').click(); await page.waitForTimeout(300);
     assert.equal((await row(o)).status, 'pending', tag + ' first click does not cancel');
     assert.match(await ui.locator('[data-cancel-direct]').innerText(), lang === 'en' ? /Click again to cancel/ : /לחצו שוב לביטול/);
-    if (width === 1440) await page.screenshot({ path: path.join(out, `${lang}-cancel-card.png`) });
+    await ui.locator('[data-cancel-box]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${lang}-${width}-cancel-box.png`) });
     await ui.locator('[data-cancel-direct]').click(); await page.waitForTimeout(1200);
     assert.equal((await row(o)).status, 'cancelled', tag + ' cancelled');
     assert.equal(Number((await DB.prepare("SELECT amount FROM client_balance_adjustments WHERE order_id=? AND kind='cancellation_fee'").bind(o.id).first()).amount), 4);
