@@ -347,3 +347,6 @@ input[type=file]::file-selector-button:hover{border-color:var(--gold)}
 input[type=color],.field input[type=color]{width:64px;min-height:44px;height:44px;padding:4px;border-radius:11px;cursor:pointer}
 input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-webkit-color-swatch{border:0;border-radius:8px}input[type=color]::-moz-color-swatch{border:0;border-radius:8px}
 .field input[type=checkbox]{width:18px;height:18px;min-height:18px;padding:0}
+.full>.btn{width:fit-content;justify-self:start}
+@media(max-width:640px){.pm-remove{width:32px;height:32px;font-size:18px}}
+@media(max-width:640px){.drawer .back{min-height:36px;padding-block:6px}.card-head .link{min-height:36px;padding-inline:6px}}
