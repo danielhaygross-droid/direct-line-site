@@ -334,3 +334,7 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .pay-strip:hover{border-color:var(--orange)}.pay-strip-ic{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange);flex:none}
 .pay-strip-ic svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8}.pay-strip-txt{display:grid;min-width:0;flex:1}.pay-strip-txt small{color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px}
 @media (max-width:640px){.pf-step{grid-template-columns:28px minmax(0,1fr);gap:10px}.pf-n{width:26px;height:26px;font-size:13px}.pay-strip{padding:10px 12px;gap:10px}}
+/* Terms page in the portal (23 Oct 2026): a readable centred column, section titles stand out. */
+[data-terms-view]{max-width:860px;margin:0 auto;display:grid;gap:12px}[data-terms-view]>.note{margin:0}
+.terms-content{font-size:15px;max-height:62vh;padding:18px 20px}
+.terms-h{display:inline-block;margin-top:12px;font-size:15.5px;font-weight:700;color:var(--text)}

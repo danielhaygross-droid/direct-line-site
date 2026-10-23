@@ -115,7 +115,12 @@
   const acceptedText = a => a ? `<span>Terms accepted:</span> <time data-no-i18n>${esc(fullDate(a.accepted_at))} · v${a.version}</time>` : '<span>Not accepted yet</span>';
   function policyHTML(data) {
     const text = window.DLi18n?.lang === 'he' ? data.policy.hebrew : data.policy.english;
-    return `<article class="card card-pad terms-paper"><h2 id="terms-title">${esc(data.policy.title)}</h2><p class="muted"><span>Version</span> <b data-no-i18n>${data.policy.version}</b></p><div class="terms-content" tabindex="0" aria-labelledby="terms-title" data-no-i18n>${esc(text)}</div></article>`;
+    return `<article class="card card-pad terms-paper"><h2 id="terms-title">${esc(data.policy.title)}</h2><p class="muted"><span>Version</span> <b data-no-i18n>${data.policy.version}</b></p><div class="terms-content" tabindex="0" aria-labelledby="terms-title" data-no-i18n>${termsText(text)}</div></article>`;
+  }
+  // Lines broken mid-sentence in the stored text (the next line starts in lower case) are joined back up.
+  // Numbered section titles ("2. Order Cancellation …") stand out from the text (Erwin, 23 Oct 2026).
+  function termsText(text) {
+    return esc(text).replace(/\n(?=[a-z(])/g, ' ').split('\n').map(l => /^\s*\d+\.\s+\S/.test(l) ? `<strong class="terms-h">${l.trim()}</strong>` : l).join('\n');
   }
   async function termsScreen() {
     try {

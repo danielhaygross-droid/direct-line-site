@@ -5,8 +5,10 @@
         <div class="adm-actions"><button type="button" class="btn" data-add-account="client">${ic('users')}Add client</button><button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button></div></section>
       <div class="kpi-bar"><label class="kpi-month"><span>Show</span><select data-kpi-month aria-label="Month"></select></label></div>
       <section class="kpis" data-kpis></section>
-      <div class="seg" role="tablist">${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['claims','Claims'], ['products','Products'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
+      <div class="seg" role="tablist" data-main-tabs>${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['claims','Claims'], ['products','Products'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
       <section data-tab-body style="display:grid;gap:14px"></section>`;
+    // Inside the Control page its sidebar is the navigation (Erwin, 23 Oct 2026): no second row of tabs here.
+    try { if (window.parent !== window && window.parent.document.querySelector('.nav-item[data-client-tab]')) document.body.classList.add('in-control'); } catch (e) { /* another origin */ }
     $('#app').addEventListener('click', onClick);
     $('#app').addEventListener('input', onInput);
     $('#app').addEventListener('change', onChange);
@@ -31,12 +33,14 @@
     const fees = month === 'all' ? t.ourShare : os.reduce((n, o) => n + cents(o.commission), 0) / 100;
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const cards = [
-      { k: 'Clients', v: clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)', go: 'data-go-tab="clients"', hint: 'Open clients' },
+      { k: 'Clients', v: clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)' },
       { k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: pending || noCost ? [pending ? `${pending} waiting to be processed` : '', noCost ? `${noCost} need cost` : ''].filter(Boolean) : ['Nothing waiting'], icon: 'orders', tone: 'var(--orange)', go: `data-go-filter="${pending ? 'pending' : noCost ? 'needscost' : 'all'}"`, hint: pending ? 'Show waiting orders' : noCost ? 'Show orders that need cost' : 'Show orders' },
       { k: 'Not paid yet', v: money(owed / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(gap) >= 1 ? `Account balance ${money(t.outstanding)}: some payments aren’t linked to orders` : '', icon: 'money', tone: owed > 0 ? 'var(--red)' : 'var(--mint)', go: 'data-go-filter="unpaid"', hint: 'Show unpaid orders', owe: owed > 0 },
-      { k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(fees), sub: [month === 'all' ? `Fees collected ${money(t.commission)}` : `Fees on ${plural(os.length, 'order')}`], icon: 'check', tone: 'var(--gold)', go: 'data-go-tab="clients"', hint: 'Earnings per client', hero: true },
+      { k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(fees), sub: [month === 'all' ? `Fees collected ${money(t.commission)}` : `Fees on ${plural(os.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
     ];
-    $('[data-kpis]').innerHTML = cards.map(c => `<button type="button" class="stat stat-go${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}" style="--tone:${c.tone}" ${c.go} title="${esc(c.hint)}"><span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}<span class="stat-more">${esc(c.hint)}${ic('chev')}</span></button>`).join('');
+    // Only the boxes that open a filtered list are buttons; Clients and Earnings are in the navigation already.
+    $('[data-kpis]').innerHTML = cards.map(c => { const inner = `<span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}`, cls = `stat${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}`;
+      return c.go ? `<button type="button" class="${cls} stat-go" style="--tone:${c.tone}" ${c.go} title="${esc(c.hint)}" aria-label="${esc(c.k)}: ${esc(c.hint)}">${inner}</button>` : `<div class="${cls} stat-plain" style="--tone:${c.tone}">${inner}</div>`; }).join('');
     const unread = S.orders.filter(o => o.unreadMessages).length;
     const b = $('[data-tab-badge="orders"]'); if (b) b.innerHTML = unread ? `<span class="badge-new">${unread}</span>` : '';
   }
