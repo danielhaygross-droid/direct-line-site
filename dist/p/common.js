@@ -313,7 +313,7 @@
       viewer = document.createElement('div'); viewer.className = 'pv'; viewer.setAttribute('role', 'dialog'); viewer.setAttribute('aria-modal', 'true'); viewer.setAttribute('aria-label', 'Photo');
       viewer.innerHTML = '<button type="button" class="pv-btn pv-close" data-pv-close aria-label="Close photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>'
         + '<button type="button" class="pv-btn pv-prev" data-pv-step="-1" aria-label="Previous photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>'
-        + '<figure class="pv-fig"><img alt="Photo"><figcaption data-pv-count></figcaption></figure>'
+        + '<figure class="pv-fig"><img alt="Photo"><figcaption data-pv-count dir="ltr"></figcaption></figure>'
         + '<button type="button" class="pv-btn pv-next" data-pv-step="1" aria-label="Next photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>';
       document.body.append(viewer);
       viewer.addEventListener('click', e => {

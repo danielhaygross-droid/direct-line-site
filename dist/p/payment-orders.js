@@ -43,7 +43,7 @@
       const due = dueCents(o, adjustments), on = checked.has(o.id);
       if (on) { n++; sum += due; }
       const tag = o.status === 'cancelled' ? '<span class="po-tag">Cancelled</span>' : '';
-      return `<label class="po-row"><input type="checkbox" name="poOrder" value="${o.id}" data-cents="${due}"${on ? ' checked' : ''}><span class="po-main"><b data-no-i18n>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(dateOf(o))}</span>${o.buyerName ? ` · <span data-no-i18n>${esc(o.buyerName)}</span>` : ''}</small></span>${tag}<b class="po-amt">${fmt(due)}</b></label>`;
+      return `<label class="po-row"><input type="checkbox" name="poOrder" value="${o.id}" data-cents="${due}"${on ? ' checked' : ''}><span class="po-main"><b data-no-i18n dir="auto">${esc(orderName(o))}</b><small><span data-no-i18n>${esc(dateOf(o))}</span>${o.buyerName ? ` · <span data-no-i18n>${esc(o.buyerName)}</span>` : ''}</small></span>${tag}<b class="po-amt">${fmt(due)}</b></label>`;
     }).join('');
     const gap = compare ? gapText(cents(amount), sum, n) : { text: '', tone: '' };
     return `<div class="po-box" data-po${compare ? ' data-po-compare' : ''}>

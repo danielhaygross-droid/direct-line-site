@@ -48,12 +48,12 @@
       <section class="af-sec"><h3 class="form-sec"><i>5</i>Notes</h3>
       <label class="field"><span>Notes <small>the client sees these</small></span><textarea name="notes" maxlength="2000">${esc(order?.notes)}</textarea></label>
       </section>
-      <p class="form-msg" data-form-msg></p></form>`;
-    d.foot.innerHTML = `<button type="submit" form="order-form" class="btn btn-primary" data-submit>${order ? 'Save changes' : 'Add order'}</button><button type="button" class="btn btn-ghost" data-close-drawer>Cancel</button>`;
+      </form>`;
+    d.foot.innerHTML = `<button type="submit" form="order-form" class="btn btn-primary" data-submit>${order ? 'Save changes' : 'Add order'}</button><button type="button" class="btn btn-ghost" data-close-drawer>Cancel</button><p class="form-msg foot-msg" data-form-msg role="alert"></p>`;
     const f = $('#order-form'), dest = destinationPicker(f.destination, $('[data-other-country]', f));
     dest.set(order?.destination || '');
     const setStores=()=>{const clientId=Number(f.clientId.value),stores=S.stores.filter(s=>s.clientId===clientId&&(!s.archived||s.id===order?.storeId));f.storeId.innerHTML='<option value="">Choose a store</option>'+stores.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');f.storeId.value=String(order?.storeId||(stores.length===1?stores[0].id:''));};setStores();f.clientId.addEventListener('change',setStores);
-    const msg = $('[data-form-msg]', f), err = t => { msg.textContent = t; msg.className = 'form-msg err'; msg.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); };
+    const msg = $('[data-form-msg]', d.foot), err = t => { msg.textContent = t; msg.className = 'form-msg foot-msg err'; };
     // ----- product links: one box per product -----
     const linkBox = $('[data-links]', f);
     const linkRow = (v = '') => `<div class="link-row"><input data-link type="url" inputmode="url" maxlength="2000" placeholder="https://www.etsy.com/listing/..." value="${esc(v)}"><button type="button" class="btn btn-sm btn-ghost" data-link-remove aria-label="Remove link">×</button></div>`;
@@ -77,7 +77,7 @@
       zone.classList.add('busy'); let failed = '';
       for (const file of list.slice(0, room)) { try { picks.push({ key: 'n' + (++pickSeq), ...(await shrinkImage(file)) }); renderPicks(); } catch (ex) { failed = ex.message; } }
       zone.classList.remove('busy');
-      if (failed) err(failed); else if (list.length > room) err(`Only ${MAX_PICKS} photos fit on one order.`); else { msg.textContent = ''; msg.className = 'form-msg'; }
+      if (failed) err(failed); else if (list.length > room) err(`Only ${MAX_PICKS} photos fit on one order.`); else { msg.textContent = ''; msg.className = 'form-msg foot-msg'; }
     }
     if (zone) {
       zone.addEventListener('change', e => { if (e.target.matches('[data-pick-input]')) { addFiles(e.target.files); e.target.value = ''; } });
@@ -95,7 +95,7 @@
       const pc = parseFloat(f.productCost.value), sh = parseFloat(f.price.value), sp = parseFloat(f.sellingPrice.value), tot = (pc || 0) + (sh || 0), billed = Number.isFinite(pc) || Number.isFinite(sh);
       $('[data-sum]').innerHTML = `<div class="total"><span>Client pays</span><span>${billed ? money(tot) : 'not billed yet'}</span></div>${billed && Number.isFinite(sp) ? `<div><span>Client’s profit</span><span class="${sp - tot >= 0 ? 'pos' : 'neg'}">${money(sp - tot)}</span></div>` : ''}`;
     };
-    f.addEventListener('input', e => { if (e.target.name === 'price') auto = null; if (msg.classList.contains('err')) { msg.textContent = ''; msg.className = 'form-msg'; } upd(); });
+    f.addEventListener('input', e => { if (e.target.name === 'price') auto = null; if (msg.classList.contains('err')) { msg.textContent = ''; msg.className = 'form-msg foot-msg'; } upd(); });
     f.addEventListener('change', upd);
     f.addEventListener('click', e => {
       const u = e.target.closest('[data-use-quote]'); if (u) { f.price.value = u.dataset.useQuote; auto = f.price.value; upd(); }
@@ -123,7 +123,7 @@
         trackingNumber: f.trackingNumber.value, destination: dest.get(), category: f.category.value,
         weightKg: f.weightKg.value === '' ? null : f.weightKg.value, productCost: f.productCost.value === '' ? null : f.productCost.value, shippingFee: f.price.value === '' ? null : f.price.value,
         notes: f.notes.value };
-      const btn = $('[data-submit]'); btn.disabled = true; msg.textContent = ''; msg.className = 'form-msg';
+      const btn = $('[data-submit]'); btn.disabled = true; msg.textContent = ''; msg.className = 'form-msg foot-msg';
       const photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
       let r;
       try {

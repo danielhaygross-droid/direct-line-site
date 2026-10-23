@@ -19,6 +19,7 @@
           <div class="top-actions">
             <button type="button" class="icon-btn lang-btn" data-lang-toggle aria-label="Language">${window.DLi18n?.lang === 'he' ? 'EN' : 'עב'}</button>
             <button type="button" class="icon-btn theme-btn" data-theme-toggle aria-label="Switch light/dark">${ic(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon')}</button>
+            ${S.me.preview || S.me.acting ? '' : `<a class="icon-btn wa-top" href="https://wa.me/972553031093" target="_blank" rel="noopener" aria-label="Contact Direct Line on WhatsApp" title="Contact Direct Line on WhatsApp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.6A8 8 0 0 1 8.1 18.5L4 20l1.4-4A8 8 0 1 1 20 11.6Z"/><path d="M9 8.5c.5 2 2 3.5 4 4l1-1c.4-.4.8-.2 1.1 0l1.5.7c.4.2.5.5.4.9-.4 1.2-1.5 1.9-2.7 1.7-3.6-.5-6.8-3.7-7.3-7.3-.2-1.2.5-2.3 1.7-2.7.4-.1.7 0 .9.4l.7 1.5c.2.3.4.7 0 1.1l-1.3.7Z"/></svg></a>`}
             <button type="button" class="icon-btn" data-bell aria-label="Notifications">${ic('bell')}<span class="count" data-bell-count hidden></span></button>
             <a class="btn btn-primary new-btn" href="#/new">${ic('plus')}New order</a>
           </div>

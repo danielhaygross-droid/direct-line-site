@@ -350,3 +350,8 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-we
 .full>.btn{width:fit-content;justify-self:start}
 @media(max-width:640px){.pm-remove{width:32px;height:32px;font-size:18px}}
 @media(max-width:640px){.drawer .back{min-height:36px;padding-block:6px}.card-head .link{min-height:36px;padding-inline:6px}}
+/* UI audit 2: claim cards (admin Claims + client order panel). */
+.claim-files{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 10px}
+.claim-decide{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}.claim-decide .field{flex:0 1 260px;min-width:180px}
+.drawer-foot .foot-msg{flex:1 1 220px;margin:0;align-self:center}.drawer-foot .foot-msg:empty{display:none}
+[dir=rtl] .po-main b[dir=auto]{text-align:right}
