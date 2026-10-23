@@ -267,7 +267,9 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .client-support svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.6}
 .client-support:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
 .dl-drawer-open .client-support,.menu-open .client-support,body:has(.dln-panel.open) .client-support,body:has(dialog[open]) .client-support{display:none}
-@media(max-width:860px){.client-support{inset-inline-end:12px;bottom:calc(88px + env(safe-area-inset-bottom))}}
+.wa-top{display:none}
+/* Phones: the floating WhatsApp button covered buttons and amounts, so it moves into the top bar. */
+@media(max-width:860px){.client-support{display:none}.wa-top{display:inline-grid;place-items:center;color:#1f8f74}[data-theme=dark] .wa-top{color:#7bdfca}}
 
 /* Orders page: the earnings block can be folded away */
 .earn-box{display:grid;gap:14px;margin-bottom:6px}
@@ -338,3 +340,6 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 [data-terms-view]{max-width:860px;margin:0 auto;display:grid;gap:12px}[data-terms-view]>.note{margin:0}
 .terms-content{font-size:15px;max-height:62vh;padding:18px 20px}
 .terms-h{display:inline-block;margin-top:12px;font-size:15.5px;font-weight:700;color:var(--text)}
+/* UI audit 2: the product name is a link-like button, not a full-row bar; on phones the price sits in one row with its tag. */
+.mp-name{justify-self:start;min-height:28px;display:inline-flex;align-items:center}
+@media(max-width:560px){.mp-side{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}.mp-side .price-options{flex-basis:100%}}

@@ -397,3 +397,10 @@ body.client-orders-open .topbar .context-controls{visibility:hidden}
 .whatsapp-dock{width:50px;height:50px;min-width:50px;padding:0;border-radius:50%;display:grid;place-items:center}
 .whatsapp-dock>span{display:none}.whatsapp-dock svg{width:24px;height:24px}
 body.client-drawer-open .whatsapp-dock,body:has(dialog[open]) .whatsapp-dock{display:none!important}
+/* UI audit 2 (23 Oct 2026). Phones: the store pickers hidden on the client pages no longer leave a blank band under the top bar. */
+@media(max-width:850px){body.client-orders-open .topbar .context-controls{display:none}}
+/* Sidebar footer: "Log out" sits at the end with a real tap area; the status text gets the room. */
+.sidebar-foot div{flex:1;min-width:0}.sidebar-foot button{margin:0;flex:none;min-height:32px;padding:4px 8px;border-radius:8px}
+/* Login: no empty "Quick demo access" block when the demo buttons are hidden; English tagline on the English page. */
+.demo-access:not(:has(button:not([hidden]))){display:none}
+html[lang=en][data-theme=light] .login-brand:after{content:"In control of the numbers. Calm in operations.";direction:ltr;text-align:left}

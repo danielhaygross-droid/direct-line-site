@@ -22,9 +22,13 @@
   const notShippedYet = o => !!o?.trackingNumber && ['pending', 'processing', 'cancellation_requested'].includes(o.status);
   const when = sec => window.DL.displayTime(sec);
   const day = when;
+  // Claim problem types and decisions as people read them (stored as keys like 'missing_parts').
+  const CLAIM_LABEL = { damaged: 'Damaged', defective: 'Defective', missing_parts: 'Missing parts', wrong_item: 'Wrong item', lost: 'Lost parcel', approved: 'Approved', rejected: 'Rejected', resolved: 'Resolved' };
+  // A claim's two files: the photo/video of the problem and the shipping label.
+  const claimFiles = c => (c.fileIds || []).map((id, i) => ({ id, label: (c.fileKinds?.[i] || (i ? 'label' : 'problem')) === 'label' ? 'Shipping label' : 'Problem photo' }));
   function activity(events=[]) {
     const labels={delayed:'Marked possibly delayed',delay_cleared:'No longer delayed',created:'Order created',edited:'Order edited',status:'Status changed',tracking:'Tracking number changed',tracking_update:'Tracking update received',photo:'Photo changed',claim:'Claim updated',billed:'Order billed',archived:'Order archived',restored:'Order restored'};
-    return `<section class="card card-pad"><h3 class="sec-title">Order activity</h3><p class="muted" data-no-i18n>${esc(window.DL.timeZoneNote())}</p>${events.length ? `<ol class="order-activity">${[...events].reverse().map(e=>`<li><b>${esc(e.kind==='edited'&&e.detail==='customer' ? 'Customer details changed' : labels[e.kind]||e.kind)}</b><span><span>${e.actor==='admin'?'Direct Line':'Client'}</span>${e.detail && e.kind!=='edited' ? ' · '+(e.kind==='status' ? `<span>${esc(LABEL[e.detail]||e.detail)}</span>` : `<span data-no-i18n>${esc(e.detail)}</span>`) : ''}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`).join('')}</ol>` : '<p class="muted">No activity recorded yet.</p>'}</section>`;
+    return `<section class="card card-pad"><h3 class="sec-title">Order activity</h3><p class="muted" data-no-i18n>${esc(window.DL.timeZoneNote())}</p>${events.length ? `<ol class="order-activity">${[...events].reverse().map(e=>`<li><b>${esc(e.kind==='edited'&&e.detail==='customer' ? 'Customer details changed' : labels[e.kind]||e.kind)}</b><span><span>${e.actor==='admin'?'Direct Line':'Client'}</span>${e.detail && e.kind!=='edited' ? ' · '+(e.kind==='status' ? `<span>${esc(LABEL[e.detail]||e.detail)}</span>` : e.kind==='claim' && CLAIM_LABEL[e.detail] ? `<span>${CLAIM_LABEL[e.detail]}</span>` : `<span data-no-i18n>${esc(e.detail)}</span>`) : ''}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`).join('')}</ol>` : '<p class="muted">No activity recorded yet.</p>'}</section>`;
   }
   function syncConversation(order,data) {
     if(!order)return;
@@ -178,5 +182,5 @@
     if(order && value===addressText(order))return Object.fromEntries(addressKeys.map(k=>[k,order[k]||'']));
     return {address1:value,address2:'',city:'',region:'',postalCode:'',buyerPhone:''};
   }
-  window.DLOrderUI = { addressText, addressFields, STEPS, LABEL, pill, isLate, delayTag, delayNote, notShippedYet, tracker, getDrawer, chat, svg, when, day, activity, syncConversation };
+  window.DLOrderUI = { CLAIM_LABEL, claimFiles, addressText, addressFields, STEPS, LABEL, pill, isLate, delayTag, delayNote, notShippedYet, tracker, getDrawer, chat, svg, when, day, activity, syncConversation };
 })();
