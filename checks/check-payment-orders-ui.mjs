@@ -112,7 +112,7 @@ try {
     await ui.waitForSelector('.pay-card .receipt-file'); assert.equal(await ui.locator('.pay-todo').count(), 0, 'nothing to do any more');
     // A second file by mistake, then removed (archived): the client no longer sees it.
     await ui.locator('[data-pay-attach]').first().click(); await ui.locator('[data-receipt-form] [name=invoiceFile]').setInputFiles(fixturePath);
-    await ui.locator('[data-receipt-form] [name=invoiceDate]').fill('2026-10-25'); await ui.locator('[data-receipt-form] [type=submit]').click();
+    await ui.locator('[data-receipt-form] [name=invoiceDate]').fill('2026-01-15'); await ui.locator('[data-receipt-form] [type=submit]').click();
     await ui.waitForFunction(() => document.querySelectorAll('.pay-card .receipt-file').length === 2);
     await ui.locator('[data-receipt-remove]').nth(1).click(); await ui.locator('[data-receipt-remove]').nth(1).click();
     await ui.waitForFunction(() => document.querySelectorAll('.pay-card .receipt-file').length === 1);
