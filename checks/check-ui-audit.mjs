@@ -76,6 +76,8 @@ for (let i = 0; i < 8; i++) {
   if (i < 6) ok(await call('/admin/invoices', 'POST', { clientId: id, paymentId: p.id, date: `2026-10-${String(10 + i).padStart(2, '0')}`, file: { data: photo.data, filename: `receipt-october-${i + 1}-direct-line.png` } }, admin));
 }
 
+await DB.prepare("UPDATE client_orders SET domestic_tracking='SF1234567890123'").run(); // the supplier's China tracking (sheet AG)
+
 // Measured in the page: returns [kind, detail] for each problem.
 // only: limit the audit to one part of the page (e.g. the login card over the dashboard).
 function audit(only) {
@@ -168,6 +170,7 @@ try {
     await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter=all]').click(); await settle();
     await ui.locator('[data-open-order]').first().click(); await ui.waitForSelector('.drawer'); await settle();
     report(tag, 'admin-order-panel', await ui.evaluate(audit)); await shot(page, tag, 'admin-order-panel');
+    { const tf = ui.locator('.track-form'); await tf.scrollIntoViewIfNeeded(); assert.equal(await ui.locator('.dom-track b').innerText(), 'SF1234567890123', tag + ': the supplier’s domestic tracking is shown'); await tf.screenshot({ path: path.join(out, `${tag}-admin-tracking.png`) }); }
     await page.keyboard.press('Escape'); await settle();
     await ui.locator('[data-tab=clients]').click(); await settle(); await ui.locator(`[data-open-client="${id}"]`).first().click(); await ui.waitForSelector('.gtabs'); await settle();
     for (const [screen, n, s] of [['client-orders', 0], ['client-stores', 1, 'stores'], ['client-products', 1, 'products'], ['client-payments', 2, 'payments'], ['client-prices', 2, 'prices'], ['client-account', 3, 'account'], ['client-activity', 3, 'activity']]) {
