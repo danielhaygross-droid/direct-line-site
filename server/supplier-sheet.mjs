@@ -52,12 +52,14 @@ export async function tabNames(DB) {
 }
 const BACKUP_TITLE = 'Work Queue (old formulas)';
 export const FIRST_ROW = 6;
+// AG (Ye, 25 Oct 2026): the supplier's domestic express tracking in China. Supplier-typed; the website never reads or writes it.
+export const DOMESTIC = 'Domestic Express Tracking Number';
 export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Photo 1', 'Product link', 'Qty', 'Product / variation',
   'Customer', 'Delivery address & phone', 'Tax number', 'Gift message', 'Notes', 'Competitor price', 'Total cost (USD)', 'Tracking number', 'Courier', 'Shipping status', 'Delayed?', 'Delay reason', 'Client paid',
-  'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID'];
+  'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID', DOMESTIC];
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'CANCELLED - do not ship' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '7';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '8';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 export const markPaidDirty = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
@@ -140,7 +142,7 @@ async function idColumn(env, fetchImpl, wq) {
 const batchValues = (env, data, fetchImpl) => sheetsRequest(env, '/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data }) }, fetchImpl);
 const batch = (env, requests, fetchImpl) => sheetsRequest(env, ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests }) }, fetchImpl);
 // Column widths (px) for A–AF, sized to their content. AE–AF (ids) are hidden; W–AD (more photos/links) are grouped.
-export const WIDTHS = [95, 125, 135, 110, 130, 80, 115, 55, 170, 140, 230, 150, 220, 260, 150, 115, 180, 120, 125, 125, 220, 100, 80, 80, 80, 80, 80, 80, 80, 220, 60, 60];
+export const WIDTHS = [95, 125, 135, 110, 130, 80, 115, 55, 170, 140, 230, 150, 220, 260, 150, 115, 180, 120, 125, 125, 220, 100, 80, 80, 80, 80, 80, 80, 80, 220, 60, 60, 190];
 // Row height that fits the wrapped text of a row (about 7 px per character at the default font), at least
 // 100 px for the photo preview.
 export function rowPx(cells) {
@@ -171,7 +173,7 @@ export async function removeClientFromWorkQueue(DB, env, clientId, fetchImpl = f
 // ---------- layout ----------
 const getSetting = async (DB, key) => (await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(key).first())?.value;
 const putSetting = (DB, key, value) => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key, value).run();
-const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). RED rows are cancelled orders: do not buy or ship them. Orange rows: the client asked to cancel, wait for Direct Line. Other columns are filled in by Direct Line.';
+const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Domestic Express Tracking Number (yellow, far right after Client paid): the tracking of the domestic express in China. RED rows are cancelled orders: do not buy or ship them. Orange rows: the client asked to cancel, wait for Direct Line. Other columns are filled in by Direct Line.';
 // Competitor price (O): light blue, open for anyone with the sheet to type in.
 const COMP = 14, blue = { red: 0.85, green: 0.92, blue: 1 }, blueHead = { red: 0.62, green: 0.79, blue: 0.97 };
 const competitorFormat = sheetId => [
@@ -215,6 +217,20 @@ const cancelFormat = sheetId => {
     { addConditionalFormatRule: { index: 2, rule: { ranges: rows(0, 30), booleanRule: { condition: is(STATUS.cancellation_requested), format: { backgroundColor: { red: 1, green: 0.87, blue: 0.7 }, textFormat: { bold: true } } } } } },
   ];
 };
+// AG: yellow and open to the supplier like P-U (outside the website's protected columns), kept as text.
+const DOM = 32;
+const domesticFormat = sheetId => [
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: DOM, endColumnIndex: DOM + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,textFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
+  { repeatCell: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: DOM, endColumnIndex: DOM + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.95, blue: 0.7 }, numberFormat: { type: 'TEXT' }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,numberFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: DOM, endColumnIndex: DOM + 1 }, cell: { note: 'Supplier: the tracking number of the domestic express in China for this order. Only you fill this in; the website does not change it.' }, fields: 'note' } },
+  { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: DOM, endIndex: DOM + 1 }, properties: { pixelSize: WIDTHS[DOM] }, fields: 'pixelSize' } },
+];
+// Sheets made with 32 columns (A-AF) get one more column for AG first.
+async function ensureColumns(env, sheetId, count, fetchImpl) {
+  const props = ((await sheetsRequest(env, '?fields=sheets.properties', {}, fetchImpl)).sheets || []).map(x => x.properties || {}).find(x => x.sheetId === sheetId);
+  const have = Number(props?.gridProperties?.columnCount || 0);
+  if (have && have < count) await batch(env, [{ appendDimension: { sheetId, dimension: 'COLUMNS', length: count - have } }], fetchImpl);
+}
 // Rewrites the Client paid column (V) from the website in one write (after payments change).
 export async function refreshPaidColumn(DB, env, fetchImpl = fetch) {
   if (!googleSheetsConfigured(env) || !await supplierSheetEnabled(DB) || await getSetting(DB, LAYOUT) !== LAYOUT_NOW) return false;
@@ -251,7 +267,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     const { wq } = await tabNames(DB);
     const sheetId = await workQueueSheetId(env, fetchImpl, true, wq);
     if (sheetId == null) throw new Error('Work Queue tab not found');
-    const header = async () => (await sheetsRequest(env, '/values/' + encodeURIComponent(`${wq}!A5:AF5`), {}, fetchImpl)).values?.[0]?.map(norm) || [];
+    const header = async () => (await sheetsRequest(env, '/values/' + encodeURIComponent(`${wq}!A5:AG5`), {}, fetchImpl)).values?.[0]?.map(norm) || [];
     let h = await header();
     // 1) Country (L) becomes Tax number, and Gift message is added after it. The column is inserted inside the
     //    website's protected columns (A–M), so it stays protected. Nothing is deleted.
@@ -275,7 +291,11 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     // 7) Cancelled rows in red (Erwin, 23 Oct 2026): every sheet before layout 7 gets the rules once; the status
     //    text changes to "CANCELLED - do not ship", so cancelled rows are written again below.
     const addCancel = String(v || '').startsWith('migrating:') || Number(v || 0) < 7;
-    await batchValues(env, [{ range: `${wq}!A5:AF5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
+    // 8) Domestic Express Tracking Number in AG (Ye, 25 Oct 2026): added once at the far right, so no column the website
+    //    reads or writes moves.
+    const addDomestic = h[DOM] !== DOMESTIC;
+    if (addDomestic) await ensureColumns(env, sheetId, DOM + 1, fetchImpl);
+    await batchValues(env, [{ range: `${wq}!A5:AG5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
     const idCol = colName(h.indexOf('Order ID') >= 0 ? h.indexOf('Order ID') : 27);
     const ranges = [`${wq}!O${FIRST_ROW}:O`, `${wq}!${idCol}${FIRST_ROW}:${idCol}`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
@@ -284,7 +304,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     await batch(env, [courierRule(sheetId, courierList(await getSetting(DB, 'couriers'))), ...competitorFormat(sheetId),
       ...[11, 12, 17].map(i => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: WIDTHS[i] }, fields: 'pixelSize' } })),
       ...(addPaid ? [...paidFormat(sheetId), { addProtectedRange: { protectedRange: { range: { sheetId, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }, description: 'Filled in by the Direct Line website', editors: { users: [googleSheetsConfig(env).email] } } } }] : []),
-      ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : []), ...(addCancel ? cancelFormat(sheetId) : [])], fetchImpl);
+      ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : []), ...(addCancel ? cancelFormat(sheetId) : []), ...(addDomestic ? domesticFormat(sheetId) : [])], fetchImpl);
     if (addPaid) await markPaidDirty(DB);
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested'))").run();
@@ -527,7 +547,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   const temp = await batch(env, [{ addSheet: { properties: { title: 'Updating… ' + Date.now() } } }], fetchImpl);
   const tempId = temp?.replies?.[0]?.addSheet?.properties?.sheetId;
   if (current) await batch(env, [{ deleteSheet: { sheetId: oldId } }], fetchImpl);
-  const add = { addSheet: { properties: { title: wq, index: 0, gridProperties: { rowCount: 1000, columnCount: 32, frozenRowCount: 5 }, ...(oldId != null ? { sheetId: oldId } : {}) } } };
+  const add = { addSheet: { properties: { title: wq, index: 0, gridProperties: { rowCount: 1000, columnCount: 33, frozenRowCount: 5 }, ...(oldId != null ? { sheetId: oldId } : {}) } } };
   let created;
   try { created = await batch(env, [add], fetchImpl); }
   catch (e) { delete add.addSheet.properties.sheetId; created = await batch(env, [add], fetchImpl); }
@@ -553,7 +573,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   const last = FIRST_ROW + Math.max(rows.length, 1) - 1;
   await batchValues(env, [
     { range: `${wq}!A2:A3`, values: [['Direct Line — Orders'], [instructions]] },
-    { range: `${wq}!A5:AF5`, values: [HEADERS] }, totalsRow(wq),
+    { range: `${wq}!A5:AG5`, values: [HEADERS] }, totalsRow(wq),
     ...(rows.length ? [{ range: `${wq}!A${FIRST_ROW}:AF${last}`, values: rows }] : []),
   ], fetchImpl);
 
@@ -579,7 +599,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 } } },
     { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
     { setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 30 } } } },
-    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId),
+    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId),
     // Only the supplier columns (and Competitor price) are editable by others; the rest is written by the website.
     { addProtectedRange: { protectedRange: { range: cols(0, 14), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
     { addProtectedRange: { protectedRange: { range: cols(21, 32), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
