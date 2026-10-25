@@ -186,3 +186,4 @@ body.in-control [data-main-tabs]{display:none}
 .track-form{display:grid;gap:10px;margin-top:14px}.track-fields{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:10px}@media(max-width:480px){.track-fields{grid-template-columns:1fr}}
 /* UI audit 2: to-do links are easy to tap on phones; claim files and the decision sit in tidy rows. */
 @media(max-width:640px){.pay-todo .link-btn{min-height:32px;text-align:start}}
+.dom-track{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;margin:0;font-size:13.5px;color:var(--muted)}.dom-track b{color:var(--text);font-variant-numeric:tabular-nums;unicode-bidi:isolate}

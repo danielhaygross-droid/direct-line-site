@@ -36,6 +36,8 @@ export const SUPPLIER_SHEET_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS delay_reason TEXT',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_delayed TEXT',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_delay_reason TEXT',
+  // AG Domestic Express Tracking Number, as the supplier typed it (shown in admin; 26 Oct 2026).
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS domestic_tracking TEXT',
 ];
 
 export const WQ = 'Work Queue';
@@ -59,7 +61,7 @@ export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Pho
   'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID', DOMESTIC];
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'CANCELLED - do not ship' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '8';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '9';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 export const markPaidDirty = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
@@ -225,6 +227,7 @@ const domesticFormat = sheetId => [
   { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: DOM, endColumnIndex: DOM + 1 }, cell: { note: 'Supplier: the tracking number of the domestic express in China for this order. Only you fill this in; the website does not change it.' }, fields: 'note' } },
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: DOM, endIndex: DOM + 1 }, properties: { pixelSize: WIDTHS[DOM] }, fields: 'pixelSize' } },
 ];
+const hideCD = sheetId => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 4 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } });
 // Sheets made with 32 columns (A-AF) get one more column for AG first.
 async function ensureColumns(env, sheetId, count, fetchImpl) {
   const props = ((await sheetsRequest(env, '?fields=sheets.properties', {}, fetchImpl)).sheets || []).map(x => x.properties || {}).find(x => x.sheetId === sheetId);
@@ -294,6 +297,9 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     // 8) Domestic Express Tracking Number in AG (Ye, 25 Oct 2026): added once at the far right, so no column the website
     //    reads or writes moves.
     const addDomestic = h[DOM] !== DOMESTIC;
+    // 9) Shop (C) and Status (D) hidden (Erwin, 26 Oct 2026): the table is narrower; cancelled orders still show as a
+    //    red row (the rule reads D). Hidden, not deleted, so no column the website writes moves.
+    const hideShopStatus = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 9;
     if (addDomestic) await ensureColumns(env, sheetId, DOM + 1, fetchImpl);
     await batchValues(env, [{ range: `${wq}!A5:AG5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
@@ -304,7 +310,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     await batch(env, [courierRule(sheetId, courierList(await getSetting(DB, 'couriers'))), ...competitorFormat(sheetId),
       ...[11, 12, 17].map(i => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: WIDTHS[i] }, fields: 'pixelSize' } })),
       ...(addPaid ? [...paidFormat(sheetId), { addProtectedRange: { protectedRange: { range: { sheetId, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }, description: 'Filled in by the Direct Line website', editors: { users: [googleSheetsConfig(env).email] } } } }] : []),
-      ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : []), ...(addCancel ? cancelFormat(sheetId) : []), ...(addDomestic ? domesticFormat(sheetId) : [])], fetchImpl);
+      ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : []), ...(addCancel ? cancelFormat(sheetId) : []), ...(addDomestic ? domesticFormat(sheetId) : []), ...(hideShopStatus ? [hideCD(sheetId)] : [])], fetchImpl);
     if (addPaid) await markPaidDirty(DB);
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested'))").run();
@@ -480,9 +486,9 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
     // Once: orders whose tax number / gift message were typed into the notes before those fields existed.
     for (const id of await splitOldNotes(DB)) { const sync = syncPortalOrderToGoogleSheet(DB, env, id, fetchImpl).catch(e => console.error('Sheet refresh after notes split failed', e)); if (waitUntil) waitUntil(sync); else await sync; }
     if (await getSetting(DB, PAID_DIRTY)) { const seen = await getSetting(DB, PAID_DIRTY); await refreshPaidColumn(DB, env, fetchImpl); await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(PAID_DIRTY, seen).run(); }
-    const ranges = [`${wq}!P${FIRST_ROW}:U`, `${wq}!AE${FIRST_ROW}:AE`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+    const ranges = [`${wq}!P${FIRST_ROW}:U`, `${wq}!AE${FIRST_ROW}:AE`, `${wq}!AG${FIRST_ROW}:AG`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
     const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
-    const [inputs, ids] = (data.valueRanges || []).map(v => v.values || []);
+    const [inputs, ids, domestic] = (data.valueRanges || []).map(v => v.values || []);
     const rows = (ids || []).map((r, i) => ({ orderId: Number(r?.[0]), cost: inputs?.[i]?.[0] ?? '', tracking: inputs?.[i]?.[1] ?? '', courier: inputs?.[i]?.[2] ?? '', shipped: inputs?.[i]?.[3] ?? '', delayed: inputs?.[i]?.[4] ?? '', reason: inputs?.[i]?.[5] ?? '' }))
       .filter(r => Number.isSafeInteger(r.orderId) && r.orderId > 0);
     result.checked = rows.length;
@@ -490,7 +496,7 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
     const seen = new Map();
     for (let i = 0; i < rows.length; i += 200) {
       const ids = rows.slice(i, i + 200).map(r => r.orderId);
-      const found = (await DB.prepare(`SELECT id, sheet_cost, sheet_tracking, sheet_courier, sheet_shipped, sheet_delayed, sheet_delay_reason FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
+      const found = (await DB.prepare(`SELECT id, sheet_cost, sheet_tracking, sheet_courier, sheet_shipped, sheet_delayed, sheet_delay_reason, domestic_tracking FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
       for (const f of found) seen.set(Number(f.id), f);
     }
     const cellText = v => (typeof v === 'number' || typeof v === 'boolean' ? String(v) : norm(v));
@@ -507,6 +513,11 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
         const sync = syncPortalOrderToGoogleSheet(DB, env, r.orderId, fetchImpl).catch(e => console.error('Sheet refresh after supplier update failed', e));
         if (waitUntil) waitUntil(sync); else await sync;
       }
+    }
+    // AG: the supplier's domestic express tracking is copied as typed (no client notice, no sheet rewrite).
+    for (const [i, r] of (ids || []).entries()) {
+      const id = Number(r?.[0]), v = norm(domestic?.[i]?.[0]).slice(0, 120);
+      if (seen.has(id) && norm(seen.get(id).domestic_tracking) !== v) await DB.prepare('UPDATE client_orders SET domestic_tracking=? WHERE id=?').bind(v || null, id).run();
     }
     // Once: remember the prices the supplier already gave (saved prices).
     result.savedPrices = await backfillSavedPrices(DB);
@@ -599,7 +610,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 } } },
     { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
     { setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 30 } } } },
-    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId),
+    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId), hideCD(sheetId),
     // Only the supplier columns (and Competitor price) are editable by others; the rest is written by the website.
     { addProtectedRange: { protectedRange: { range: cols(0, 14), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
     { addProtectedRange: { protectedRange: { range: cols(21, 32), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },

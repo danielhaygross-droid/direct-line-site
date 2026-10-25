@@ -32,6 +32,7 @@ async function fakeFetch(url, opts = {}) {
   if (path.startsWith('?fields=sheets.properties')) return ok({ sheets: [...new Set(['Work Queue', ...tabs.keys()])].map((title, i) => ({ properties: { title, sheetId: title === 'Work Queue' ? WQ_ID : 100 + i } })) });
   if (path.startsWith(':batchUpdate')) {
     for (const r of body.requests) if (r.addConditionalFormatRule) rules.push(r.addConditionalFormatRule.rule);
+    for (const r of body.requests) if (r.updateDimensionProperties?.properties?.hiddenByUser && r.updateDimensionProperties.range.startIndex === 2) calls.push('hide C-D');
     for (const r of body.requests) if (r.insertDimension) {
       assert.equal(r.insertDimension.range.sheetId, WQ_ID); const { startIndex, endIndex } = r.insertDimension.range;
       for (const row of grid('Work Queue')) if (row) row.splice(startIndex, 0, ...Array(endIndex - startIndex).fill(''));
@@ -80,7 +81,7 @@ console.log('PASS old notes split into Tax number / Gift message');
 assert.equal(wq[5][15], 55.9, 'cost moved to P'); assert.equal(wq[5][16], 'UL602450763YP', 'tracking moved to Q'); assert.equal(wq[5][14], '', 'competitor price O empty');
 assert.equal(wq[5][17], '', 'empty courier'); assert.equal(wq[5][18], 'Not shipped', 'status moved to S');
 assert.equal(wq[5][30], String(a.id), 'order id in AE'); assert.equal(wq[5][31], String(id), 'client id in AF');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '8', 'up to date: layout 8 (Delayed? + Delay reason, red cancelled rows, Domestic Express Tracking Number)');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '9', 'up to date: layout 9 (Delayed? + Delay reason, red cancelled rows, Domestic Express Tracking Number)');
 const o1 = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(a.id).first();
 assert.equal(o1.tracking_number, '', 'nothing applied from the wrong columns'); assert.equal(o1.courier, null);
 console.log('PASS switch: header, columns moved, old country cleared, ids found, nothing misapplied');
@@ -177,7 +178,7 @@ assert.deepEqual(wq[4].slice(0, HEADERS.length), HEADERS);
 assert.equal(wq[5][15], costBefore, 'cost stays in P'); assert.equal(wq[6][16], trackBefore, 'tracking stays in Q');
 assert.equal(wq[5][17], courierBefore, 'courier stays in R'); assert.equal(wq[5][19], '', 'new Delayed? cell is empty'); assert.equal(wq[5][30], String(a.id), 'ids moved to AE');
 assert.equal(p.changed.length, 0, 'nothing applied by the switch');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '8');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '9');
 console.log('PASS live layout 5 -> 8: two columns added after Shipping status, everything else moved with its data');
 
 // 10) Layout 6 -> 7 (the live sheet on 23 Oct): only the red / orange row rules are added, no columns move.
@@ -190,7 +191,7 @@ const redRow = cancelRules().find(x => x.ranges[0].startColumnIndex === 0 && x.b
 assert.equal(redRow.ranges[0].endColumnIndex, 30, 'the whole row up to the photos'); assert.equal(redRow.ranges[0].startRowIndex, 5, 'from the first order row');
 assert.match(wq[3][18], /COUNTIF\(D6:D,"CANCELLED - do not ship"\)&" cancelled"/, 'row 4 counts cancelled orders');
 assert.match(wq[2][0], /RED rows are cancelled orders: do not buy or ship them/, 'the instructions say so');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '8');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '9');
 // Running it again adds nothing.
 rules.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(cancelRules().length, 0, 'rules added once');
 // Cancelling an order: its Status cell says so, in the text the rules look for.
@@ -211,9 +212,21 @@ calls.length = 0; rules.length = 0; p = await pollSupplierSheet(DB, env, { fetch
 assert.deepEqual(calls.filter(c => c.startsWith('insert')), [], 'no columns inserted');
 assert.equal(wq[4][32], 'Domestic Express Tracking Number'); assert.equal(wq[4][30], 'Order ID', 'ids stay in AE/AF');
 assert.match(wq[2][0], /Domestic Express Tracking Number \(yellow, far right/);
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '8');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '9');
 const rA = wq.findIndex(row => row && row[30] === String(a.id)); wq[rA][32] = 'SF1234567890';
 await syncPortalOrderToGoogleSheet(DB, env, a.id, fakeFetch);
 assert.equal(wq[rA][32], 'SF1234567890', 'the supplier’s domestic tracking is kept when the website rewrites the row');
 console.log('PASS layout 7 -> 8: Domestic Express Tracking Number in AG, kept on rewrites');
+
+// 12) Layout 8 -> 9 (26 Oct): Shop (C) + Status (D) hidden once; the supplier's AG value reaches the website (admin).
+await DB.prepare("UPDATE portal_settings SET value='8' WHERE key='supplier_sheet_layout'").run();
+calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
+assert.equal(calls.filter(c => c === 'hide C-D').length, 1, 'Shop and Status hidden'); assert.deepEqual(calls.filter(c => c.startsWith('insert')), [], 'nothing inserted or deleted');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '9');
+calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(calls.filter(c => c === 'hide C-D').length, 0, 'only once');
+assert.equal((await DB.prepare('SELECT domestic_tracking FROM client_orders WHERE id=?').bind(a.id).first()).domestic_tracking, 'SF1234567890', 'AG copied to the order');
+const listed = (await call('/admin/orders', 'GET', null, admin)).data.orders.find(o => o.id === a.id); assert.equal(listed.domesticTracking, 'SF1234567890', 'admin sees it');
+wq[rA][32] = ''; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+assert.equal((await DB.prepare('SELECT domestic_tracking FROM client_orders WHERE id=?').bind(a.id).first()).domestic_tracking, null, 'cleared in the sheet = cleared on the site');
+console.log('PASS layout 8 -> 9: Shop + Status hidden; domestic tracking from AG shown in admin');
 await pg.close();
