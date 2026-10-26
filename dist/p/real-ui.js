@@ -168,7 +168,13 @@
   renderAll = function () { const r = original.apply(this, arguments); try { update(); updateSidebar(); } catch (e) { console.warn('real ui', e); } return r; };
   // Check for client activity every 30s, right away when the tab comes back into view,
   // and whenever the Clients & orders view says something changed.
-  setInterval(() => { updateSidebar(); if (!document.hidden) load(); }, 30000);
+  // Neon free plan (26 Oct 2026): a tab left open must not keep the database awake. After 10 minutes without
+  // mouse / keyboard / touch the bell stops refreshing; the next refresh after any activity brings them up to date.
+  let lastActive = Date.now();
+  for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'focus']) addEventListener(ev, () => { lastActive = Date.now(); }, { passive: true, capture: true });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) lastActive = Date.now(); });
+  const idle = () => Date.now() - lastActive > 10 * 60 * 1000;
+  setInterval(() => { updateSidebar(); if (!document.hidden && !idle()) load(); }, 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(true); });
   addEventListener('focus', () => load());
   addEventListener('message', e => { if (e.origin === location.origin && e.data?.type === 'dl-followups') load(true); });

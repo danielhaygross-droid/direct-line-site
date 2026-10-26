@@ -234,7 +234,7 @@
       finally { btn.disabled = false; }
     };
     clearInterval(openThread.timer);
-    openThread.timer = setInterval(() => { if (dlg.open && !document.hidden) load(); }, 15000);
+    openThread.timer = setInterval(() => { if (dlg.open && !document.hidden && !idle()) load(); }, 15000);
     dlg.addEventListener('close', () => clearInterval(openThread.timer), { once: true });
     if (!dlg.open) dlg.showModal();
     // Inside the dashboard: keep the box in the part of the page the user is looking at, even while they scroll.
@@ -361,5 +361,13 @@
     text: get => (a, b) => String(get(a) || '').localeCompare(String(get(b) || ''), undefined, { sensitivity: 'base', numeric: true }),
   };
 
-  window.DL = { sortPick, sortList, setSort, sortKey, bySort, openPhoto, closePhoto, addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  // Neon free plan (26 Oct 2026): a tab left open must not keep the database awake. After 10 minutes without
+  // mouse / keyboard / touch the screens stop refreshing; the next refresh after any activity brings them up to date.
+  let lastActive = Date.now();
+  if (typeof addEventListener === 'function') {
+    for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'focus']) addEventListener(ev, () => { lastActive = Date.now(); }, { passive: true, capture: true });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) lastActive = Date.now(); });
+  }
+  const idle = () => Date.now() - lastActive > 10 * 60 * 1000;
+  window.DL = { idle, sortPick, sortList, setSort, sortKey, bySort, openPhoto, closePhoto, addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();

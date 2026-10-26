@@ -21,7 +21,8 @@ import { sheetsRequest, googleSheetsConfig, googleSheetsConfigured, syncPortalOr
 import { changeStatus } from './order-status.mjs';
 import { sheetPhotoUrl } from './sheet-photos.mjs';
 import { splitOldNotes } from './order-notes.mjs';
-import { pollQuoteTab } from './quote-sheet.mjs';
+import { pollQuoteTab, QT } from './quote-sheet.mjs';
+import { createHash } from 'node:crypto';
 import { rememberPrice, backfillSavedPrices } from './saved-prices.mjs';
 
 export const SUPPLIER_SHEET_SCHEMA = [
@@ -64,7 +65,9 @@ const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shippe
 const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '9';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
-export const markPaidDirty = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
+const markPaidDirtyDb = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
+// Also tells the minute cron (which otherwise only reads the sheet) to do a full check next time.
+export const markPaidDirty = async (DB, env) => { await markPaidDirtyDb(DB); if (env && googleSheetsConfigured(env)) await forceFullSupplierCheck(env).catch(e => console.error('Supplier sheet mark not reset', e)); };
 export const DEFAULT_COURIERS = 'China Post\nYanwen';
 export const courierList = v => [...new Set(String(v ?? DEFAULT_COURIERS).split(/[\n,]/).map(x => x.trim()).filter(Boolean))].slice(0, 30);
 
@@ -481,6 +484,40 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
     }
   }
   return { done, skipped };
+}
+
+// ---------- quick look without the database (Neon free plan, 26 Oct 2026) ----------
+// The every-minute cron kept the database awake 24/7 and used up Neon's free hours (the site went down). Now the
+// cron first reads only the Google Sheet: what the supplier can change (Orders P-U + ids AE + domestic AG, and the
+// Product Quotes tab). If it is the same as at the last full check, the database is not touched. A full check still
+// runs at least every FULL_EVERY seconds (rows waiting for the sheet are rewritten; an open admin does it at once).
+// The last fingerprint is kept on the spreadsheet itself (invisible developer metadata), not in the database.
+const SEEN_KEY = 'dl-supplier-sheet-seen', FULL_EVERY = 3 * 3600;
+export async function supplierSheetFingerprint(env, fetchImpl = fetch, tab = WQ_NEW) {
+  const ranges = [`${tab}!P${FIRST_ROW}:U`, `${tab}!AE${FIRST_ROW}:AE`, `${tab}!AG${FIRST_ROW}:AG`, `${QT}!A1:Z`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+  const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
+  return createHash('sha256').update(JSON.stringify((data.valueRanges || []).map(v => v.values || []))).digest('hex');
+}
+// The mark, and which tab is the supplier's ("Work Queue" until the one-time rename, then "Orders"; see ensureTabNames).
+const seenMark = async (env, fetchImpl) => {
+  const d = await sheetsRequest(env, '?fields=developerMetadata(metadataId,metadataKey,metadataValue),sheets.properties.title', {}, fetchImpl);
+  return { mark: (d.developerMetadata || []).find(m => m.metadataKey === SEEN_KEY) || null, tab: (d.sheets || []).some(x => x.properties?.title === WQ) ? WQ : WQ_NEW };
+};
+// { unchanged: true } = nothing to do; otherwise run the full check and then call rememberSupplierSheet.
+export async function supplierSheetQuickLook(env, { fetchImpl = fetch, now = Math.floor(Date.now() / 1000) } = {}) {
+  if (!googleSheetsConfigured(env)) return { unchanged: false };
+  const { mark, tab } = await seenMark(env, fetchImpl), fingerprint = await supplierSheetFingerprint(env, fetchImpl, tab);
+  const [seen, at] = String(mark?.metadataValue || '').split('|');
+  return { unchanged: !!mark && seen === fingerprint && now - Number(at || 0) < FULL_EVERY, fingerprint, tab, markId: mark?.metadataId ?? null };
+}
+// Next cron run does the full check (e.g. a payment changed the "Client paid" column the website writes).
+export const forceFullSupplierCheck = (env, fetchImpl = fetch) => batch(env, [{ updateDeveloperMetadata: { dataFilters: [{ developerMetadataLookup: { metadataKey: SEEN_KEY } }], developerMetadata: { metadataValue: 'reset|0' }, fields: 'metadataValue' } }], fetchImpl);
+export async function rememberSupplierSheet(env, look, { fetchImpl = fetch, now = Math.floor(Date.now() / 1000) } = {}) {
+  // Taken again after the full check: the website's own writes during it must not count as a change next minute.
+  const value = (await supplierSheetFingerprint(env, fetchImpl, (await seenMark(env, fetchImpl)).tab)) + '|' + now;
+  await batch(env, [look.markId != null
+    ? { updateDeveloperMetadata: { dataFilters: [{ developerMetadataLookup: { metadataId: look.markId } }], developerMetadata: { metadataValue: value }, fields: 'metadataValue' } }
+    : { createDeveloperMetadata: { developerMetadata: { metadataKey: SEEN_KEY, metadataValue: value, location: { spreadsheet: true }, visibility: 'DOCUMENT' } } }], fetchImpl);
 }
 
 // Cron (every minute): read the supplier columns and apply changes.
