@@ -124,6 +124,15 @@ r = await call('/orders/' + b.id, 'PUT', { trackingNumber: 'UL602451830YP', cour
 await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch);
 assert.equal(wq[6][17], 'Yanwen');
 p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(p.changed.length, 0, 'the website does not re-apply its own write');
+// Supplier edits are logged for admins only, old -> new (Erwin, 26 Oct: "did the supplier change the cost while we were offline?").
+const sheetEdits = async (oid, cookie) => ((await call('/orders/' + oid + '/messages', 'GET', null, cookie)).data.events || []).filter(e => e.kind === 'supplier_sheet').map(e => JSON.parse(e.detail));
+assert.deepEqual(await sheetEdits(b.id, admin), [{ f: 'tracking', from: '', to: 'UL602451830YP' }, { f: 'courier', from: '', to: 'China Post' }], 'tracking + courier typed by the supplier; the admin\'s own courier change is not logged');
+assert.deepEqual(await sheetEdits(a.id, admin), [{ f: 'courier', from: '', to: 'Yanwen' }]);
+wq[5][15] = 60.5; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
+assert.deepEqual((await sheetEdits(a.id, admin)).at(-1), { f: 'cost', from: '55.9', to: '60.5' }, 'cost change logged with the old cost');
+assert.deepEqual(await sheetEdits(a.id, client), [], 'clients never see the supplier sheet log');
+assert.ok(!((await call('/notifications', 'GET', null, client)).data.items || []).some(e => e.kind === 'supplier_sheet'), 'not in client notifications');
+console.log('PASS supplier sheet edits logged for admins (old -> new), hidden from clients');
 // a client cannot set the courier
 await call('/orders/' + b.id, 'PUT', { courier: 'Fake' }, client);
 assert.equal((await DB.prepare('SELECT courier FROM client_orders WHERE id=?').bind(b.id).first()).courier, 'Yanwen');

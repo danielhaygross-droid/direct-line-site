@@ -411,11 +411,25 @@ const colName = i => { let s = ''; i += 1; while (i) { const m = (i - 1) % 26; s
 async function event(DB, o, kind, detail, t) {
   await DB.prepare('INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,?,?,?,?)').bind(o.id, o.client_id, kind, 'admin', detail, t).run();
 }
+// Admin-only audit of the supplier's own edits in the sheet (Erwin, 26 Oct 2026: "we need to know if the supplier
+// changes the product cost when we are not online"). One event per changed cell, old -> new as the sheet showed them.
+// kind 'supplier_sheet' is never sent to clients (see /orders/:id/messages and /notifications in portal.mjs).
+export const SUPPLIER_SHEET_EVENT = 'supplier_sheet';
+async function logSupplierEdits(DB, order, cells, now, t) {
+  const was = { cost: order.sheet_cost, tracking: order.sheet_tracking, courier: order.sheet_courier, shipped: order.sheet_shipped, delayed: order.sheet_delayed, reason: order.sheet_delay_reason };
+  for (const f of Object.keys(was)) {
+    if (now[f] === undefined || now[f] === norm(was[f])) continue;
+    await event(DB, order, SUPPLIER_SHEET_EVENT, JSON.stringify({ f, from: norm(was[f]), to: now[f] }), t);
+  }
+}
 // Applies one Work Queue row (cost, tracking, shipped) to its order. Returns what changed.
 export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now() / 1000)) {
   const done = [], skipped = [];
   const cost = typeof cells.cost === 'number' ? String(cells.cost) : norm(cells.cost), tracking = norm(cells.tracking), courier = norm(cells.courier), shipped = norm(cells.shipped);
   if (order.archived) return { done, skipped: ['archived'] };
+  await logSupplierEdits(DB, order, cells, { cost, tracking, courier: cells.courier === undefined ? undefined : courier, shipped,
+    delayed: cells.delayed === undefined ? undefined : typeof cells.delayed === 'boolean' ? String(cells.delayed) : norm(cells.delayed),
+    reason: cells.delayed === undefined ? undefined : norm(cells.reason).slice(0, 300) }, t);
   if (cost !== norm(order.sheet_cost)) {
     const n = parseCost(cells.cost);
     if (n === null) { if (cost) skipped.push('cost not a number: ' + cost); await DB.prepare('UPDATE client_orders SET sheet_cost=? WHERE id=?').bind(cost, order.id).run(); }

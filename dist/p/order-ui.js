@@ -26,9 +26,16 @@
   const CLAIM_LABEL = { damaged: 'Damaged', defective: 'Defective', missing_parts: 'Missing parts', wrong_item: 'Wrong item', lost: 'Lost parcel', approved: 'Approved', rejected: 'Rejected', resolved: 'Resolved' };
   // A claim's two files: the photo/video of the problem and the shipping label.
   const claimFiles = c => (c.fileIds || []).map((id, i) => ({ id, label: (c.fileKinds?.[i] || (i ? 'label' : 'problem')) === 'label' ? 'Shipping label' : 'Problem photo' }));
+  // A change the supplier made in their Google Sheet (admins only): which cell, old -> new.
+  const SHEET_FIELD = { cost: 'Total cost', tracking: 'Tracking number', courier: 'Courier', shipped: 'Shipping status', delayed: 'Delayed?', reason: 'Delay reason' };
+  function sheetEdit(e) {
+    let d; try { d = JSON.parse(e.detail); } catch (x) { return ''; }
+    const v = x => x === '' ? '<i>empty</i>' : `<bdi data-no-i18n>${esc(d.f === 'cost' && /^\d+(\.\d+)?$/.test(x) ? '$' + Number(x).toFixed(2) : x)}</bdi>`;
+    return `<li class="act-supplier${d.f === 'cost' ? ' act-cost' : ''}"><b>Supplier sheet change</b><span><span>Supplier sheet</span> · <span>${SHEET_FIELD[d.f] || esc(d.f)}</span>: ${v(d.from)} <span class="act-arrow"></span> ${v(d.to)}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`;
+  }
   function activity(events=[]) {
     const labels={delayed:'Marked possibly delayed',delay_cleared:'No longer delayed',created:'Order created',edited:'Order edited',status:'Status changed',tracking:'Tracking number changed',tracking_update:'Tracking update received',photo:'Photo changed',claim:'Claim updated',billed:'Order billed',archived:'Order archived',restored:'Order restored'};
-    return `<section class="card card-pad"><h3 class="sec-title">Order activity</h3><p class="muted" data-no-i18n>${esc(window.DL.timeZoneNote())}</p>${events.length ? `<ol class="order-activity">${[...events].reverse().map(e=>`<li><b>${esc(e.kind==='edited'&&e.detail==='customer' ? 'Customer details changed' : labels[e.kind]||e.kind)}</b><span><span>${e.actor==='admin'?'Direct Line':'Client'}</span>${e.detail && e.kind!=='edited' ? ' · '+(e.kind==='status' ? `<span>${esc(LABEL[e.detail]||e.detail)}</span>` : e.kind==='claim' && CLAIM_LABEL[e.detail] ? `<span>${CLAIM_LABEL[e.detail]}</span>` : `<span data-no-i18n>${esc(e.detail)}</span>`) : ''}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`).join('')}</ol>` : '<p class="muted">No activity recorded yet.</p>'}</section>`;
+    return `<section class="card card-pad"><h3 class="sec-title">Order activity</h3><p class="muted" data-no-i18n>${esc(window.DL.timeZoneNote())}</p>${events.length ? `<ol class="order-activity">${[...events].reverse().map(e=>e.kind==='supplier_sheet' ? sheetEdit(e) : `<li><b>${esc(e.kind==='edited'&&e.detail==='customer' ? 'Customer details changed' : labels[e.kind]||e.kind)}</b><span><span>${e.actor==='admin'?'Direct Line':'Client'}</span>${e.detail && e.kind!=='edited' ? ' · '+(e.kind==='status' ? `<span>${esc(LABEL[e.detail]||e.detail)}</span>` : e.kind==='claim' && CLAIM_LABEL[e.detail] ? `<span>${CLAIM_LABEL[e.detail]}</span>` : `<span data-no-i18n>${esc(e.detail)}</span>`) : ''}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`).join('')}</ol>` : '<p class="muted">No activity recorded yet.</p>'}</section>`;
   }
   function syncConversation(order,data) {
     if(!order)return;
