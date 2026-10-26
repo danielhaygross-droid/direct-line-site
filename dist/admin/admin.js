@@ -88,7 +88,7 @@
   }
   // Refresh lists without wiping what the admin is doing.
   async function poll() {
-    if (document.hidden || !S.ov) return;
+    if (document.hidden || !S.ov || window.DL.idle()) return;
     const a = document.activeElement;
     const busy = a && a.matches('select, input, textarea') && !a.matches('[data-q],[data-cq]');
     try { await loadAll(); } catch (e) { return; }

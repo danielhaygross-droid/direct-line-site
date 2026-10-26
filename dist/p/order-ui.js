@@ -177,7 +177,7 @@
       } catch (ex) { msg.textContent = ex.message; msg.className = 'form-msg err'; }
       finally { sending=false;btn.disabled = false;ta.readOnly=readOnly; }
     });
-    const timer = setInterval(() => { if (!document.hidden) load(); }, 15000);
+    const timer = setInterval(() => { if (!document.hidden && !window.DL?.idle?.()) load(); }, 15000);
     load();
     return { reload: load, focus: () => ta.focus(), destroy() { alive = false; clearInterval(timer); } };
   }

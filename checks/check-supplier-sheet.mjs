@@ -32,13 +32,14 @@ function read(rg) {
   return out;
 }
 const lastRow = name => { const g = sheets.get(name).grid; let n = g.length; while (n && !(g[n - 1] || []).some(v => v !== undefined && v !== '')) n--; return n; };
-const requests = [];
+const requests = [], meta = []; // meta: the spreadsheet's developer metadata (the cron's "last seen" mark)
 globalThis.fetch = (real => async (url, opt = {}) => {
   url = String(url);
   if (url.includes('oauth2.googleapis.com')) return Response.json({ access_token: 't', expires_in: 3600 });
   if (!url.includes('sheets.googleapis.com')) return real(url, opt);
   const path = url.split('/spreadsheets/sheet-id')[1], body = opt.body ? JSON.parse(opt.body) : null, method = opt.method || 'GET';
   requests.push(method + ' ' + decodeURIComponent(path).slice(0, 80));
+  if (path.startsWith('?fields=developerMetadata')) return Response.json({ developerMetadata: meta, sheets: [...sheets.keys()].map(title => ({ properties: { title } })) });
   if (path.startsWith('?fields=sheets.properties')) return Response.json({ sheets: [...sheets].map(([title, s]) => ({ properties: { title, sheetId: s.sheetId, hidden: s.hidden } })) });
   if (path === ':batchUpdate') {
     const replies = [];
@@ -53,6 +54,8 @@ globalThis.fetch = (real => async (url, opt = {}) => {
       }
       else if (kind === 'deleteSheet') { const [title] = byId(a.sheetId); if (![...sheets].some(([t, s]) => t !== title && !s.hidden)) return Response.json({ error: { code: 400, message: "Invalid requests[0].deleteSheet: You can't remove all the visible sheets in a document." } }, { status: 400 }); sheets.delete(title); }
       else if (kind === 'addSheet') { const p = a.properties; if (p.sheetId != null && byId(p.sheetId)) throw new Error('id in use'); const t = addTab(p.title, p.sheetId ?? nextId++); replies.push({ addSheet: { properties: { sheetId: t.sheetId, title: p.title } } }); continue; }
+      else if (kind === 'createDeveloperMetadata') meta.push({ metadataId: meta.length + 1, ...a.developerMetadata });
+      else if (kind === 'updateDeveloperMetadata') { const l = a.dataFilters[0].developerMetadataLookup; for (const m of meta) if (m.metadataId === l.metadataId || m.metadataKey === l.metadataKey) m.metadataValue = a.developerMetadata.metadataValue; }
       else if (kind === 'deleteDimension') { const [, s] = byId(a.range.sheetId); if (a.range.dimension === 'ROWS') s.grid.splice(a.range.startIndex, a.range.endIndex - a.range.startIndex); }
       replies.push({});
     }
@@ -79,6 +82,7 @@ Object.assign(env, {
   GOOGLE_SHEETS_SPREADSHEET_ID: 'sheet-id', GOOGLE_SERVICE_ACCOUNT_EMAIL: 'writer@example.iam.gserviceaccount.com', CRON_SECRET: 'cron-test',
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }),
 });
+const later = () => { for (const m of meta) m.metadataValue = String(m.metadataValue).split('|')[0] + '|0'; }; // 3+ hours since the last full check
 const settle = () => new Promise(r => setTimeout(r, 300)); // background sheet syncs (waitUntil absent → awaited, but be safe)
 const cron = async () => (await route(new Request('http://x/api/cron/supplier-sheet', { headers: { authorization: 'Bearer cron-test' } }), { db: DB, env })).json();
 const wq = () => { const g = sheets.get(WQ).grid; const ids = {}; for (let r = FIRST_ROW - 1; r < g.length; r++) if (g[r]?.[30]) ids[Number(g[r][30])] = r; return ids; };
@@ -148,7 +152,7 @@ console.log('PASS supplier → website: bill (total + fee), tracking, shipped, i
 
 // ---------- idempotent ----------
 r = await cron();
-assert.equal(r.changed.length, 0); assert.equal((await events(A.id, 'billed')).length, 1); assert.equal((await events(B.id, 'tracking')).length, 1);
+assert.ok(r.unchanged || r.changed.length === 0, JSON.stringify(r)); assert.equal((await events(A.id, 'billed')).length, 1); assert.equal((await events(B.id, 'tracking')).length, 1);
 console.log('PASS re-check: no duplicate bills or notifications');
 
 // ---------- always editable; sorting is safe ----------
@@ -215,7 +219,7 @@ assert.ok(lastRow(LOG_NEW) > 5, 'the website log is written under its new name')
 const logId = sheets.get(LOG_NEW).sheetId;
 assert.equal((await cron()).ok, true); assert.ok(sheets.has(WQ), 'still waiting');
 await DB.prepare('UPDATE portal_settings SET value=? WHERE key=?').bind('log:' + (Math.floor(Date.now() / 1000) - 700), TAB_NAMES).run();
-const switched = await cron(); assert.equal(switched.ok, true, JSON.stringify(switched));
+later(); const switched = await cron(); assert.equal(switched.ok, true, JSON.stringify(switched));
 assert.equal((await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(TAB_NAMES).first()).value, 'done');
 assert.ok(!sheets.has(WQ) && sheets.get(WQ_NEW).sheetId === 2026101301, 'the supplier tab is now "Orders" (same tab id, links still open it)');
 assert.equal(sheets.get(LOG_NEW).sheetId, logId); assert.equal(sheets.get(WQ_NEW).grid[1][0], 'Direct Line — Orders');
@@ -247,13 +251,21 @@ console.log('PASS Client paid column follows the payments; row 4 adds up the sup
 
 // Rows waiting for the sheet are rewritten by the cron too, with no admin screen open.
 const W = (await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === T.id);
+// Neon free plan (26 Oct): the cron only wakes the database when the supplier's columns changed.
+await cron(); let q = await cron(); assert.equal(q.unchanged, true, 'sheet unchanged: database not touched ' + JSON.stringify(q));
+assert.equal(meta.length, 1, 'one invisible mark on the spreadsheet');
+sheets.get(WQ_NEW).grid[rowOf(W.id)][15] = 31.5; q = await cron(); assert.ok(!q.unchanged && q.checked > 0, JSON.stringify(q));
+assert.equal((await order(W.id)).supplier_cost, 31.5, 'the supplier\'s new cost was applied');
+assert.equal((await cron()).unchanged, true, 'and then quiet again');
+console.log('PASS cron reads only the sheet when nothing changed; a supplier edit wakes the database');
 const gW = sheets.get(WQ_NEW).grid, rW = rowOf(W.id); gW[rW][D] = 'stale';
 await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting', sheet_next_try=0 WHERE id=?").bind(W.id).run();
 await DB.prepare("DELETE FROM portal_settings WHERE key='sheet_retry_until'").run();
+later(); // 3 hours later: a full check even if the sheet did not change
 const c = await cron(); assert.equal(c.ok, true); assert.ok(c.retry.attempted >= 1, JSON.stringify(c.retry));
 assert.notEqual(gW[rW][D], 'stale', 'the cron rewrote the waiting row');
 assert.equal((await order(W.id)).sheet_sync_status, 'synced');
-console.log('PASS the minute cron also rewrites rows waiting for the sheet');
+console.log('PASS the cron rewrites rows waiting for the sheet (at least every 3 hours)');
 
 // Cron needs the secret.
 assert.equal((await route(new Request('http://x/api/cron/supplier-sheet'), { db: DB, env })).status, 401);

@@ -11,7 +11,7 @@ import { LOCK_MESSAGE } from '../server/login-limit.mjs';
 import { SCHEMA as PORTAL_SCHEMA, handlePortal, signIn, createSessionCookie, readSessionRole, parseRole, clientSession } from '../server/portal.mjs';
 import { syncFileStorage } from '../server/file-storage.mjs';
 import { runBackup } from '../server/backup.mjs';
-import { pollSupplierSheet } from '../server/supplier-sheet.mjs';
+import { pollSupplierSheet, supplierSheetQuickLook, rememberSupplierSheet } from '../server/supplier-sheet.mjs';
 import { retryPendingGoogleSheetOrders } from '../server/google-sheets.mjs';
 
 const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
@@ -38,10 +38,15 @@ const CRON_JOBS = {
   '/api/cron/backup': (db, env) => runBackup(db, env),
   // Every minute: read the supplier's columns, then rewrite rows still waiting for the sheet (after a layout change or
   // a failed write). Before 23 Oct 2026 only an open, visible admin dashboard rewrote them.
+  // Since 26 Oct 2026 (Neon free plan): a quick look at the Google Sheet first; the database is only woken when the
+  // supplier changed something, or at least every 3 hours (see supplierSheetQuickLook).
   '/api/cron/supplier-sheet': async (db, env) => {
+    const look = await supplierSheetQuickLook(env).catch(e => ({ unchanged: false, error: e.message }));
+    if (look.unchanged) return { ok: true, unchanged: true };
     const result = await pollSupplierSheet(db, env);
     const retry = await retryPendingGoogleSheetOrders(db, env).catch(e => ({ error: e.message }));
-    return { ...result, retry };
+    if (result.ok && result.enabled && look.fingerprint) await rememberSupplierSheet(env, look).catch(e => console.error('Supplier sheet mark not saved', e));
+    return { ...result, retry, ...(look.error ? { quickLook: look.error } : {}) };
   },
 };
 

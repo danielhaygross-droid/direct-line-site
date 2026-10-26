@@ -108,7 +108,7 @@
     if (await refresh(true) === false) return;
     route();
     addEventListener('hashchange', route);
-    setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 20000);
+    setInterval(() => { if (!document.hidden && !window.DL.idle()) refresh().catch(() => {}); }, 20000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh().catch(() => {}); });
   }
 
