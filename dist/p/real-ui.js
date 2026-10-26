@@ -47,6 +47,9 @@
   function eventItem(e) {
     const who = e.clientName || L('A client', 'לקוח'), ref = e.orderRef || '#' + e.orderId;
     const base = { id: 'ev-' + e.id, time: e.createdAt * 1000, orderId: e.orderId, action: L('Open order', 'פתח הזמנה') };
+    // The supplier changed a cost in their Google Sheet (Erwin, 26 Oct 2026: know it even when nobody was online).
+    if (e.kind === 'supplier_sheet') { let d = {}; try { d = JSON.parse(e.detail); } catch (x) { /* old row */ } const usd = v => (/^\d+(\.\d+)?$/.test(v || '') ? '$' + Number(v).toFixed(2) : v || '—');
+      return { ...base, icon: 'alert', tone: 'orange', title: L('Supplier changed a cost in the sheet', 'הספק שינה עלות בגיליון'), text: `${ref} · ${who} · ${usd(d.from)} ${L('→', '←')} ${usd(d.to)}` }; }
     if(e.kind==='claim')return {...base,icon:'alert',tone:'orange',title:L(`${who} reported an order problem`,`${who} דיווח/ה על בעיה בהזמנה`),text:ref};
     if(e.kind==='product')return {...base,view:'client-products',action:L('View products','צפייה במוצרים'),icon:'order',tone:'gold',title:L(`${who} submitted a product for quote`,`${who} שלח/ה מוצר להצעת מחיר`),text:e.productName};
     if (e.kind === 'created') return { ...base, icon: 'order', tone: 'gold', title: L(`${who} added a new order`, `${who} הוסיף/ה הזמנה חדשה`), text: L(`${ref} · waiting to be processed`, `${ref} · ממתינה לטיפול`) };
