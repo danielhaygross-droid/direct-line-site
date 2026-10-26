@@ -257,6 +257,10 @@ assert.equal(meta.length, 1, 'one invisible mark on the spreadsheet');
 sheets.get(WQ_NEW).grid[rowOf(W.id)][15] = 31.5; q = await cron(); assert.ok(!q.unchanged && q.checked > 0, JSON.stringify(q));
 assert.equal((await order(W.id)).supplier_cost, 31.5, 'the supplier\'s new cost was applied');
 assert.equal((await cron()).unchanged, true, 'and then quiet again');
+// A row still waiting for the sheet keeps the cron doing full checks until it is written (26 Oct: 26 cancelled rows waited).
+await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting', sheet_next_try=? WHERE id=?").bind(Math.floor(Date.now() / 1000) + 3600, W.id).run();
+later(); await cron(); q = await cron(); assert.ok(!q.unchanged, 'a waiting row: no quiet minutes ' + JSON.stringify(q));
+await DB.prepare("UPDATE client_orders SET sheet_sync_status='synced' WHERE id=?").bind(W.id).run(); await cron(); assert.equal((await cron()).unchanged, true, 'quiet again once written');
 console.log('PASS cron reads only the sheet when nothing changed; a supplier edit wakes the database');
 const gW = sheets.get(WQ_NEW).grid, rW = rowOf(W.id); gW[rW][D] = 'stale';
 await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting', sheet_next_try=0 WHERE id=?").bind(W.id).run();

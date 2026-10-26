@@ -45,7 +45,9 @@ const CRON_JOBS = {
     if (look.unchanged) return { ok: true, unchanged: true };
     const result = await pollSupplierSheet(db, env);
     const retry = await retryPendingGoogleSheetOrders(db, env).catch(e => ({ error: e.message }));
-    if (result.ok && result.enabled && look.fingerprint) await rememberSupplierSheet(env, look).catch(e => console.error('Supplier sheet mark not saved', e));
+    // Rows still waiting for the sheet (retried a few per run): keep doing full checks until none are left.
+    const rowsLeft = !!(await db.prepare("SELECT 1 AS x FROM client_orders WHERE sheet_sync_status='waiting' AND NOT archived LIMIT 1").first().catch(() => null));
+    if (result.ok && result.enabled && look.fingerprint && !rowsLeft) await rememberSupplierSheet(env, look).catch(e => console.error('Supplier sheet mark not saved', e));
     return { ...result, retry, ...(look.error ? { quickLook: look.error } : {}) };
   },
 };
