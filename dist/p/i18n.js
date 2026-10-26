@@ -141,7 +141,7 @@
     'Approved': 'מאושר',
     'Not available': 'לא זמין',
     'Product quote updated': 'הצעת המחיר למוצר עודכנה',
-    'View products': 'צפייה במוצרים',
+    'View products': 'צפייה במוצרים', 'View product': 'צפייה במוצר',
     'Add product': 'הוספת מוצר',
     'Product name': 'שם המוצר',
     'Variant notes': 'פרטי גרסה',
