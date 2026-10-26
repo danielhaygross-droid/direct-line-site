@@ -364,8 +364,10 @@
   // Neon free plan (26 Oct 2026): a tab left open must not keep the database awake. After 10 minutes without
   // mouse / keyboard / touch the screens stop refreshing; the next refresh after any activity brings them up to date.
   let lastActive = Date.now();
-  for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'focus']) addEventListener(ev, () => { lastActive = Date.now(); }, { passive: true, capture: true });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) lastActive = Date.now(); });
+  if (typeof addEventListener === 'function') {
+    for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'focus']) addEventListener(ev, () => { lastActive = Date.now(); }, { passive: true, capture: true });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) lastActive = Date.now(); });
+  }
   const idle = () => Date.now() - lastActive > 10 * 60 * 1000;
   window.DL = { idle, sortPick, sortList, setSort, sortKey, bySort, openPhoto, closePhoto, addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();
