@@ -60,9 +60,11 @@ export const DOMESTIC = 'Domestic Express Tracking Number';
 export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Photo 1', 'Product link', 'Qty', 'Product / variation',
   'Customer', 'Delivery address & phone', 'Tax number', 'Gift message', 'Notes', 'Competitor price', 'Total cost (USD)', 'Tracking number', 'Courier', 'Shipping status', 'Delayed?', 'Delay reason', 'Client paid',
   'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID', DOMESTIC];
-export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
+// CANCELLED_SHIP: written by the website in Shipping status for cancelled orders (Erwin, 26 Oct 2026: the supplier
+// filters them to sort out refunds per store). Picking it in the sheet does not cancel anything on the website.
+export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', CANCELLED_SHIP = 'Cancelled', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'CANCELLED - do not ship' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '9';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '10';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 const markPaidDirtyDb = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
@@ -231,6 +233,9 @@ const domesticFormat = sheetId => [
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: DOM, endIndex: DOM + 1 }, properties: { pixelSize: WIDTHS[DOM] }, fields: 'pixelSize' } },
 ];
 const hideCD = sheetId => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 4 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } });
+// Layout 10: Shop (C) shown again, Status (D) stays hidden.
+const showShop = sheetId => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 3 }, properties: { hiddenByUser: false }, fields: 'hiddenByUser' } });
+const statusRule = sheetId => ({ setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: 18, endColumnIndex: 19 }, rule: { condition: { type: 'ONE_OF_LIST', values: [NOT_SHIPPED, SHIPPED, CANCELLED_SHIP].map(userEnteredValue => ({ userEnteredValue })) }, showCustomUi: true, strict: false } } });
 // Sheets made with 32 columns (A-AF) get one more column for AG first.
 async function ensureColumns(env, sheetId, count, fetchImpl) {
   const props = ((await sheetsRequest(env, '?fields=sheets.properties', {}, fetchImpl)).sheets || []).map(x => x.properties || {}).find(x => x.sheetId === sheetId);
@@ -303,6 +308,8 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     // 9) Shop (C) and Status (D) hidden (Erwin, 26 Oct 2026): the table is narrower; cancelled orders still show as a
     //    red row (the rule reads D). Hidden, not deleted, so no column the website writes moves.
     const hideShopStatus = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 9;
+    // 10) "Cancelled" in the Shipping status dropdown + Shop (C) visible again (Erwin, 26 Oct 2026); cancelled rows rewritten below.
+    const addCancelStatus = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 10;
     if (addDomestic) await ensureColumns(env, sheetId, DOM + 1, fetchImpl);
     await batchValues(env, [{ range: `${wq}!A5:AG5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
@@ -313,7 +320,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     await batch(env, [courierRule(sheetId, courierList(await getSetting(DB, 'couriers'))), ...competitorFormat(sheetId),
       ...[11, 12, 17].map(i => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: WIDTHS[i] }, fields: 'pixelSize' } })),
       ...(addPaid ? [...paidFormat(sheetId), { addProtectedRange: { protectedRange: { range: { sheetId, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }, description: 'Filled in by the Direct Line website', editors: { users: [googleSheetsConfig(env).email] } } } }] : []),
-      ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : []), ...(addCancel ? cancelFormat(sheetId) : []), ...(addDomestic ? domesticFormat(sheetId) : []), ...(hideShopStatus ? [hideCD(sheetId)] : [])], fetchImpl);
+      ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : []), ...(addCancel ? cancelFormat(sheetId) : []), ...(addDomestic ? domesticFormat(sheetId) : []), ...(hideShopStatus ? [hideCD(sheetId)] : []), ...(addCancelStatus ? [statusRule(sheetId), showShop(sheetId)] : [])], fetchImpl);
     if (addPaid) await markPaidDirty(DB);
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested'))").run();
@@ -385,6 +392,11 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
     if (['shipped', 'delivered'].includes(order.status) && !isShipped(order.sheet_shipped)) {
       data.push({ range: `${wq}!S${r}`, values: [[SHIPPED]] }); sets.push(['sheet_shipped', SHIPPED]);
     }
+    // Cancelled orders say "Cancelled" in Shipping status; reopened ones go back to "Not shipped".
+    const cancelled = order.status === 'cancelled', saysCancelled = norm(order.sheet_shipped) === CANCELLED_SHIP;
+    if (cancelled !== saysCancelled && !['shipped', 'delivered'].includes(order.status)) {
+      const v = cancelled ? CANCELLED_SHIP : NOT_SHIPPED; data.push({ range: `${wq}!S${r}`, values: [[v]] }); sets.push(['sheet_shipped', v]);
+    }
     await batchValues(env, data, fetchImpl);
     for (const [col, v] of sets) await DB.prepare(`UPDATE client_orders SET ${col}=? WHERE id=?`).bind(v, order.id).run();
     const sheetId = await workQueueSheetId(env, fetchImpl, false, wq);
@@ -403,7 +415,7 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
 }
 
 // The supplier's columns P–U for a new row: what the website knows about the order.
-const supplierCells = o => [o.supplier_cost == null ? '' : Number(o.supplier_cost), txt(o.tracking_number), txt(o.courier), ['shipped', 'delivered'].includes(o.status) ? SHIPPED : NOT_SHIPPED,
+const supplierCells = o => [o.supplier_cost == null ? '' : Number(o.supplier_cost), txt(o.tracking_number), txt(o.courier), ['shipped', 'delivered'].includes(o.status) ? SHIPPED : o.status === 'cancelled' ? CANCELLED_SHIP : NOT_SHIPPED,
   o.delayed_at ? DELAYED : '', o.delayed_at ? txt(o.delay_reason) : ''];
 // What the website last wrote to P-U, so only the supplier's own later edits are applied.
 const rememberSupplierCells = (DB, o, s) => DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_courier=?, sheet_shipped=?, sheet_delayed=?, sheet_delay_reason=? WHERE id=?')
@@ -661,7 +673,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 } } },
     { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
     { setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 30 } } } },
-    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId), hideCD(sheetId),
+    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId), hideCD(sheetId), statusRule(sheetId), showShop(sheetId),
     // Only the supplier columns (and Competitor price) are editable by others; the rest is written by the website.
     { addProtectedRange: { protectedRange: { range: cols(0, 14), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
     { addProtectedRange: { protectedRange: { range: cols(21, 32), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
