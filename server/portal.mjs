@@ -1073,7 +1073,7 @@ async function routePortal(request, url, ctx, meta) {
     return json({ ok: true, ...(await retryPendingGoogleSheetOrders(DB, env)) });
   }
   if (path === '/admin/notifications' && method === 'GET') {
-    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE e.actor = 'client' AND NOT u.archived AND NOT o.archived ORDER BY e.created_at DESC, e.id DESC LIMIT 60").all()).results || [];
+    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE (e.actor = 'client' OR e.kind = 'supplier_sheet' AND e.detail LIKE ?) AND NOT u.archived AND NOT o.archived ORDER BY e.created_at DESC, e.id DESC LIMIT 60").bind('{"f":"cost","from":"_%').all()).results || [];
     return json({ ok: true, items: [...rows.map(eventOut),...await productEvents(DB,null,'client')].sort((a,b)=>b.createdAt-a.createdAt).slice(0,60), now: now() });
   }
   const archiveOrder = /^\/admin\/orders\/(\d+)\/archive$/.exec(path);

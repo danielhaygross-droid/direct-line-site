@@ -132,6 +132,8 @@ wq[5][15] = 60.5; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch })
 assert.deepEqual((await sheetEdits(a.id, admin)).at(-1), { f: 'cost', from: '55.9', to: '60.5' }, 'cost change logged with the old cost');
 assert.deepEqual(await sheetEdits(a.id, client), [], 'clients never see the supplier sheet log');
 assert.ok(!((await call('/notifications', 'GET', null, client)).data.items || []).some(e => e.kind === 'supplier_sheet'), 'not in client notifications');
+const bell = ((await call('/admin/notifications', 'GET', null, admin)).data.items || []).filter(e => e.kind === 'supplier_sheet').map(e => JSON.parse(e.detail));
+assert.deepEqual(bell, [{ f: 'cost', from: '55.9', to: '60.5' }], 'admin bell: only a changed cost (not tracking, not a first cost)');
 console.log('PASS supplier sheet edits logged for admins (old -> new), hidden from clients');
 // a client cannot set the courier
 await call('/orders/' + b.id, 'PUT', { courier: 'Fake' }, client);
