@@ -17,7 +17,7 @@
     const f = t.closest('[data-filter]'); if (f) { S.filter = f.dataset.filter; renderChips(); renderOrdersList(); return; }
     const gf = t.closest('[data-go-filter]'); if (gf) { S.filter = gf.dataset.goFilter; S.q = ''; go('orders'); return; }
     if (t.closest('[data-ask-go]')) { openOrder($('[data-ask]').value, 'chat'); return; }
-    const productNote=t.closest('[data-product-note]');if(productNote){const note=noteItems().find(x=>x.id===productNote.dataset.note);if(note)markRead(note);go('products');return;}
+    const productNote=t.closest('[data-product-note]');if(productNote){const note=noteItems().find(x=>x.id===productNote.dataset.note);if(note)markRead(note);showProduct(note?.productId);return;}
     const invoiceNote=t.closest('[data-invoice-note]');if(invoiceNote){const note=noteItems().find(x=>x.id===invoiceNote.dataset.note);if(note)markRead(note);go('payments');return;}
     const oo = t.closest('[data-open-order]');
     if (oo && !t.closest('a')) {

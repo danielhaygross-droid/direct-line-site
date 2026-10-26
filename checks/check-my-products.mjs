@@ -94,6 +94,13 @@ try {
     await page.goto(`${base}/portal/?lang=${lang}#/products`); await page.waitForSelector('[data-plist]'); await page.waitForTimeout(300);
     const [popup] = await Promise.all([ctx.waitForEvent('page'), page.locator('.mp-row a').first().click()]); await popup.close();
     assert.equal(await page.locator('.drawer.open').count(), 0);
+    // A "Product quote updated" notification opens that product's panel, not only the list (Erwin, 26 Oct 2026).
+    await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForTimeout(500); await page.locator('[data-bell]:visible').first().click();
+    const note = page.locator('.dln-item[data-dln-id^="nproduct-"]').first(); await note.waitFor();
+    const pid = (await DB.prepare('SELECT product_id FROM portal_product_events WHERE id=?').bind(Number((await note.getAttribute('data-dln-id')).replace('nproduct-', ''))).first()).product_id;
+    await note.click(); await page.waitForSelector('.drawer.open .mp-photos'); assert.match(page.url(), /#\/products/);
+    assert.equal((await page.locator('.drawer.open .drawer-head h2').innerText()).trim(), (await DB.prepare('SELECT name FROM portal_products WHERE id=?').bind(pid).first()).name, 'the notified product is open');
+    await page.keyboard.press('Escape'); await page.waitForTimeout(200);
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
   }
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }

@@ -232,7 +232,7 @@
     const o = S.orders.find(x => x.id === e.orderId), ref = e.orderRef || (o ? orderName(o) : '#' + e.orderId);
     const base = { id: 'n' + e.id, orderId: e.orderId, time: e.createdAt * 1000, action: 'View order' };
     let it;
-    if(e.kind==='product')it={...base,product:true,action:'View products',icon:'order',tone:'gold',title:'Product quote updated',text:e.productName};
+    if(e.kind==='product')it={...base,product:true,productId:e.productId,action:'View product',icon:'order',tone:'gold',title:'Product quote updated',text:e.productName};
     else if (e.kind === 'invoice') { const [amt, day] = String(e.detail || '').split('|'); it = {...base, invoice:true, action:'View payments', icon:'wallet',tone:'mint',title:'New receipt',text:day ? `For your ${money(amt)} payment of ${window.DLPayOrders.day(day)}` : e.detail}; }
     else if(e.kind==='claim')it={...base,icon:'alert',tone:'gold',title:'Claim updated',text:ref};
     else if (e.kind === 'status') {
@@ -291,7 +291,7 @@
     const bell = $('[data-bell]');
     panel = N.panel({
       anchor: bell,
-      onItem: x => { markRead(x); x.product ? go('products') : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); },
+      onItem: x => { markRead(x); x.product ? showProduct(x.productId) : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); },
       onMarkAll: async () => { try { const r = await api('/notifications/seen', { method: 'POST' }); S.seenAt = r.seenAt; readIds = new Set(); store.set(readKey(), []); updateChrome(); if (S.route === 'home' || S.route === 'orders') renderView(true); } catch (e) { /* offline */ } },
       onOpen: () => { store.set(badgeKey(), Date.now()); updateChrome(); },
       footer: 'Updates come in by themselves every 20 seconds.',
@@ -352,6 +352,7 @@
     if(['home','orders','payments'].includes(S.route))view.insertAdjacentHTML('afterbegin',storeSwitcher());
     if (soft) view.querySelectorAll(':scope > *').forEach(el => { el.style.animation = 'none'; });
     ({ orders: bindOrders, new: bindForm, edit: bindForm, terms: bindTerms, payments: bindPayments, products:bindProducts, stores:bindStores })[S.route]?.();
+    if (S.route === 'products' && S.openProductId) { const id = S.openProductId; S.openProductId = null; openProduct(id); }
   }
   const empty = (icon, title, text, extra = '') => `<div class="empty"><span class="empty-ic">${ic(icon)}</span><h3>${esc(title)}</h3><p>${esc(text)}</p>${extra}</div>`;
 
@@ -1000,6 +1001,8 @@
     return `<article class="mp-row${fresh?' is-new':''}" data-open-product="${p.id}">${p.photoIds[0]?`<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="112" height="112" alt="Product photo" loading="lazy">`:'<span class="mp-ph"></span>'}<div class="mp-main"><button type="button" class="mp-name" data-open-product="${p.id}" data-no-i18n>${esc(p.name)}</button>${p.variant?`<small data-no-i18n>${esc(p.variant)}</small>`:''}${p.competitorPrice?`<small class="mp-comp"><span>Competitor price</span>: <b data-no-i18n><bdi>${esc(p.competitorPrice)}</bdi></b></small>`:''}<small><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a> · <span>Updated</span> <time data-no-i18n datetime="${new Date(p.updatedAt*1000).toISOString()}" title="${esc(fullDate(p.updatedAt))}">${esc(new Date(p.updatedAt*1000).toLocaleDateString('en-GB',{timeZone:window.DL.displayTimeZone()}))}</time></small>${p.note?`<p class="mp-note" data-no-i18n>${esc(p.note)}</p>`:''}</div><div class="mp-side"><span class="chip mp-status ${P_TONE[p.status]||''}"><i class="dot"></i>${productStatus(p.status)}</span>${fresh?`<span class="tag tag-gold">${p.status==='approved'?'New price':'Updated'}</span>`:''}${price}</div></article>`;
   }
   // Product details in the side panel: all photos, price (or each option), supplier note, dates, and "Order this product".
+  // From a notification: the products page, then that product's panel (opened after the page renders).
+  function showProduct(id){ if (S.route === 'products' && id) { openProduct(id); return; } S.openProductId = id || null; go('products'); }
   function openProduct(id){
     const p=S.products.find(x=>x.id===Number(id));if(!p)return;
     const d=UI.getDrawer();chatCtl?.destroy();chatCtl=null;d.foot.dataset.confirm='';d.onClose=null;d.open('p'+p.id);
@@ -1080,7 +1083,7 @@
     const f = t.closest('[data-filter]'); if (f) { S.filter = f.dataset.filter; renderChips(); renderOrdersList(); return; }
     const gf = t.closest('[data-go-filter]'); if (gf) { S.filter = gf.dataset.goFilter; S.q = ''; go('orders'); return; }
     if (t.closest('[data-ask-go]')) { openOrder($('[data-ask]').value, 'chat'); return; }
-    const productNote=t.closest('[data-product-note]');if(productNote){const note=noteItems().find(x=>x.id===productNote.dataset.note);if(note)markRead(note);go('products');return;}
+    const productNote=t.closest('[data-product-note]');if(productNote){const note=noteItems().find(x=>x.id===productNote.dataset.note);if(note)markRead(note);showProduct(note?.productId);return;}
     const invoiceNote=t.closest('[data-invoice-note]');if(invoiceNote){const note=noteItems().find(x=>x.id===invoiceNote.dataset.note);if(note)markRead(note);go('payments');return;}
     const oo = t.closest('[data-open-order]');
     if (oo && !t.closest('a')) {
