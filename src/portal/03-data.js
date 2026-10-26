@@ -5,7 +5,7 @@
     const me = await api('/me');
     if (me.termsRequired) { S.me = { ...S.me, ...me }; await termsScreen(); return false; }
     const [o, p, n, products, claims, stores] = await Promise.all([api('/orders'), api('/payments'), api('/notifications').catch(() => null),api('/products'),api('/claims'),api('/client-stores')]);
-    S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments; S.transfers = p.transfers || []; S.adjustments = p.adjustments || []; S.invoices=p.invoices || []; S.billing=p.billing || null; S.products=products.products || [];S.claims=claims.claims || [];S.stores=stores.stores || [];if(first)S.storeId=Number(store.get('dl-client-store-'+S.me.id,0));if(S.storeId&&!S.stores.some(s=>s.id===S.storeId))S.storeId=0;
+    S.me = { ...S.me, ...me }; S.orders = o.orders; S.payments = p.payments; S.cancelled = p.cancelled || null; S.transfers = p.transfers || []; S.adjustments = p.adjustments || []; S.invoices=p.invoices || []; S.billing=p.billing || null; S.products=products.products || [];S.claims=claims.claims || [];S.stores=stores.stores || [];if(first)S.storeId=Number(store.get('dl-client-store-'+S.me.id,0));if(S.storeId&&!S.stores.some(s=>s.id===S.storeId))S.storeId=0;
     if (!first && S.route === 'edit' && !S.orders.some(o => o.id === S.id && editable(o))) { go('orders'); N.popup({ icon: 'alert', title: 'This order is already being processed. Need a change? Send us a message.' }); }
     if (n) { S.notes = n.items; S.seenAt = n.seenAt; }
     const fresh = known ? S.notes.filter(x => !known.has(x.id)) : [];

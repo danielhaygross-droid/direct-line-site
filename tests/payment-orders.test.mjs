@@ -80,5 +80,5 @@ test('wired up: script on both pages, Hebrew for the new text, payments linked o
     assert.ok(he.includes(`'${s}':`), s);
   for (const s of ['orders? ticked · (.+)$/', 'more than the ticked orders', 'For (\\d+) orders? · (.+)$/', 'is already paid by another payment']) assert.ok(he.includes(s), s);
   const portal = await read('../server/portal.mjs');
-  assert.ok(portal.includes('SCHEMA.push(...PAYMENT_ORDER_SCHEMA, ...BILLING_SCHEMA);'));
+  assert.ok(portal.includes('SCHEMA.push(...PAYMENT_ORDER_SCHEMA, ...BILLING_SCHEMA'));
 });

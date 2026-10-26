@@ -14,6 +14,7 @@ import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms 
 
 import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } from './files.mjs';
 import { BILLING_SCHEMA, getBilling, saveBilling } from './billing.mjs';
+import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund } from './cancellations.mjs';
 import { PAYMENT_ORDER_SCHEMA, orderIdList, checkOrders, setPaymentOrders, paymentOrderIds, withPaid, dropTakenOrders } from './payment-orders.mjs';
 
 import { STATUS_SCHEMA, changeStatus, balanceAdjustments } from './order-status.mjs';
@@ -204,7 +205,7 @@ SCHEMA.push(`CREATE TABLE IF NOT EXISTS payment_edits (
   id SERIAL PRIMARY KEY, payment_id INTEGER NOT NULL REFERENCES client_payments(id), field TEXT NOT NULL,
   old_value TEXT NOT NULL DEFAULT '', new_value TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`);
 // Which orders each payment is for (payment-orders.mjs).
-SCHEMA.push(...PAYMENT_ORDER_SCHEMA, ...BILLING_SCHEMA);
+SCHEMA.push(...PAYMENT_ORDER_SCHEMA, ...BILLING_SCHEMA, ...REFUND_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -608,9 +609,9 @@ async function clientSummary(DB, clientId, settings) {
   const o = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS billed, COALESCE(SUM(commission),0) AS commission, COALESCE(SUM(LEAST(supplier_share, commission)),0) AS supplier, COALESCE(SUM(selling_price - price) FILTER (WHERE selling_price IS NOT NULL),0) AS profit FROM client_orders WHERE client_id = ? AND status <> 'cancelled'").bind(clientId).first();
   const p = await DB.prepare('SELECT COALESCE(SUM(amount),0) AS paid FROM client_payments WHERE client_id = ? AND NOT archived').bind(clientId).first();
   const performance=await clientPerformance(DB,clientId);
-  const billed = performance.totals.billed, paid = round2(p.paid);
+  const billed = performance.totals.billed, paid = round2(p.paid), refunded = await refundedTotal(DB, clientId);
   const commission = round2(o.commission), supplierShare = 0;
-  return { orders: Number(o.n), billed, paid, outstanding: round2(billed - paid), commission, supplierShare, ourShare: round2(commission - supplierShare), clientProfit: performance.totals.profit };
+  return { orders: Number(o.n), billed, paid, refunded, outstanding: round2(billed - paid + refunded), commission, supplierShare, ourShare: round2(commission - supplierShare), clientProfit: performance.totals.profit };
 }
 
 // ---------- request handler ----------
@@ -737,7 +738,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/payments' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? AND NOT archived ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
     const linked = await paymentOrderIds(DB, who.clientId);
-    return json({ ok: true, billing: await getBilling(DB, who.clientId), payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), orderIds: linked.get(Number(r.id)) || [] })), invoices: await invoices(DB,who.clientId), adjustments: await balanceAdjustments(DB,who.clientId), transfers: await transfers(DB,who.clientId) });
+    return json({ ok: true, cancelled: await cancelledSummary(DB, who.clientId), billing: await getBilling(DB, who.clientId), payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), orderIds: linked.get(Number(r.id)) || [] })), invoices: await invoices(DB,who.clientId), adjustments: await balanceAdjustments(DB,who.clientId), transfers: await transfers(DB,who.clientId) });
   }
   if (path==='/invoices/month' && method==='GET' && !who.admin) return monthlyInvoices(DB,who.clientId,url.searchParams.get('month'),env);
   if(path==='/client-stores'&&!who.admin){if(method==='GET')return json({ok:true,stores:await clientStores(DB,who.clientId)});if(method==='POST'){try{const store=await saveStore(DB,who.clientId,null,await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}}
@@ -1131,7 +1132,7 @@ async function routePortal(request, url, ctx, meta) {
     const clientId = Number(url.searchParams.get('clientId') || 0);
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(clientId).all()).results || [];
     const linked = await paymentOrderIds(DB, clientId);
-    return json({ ok: true, payments: rows.map(r => ({ id: r.id, clientId: r.client_id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), archived: !!r.archived, confirmationId: r.confirmation_id == null ? null : Number(r.confirmation_id), orderIds: linked.get(Number(r.id)) || [] })),adjustments:await balanceAdjustments(DB,clientId),billing:await getBilling(DB,clientId) });
+    return json({ ok: true, cancelled: await cancelledSummary(DB, clientId), payments: rows.map(r => ({ id: r.id, clientId: r.client_id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), archived: !!r.archived, confirmationId: r.confirmation_id == null ? null : Number(r.confirmation_id), orderIds: linked.get(Number(r.id)) || [] })),adjustments:await balanceAdjustments(DB,clientId),billing:await getBilling(DB,clientId) });
   }
   const billingMatch = /^\/admin\/billing\/(\d+)$/.exec(path);
   if (billingMatch && method === 'POST') {
@@ -1139,6 +1140,18 @@ async function routePortal(request, url, ctx, meta) {
     if (!client) return json({ ok: false, error: 'Unknown client' }, 400);
     try { return json({ ok: true, billing: await saveBilling(DB, Number(client.id), await readBody(request), 'admin') }); }
     catch (e) { return json({ ok: false, error: e.message }, 400); }
+  }
+  // Refunds: money sent back to a client (credit from cancelled orders). Archived, never deleted (Erwin, 27 Oct 2026).
+  if (path === '/admin/refunds' && method === 'POST') {
+    const body = await readBody(request);
+    try { const id = await addRefund(DB, body); return json({ ok: true, id, cancelled: await cancelledSummary(DB, Number(body.clientId)) }); }
+    catch (e) { return json({ ok: false, error: e.message }, e.status || 400); }
+  }
+  const refundArchive = /^\/admin\/refunds\/(\d+)\/archive$/.exec(path);
+  if (refundArchive && method === 'POST') {
+    const row = await DB.prepare('UPDATE client_refunds SET archived = TRUE WHERE id = ? RETURNING client_id').bind(Number(refundArchive[1])).first();
+    if (!row) return json({ ok: false, error: 'Refund not found' }, 404);
+    return json({ ok: true, cancelled: await cancelledSummary(DB, Number(row.client_id)) });
   }
   if (path === '/admin/payments' && method === 'POST') {
     const body = await readBody(request);

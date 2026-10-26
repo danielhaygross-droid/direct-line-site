@@ -1,5 +1,5 @@
   // ---------- side panel: one client ----------
-  let payments = [], transferProofs = [], invoiceFiles=[], balanceAdjustments=[], billing = null, savedPrices = null, clientActivity = null;
+  let cancelledMoney = null, payments = [], transferProofs = [], invoiceFiles=[], balanceAdjustments=[], billing = null, savedPrices = null, clientActivity = null;
   async function openClient(id, tab = 'orders') {
     const c = clientOf(id); if (!c) return;
     const d = UI.getDrawer();
@@ -89,7 +89,7 @@
       <section class="card card-pad"><h3 class="sec-title">Changes made by admins logged in as this client</h3>${a.adminActions.length ? foldList(a.adminActions.map(x => { const d = adminDid(x); return actRow(d.label, d.ref, x.createdAt, x.ok ? '' : ' <span class="neg">Didn’t go through</span>'); })) : '<p class="muted">None yet.</p>'}</section>`;
   }
   async function loadPayments(id) {
-    try { const [p,t,f] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id),api('/admin/invoices?clientId='+id)]); payments=p.payments; transferProofs=t.transfers;invoiceFiles=f.invoices;balanceAdjustments=p.adjustments||[];billing=p.billing||null; } catch (e) { payments = []; transferProofs = []; invoiceFiles=[]; toast('Couldn’t load payments: ' + e.message); }
+    try { const [p,t,f] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id),api('/admin/invoices?clientId='+id)]); payments=p.payments; cancelledMoney=p.cancelled||null; transferProofs=t.transfers;invoiceFiles=f.invoices;balanceAdjustments=p.adjustments||[];billing=p.billing||null; } catch (e) { payments = []; transferProofs = []; invoiceFiles=[]; toast('Couldn’t load payments: ' + e.message); }
     if (S.drawer?.kind === 'client' && S.drawer.id === id) fillClient(clientOf(id), true);
   }
   // Receipts (stored as portal_files kind 'invoice'): the file Direct Line sends the client for money already paid.
@@ -202,7 +202,7 @@
   }
   function paymentsPane(c, iso) {
     const adding = S.drawer.payNew || pendingTransfer(), other = invoiceFiles.filter(f => !f.paymentId || !payments.some(p => p.id === f.paymentId));
-    return `${paySummary(c)}${transferProofHTML()}
+    return `${paySummary(c)}${PO.cancelledBox(cancelledMoney, { admin: true })}${transferProofHTML()}
       ${adding ? `<section class="card card-pad" data-pay-card><h3 class="sec-title">Record a payment</h3>${recordForm(c, iso)}</section>` : ''}
       <section class="pay-cards"><div class="pay-cards-head"><h3 class="sec-title">Payments <small>${payments.length}</small></h3>${adding ? '' : `<button type="button" class="btn btn-primary btn-sm" data-pay-new>${ic('plus')}Record a payment</button>`}</div>
         ${payments.length ? payments.map(p => paymentCard(c, p)).join('') : `<div class="card">${empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</div>`}</section>
