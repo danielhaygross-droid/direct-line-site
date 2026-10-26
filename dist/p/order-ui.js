@@ -27,10 +27,10 @@
   // A claim's two files: the photo/video of the problem and the shipping label.
   const claimFiles = c => (c.fileIds || []).map((id, i) => ({ id, label: (c.fileKinds?.[i] || (i ? 'label' : 'problem')) === 'label' ? 'Shipping label' : 'Problem photo' }));
   // A change the supplier made in their Google Sheet (admins only): which cell, old -> new.
-  const SHEET_FIELD = { cost: 'Total cost', tracking: 'Tracking number', courier: 'Courier', shipped: 'Shipping status', delayed: 'Delayed?', reason: 'Delay reason' };
+  const SHEET_FIELD = { cost: 'Total cost', tracking: 'Tracking number', courier: 'Courier', shipped: 'Shipping status', delayed: 'Delayed?', reason: 'Delay reason', cancel_fee: 'Cancellation fee' };
   function sheetEdit(e) {
     let d; try { d = JSON.parse(e.detail); } catch (x) { return ''; }
-    const v = x => x === '' ? '<i>empty</i>' : `<bdi data-no-i18n>${esc(d.f === 'cost' && /^\d+(\.\d+)?$/.test(x) ? '$' + Number(x).toFixed(2) : x)}</bdi>`;
+    const v = x => x === '' ? '<i>empty</i>' : `<bdi data-no-i18n>${esc(['cost', 'cancel_fee'].includes(d.f) && /^\d+(\.\d+)?$/.test(x) ? '$' + Number(x).toFixed(2) : x)}</bdi>`;
     return `<li class="act-supplier${d.f === 'cost' ? ' act-cost' : ''}"><b>Supplier sheet change</b><span><span>Supplier sheet</span> · <span>${SHEET_FIELD[d.f] || esc(d.f)}</span>: ${v(d.from)} <span class="act-arrow"></span> ${v(d.to)}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`;
   }
   function activity(events=[]) {

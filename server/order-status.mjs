@@ -9,6 +9,8 @@ export const STATUS_SCHEMA = [
   "UPDATE client_orders SET delivered_at=updated_at WHERE status='delivered' AND delivered_at IS NULL",
 ];
 export const ADMIN_STATUS_TARGETS=['pending','processing','shipped','delivered','cancelled'];
+// No fee typed by the admin: the supplier's cancellation fee from the sheet (AH), if any (Erwin, 26 Oct 2026).
+const feeOrSupplier=(fee,order)=>fee==null||fee===''?order.supplier_cancel_fee??'':fee;
 // A fee in dollars with up to two decimals; empty means no fee.
 export function parseFee(value) {
   const fee=value==null||value===''?0:Number(value);
@@ -26,7 +28,7 @@ export function statusChange(order, action, body, admin) {
   if(action==='approve-cancellation'||action==='reject-cancellation') {
     if(!admin) throw Object.assign(new Error('Only admins can decide cancellation requests.'),{status:403});
     if(status!=='cancellation_requested') throw new Error('There is no pending cancellation request.');
-    const fee=action==='approve-cancellation'?parseFee(body.fee):0;
+    const fee=action==='approve-cancellation'?parseFee(feeOrSupplier(body.fee,order)):0;
     return {status:action==='approve-cancellation'?'cancelled':order.cancellation_previous_status||'pending',previous:order.cancellation_previous_status,reason:order.cancellation_reason,fee:action==='approve-cancellation'?fee:0};
   }
   const next=action==='mark-delivered'?'delivered':body.status;
@@ -36,7 +38,7 @@ export function statusChange(order, action, body, admin) {
     // Admins can set any order to any status: back to Pending, out of Cancelled (reopening it), or cancelled with an optional fee.
     if(!ADMIN_STATUS_TARGETS.includes(next)) throw new Error('Unknown status.');
     if(next!=='cancelled') return {status:next,previous:order.cancellation_previous_status,reason:order.cancellation_reason,fee:0};
-    return {status:'cancelled',previous:status,reason:String(body.reason||'').trim().slice(0,1000)||order.cancellation_reason,fee:parseFee(body.fee)};
+    return {status:'cancelled',previous:status,reason:String(body.reason||'').trim().slice(0,1000)||order.cancellation_reason,fee:parseFee(feeOrSupplier(body.fee,order))};
   }
   if(next!=='delivered') throw new Error('Request cancellation instead.');
   return {status:next,previous:order.cancellation_previous_status,reason:order.cancellation_reason,fee:0};
@@ -45,6 +47,7 @@ export function statusChange(order, action, body, admin) {
 export async function changeStatus(DB, order, action, body, admin, actorName) {
   const change=statusChange(order,action,body,admin);if(!change)return order;
   const t=Math.floor(Date.now()/1000),actor=actorName||(admin?'admin':'client');
+  // The fee is cast to NUMERIC: a bare ?>0 made Postgres read it as an integer, so fees with cents (6.50) failed.
   // Status, audit event and fee are one statement: retries/races cannot charge twice or lose the audit entry.
   const row=await DB.prepare(`WITH changed AS (
     UPDATE client_orders SET status=?,cancellation_previous_status=?,cancellation_reason=?,
@@ -56,7 +59,7 @@ export async function changeStatus(DB, order, action, body, admin, actorName) {
     decision AS (INSERT INTO order_events(order_id,client_id,kind,actor,detail,created_at)
       SELECT id,client_id,'cancellation',?,?,? FROM changed WHERE ?<>''),
     fee AS (INSERT INTO client_balance_adjustments(client_id,order_id,kind,amount,note,created_at)
-      SELECT client_id,id,'cancellation_fee',?,'Cancellation fee',? FROM changed WHERE ?>0
+      SELECT client_id,id,'cancellation_fee',?,'Cancellation fee',? FROM changed WHERE CAST(? AS NUMERIC)>0
       ON CONFLICT(order_id,kind) DO UPDATE SET amount=EXCLUDED.amount,created_at=EXCLUDED.created_at)
     SELECT * FROM changed`).bind(change.status,change.previous,change.reason,change.status,t,change.status,change.status,t,change.status,t,order.id,order.status,
       actor,change.status,t,actor,action==='request-cancellation'?change.reason:action==='reject-cancellation'?'Cancellation rejected':action==='approve-cancellation'?'Cancellation approved':'',t,

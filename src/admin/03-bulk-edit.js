@@ -5,7 +5,7 @@
     const couriers = String(S.ov.settings.couriers || '').split('\n').filter(Boolean);
     return `<div class="bulk-bar" data-bulk-bar>${all}<b>${n} selected</b>
       ${archivedView ? '<button type="button" class="btn btn-sm" data-bulk="restore">Restore</button>' : `
-      <label class="bulk-f"><span>Status</span><select data-bulk-status><option value="">Choose…</option>${ADMIN_STATUSES.map(s => `<option value="${s}">${UI.LABEL[s]}</option>`).join('')}</select></label><button type="button" class="btn btn-sm" data-bulk="status">Set status</button>
+      <label class="bulk-f"><span>Status</span><select data-bulk-status><option value="">Choose…</option>${ADMIN_STATUSES.map(s => `<option value="${s}">${UI.LABEL[s]}</option>`).join('')}<option value="cancelled">${UI.LABEL.cancelled}</option></select></label><button type="button" class="btn btn-sm" data-bulk="status">Set status</button>
       <label class="bulk-f"><span>Courier</span><input data-bulk-courier list="dl-bulk-couriers" maxlength="60" placeholder="e.g. Yanwen"><datalist id="dl-bulk-couriers">${couriers.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label><button type="button" class="btn btn-sm" data-bulk="courier">Set courier</button>
       <label class="bulk-f"><span>Fee</span><span class="money"><input data-bulk-fee type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.50"></span></label><button type="button" class="btn btn-sm" data-bulk="fee">Set fee</button>
       <button type="button" class="btn btn-sm btn-danger" data-bulk="archive">Archive</button>`}
@@ -17,6 +17,10 @@
     if (kind === 'clear') { S.picked.clear(); renderOrders(); return; }
     let body = null;
     if (kind === 'status') { const v = $('[data-bulk-status]', bar).value; if (!v) { msg.textContent = 'Choose a status first.'; return; } body = { status: v }; }
+    // Cancelled (Erwin, 26 Oct 2026): requests are approved, other orders cancelled; each uses the supplier's cancellation
+    // fee from the sheet (none = free). Two clicks, like Archive.
+    const cancelling = kind === 'status' && body?.status === 'cancelled';
+    if (cancelling && !btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = `Click again to cancel ${ids.length} (supplier fees)`; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Set status'; } }, 5000); return; }
     if (kind === 'courier') { const v = $('[data-bulk-courier]', bar).value.trim(); if (!v) { msg.textContent = 'Type or pick a courier first.'; return; } body = { courier: v }; }
     if (kind === 'addrflag') body = { clearAddressFlag: true };
     if (kind === 'fee') { const v = $('[data-bulk-fee]', bar).value; if (v === '' || !(Number(v) >= 0)) { msg.textContent = 'Enter the fee first.'; return; } body = { commission: v }; }
@@ -26,7 +30,11 @@
     for (const [i, id] of ids.entries()) {
       msg.textContent = `Updating ${i + 1} of ${ids.length}…`;
       try {
-        if (kind === 'archive' || kind === 'restore') await api('/admin/orders/' + id + '/archive', { method: 'POST', body: { archived: kind === 'archive' } });
+        const o = S.orders.find(x => x.id === id), fee = o?.supplierCancelFee ?? '';
+        if (cancelling && o?.status === 'cancelled') continue;
+        if (cancelling && o?.status === 'cancellation_requested') await api('/orders/' + id + '/approve-cancellation', { method: 'POST', body: { fee } });
+        else if (cancelling) await api('/orders/' + id, { method: 'PUT', body: { status: 'cancelled', fee } });
+        else if (kind === 'archive' || kind === 'restore') await api('/admin/orders/' + id + '/archive', { method: 'POST', body: { archived: kind === 'archive' } });
         else await api('/orders/' + id, { method: 'PUT', body });
       } catch (ex) { failedIds.push(id); failed.push(`${orderName(S.orders.find(o => o.id === id) || S.archivedOrders.find(o => o.id === id) || { id })}: ${ex.message}`); }
     }

@@ -164,7 +164,7 @@
     const couriers = String(S.ov.settings.couriers || '').split('\n').filter(Boolean);
     return `<div class="bulk-bar" data-bulk-bar>${all}<b>${n} selected</b>
       ${archivedView ? '<button type="button" class="btn btn-sm" data-bulk="restore">Restore</button>' : `
-      <label class="bulk-f"><span>Status</span><select data-bulk-status><option value="">Choose…</option>${ADMIN_STATUSES.map(s => `<option value="${s}">${UI.LABEL[s]}</option>`).join('')}</select></label><button type="button" class="btn btn-sm" data-bulk="status">Set status</button>
+      <label class="bulk-f"><span>Status</span><select data-bulk-status><option value="">Choose…</option>${ADMIN_STATUSES.map(s => `<option value="${s}">${UI.LABEL[s]}</option>`).join('')}<option value="cancelled">${UI.LABEL.cancelled}</option></select></label><button type="button" class="btn btn-sm" data-bulk="status">Set status</button>
       <label class="bulk-f"><span>Courier</span><input data-bulk-courier list="dl-bulk-couriers" maxlength="60" placeholder="e.g. Yanwen"><datalist id="dl-bulk-couriers">${couriers.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label><button type="button" class="btn btn-sm" data-bulk="courier">Set courier</button>
       <label class="bulk-f"><span>Fee</span><span class="money"><input data-bulk-fee type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.50"></span></label><button type="button" class="btn btn-sm" data-bulk="fee">Set fee</button>
       <button type="button" class="btn btn-sm btn-danger" data-bulk="archive">Archive</button>`}
@@ -176,6 +176,10 @@
     if (kind === 'clear') { S.picked.clear(); renderOrders(); return; }
     let body = null;
     if (kind === 'status') { const v = $('[data-bulk-status]', bar).value; if (!v) { msg.textContent = 'Choose a status first.'; return; } body = { status: v }; }
+    // Cancelled (Erwin, 26 Oct 2026): requests are approved, other orders cancelled; each uses the supplier's cancellation
+    // fee from the sheet (none = free). Two clicks, like Archive.
+    const cancelling = kind === 'status' && body?.status === 'cancelled';
+    if (cancelling && !btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = `Click again to cancel ${ids.length} (supplier fees)`; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Set status'; } }, 5000); return; }
     if (kind === 'courier') { const v = $('[data-bulk-courier]', bar).value.trim(); if (!v) { msg.textContent = 'Type or pick a courier first.'; return; } body = { courier: v }; }
     if (kind === 'addrflag') body = { clearAddressFlag: true };
     if (kind === 'fee') { const v = $('[data-bulk-fee]', bar).value; if (v === '' || !(Number(v) >= 0)) { msg.textContent = 'Enter the fee first.'; return; } body = { commission: v }; }
@@ -185,7 +189,11 @@
     for (const [i, id] of ids.entries()) {
       msg.textContent = `Updating ${i + 1} of ${ids.length}…`;
       try {
-        if (kind === 'archive' || kind === 'restore') await api('/admin/orders/' + id + '/archive', { method: 'POST', body: { archived: kind === 'archive' } });
+        const o = S.orders.find(x => x.id === id), fee = o?.supplierCancelFee ?? '';
+        if (cancelling && o?.status === 'cancelled') continue;
+        if (cancelling && o?.status === 'cancellation_requested') await api('/orders/' + id + '/approve-cancellation', { method: 'POST', body: { fee } });
+        else if (cancelling) await api('/orders/' + id, { method: 'PUT', body: { status: 'cancelled', fee } });
+        else if (kind === 'archive' || kind === 'restore') await api('/admin/orders/' + id + '/archive', { method: 'POST', body: { archived: kind === 'archive' } });
         else await api('/orders/' + id, { method: 'PUT', body });
       } catch (ex) { failedIds.push(id); failed.push(`${orderName(S.orders.find(o => o.id === id) || S.archivedOrders.find(o => o.id === id) || { id })}: ${ex.message}`); }
     }
@@ -502,13 +510,13 @@
       <section class="card card-pad"><h3 class="sec-title">Update status</h3>
         ${o.status==='cancelled' ? '<p class="note">This order is cancelled. Choose a status to reopen it; its cancellation fee is then removed.</p>' : ''}
         <div class="status-btns">${ADMIN_STATUSES.map(s => `<button type="button" class="t-${s}${s === o.status ? ' on' : ''}" data-set-status="${s}" data-id="${o.id}">${UI.LABEL[s]}</button>`).join('')}${o.status === 'cancellation_requested' ? '' : `<button type="button" class="t-cancelled${o.status === 'cancelled' ? ' on' : ''}"${o.status === 'cancelled' ? '' : ' data-cancel-open aria-expanded="false"'}>${UI.LABEL.cancelled}</button>`}</div>
-        ${['cancelled', 'cancellation_requested'].includes(o.status) ? '' : `<div class="cancel-box" data-cancel-box hidden><p>The client sees it as cancelled. Add a cancellation fee if one applies. You can reopen the order later.</p>
-          <div class="cancel-row"><label class="field"><span>Cancellation fee (USD) <small>optional</small></span><input name="directCancelFee" type="number" min="0" step="0.01" placeholder="0.00"></label><button type="button" class="btn" data-cancel-four-direct>$4</button><button type="button" class="btn btn-danger" data-cancel-direct="${o.id}">Cancel this order</button><button type="button" class="btn btn-ghost" data-cancel-close>Keep the order</button></div></div>`}
+        ${['cancelled', 'cancellation_requested'].includes(o.status) ? '' : `<div class="cancel-box" data-cancel-box hidden><p>The client sees it as cancelled. Add a cancellation fee if one applies. You can reopen the order later.</p>${o.supplierCancelFee != null ? `<p class="note cancel-sup"><span>Supplier's cancellation fee (from the sheet)</span>: <b data-no-i18n>${money(o.supplierCancelFee)}</b></p>` : '<p class="note cancel-sup">No cancellation fee from the supplier yet.</p>'}
+          <div class="cancel-row"><label class="field"><span>Cancellation fee (USD) <small>optional</small></span><input name="directCancelFee" type="number" min="0" step="0.01" placeholder="0.00" value="${o.supplierCancelFee ?? ''}"></label><button type="button" class="btn" data-cancel-four-direct>$4</button><button type="button" class="btn btn-danger" data-cancel-direct="${o.id}">Cancel this order</button><button type="button" class="btn btn-ghost" data-cancel-close>Keep the order</button></div></div>`}
         <form class="track-form" data-track-form="${o.id}"><div class="track-fields"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(o.trackingNumber)}" placeholder="e.g. LX123456789CN"></label><label class="field"><span>Courier</span><input name="courier" maxlength="60" list="dl-couriers" value="${esc(o.courier)}" placeholder="e.g. Yanwen"></label><datalist id="dl-couriers">${String(S.ov.settings.couriers || '').split('\n').filter(Boolean).map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>${o.domesticTracking ? `<p class="dom-track"><span>Domestic tracking in China (from the supplier sheet)</span> <b data-no-i18n>${esc(o.domesticTracking)}</b></p>` : ''}<div class="form-actions"><button class="btn" type="submit">Save tracking</button><button type="button" class="btn" data-tracking-update="${o.id}">Tracking update received</button>${o.trackingNumber ? `<a class="btn btn-ghost" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track</a>` : ''}</div></form>
       </section>
       <section class="card card-pad"><label class="field"><span>Store</span><select data-move-order="${o.id}">${S.stores.filter(s=>s.clientId===o.clientId&&(!s.archived||s.id===o.storeId)).map(s=>`<option value="${s.id}"${s.id===o.storeId?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label></section>
       ${adminClaimCard(S.claims.find(c=>c.orderId===o.id))}
-      ${o.status==='cancellation_requested' ? `<section class="card card-pad"><h3 class="sec-title">Cancellation request</h3><p data-no-i18n>${esc(o.cancellationReason)}</p><div class="cancel-row"><label class="field"><span>Cancellation fee (USD)</span><input name="cancellationFee" type="number" min="0" step="0.01" placeholder="0.00"></label><button type="button" class="btn" data-cancel-four>$4</button><button type="button" class="btn btn-danger" data-cancel-decision="approve" data-id="${o.id}">Approve cancellation</button><button type="button" class="btn" data-cancel-decision="reject" data-id="${o.id}">Reject cancellation</button></div></section>` : ''}
+      ${o.status==='cancellation_requested' ? `<section class="card card-pad"><h3 class="sec-title">Cancellation request</h3><p data-no-i18n>${esc(o.cancellationReason)}</p>${o.supplierCancelFee != null ? `<p class="note cancel-sup"><span>Supplier's cancellation fee (from the sheet)</span>: <b data-no-i18n>${money(o.supplierCancelFee)}</b></p>` : '<p class="note cancel-sup">No cancellation fee from the supplier yet.</p>'}<div class="cancel-row"><label class="field"><span>Cancellation fee (USD)</span><input name="cancellationFee" type="number" min="0" step="0.01" placeholder="0.00" value="${o.supplierCancelFee ?? ''}"></label><button type="button" class="btn" data-cancel-four>$4</button><button type="button" class="btn btn-danger" data-cancel-decision="approve" data-id="${o.id}">Approve cancellation</button><button type="button" class="btn" data-cancel-decision="reject" data-id="${o.id}">Reject cancellation</button></div></section>` : ''}
       <section class="card card-pad"><h3 class="sec-title">Receipts</h3>${adminInvoiceLinks(invoiceFiles.filter(f=>f.orderIds.includes(o.id)))}${invoiceForm(o.clientId,o.id)}</section>
       ${o.quotedUnitPrice!=null ? `<section class="card card-pad"><span>Fixed unit quote</span> <b>${money(o.quotedUnitPrice)}</b> × ${o.quantity} = <b>${money(o.price)}</b></section>` : billHTML(o)}
       <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">

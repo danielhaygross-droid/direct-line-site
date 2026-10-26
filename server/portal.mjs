@@ -403,11 +403,12 @@ function orderOut(r) {
     sheetSyncError: r.sheet_sync_error || '',
     // Supplier's total for the whole order (product + shipping), from the supplier Work Queue. Admin only.
     supplierCost: r.supplier_cost == null ? null : Number(r.supplier_cost),
+    supplierCancelFee: r.supplier_cancel_fee == null ? null : Number(r.supplier_cancel_fee),
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   };
 }
 // What a client may see of an order: total only, never the product vs shipping breakdown (item #6).
-const CLIENT_HIDDEN = ['addressChangedAt', 'commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost', 'priceSource'];
+const CLIENT_HIDDEN = ['addressChangedAt', 'commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost', 'priceSource', 'supplierCancelFee'];
 function clientOrder(o) {
   const out = { ...o, priced: o.productCost != null || o.shippingFee != null || o.quotedUnitPrice != null };
   for (const k of CLIENT_HIDDEN) delete out[k];
@@ -1073,7 +1074,7 @@ async function routePortal(request, url, ctx, meta) {
     return json({ ok: true, ...(await retryPendingGoogleSheetOrders(DB, env)) });
   }
   if (path === '/admin/notifications' && method === 'GET') {
-    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE (e.actor = 'client' OR e.kind = 'supplier_sheet' AND e.detail LIKE ?) AND NOT u.archived AND NOT o.archived ORDER BY e.created_at DESC, e.id DESC LIMIT 60").bind('{"f":"cost","from":"_%').all()).results || [];
+    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE (e.actor = 'client' OR e.kind = 'supplier_sheet' AND (e.detail LIKE ? OR e.detail LIKE ?)) AND NOT u.archived AND NOT o.archived ORDER BY e.created_at DESC, e.id DESC LIMIT 60").bind('{"f":"cost","from":"_%', '{"f":"cancel_fee",%"to":"_%').all()).results || [];
     return json({ ok: true, items: [...rows.map(eventOut),...await productEvents(DB,null,'client')].sort((a,b)=>b.createdAt-a.createdAt).slice(0,60), now: now() });
   }
   const archiveOrder = /^\/admin\/orders\/(\d+)\/archive$/.exec(path);

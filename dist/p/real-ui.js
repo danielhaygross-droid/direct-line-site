@@ -49,6 +49,7 @@
     const base = { id: 'ev-' + e.id, time: e.createdAt * 1000, orderId: e.orderId, action: L('Open order', 'פתח הזמנה') };
     // The supplier changed a cost in their Google Sheet (Erwin, 26 Oct 2026: know it even when nobody was online).
     if (e.kind === 'supplier_sheet') { let d = {}; try { d = JSON.parse(e.detail); } catch (x) { /* old row */ } const usd = v => (/^\d+(\.\d+)?$/.test(v || '') ? '$' + Number(v).toFixed(2) : v || '—');
+      if (d.f === 'cancel_fee') return { ...base, icon: 'alert', tone: 'red', title: L('Supplier set a cancellation fee', 'הספק קבע עמלת ביטול'), text: `${ref} · ${who} · ${usd(d.to)}` };
       return { ...base, icon: 'alert', tone: 'orange', title: L('Supplier changed a cost in the sheet', 'הספק שינה עלות בגיליון'), text: `${ref} · ${who} · ${usd(d.from)} ${L('→', '←')} ${usd(d.to)}` }; }
     if(e.kind==='claim')return {...base,icon:'alert',tone:'orange',title:L(`${who} reported an order problem`,`${who} דיווח/ה על בעיה בהזמנה`),text:ref};
     if(e.kind==='product')return {...base,view:'client-products',action:L('View products','צפייה במוצרים'),icon:'order',tone:'gold',title:L(`${who} submitted a product for quote`,`${who} שלח/ה מוצר להצעת מחיר`),text:e.productName};
