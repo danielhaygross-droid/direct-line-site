@@ -98,5 +98,27 @@
     document.addEventListener('change', onInput);
     document.addEventListener('input', onInput);
   }
-  root.DLPayOrders = { dueCents, state, tag, day, checklist, picked, linked, refresh, tickOldest };
+  // Money on cancelled orders (Erwin, 27 Oct 2026): the same box for the admin (client panel > Money) and the client
+  // (Payments). c = server cancelledSummary. admin: adds "Record refund" and Undo on refunds.
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  const usd = n => fmt(cents(n));
+  function cancelledBox(c, { admin = false } = {}) {
+    if (!c || (!c.count && !c.refunds?.length)) return '';
+    const stat = (label, value, note, cls = '') => `<div class="cx-stat ${cls}"><small>${label}</small><b data-no-i18n>${value}</b>${note ? `<em>${note}</em>` : ''}</div>`;
+    const rows = c.orders.map(o => `<tr><td><button type="button" class="link-btn" data-open-order="${o.id}"><bdi data-no-i18n>${esc(o.orderRef || '#' + o.id)}</bdi></button>${o.store ? `<small data-no-i18n>${esc(o.store)}</small>` : ''}</td>`
+      + `<td class="num" data-no-i18n>${o.paid ? usd(o.paid) : '—'}</td><td class="num" data-no-i18n>${o.fee ? usd(o.fee) : '—'}</td><td class="num" data-no-i18n><b>${o.paid ? usd(o.back) : '—'}</b></td></tr>`).join('');
+    const refunds = (c.refunds || []).map(r => `<div class="cx-refund"><span data-no-i18n>${day(r.refundedAt)}</span><b data-no-i18n>${usd(r.amount)}</b><span data-no-i18n>${esc([r.method, r.note].filter(Boolean).join(' · '))}</span>${admin ? `<button type="button" class="btn btn-sm btn-ghost" data-refund-undo="${r.id}">Undo</button>` : ''}</div>`).join('');
+    return `<section class="card card-pad cx-box" data-cancelled-box><h3 class="sec-title">Cancelled orders</h3>
+      <div class="cx-stats">${stat('Cancelled orders', String(c.count), c.paidCount ? `${c.paidCount} already paid` : '')}${stat('Paid for them', usd(c.paid))}${stat('Cancellation fees', usd(c.fees), '', c.fees ? 'neg' : '')}${stat(admin ? 'Due back to the client' : 'Due back to you', usd(c.dueBack), 'Paid minus fees')}${stat('Refunded', usd(c.refunded))}${stat('Kept as credit', usd(c.credit), admin ? 'Counts toward their next orders' : 'Counts toward your next orders', c.credit > 0 ? 'pos' : '')}</div>
+      ${rows ? `<div class="table-wrap"><table class="tbl cx-table"><thead><tr><th>Order</th><th class="num">Paid</th><th class="num">Fee</th><th class="num">Back</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+      ${refunds ? `<h4 class="cx-sub">Refunds</h4><div class="cx-refunds">${refunds}</div>` : ''}
+      ${admin ? `<details class="cx-add"${c.credit > 0 ? '' : ''}><summary class="btn btn-sm">Record refund</summary><form class="form-grid" data-refund-form novalidate>
+        <label class="field"><span>Amount (USD)</span><span class="money"><input name="amount" type="number" min="0" step="0.01" inputmode="decimal" value="${c.credit > 0 ? c.credit.toFixed(2) : ''}"></span></label>
+        <label class="field"><span>Date</span><input name="date" type="date" value="${new Date().toLocaleDateString('en-CA')}"></label>
+        <label class="field"><span>Method <small>optional</small></span><input name="method" maxlength="60" placeholder="e.g. Bank transfer"></label>
+        <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="300"></label>
+        <div class="full form-actions"><button class="btn btn-primary" type="submit">Save refund</button><p class="form-msg" data-refund-msg></p></div></form></details>` : ''}
+    </section>`;
+  }
+  root.DLPayOrders = { cancelledBox, dueCents, state, tag, day, checklist, picked, linked, refresh, tickOldest };
 })(typeof window !== 'undefined' ? window : globalThis);

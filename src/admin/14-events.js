@@ -116,6 +116,15 @@
       if (go) setTimeout(() => $(go)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
       return;
     }
+    // Refunds (cancelled orders box): Undo archives the refund after a second click.
+    const ru = t.closest('[data-refund-undo]');
+    if (ru) {
+      if (!ru.dataset.armed) { ru.dataset.armed = '1'; ru.textContent = 'Click again to undo'; setTimeout(() => { if (ru.isConnected) { delete ru.dataset.armed; ru.textContent = 'Undo'; } }, 4000); return; }
+      if (ru.disabled) return; ru.disabled = true;
+      try { await api('/admin/refunds/' + ru.dataset.refundUndo + '/archive', { method: 'POST' }); await loadAll(); await loadPayments(S.drawer.id); fillClient(clientOf(S.drawer.id), false); toast('Refund undone.'); }
+      catch (ex) { toast(ex.message); ru.disabled = false; }
+      return;
+    }
     const rr = t.closest('[data-receipt-remove]');
     if (rr) {
       if (!rr.dataset.armed) { rr.dataset.armed = '1'; rr.textContent = 'Click again to remove'; setTimeout(() => { if (rr.isConnected) { delete rr.dataset.armed; rr.textContent = 'Remove'; } }, 4000); return; }
@@ -232,6 +241,14 @@
     const inf=e.target.closest('[data-invoice-form]');
     if(inf){e.preventDefault();const b=$('[type=submit]',inf),m=$('[data-invoice-msg]',inf);b.disabled=true;try{const file=await invoiceFile(inf);if(!file)throw new Error('Choose the receipt file.');await api('/admin/invoices',{method:'POST',body:{clientId:Number(inf.dataset.invoiceForm),orderIds:inf.dataset.orderId?[Number(inf.dataset.orderId)]:PO.picked(inf),paymentId:inf.invoicePayment?.value||null,date:inf.invoiceDate.value,file}});document.activeElement?.blur();inf.reset();invoiceFiles=(await api('/admin/invoices?clientId='+inf.dataset.invoiceForm)).invoices;refreshDrawer();toast('Receipt saved. The client can download it now.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     // Attach a receipt to a payment: saved with the payment and its orders; the client is notified and can download it.
+    // Record refund: money sent back to the client from cancelled orders' credit.
+    const rff = e.target.closest('[data-refund-form]');
+    if (rff) {
+      e.preventDefault(); const b = $('[type=submit]', rff), m = $('[data-refund-msg]', rff); if (b.disabled) return; b.disabled = true; m.textContent = ''; m.className = 'form-msg';
+      try { await api('/admin/refunds', { method: 'POST', body: { clientId: S.drawer.id, amount: rff.amount.value, date: rff.date.value, method: rff.method.value, note: rff.note.value } }); await loadAll(); await loadPayments(S.drawer.id); fillClient(clientOf(S.drawer.id), false); toast('Refund recorded. The client sees it on their Payments page.'); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
+      return;
+    }
     const rf = e.target.closest('[data-receipt-form]');
     if (rf) {
       e.preventDefault();

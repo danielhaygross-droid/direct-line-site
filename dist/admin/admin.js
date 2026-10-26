@@ -615,7 +615,7 @@
   }
 
   // ---------- side panel: one client ----------
-  let payments = [], transferProofs = [], invoiceFiles=[], balanceAdjustments=[], billing = null, savedPrices = null, clientActivity = null;
+  let cancelledMoney = null, payments = [], transferProofs = [], invoiceFiles=[], balanceAdjustments=[], billing = null, savedPrices = null, clientActivity = null;
   async function openClient(id, tab = 'orders') {
     const c = clientOf(id); if (!c) return;
     const d = UI.getDrawer();
@@ -705,7 +705,7 @@
       <section class="card card-pad"><h3 class="sec-title">Changes made by admins logged in as this client</h3>${a.adminActions.length ? foldList(a.adminActions.map(x => { const d = adminDid(x); return actRow(d.label, d.ref, x.createdAt, x.ok ? '' : ' <span class="neg">Didn’t go through</span>'); })) : '<p class="muted">None yet.</p>'}</section>`;
   }
   async function loadPayments(id) {
-    try { const [p,t,f] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id),api('/admin/invoices?clientId='+id)]); payments=p.payments; transferProofs=t.transfers;invoiceFiles=f.invoices;balanceAdjustments=p.adjustments||[];billing=p.billing||null; } catch (e) { payments = []; transferProofs = []; invoiceFiles=[]; toast('Couldn’t load payments: ' + e.message); }
+    try { const [p,t,f] = await Promise.all([api('/admin/payments?clientId=' + id), api('/admin/transfers?clientId=' + id),api('/admin/invoices?clientId='+id)]); payments=p.payments; cancelledMoney=p.cancelled||null; transferProofs=t.transfers;invoiceFiles=f.invoices;balanceAdjustments=p.adjustments||[];billing=p.billing||null; } catch (e) { payments = []; transferProofs = []; invoiceFiles=[]; toast('Couldn’t load payments: ' + e.message); }
     if (S.drawer?.kind === 'client' && S.drawer.id === id) fillClient(clientOf(id), true);
   }
   // Receipts (stored as portal_files kind 'invoice'): the file Direct Line sends the client for money already paid.
@@ -818,7 +818,7 @@
   }
   function paymentsPane(c, iso) {
     const adding = S.drawer.payNew || pendingTransfer(), other = invoiceFiles.filter(f => !f.paymentId || !payments.some(p => p.id === f.paymentId));
-    return `${paySummary(c)}${transferProofHTML()}
+    return `${paySummary(c)}${PO.cancelledBox(cancelledMoney, { admin: true })}${transferProofHTML()}
       ${adding ? `<section class="card card-pad" data-pay-card><h3 class="sec-title">Record a payment</h3>${recordForm(c, iso)}</section>` : ''}
       <section class="pay-cards"><div class="pay-cards-head"><h3 class="sec-title">Payments <small>${payments.length}</small></h3>${adding ? '' : `<button type="button" class="btn btn-primary btn-sm" data-pay-new>${ic('plus')}Record a payment</button>`}</div>
         ${payments.length ? payments.map(p => paymentCard(c, p)).join('') : `<div class="card">${empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</div>`}</section>
@@ -1200,6 +1200,15 @@
       if (go) setTimeout(() => $(go)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
       return;
     }
+    // Refunds (cancelled orders box): Undo archives the refund after a second click.
+    const ru = t.closest('[data-refund-undo]');
+    if (ru) {
+      if (!ru.dataset.armed) { ru.dataset.armed = '1'; ru.textContent = 'Click again to undo'; setTimeout(() => { if (ru.isConnected) { delete ru.dataset.armed; ru.textContent = 'Undo'; } }, 4000); return; }
+      if (ru.disabled) return; ru.disabled = true;
+      try { await api('/admin/refunds/' + ru.dataset.refundUndo + '/archive', { method: 'POST' }); await loadAll(); await loadPayments(S.drawer.id); fillClient(clientOf(S.drawer.id), false); toast('Refund undone.'); }
+      catch (ex) { toast(ex.message); ru.disabled = false; }
+      return;
+    }
     const rr = t.closest('[data-receipt-remove]');
     if (rr) {
       if (!rr.dataset.armed) { rr.dataset.armed = '1'; rr.textContent = 'Click again to remove'; setTimeout(() => { if (rr.isConnected) { delete rr.dataset.armed; rr.textContent = 'Remove'; } }, 4000); return; }
@@ -1316,6 +1325,14 @@
     const inf=e.target.closest('[data-invoice-form]');
     if(inf){e.preventDefault();const b=$('[type=submit]',inf),m=$('[data-invoice-msg]',inf);b.disabled=true;try{const file=await invoiceFile(inf);if(!file)throw new Error('Choose the receipt file.');await api('/admin/invoices',{method:'POST',body:{clientId:Number(inf.dataset.invoiceForm),orderIds:inf.dataset.orderId?[Number(inf.dataset.orderId)]:PO.picked(inf),paymentId:inf.invoicePayment?.value||null,date:inf.invoiceDate.value,file}});document.activeElement?.blur();inf.reset();invoiceFiles=(await api('/admin/invoices?clientId='+inf.dataset.invoiceForm)).invoices;refreshDrawer();toast('Receipt saved. The client can download it now.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     // Attach a receipt to a payment: saved with the payment and its orders; the client is notified and can download it.
+    // Record refund: money sent back to the client from cancelled orders' credit.
+    const rff = e.target.closest('[data-refund-form]');
+    if (rff) {
+      e.preventDefault(); const b = $('[type=submit]', rff), m = $('[data-refund-msg]', rff); if (b.disabled) return; b.disabled = true; m.textContent = ''; m.className = 'form-msg';
+      try { await api('/admin/refunds', { method: 'POST', body: { clientId: S.drawer.id, amount: rff.amount.value, date: rff.date.value, method: rff.method.value, note: rff.note.value } }); await loadAll(); await loadPayments(S.drawer.id); fillClient(clientOf(S.drawer.id), false); toast('Refund recorded. The client sees it on their Payments page.'); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
+      return;
+    }
     const rf = e.target.closest('[data-receipt-form]');
     if (rf) {
       e.preventDefault();
