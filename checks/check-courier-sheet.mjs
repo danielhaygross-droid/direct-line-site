@@ -72,7 +72,7 @@ await DB.prepare('UPDATE client_orders SET notes=? WHERE id=?').bind(FR_NOTES, a
 let p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
 assert.ok(p.ok, JSON.stringify(p));
 assert.deepEqual(wq[4].slice(0, HEADERS.length), HEADERS, 'header is the new layout');
-assert.equal(wq[4].length, 33);
+assert.equal(wq[4].length, 34, "A-AH (AH = Cancellation fee)");
 assert.deepEqual(calls.filter(c => c.startsWith('insert')), ['insert 12', 'insert 16', 'insert 14', 'insert 19', 'insert 19'], 'gift message, courier, competitor price, client paid, then delayed + reason');
 assert.equal(wq[6][11], '', 'old country code cleared from Tax number'); assert.equal(wq[6][12], ''); assert.equal(wq[6][13], 'old note');
 // the old notes were split: own columns in the sheet, notes cleaned
@@ -83,7 +83,7 @@ console.log('PASS old notes split into Tax number / Gift message');
 assert.equal(wq[5][15], 55.9, 'cost moved to P'); assert.equal(wq[5][16], 'UL602450763YP', 'tracking moved to Q'); assert.equal(wq[5][14], '', 'competitor price O empty');
 assert.equal(wq[5][17], '', 'empty courier'); assert.equal(wq[5][18], 'Not shipped', 'status moved to S');
 assert.equal(wq[5][30], String(a.id), 'order id in AE'); assert.equal(wq[5][31], String(id), 'client id in AF');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '10', 'up to date: layout 10 (Delayed? + Delay reason, red cancelled rows, Domestic Express Tracking Number)');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '11', 'up to date: layout 11 (Delayed? + Delay reason, red cancelled rows, Domestic Express Tracking Number)');
 const o1 = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(a.id).first();
 assert.equal(o1.tracking_number, '', 'nothing applied from the wrong columns'); assert.equal(o1.courier, null);
 console.log('PASS switch: header, columns moved, old country cleared, ids found, nothing misapplied');
@@ -191,7 +191,7 @@ assert.deepEqual(wq[4].slice(0, HEADERS.length), HEADERS);
 assert.equal(wq[5][15], costBefore, 'cost stays in P'); assert.equal(wq[6][16], trackBefore, 'tracking stays in Q');
 assert.equal(wq[5][17], courierBefore, 'courier stays in R'); assert.equal(wq[5][19], '', 'new Delayed? cell is empty'); assert.equal(wq[5][30], String(a.id), 'ids moved to AE');
 assert.equal(p.changed.length, 0, 'nothing applied by the switch');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '10');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '11');
 console.log('PASS live layout 5 -> 8: two columns added after Shipping status, everything else moved with its data');
 
 // 10) Layout 6 -> 7 (the live sheet on 23 Oct): only the red / orange row rules are added, no columns move.
@@ -204,7 +204,7 @@ const redRow = cancelRules().find(x => x.ranges[0].startColumnIndex === 0 && x.b
 assert.equal(redRow.ranges[0].endColumnIndex, 30, 'the whole row up to the photos'); assert.equal(redRow.ranges[0].startRowIndex, 5, 'from the first order row');
 assert.match(wq[3][18], /COUNTIF\(D6:D,"CANCELLED - do not ship"\)&" cancelled"/, 'row 4 counts cancelled orders');
 assert.match(wq[2][0], /RED rows are cancelled orders: do not buy or ship them/, 'the instructions say so');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '10');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '11');
 // Running it again adds nothing.
 rules.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(cancelRules().length, 0, 'rules added once');
 // Cancelling an order: its Status cell says so, in the text the rules look for.
@@ -225,7 +225,7 @@ calls.length = 0; rules.length = 0; p = await pollSupplierSheet(DB, env, { fetch
 assert.deepEqual(calls.filter(c => c.startsWith('insert')), [], 'no columns inserted');
 assert.equal(wq[4][32], 'Domestic Express Tracking Number'); assert.equal(wq[4][30], 'Order ID', 'ids stay in AE/AF');
 assert.match(wq[2][0], /Domestic Express Tracking Number \(yellow, far right/);
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '10');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '11');
 const rA = wq.findIndex(row => row && row[30] === String(a.id)); wq[rA][32] = 'SF1234567890';
 await syncPortalOrderToGoogleSheet(DB, env, a.id, fakeFetch);
 assert.equal(wq[rA][32], 'SF1234567890', 'the supplier’s domestic tracking is kept when the website rewrites the row');
@@ -235,7 +235,7 @@ console.log('PASS layout 7 -> 8: Domestic Express Tracking Number in AG, kept on
 await DB.prepare("UPDATE portal_settings SET value='8' WHERE key='supplier_sheet_layout'").run();
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
 assert.equal(calls.filter(c => c === 'hide C-D').length, 1, 'Shop and Status hidden'); assert.deepEqual(calls.filter(c => c.startsWith('insert')), [], 'nothing inserted or deleted');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '10');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '11');
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(calls.filter(c => c === 'hide C-D').length, 0, 'only once');
 assert.equal((await DB.prepare('SELECT domestic_tracking FROM client_orders WHERE id=?').bind(a.id).first()).domestic_tracking, 'SF1234567890', 'AG copied to the order');
 const listed = (await call('/admin/orders', 'GET', null, admin)).data.orders.find(o => o.id === a.id); assert.equal(listed.domesticTracking, 'SF1234567890', 'admin sees it');
@@ -248,11 +248,39 @@ assert.equal((await call('/orders/' + b.id, 'PUT', { status: 'cancelled', fee: 0
 await DB.prepare("UPDATE client_orders SET sheet_shipped='Not shipped' WHERE id=?").bind(b.id).run(); wq[rowOf(b)][18] = 'Not shipped'; // as before layout 10
 await DB.prepare("UPDATE portal_settings SET value='9' WHERE key='supplier_sheet_layout'").run();
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
-assert.deepEqual(calls.filter(c => c === 'show C' || c.startsWith('status list')).sort(), ['show C', 'status list Not shipped/Shipped/Cancelled'], 'list + Shop column, once');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '10');
+assert.deepEqual(calls.filter(c => c === 'show C' || c.startsWith('status list')).sort(), ['show C', 'status list Not shipped/Shipped/Cancel requested/Cancelled'], 'list + Shop column, once');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '11');
 await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(wq[rowOf(b)][18], 'Cancelled', 'existing cancelled row rewritten');
 wq[rowOf(a)][18] = 'Cancelled'; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
 assert.notEqual((await DB.prepare('SELECT status FROM client_orders WHERE id=?').bind(a.id).first()).status, 'cancelled', 'the supplier picking Cancelled does not cancel the order');
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(calls.filter(c => c === 'show C').length, 0, 'only once');
 console.log('PASS layout 9 -> 10: Cancelled in Shipping status, Shop column back; supplier cannot cancel from the sheet');
+
+// 14) Layout 11 (26 Oct, KumoBags suspended): "Cancel requested" in S, the supplier's Cancellation fee (USD) in AH.
+assert.equal(wq[4][33], 'Cancellation fee (USD)', 'AH header');
+assert.equal((await call('/orders/' + b.id, 'PUT', { status: 'processing' }, admin)).status, 200);
+await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(wq[rowOf(b)][18], 'Not shipped', 'reopened');
+assert.equal((await call('/orders/' + b.id + '/request-cancellation', 'POST', { reason: 'Store suspended' }, client)).status, 200);
+await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(wq[rowOf(b)][18], 'Cancel requested', 'S says Cancel requested');
+wq[rowOf(b)][33] = 6.5; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
+assert.equal((await DB.prepare('SELECT supplier_cancel_fee FROM client_orders WHERE id=?').bind(b.id).first()).supplier_cancel_fee, 6.5, 'fee saved on the order');
+const adminOrder = (await call('/admin/orders', 'GET', null, admin)).data.orders.find(o => o.id === b.id); assert.equal(adminOrder.supplierCancelFee, 6.5, 'admin sees it');
+const clientOrder = (await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === b.id); assert.equal(clientOrder.supplierCancelFee, undefined, 'client does not (until approved)');
+assert.ok(((await call('/admin/notifications', 'GET', null, admin)).data.items || []).some(e => e.kind === 'supplier_sheet' && JSON.parse(e.detail).f === 'cancel_fee'), 'admin bell: supplier set a cancellation fee');
+assert.equal((await DB.prepare('SELECT status FROM client_orders WHERE id=?').bind(b.id).first()).status, 'cancellation_requested', 'nothing approved by the supplier');
+{ const r = await call('/orders/' + b.id + '/approve-cancellation', 'POST', { fee: adminOrder.supplierCancelFee }, admin); assert.equal(r.status, 200, JSON.stringify(r.data)); }
+assert.equal((await DB.prepare("SELECT amount FROM client_balance_adjustments WHERE order_id=? AND kind='cancellation_fee'").bind(b.id).first()).amount, 6.5, 'client billed exactly the supplier fee');
+await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(wq[rowOf(b)][18], 'Cancelled');
+wq[rowOf(b)][33] = 'abc'; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+assert.equal((await DB.prepare('SELECT supplier_cancel_fee FROM client_orders WHERE id=?').bind(b.id).first()).supplier_cancel_fee, 6.5, 'not a number: ignored');
+// Cancelled first, fee later: the supplier's fee is billed straight away and the client is notified (Erwin, 26 Oct 2026).
+wq[rowOf(b)][33] = ''; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+const feeNow = async () => Number((await DB.prepare("SELECT amount FROM client_balance_adjustments WHERE order_id=? AND kind='cancellation_fee'").bind(b.id).first()).amount);
+assert.equal(await feeNow(), 0, 'fee cleared in the sheet = no fee');
+wq[rowOf(b)][33] = 3.25; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
+assert.equal(await feeNow(), 3.25, 'fee typed after the cancellation is billed at once');
+const feeNotes = ((await call('/notifications', 'GET', null, client)).data.items || []).filter(e => e.kind === 'cancel_fee');
+assert.equal(feeNotes[0]?.detail, '3.25', 'the client is notified');
+console.log('PASS cancelled first, fee later: billed at once, client notified; cleared = removed');
+console.log('PASS layout 11: Cancel requested in S, supplier cancellation fee read from AH, admin approves, client pays exactly that');
 await pg.close();
