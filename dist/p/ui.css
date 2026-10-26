@@ -355,3 +355,7 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-we
 .claim-decide{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}.claim-decide .field{flex:0 1 260px;min-width:180px}
 .drawer-foot .foot-msg{flex:1 1 220px;margin:0;align-self:center}.drawer-foot .foot-msg:empty{display:none}
 [dir=rtl] .po-main b[dir=auto]{text-align:right}
+/* Supplier-sheet changes in the admin order activity: marked so the team spots them; cost changes stand out. */
+.order-activity li.act-supplier{padding:8px 10px;border-inline-start:3px solid var(--blue);border-radius:8px;background:color-mix(in srgb,var(--blue) 7%,transparent)}
+.order-activity li.act-cost{border-inline-start-color:var(--orange);background:color-mix(in srgb,var(--orange) 10%,transparent)}.order-activity li.act-supplier bdi{color:var(--text);font-weight:600}
+.act-arrow::before{content:"\2192"}[dir=rtl] .act-arrow::before{content:"\2190"}

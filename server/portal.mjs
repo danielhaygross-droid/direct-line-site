@@ -798,7 +798,7 @@ async function routePortal(request, url, ctx, meta) {
   }
   // ----- notifications: what the other side did, newest first -----
   if (path === '/notifications' && method === 'GET' && !who.admin) {
-    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND NOT o.archived AND e.actor = 'admin' ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
+    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND NOT o.archived AND e.actor = 'admin' AND e.kind <> 'supplier_sheet' ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
     // A receipt: "amount|YYYY-MM-DD" of its payment (the portal shows "For your $1301.00 payment of 21 Oct 2026"), else the file name.
     const pays = new Map((((await DB.prepare('SELECT id, amount, paid_at FROM client_payments WHERE client_id = ? AND NOT archived').bind(who.clientId).all()).results) || []).map(p => [Number(p.id), p]));
     for(const f of await invoices(DB,who.clientId)) { const p = pays.get(f.paymentId); rows.push({id:'invoice-'+f.id,order_id:f.orderIds[0]||null,client_id:who.clientId,kind:'invoice',actor:'admin',detail:p ? Number(p.amount).toFixed(2) + '|' + new Date(Number(p.paid_at) * 1000).toISOString().slice(0, 10) : f.filename,created_at:f.createdAt}); }
@@ -830,7 +830,8 @@ async function routePortal(request, url, ctx, meta) {
     if (!who.preview && !who.acting) await DB.prepare(who.admin ? "UPDATE order_messages SET read_by_admin = TRUE WHERE order_id = ? AND author = 'client'"
       : "UPDATE order_messages SET read_by_client = TRUE WHERE order_id = ? AND author = 'admin'").bind(id).run();
     const rows = (await DB.prepare('SELECT * FROM order_messages WHERE order_id = ? ORDER BY created_at, id').bind(id).all()).results || [];
-    const events = (await DB.prepare("SELECT * FROM order_events WHERE order_id = ? AND kind <> 'message' ORDER BY created_at, id").bind(id).all()).results || [];
+    // The supplier-sheet audit is for the Direct Line team only (not clients, not admins viewing the client's portal).
+    const events = (await DB.prepare("SELECT * FROM order_events WHERE order_id = ? AND kind <> 'message' AND (? OR kind <> 'supplier_sheet') ORDER BY created_at, id").bind(id, !!who.admin && !who.preview && !who.acting).all()).results || [];
     return json({ ok: true, messages: rows.map(messageOut), events: events.map(eventOut) });
   }
   if(path==='/claims'&&method==='GET'&&!who.admin)return json({ok:true,claims:await claims(DB,who.clientId)});
