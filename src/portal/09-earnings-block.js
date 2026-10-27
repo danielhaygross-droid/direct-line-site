@@ -18,8 +18,7 @@
     const { stats } = earnedNumbers();
     return `${!S.storeId && S.stores.length > 1 ? `<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>` : ''}
       ${statCardsHTML()}
-      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
-      <section class="card card-pad mc" data-client-chart></section>`;
+      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>`;
   }
   function profitChart(){
     const range=homeRange(),[fy,fm]=range.from.split('-').map(Number),[ty,tm]=range.to.split('-').map(Number),span=(ty-fy)*12+tm-fm+1,buckets=[];
@@ -86,9 +85,17 @@
     const blob = window.DLExcelExport.orders({ title: t('Orders') + ' — ' + S.me.name, subtitle: parts.map(p => Array.isArray(p) ? p.join(' ') : p).join(' · '), orders: list, statusLabel: s => t(UI.LABEL[s] || s), t, rtl: he });
     window.DLExcelExport.download(blob, `Direct-Line-orders-${localDay()}.xlsx`);
   }
+  // Several parcels arrived (portal review, 28 Oct 2026): on the Shipped filter the client ticks the orders their
+  // customers received and marks them delivered at once (the same action as one order's "Mark as delivered").
+  function bulkDelivered(list) {
+    const shipped = list.filter(o => o.status === 'shipped'); if (S.filter !== 'shipped' || shipped.length < 2 || S.me.preview) return '';
+    return `<details class="card card-pad bulk-deliver" data-bulk-deliver><summary><b>Mark several as delivered</b><small class="muted">Tick the orders your customers received.</small></summary>
+      <form data-bulk-form><div class="po-list">${shipped.map(o => `<label class="po-row"><input type="checkbox" name="id" value="${o.id}"><span class="po-main"><b data-no-i18n>${esc(orderName(o))}</b><small data-no-i18n>${esc(o.buyerName || '')}${o.trackingNumber ? ' · ' + esc(o.trackingNumber) : ''}</small></span></label>`).join('')}</div>
+      <div class="form-actions"><button type="submit" class="btn btn-primary" data-bulk-go disabled>Mark as delivered</button><p class="form-msg" data-bulk-msg role="status"></p></div></form></details>`;
+  }
   function renderOrdersList() {
     const list = shownOrders();
-    $('[data-orders-list]').innerHTML = list.length ? `<div class="table-wrap">${ordersTable(list)}</div>`
+    $('[data-orders-list]').innerHTML = list.length ? `${bulkDelivered(list)}<div class="table-wrap">${ordersTable(list)}</div>`
       : S.orders.length ? empty('search', 'No orders match', 'Try another search or status.') : empty('orders', 'No orders yet', 'Add your first order and we’ll take it from there.', '<a class="btn btn-primary" href="#/new">New order</a>');
   }
   function bindOrders() { renderChips(); renderOrdersList(); }

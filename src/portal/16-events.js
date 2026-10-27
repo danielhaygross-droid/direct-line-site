@@ -28,7 +28,15 @@
   }
   // The earnings block on Orders can be folded away; the choice is remembered on this device.
   document.addEventListener('toggle', e => { if (e.target.matches?.('[data-earn]')) store.set('dl-earn-open', e.target.open); }, true);
-  document.addEventListener('click',e=>{if(e.target.closest?.('[data-excel-export]'))exportOrdersToExcel();});
+  // Bulk "Mark as delivered": the button counts the ticked orders; each is marked like a single one.
+  document.addEventListener('change', e => { const f = e.target.closest?.('[data-bulk-form]'); if (!f) return; const n = $$('[name=id]:checked', f).length, b = $('[data-bulk-go]', f); b.disabled = !n; b.textContent = n ? (window.DLi18n?.lang === 'he' ? `סימון ${n} כנמסרו` : `Mark ${n} as delivered`) : (window.DLi18n?.lang === 'he' ? 'סימון כנמסרו' : 'Mark as delivered'); });
+  document.addEventListener('submit', async e => {
+    const f = e.target.closest('[data-bulk-form]'); if (!f) return; e.preventDefault();
+    const ids = $$('[name=id]:checked', f).map(i => i.value), b = $('[data-bulk-go]', f), m = $('[data-bulk-msg]', f); if (!ids.length) return; b.disabled = true; let done = 0;
+    for (const id of ids) { try { await api('/orders/' + id + '/mark-delivered', { method: 'POST', body: {} }); done++; } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; } }
+    await refresh(); N.popup({ icon: 'check', title: done === 1 ? '1 order marked as delivered' : `${done} orders marked as delivered` });
+  });
+  document.addEventListener('click',e=>{if(e.target.closest?.('[data-excel-export]'))exportOrdersToExcel();if(e.target.closest?.('[data-pay-excel]'))exportPaymentsToExcel();});
   // A "Sort" dropdown changed: remember it and redraw that list.
   document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
@@ -62,6 +70,7 @@
   // Drawer actions (the drawer lives outside #app).
   document.addEventListener('click', async e => {
     const t = e.target;
+    const reorder = t.closest('[data-reorder]'); if (reorder) S.reorderFrom = Number(reorder.dataset.reorder);
     const orderProduct = t.closest('[data-order-product]'); if (orderProduct) S.orderProduct = Number(orderProduct.dataset.orderProduct);
     if (t.closest('[data-close-drawer]')) { UI.getDrawer().close(); return; }
     const openP = t.closest('[data-open-product]'); if (openP && !t.closest('a')) { openProduct(openP.dataset.openProduct); return; }

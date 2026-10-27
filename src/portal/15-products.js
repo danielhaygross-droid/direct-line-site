@@ -54,6 +54,14 @@
       <div class="cpay-orders">${window.DLPayOrders.linked({ payment: p, orders: S.orders, adjustments: S.adjustments, orderName, esc })}</div>
       <div class="cpay-receipt">${files.length ? files.map(f => `<a class="btn btn-sm btn-primary" href="/api/portal/files/${f.id}" target="_blank" rel="noopener" title="${esc(f.filename)}">${ic('doc')}<span>Download receipt</span></a>`).join('') : '<span class="muted">Receipt not ready yet</span>'}</div></div>`;
   }
+  // All payments as an Excel file (portal review, 28 Oct 2026): date, amount, method, note, the orders paid, receipt ready.
+  function exportPaymentsToExcel() {
+    const he = window.DLi18n?.lang === 'he', t = he ? window.DLi18n.t : s => s;
+    const rows = S.payments.map(p => ({ paidAt: new Date(p.paidAt * 1000).toISOString().slice(0, 10), amount: p.amount, method: p.method, note: p.note,
+      orders: (p.orderIds || []).map(id => { const o = S.orders.find(x => x.id === id); return o ? orderName(o) : '#' + id; }).join(', '), receipt: S.invoices.some(f => f.paymentId === p.id) }));
+    const blob = window.DLExcelExport.payments({ title: t('Payments') + ' — ' + S.me.name, subtitle: [t('Exported'), new Date().toLocaleDateString('en-GB')].join(' '), rows, t, rtl: he });
+    window.DLExcelExport.download(blob, `Direct-Line-payments-${localDay()}.xlsx`);
+  }
   function viewPayments() {
     const s = S.me.summary, credit = s.outstanding < 0, adjustments=S.adjustments.filter(a=>!S.storeId||S.orders.some(o=>o.id===a.orderId&&o.storeId===S.storeId));
     return `<section class="stats">
@@ -66,7 +74,7 @@
       ${adjustments.length ? `<section class="card card-pad"><h3 class="sec-title">Balance adjustments</h3>${adjustments.map(a=>`<div class="confirmation-row"><a href="#/orders" data-open-order="${a.orderId}">${esc(a.orderRef || '#'+a.orderId)}</a><span>${esc(a.note)}</span><b>${money(a.amount)}</b></div>`).join('')}</section>` : ''}
       ${payFlow()}
       ${S.billing ? '' : billingCard()}
-      <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3><form id="invoice-month-form" class="month-receipts"><label class="field"><span>Receipts for a month</span><input type="month" name="month" value="${localDay().slice(0,7)}" required></label><button class="btn btn-sm" type="submit">Download all</button><p data-month-msg class="form-msg"></p></form></div>
+      <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3>${S.payments.length ? `<button type="button" class="btn btn-sm" data-pay-excel title="An Excel file with all your payments">${ic('doc')}<span>Download Excel</span></button>` : ''}<form id="invoice-month-form" class="month-receipts"><label class="field"><span>Receipts for a month</span><input type="month" name="month" value="${localDay().slice(0,7)}" required></label><button class="btn btn-sm" type="submit">Download all</button><p data-month-msg class="form-msg"></p></form></div>
         ${S.payments.length ? `<div class="cpay-list">${S.payments.map(paymentRow).join('')}</div>` : empty('wallet', 'No payments yet', 'When we receive a payment from you, we record it here.')}
       </section>
       ${S.billing ? billingCard() : ''}

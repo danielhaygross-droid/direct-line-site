@@ -7,7 +7,7 @@
     return `<form class="form-layout" id="order-form" novalidate>
       <div class="form-main">
         <section class="card card-pad"><h3 class="form-sec"><i>1</i>Store order number</h3><div class="form-grid">
-          <label class="field full" data-f="storeId"${S.stores.filter(s=>!s.archived).length===1&&(!ed||!S.stores.find(s=>s.id===ed.storeId)?.archived)?' hidden':''}><span>Store</span><select name="storeId" required><option value="">Choose a store</option>${S.stores.filter(s=>!s.archived||s.id===ed?.storeId).map(st=>`<option value="${st.id}"${st.id===(ed?.storeId||(S.stores.some(s=>s.id===S.storeId&&!s.archived)?S.storeId:0)||(S.stores.filter(s=>!s.archived).length===1?S.stores.find(s=>!s.archived).id:0))?' selected':''}>${esc(st.name)}</option>`).join('')}</select></label>
+          <label class="field full" data-f="storeId"${S.stores.filter(s=>!s.archived).length===1&&(!ed||!S.stores.find(s=>s.id===ed.storeId)?.archived)?' hidden':''}><span>Store</span><select name="storeId" required><option value="">Choose a store</option>${S.stores.filter(s=>!s.archived||s.id===ed?.storeId).map(st=>`<option value="${st.id}"${st.id===(ed?.storeId||(S.stores.some(s=>s.id===S.storeId&&!s.archived)?S.storeId:0)||(S.stores.filter(s=>!s.archived).length===1?S.stores.find(s=>!s.archived).id:0))?' selected':''}>${esc(st.name)}${st.status==='suspended'?' · Suspended':''}</option>`).join('')}</select></label>
           <label class="field" data-f="orderRef"><span>Order number</span><input name="orderRef" required maxlength="120" inputmode="text" placeholder="e.g. 3412345678" value="${esc(ed?.orderRef)}">
             <em class="help">The order number from your store’s order page.</em></label>
           <label class="field" data-f="orderDate"><span>Order date</span><input name="orderDate" required type="date" value="${esc(ed?.orderDate || today)}"></label>
@@ -108,7 +108,11 @@
     // Lines grouped by link (in order). Editing an older order: its first link with its quantity; other links need their own.
     const groups = list => { const out = []; for (const it of list) { const g = out.find(x => x.link === it.link && it.link); if (g) g.vars.push(it); else out.push({ link: it.link, vars: [it] }); } return out; };
     const oldLinks = ed?.productLinks?.length ? ed.productLinks : String(ed?.etsyUrl || '').split(/\s+/).filter(Boolean);
-    const start = ed?.items?.length ? groups(ed.items) : ed ? [{ link: oldLinks[0] || '', vars: [{ quantity: ed.quantity || 1, variant: ed.variant || '' }] }, ...oldLinks.slice(1).map(link => ({ link, vars: [{ quantity: '', variant: '' }] }))] : [{}];
+    // "Send this product again" (portal review, 28 Oct 2026): a new order starts with the products of an earlier one; the
+    // customer, address and photo are new every time.
+    const again = !ed && S.reorderFrom ? S.orders.find(o => o.id === S.reorderFrom) : null; S.reorderFrom = null;
+    const src = ed || again, srcLinks = src?.productLinks?.length ? src.productLinks : String(src?.etsyUrl || '').split(/\s+/).filter(Boolean);
+    const start = src?.items?.length ? groups(src.items) : src ? [{ link: srcLinks[0] || '', vars: [{ quantity: src.quantity || 1, variant: src.variant || '' }] }, ...srcLinks.slice(1).map(link => ({ link, vars: [{ quantity: '', variant: '' }] }))] : [{}];
     prodBox.innerHTML = start.map(prodBlock).join('');
     // Function declarations: the photo box updates the summary before the boxes are drawn.
     function prodRows() { return $$('[data-prod]', form); }
@@ -147,12 +151,21 @@
     // ----- check everything at once, mark what's missing -----
     const mark = (key, bad) => { const f = form.querySelector(`[data-f="${key}"]`); if (f) f.classList.toggle('bad', !!bad); };
     form.addEventListener('input', e => { const f = e.target.closest('[data-f]'); if (f) f.classList.remove('bad'); });
+    // Expected profit (portal review, 28 Oct 2026): with a quoted product, what the client earns on Etsy (after fees, in USD)
+    // minus the order total. Only an estimate in the summary; nothing is saved from it.
+    function profitRow(total) {
+      const n = v => v === '' || v == null ? null : Number(v), cur = form.currency?.value || 'USD', earned = n(form.etsyEarned?.value) ?? (n(form.sellingPrice?.value) != null && n(form.etsyFee?.value) != null ? n(form.sellingPrice.value) - n(form.etsyFee.value) : null);
+      if (cur !== 'USD') return '';
+      if (earned == null) return `<div class="sum-hint"><span>Your profit</span><em class="miss">fill in your Etsy earnings under More details</em></div>`;
+      const p = Math.round((earned - total) * 100) / 100;
+      return `<div class="sum-profit ${p < 0 ? 'neg' : 'pos'}"><span>Your profit <small>estimate</small></span><b data-no-i18n>${money(p)}</b></div>`;
+    }
     function updateSum() {
       const qty = totalQty() || 1, links = prodRows().filter(b => b.querySelector('[data-link]').value.trim()).length;
       const where = [form.buyerName.value.trim(), dest.label()].filter(Boolean).join(' · ');
       const row = (label, value) => `<div><span>${label}</span><b>${value ? esc(value) : '<em class="miss">not filled in yet</em>'}</b></div>`;
       $('[data-sum]').innerHTML = row('Order number', form.orderRef.value.trim()) + row('Product', links ? `${links} product${links > 1 ? 's' : ''} · ${qty} item${qty > 1 ? 's' : ''}` : '')
-        + (unitPrice()!=null ? row('Order total',money(Math.round((unitPrice()*qty+(shippingNow()||0))*100)/100)) : '') + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
+        + (unitPrice()!=null ? row('Order total',money(Math.round((unitPrice()*qty+(shippingNow()||0))*100)/100)) + profitRow(Math.round((unitPrice()*qty+(shippingNow()||0))*100)/100) : '') + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
     }
     form.addEventListener('input', updateSum);
     form.addEventListener('change', updateSum);
@@ -219,6 +232,7 @@
     });
     updateSum();
     // Came from "Order this product": that product is already chosen.
+    if (again) { if (form.storeId && S.stores.some(s => s.id === again.storeId && !s.archived)) form.storeId.value = String(again.storeId); if (form.competitorPrice && again.competitorPrice) form.competitorPrice.value = again.competitorPrice; if (again.productId && S.products.some(p => p.id === again.productId && p.status === 'approved')) S.orderProduct = again.productId; N.popup({ icon: 'order', title: 'Products copied from ' + orderName(again), text: 'Add the new order number, customer and a screenshot.' }, { duration: 6000 }); }
     if (!ed && S.orderProduct && form.productId && S.products.some(p => p.id === S.orderProduct && p.status === 'approved')) { form.productId.value = String(S.orderProduct); form.productId.dispatchEvent(new Event('change')); }
     S.orderProduct = null;
     if (!ed) form.orderRef.focus({ preventScroll: true });

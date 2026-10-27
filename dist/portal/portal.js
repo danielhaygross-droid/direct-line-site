@@ -436,8 +436,7 @@
     const { stats } = earnedNumbers();
     return `${!S.storeId && S.stores.length > 1 ? `<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>` : ''}
       ${statCardsHTML()}
-      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
-      <section class="card card-pad mc" data-client-chart></section>`;
+      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>`;
   }
   function profitChart(){
     const range=homeRange(),[fy,fm]=range.from.split('-').map(Number),[ty,tm]=range.to.split('-').map(Number),span=(ty-fy)*12+tm-fm+1,buckets=[];
@@ -504,9 +503,17 @@
     const blob = window.DLExcelExport.orders({ title: t('Orders') + ' — ' + S.me.name, subtitle: parts.map(p => Array.isArray(p) ? p.join(' ') : p).join(' · '), orders: list, statusLabel: s => t(UI.LABEL[s] || s), t, rtl: he });
     window.DLExcelExport.download(blob, `Direct-Line-orders-${localDay()}.xlsx`);
   }
+  // Several parcels arrived (portal review, 28 Oct 2026): on the Shipped filter the client ticks the orders their
+  // customers received and marks them delivered at once (the same action as one order's "Mark as delivered").
+  function bulkDelivered(list) {
+    const shipped = list.filter(o => o.status === 'shipped'); if (S.filter !== 'shipped' || shipped.length < 2 || S.me.preview) return '';
+    return `<details class="card card-pad bulk-deliver" data-bulk-deliver><summary><b>Mark several as delivered</b><small class="muted">Tick the orders your customers received.</small></summary>
+      <form data-bulk-form><div class="po-list">${shipped.map(o => `<label class="po-row"><input type="checkbox" name="id" value="${o.id}"><span class="po-main"><b data-no-i18n>${esc(orderName(o))}</b><small data-no-i18n>${esc(o.buyerName || '')}${o.trackingNumber ? ' · ' + esc(o.trackingNumber) : ''}</small></span></label>`).join('')}</div>
+      <div class="form-actions"><button type="submit" class="btn btn-primary" data-bulk-go disabled>Mark as delivered</button><p class="form-msg" data-bulk-msg role="status"></p></div></form></details>`;
+  }
   function renderOrdersList() {
     const list = shownOrders();
-    $('[data-orders-list]').innerHTML = list.length ? `<div class="table-wrap">${ordersTable(list)}</div>`
+    $('[data-orders-list]').innerHTML = list.length ? `${bulkDelivered(list)}<div class="table-wrap">${ordersTable(list)}</div>`
       : S.orders.length ? empty('search', 'No orders match', 'Try another search or status.') : empty('orders', 'No orders yet', 'Add your first order and we’ll take it from there.', '<a class="btn btn-primary" href="#/new">New order</a>');
   }
   function bindOrders() { renderChips(); renderOrdersList(); }
@@ -577,7 +584,7 @@
         </form></section>`}`;
     bindNumbers(o);
     if (keepFoot && d.foot.dataset.confirm) return;
-    d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>${['pending','processing','cancellation_requested'].includes(o.status) ? 'This order is already being processed. Need a change? Send us a message.' : 'Questions about this order? Send us a message.'}</a>`}${canChangeCustomer(o) ? `<button type="button" class="btn" data-change-customer="${o.id}">${ic('edit')}Change customer details</button>` : ''}<span class="spacer"></span>${['pending','processing','shipped'].includes(o.status) ? `<div><button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Request cancellation</button><p class="muted" style="font-size:12px">Free before the item reaches our warehouse. $4 after it arrives at the warehouse, or if the parcel is intercepted.</p></div>` : ''}${o.status === 'shipped' ? `<button type="button" class="btn btn-primary" data-delivered="${o.id}">Mark as delivered</button>` : ''}${!S.claims.some(c=>c.orderId===o.id) && (o.claimEligibility?.problem || o.claimEligibility?.lost) ? `<button type="button" class="btn" data-report-claim="${o.id}">${o.claimEligibility.lost ? 'Report lost parcel' : 'Report a problem'}</button>` : ''}`;
+    d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>${['pending','processing','cancellation_requested'].includes(o.status) ? 'This order is already being processed. Need a change? Send us a message.' : 'Questions about this order? Send us a message.'}</a>`}${!S.me.preview && o.status !== 'cancelled' ? `<a class="btn" style="align-self:flex-start" href="#/new" data-reorder="${o.id}" data-close-drawer>${ic('plus')}Send this product again</a>` : ''}${canChangeCustomer(o) ? `<button type="button" class="btn" data-change-customer="${o.id}">${ic('edit')}Change customer details</button>` : ''}<span class="spacer"></span>${['pending','processing','shipped'].includes(o.status) ? `<div><button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Request cancellation</button><p class="muted" style="font-size:12px">Free before the item reaches our warehouse. $4 after it arrives at the warehouse, or if the parcel is intercepted.</p></div>` : ''}${o.status === 'shipped' ? `<button type="button" class="btn btn-primary" data-delivered="${o.id}">Mark as delivered</button>` : ''}${!S.claims.some(c=>c.orderId===o.id) && (o.claimEligibility?.problem || o.claimEligibility?.lost) ? `<button type="button" class="btn" data-report-claim="${o.id}">${o.claimEligibility.lost ? 'Report lost parcel' : 'Report a problem'}</button>` : ''}`;
   }
   // ---------- cost revision (Erwin, 27 Oct 2026) ----------
   // The client asks for a lower cost on a priced order or a quoted product; the competitor price (what their Etsy
@@ -626,7 +633,7 @@
     return `<form class="form-layout" id="order-form" novalidate>
       <div class="form-main">
         <section class="card card-pad"><h3 class="form-sec"><i>1</i>Store order number</h3><div class="form-grid">
-          <label class="field full" data-f="storeId"${S.stores.filter(s=>!s.archived).length===1&&(!ed||!S.stores.find(s=>s.id===ed.storeId)?.archived)?' hidden':''}><span>Store</span><select name="storeId" required><option value="">Choose a store</option>${S.stores.filter(s=>!s.archived||s.id===ed?.storeId).map(st=>`<option value="${st.id}"${st.id===(ed?.storeId||(S.stores.some(s=>s.id===S.storeId&&!s.archived)?S.storeId:0)||(S.stores.filter(s=>!s.archived).length===1?S.stores.find(s=>!s.archived).id:0))?' selected':''}>${esc(st.name)}</option>`).join('')}</select></label>
+          <label class="field full" data-f="storeId"${S.stores.filter(s=>!s.archived).length===1&&(!ed||!S.stores.find(s=>s.id===ed.storeId)?.archived)?' hidden':''}><span>Store</span><select name="storeId" required><option value="">Choose a store</option>${S.stores.filter(s=>!s.archived||s.id===ed?.storeId).map(st=>`<option value="${st.id}"${st.id===(ed?.storeId||(S.stores.some(s=>s.id===S.storeId&&!s.archived)?S.storeId:0)||(S.stores.filter(s=>!s.archived).length===1?S.stores.find(s=>!s.archived).id:0))?' selected':''}>${esc(st.name)}${st.status==='suspended'?' · Suspended':''}</option>`).join('')}</select></label>
           <label class="field" data-f="orderRef"><span>Order number</span><input name="orderRef" required maxlength="120" inputmode="text" placeholder="e.g. 3412345678" value="${esc(ed?.orderRef)}">
             <em class="help">The order number from your store’s order page.</em></label>
           <label class="field" data-f="orderDate"><span>Order date</span><input name="orderDate" required type="date" value="${esc(ed?.orderDate || today)}"></label>
@@ -727,7 +734,11 @@
     // Lines grouped by link (in order). Editing an older order: its first link with its quantity; other links need their own.
     const groups = list => { const out = []; for (const it of list) { const g = out.find(x => x.link === it.link && it.link); if (g) g.vars.push(it); else out.push({ link: it.link, vars: [it] }); } return out; };
     const oldLinks = ed?.productLinks?.length ? ed.productLinks : String(ed?.etsyUrl || '').split(/\s+/).filter(Boolean);
-    const start = ed?.items?.length ? groups(ed.items) : ed ? [{ link: oldLinks[0] || '', vars: [{ quantity: ed.quantity || 1, variant: ed.variant || '' }] }, ...oldLinks.slice(1).map(link => ({ link, vars: [{ quantity: '', variant: '' }] }))] : [{}];
+    // "Send this product again" (portal review, 28 Oct 2026): a new order starts with the products of an earlier one; the
+    // customer, address and photo are new every time.
+    const again = !ed && S.reorderFrom ? S.orders.find(o => o.id === S.reorderFrom) : null; S.reorderFrom = null;
+    const src = ed || again, srcLinks = src?.productLinks?.length ? src.productLinks : String(src?.etsyUrl || '').split(/\s+/).filter(Boolean);
+    const start = src?.items?.length ? groups(src.items) : src ? [{ link: srcLinks[0] || '', vars: [{ quantity: src.quantity || 1, variant: src.variant || '' }] }, ...srcLinks.slice(1).map(link => ({ link, vars: [{ quantity: '', variant: '' }] }))] : [{}];
     prodBox.innerHTML = start.map(prodBlock).join('');
     // Function declarations: the photo box updates the summary before the boxes are drawn.
     function prodRows() { return $$('[data-prod]', form); }
@@ -766,12 +777,21 @@
     // ----- check everything at once, mark what's missing -----
     const mark = (key, bad) => { const f = form.querySelector(`[data-f="${key}"]`); if (f) f.classList.toggle('bad', !!bad); };
     form.addEventListener('input', e => { const f = e.target.closest('[data-f]'); if (f) f.classList.remove('bad'); });
+    // Expected profit (portal review, 28 Oct 2026): with a quoted product, what the client earns on Etsy (after fees, in USD)
+    // minus the order total. Only an estimate in the summary; nothing is saved from it.
+    function profitRow(total) {
+      const n = v => v === '' || v == null ? null : Number(v), cur = form.currency?.value || 'USD', earned = n(form.etsyEarned?.value) ?? (n(form.sellingPrice?.value) != null && n(form.etsyFee?.value) != null ? n(form.sellingPrice.value) - n(form.etsyFee.value) : null);
+      if (cur !== 'USD') return '';
+      if (earned == null) return `<div class="sum-hint"><span>Your profit</span><em class="miss">fill in your Etsy earnings under More details</em></div>`;
+      const p = Math.round((earned - total) * 100) / 100;
+      return `<div class="sum-profit ${p < 0 ? 'neg' : 'pos'}"><span>Your profit <small>estimate</small></span><b data-no-i18n>${money(p)}</b></div>`;
+    }
     function updateSum() {
       const qty = totalQty() || 1, links = prodRows().filter(b => b.querySelector('[data-link]').value.trim()).length;
       const where = [form.buyerName.value.trim(), dest.label()].filter(Boolean).join(' · ');
       const row = (label, value) => `<div><span>${label}</span><b>${value ? esc(value) : '<em class="miss">not filled in yet</em>'}</b></div>`;
       $('[data-sum]').innerHTML = row('Order number', form.orderRef.value.trim()) + row('Product', links ? `${links} product${links > 1 ? 's' : ''} · ${qty} item${qty > 1 ? 's' : ''}` : '')
-        + (unitPrice()!=null ? row('Order total',money(Math.round((unitPrice()*qty+(shippingNow()||0))*100)/100)) : '') + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
+        + (unitPrice()!=null ? row('Order total',money(Math.round((unitPrice()*qty+(shippingNow()||0))*100)/100)) + profitRow(Math.round((unitPrice()*qty+(shippingNow()||0))*100)/100) : '') + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
     }
     form.addEventListener('input', updateSum);
     form.addEventListener('change', updateSum);
@@ -838,6 +858,7 @@
     });
     updateSum();
     // Came from "Order this product": that product is already chosen.
+    if (again) { if (form.storeId && S.stores.some(s => s.id === again.storeId && !s.archived)) form.storeId.value = String(again.storeId); if (form.competitorPrice && again.competitorPrice) form.competitorPrice.value = again.competitorPrice; if (again.productId && S.products.some(p => p.id === again.productId && p.status === 'approved')) S.orderProduct = again.productId; N.popup({ icon: 'order', title: 'Products copied from ' + orderName(again), text: 'Add the new order number, customer and a screenshot.' }, { duration: 6000 }); }
     if (!ed && S.orderProduct && form.productId && S.products.some(p => p.id === S.orderProduct && p.status === 'approved')) { form.productId.value = String(S.orderProduct); form.productId.dispatchEvent(new Event('change')); }
     S.orderProduct = null;
     if (!ed) form.orderRef.focus({ preventScroll: true });
@@ -875,7 +896,10 @@
   // Short "N orders not paid yet · $X  [Pay for orders]" line for Home and Orders (nothing when all is paid).
   function payStrip() {
     const list = unpaidOrders(); if (!list.length || S.me.preview) return '';
-    return `<a class="pay-strip" href="#/payments?pay=1" data-pay-go><span class="pay-strip-ic">${ic('wallet')}</span><span class="pay-strip-txt"><b>${list.length} ${list.length === 1 ? 'order' : 'orders'} not paid yet</b><small>${money(unpaidCents() / 100)}</small></span><span class="btn btn-primary btn-sm">Pay for orders</span></a>`;
+    // Reminder (portal review, 28 Oct 2026): once the oldest unpaid order is more than 14 days old the strip turns red and
+    // says since when. Only a reminder: nothing is blocked or charged.
+    const oldest = list.map(o => window.DLClientStoreMath.dateKey(o)).sort()[0], days = oldest ? Math.floor((Date.now() - Date.parse(oldest + 'T12:00:00Z')) / 864e5) : 0, late = days > 14;
+    return `<a class="pay-strip${late ? ' late' : ''}" href="#/payments?pay=1" data-pay-go><span class="pay-strip-ic">${ic('wallet')}</span><span class="pay-strip-txt"><b>${list.length} ${list.length === 1 ? 'order' : 'orders'} not paid yet</b><small>${money(unpaidCents() / 100)}${late ? ` · <span>oldest from</span> <span data-no-i18n>${esc(window.DLPayOrders.day(oldest))}</span> (<span>${days} days ago</span>)` : ''}</small></span><span class="btn btn-primary btn-sm">Pay for orders</span></a>`;
   }
   // "Not paid yet": the orders still to pay, so the client can see what the balance is made of (preview mode only;
   // clients get the same list as step 1 of "Pay for your orders").
@@ -1087,6 +1111,14 @@
       <div class="cpay-orders">${window.DLPayOrders.linked({ payment: p, orders: S.orders, adjustments: S.adjustments, orderName, esc })}</div>
       <div class="cpay-receipt">${files.length ? files.map(f => `<a class="btn btn-sm btn-primary" href="/api/portal/files/${f.id}" target="_blank" rel="noopener" title="${esc(f.filename)}">${ic('doc')}<span>Download receipt</span></a>`).join('') : '<span class="muted">Receipt not ready yet</span>'}</div></div>`;
   }
+  // All payments as an Excel file (portal review, 28 Oct 2026): date, amount, method, note, the orders paid, receipt ready.
+  function exportPaymentsToExcel() {
+    const he = window.DLi18n?.lang === 'he', t = he ? window.DLi18n.t : s => s;
+    const rows = S.payments.map(p => ({ paidAt: new Date(p.paidAt * 1000).toISOString().slice(0, 10), amount: p.amount, method: p.method, note: p.note,
+      orders: (p.orderIds || []).map(id => { const o = S.orders.find(x => x.id === id); return o ? orderName(o) : '#' + id; }).join(', '), receipt: S.invoices.some(f => f.paymentId === p.id) }));
+    const blob = window.DLExcelExport.payments({ title: t('Payments') + ' — ' + S.me.name, subtitle: [t('Exported'), new Date().toLocaleDateString('en-GB')].join(' '), rows, t, rtl: he });
+    window.DLExcelExport.download(blob, `Direct-Line-payments-${localDay()}.xlsx`);
+  }
   function viewPayments() {
     const s = S.me.summary, credit = s.outstanding < 0, adjustments=S.adjustments.filter(a=>!S.storeId||S.orders.some(o=>o.id===a.orderId&&o.storeId===S.storeId));
     return `<section class="stats">
@@ -1099,7 +1131,7 @@
       ${adjustments.length ? `<section class="card card-pad"><h3 class="sec-title">Balance adjustments</h3>${adjustments.map(a=>`<div class="confirmation-row"><a href="#/orders" data-open-order="${a.orderId}">${esc(a.orderRef || '#'+a.orderId)}</a><span>${esc(a.note)}</span><b>${money(a.amount)}</b></div>`).join('')}</section>` : ''}
       ${payFlow()}
       ${S.billing ? '' : billingCard()}
-      <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3><form id="invoice-month-form" class="month-receipts"><label class="field"><span>Receipts for a month</span><input type="month" name="month" value="${localDay().slice(0,7)}" required></label><button class="btn btn-sm" type="submit">Download all</button><p data-month-msg class="form-msg"></p></form></div>
+      <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3>${S.payments.length ? `<button type="button" class="btn btn-sm" data-pay-excel title="An Excel file with all your payments">${ic('doc')}<span>Download Excel</span></button>` : ''}<form id="invoice-month-form" class="month-receipts"><label class="field"><span>Receipts for a month</span><input type="month" name="month" value="${localDay().slice(0,7)}" required></label><button class="btn btn-sm" type="submit">Download all</button><p data-month-msg class="form-msg"></p></form></div>
         ${S.payments.length ? `<div class="cpay-list">${S.payments.map(paymentRow).join('')}</div>` : empty('wallet', 'No payments yet', 'When we receive a payment from you, we record it here.')}
       </section>
       ${S.billing ? billingCard() : ''}
@@ -1138,7 +1170,15 @@
   }
   // The earnings block on Orders can be folded away; the choice is remembered on this device.
   document.addEventListener('toggle', e => { if (e.target.matches?.('[data-earn]')) store.set('dl-earn-open', e.target.open); }, true);
-  document.addEventListener('click',e=>{if(e.target.closest?.('[data-excel-export]'))exportOrdersToExcel();});
+  // Bulk "Mark as delivered": the button counts the ticked orders; each is marked like a single one.
+  document.addEventListener('change', e => { const f = e.target.closest?.('[data-bulk-form]'); if (!f) return; const n = $$('[name=id]:checked', f).length, b = $('[data-bulk-go]', f); b.disabled = !n; b.textContent = n ? (window.DLi18n?.lang === 'he' ? `סימון ${n} כנמסרו` : `Mark ${n} as delivered`) : (window.DLi18n?.lang === 'he' ? 'סימון כנמסרו' : 'Mark as delivered'); });
+  document.addEventListener('submit', async e => {
+    const f = e.target.closest('[data-bulk-form]'); if (!f) return; e.preventDefault();
+    const ids = $$('[name=id]:checked', f).map(i => i.value), b = $('[data-bulk-go]', f), m = $('[data-bulk-msg]', f); if (!ids.length) return; b.disabled = true; let done = 0;
+    for (const id of ids) { try { await api('/orders/' + id + '/mark-delivered', { method: 'POST', body: {} }); done++; } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; } }
+    await refresh(); N.popup({ icon: 'check', title: done === 1 ? '1 order marked as delivered' : `${done} orders marked as delivered` });
+  });
+  document.addEventListener('click',e=>{if(e.target.closest?.('[data-excel-export]'))exportOrdersToExcel();if(e.target.closest?.('[data-pay-excel]'))exportPaymentsToExcel();});
   // A "Sort" dropdown changed: remember it and redraw that list.
   document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
@@ -1172,6 +1212,7 @@
   // Drawer actions (the drawer lives outside #app).
   document.addEventListener('click', async e => {
     const t = e.target;
+    const reorder = t.closest('[data-reorder]'); if (reorder) S.reorderFrom = Number(reorder.dataset.reorder);
     const orderProduct = t.closest('[data-order-product]'); if (orderProduct) S.orderProduct = Number(orderProduct.dataset.orderProduct);
     if (t.closest('[data-close-drawer]')) { UI.getDrawer().close(); return; }
     const openP = t.closest('[data-open-product]'); if (openP && !t.closest('a')) { openProduct(openP.dataset.openProduct); return; }

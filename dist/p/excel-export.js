@@ -89,21 +89,44 @@
       + `<conditionalFormatting sqref="${paid}"><cfRule type="cellIs" dxfId="0" priority="1" operator="equal"><formula>"${x(YES)}"</formula></cfRule></conditionalFormatting>`
       + `<dataValidations count="1"><dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="${paid}"><formula1>"${x(YES)},${x(NO)}"</formula1></dataValidation></dataValidations>`
       + `<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup orientation="landscape" paperSize="9" fitToWidth="1" fitToHeight="0"/></worksheet>`;
-    const sheetName = x(t('Orders')).slice(0, 31);
+    return book(sheet, x(t('Orders')).slice(0, 31), title, `$A$4:$H$${last}`);
+  }
+  // Payments (portal review, 28 Oct 2026): date, amount, method, note, the orders it paid, receipt ready; total at the end.
+  //   rows: [{ paidAt: 'YYYY-MM-DD', amount, method, note, orders: 'SHOP-1, SHOP-2', receipt: true }]
+  function payments({ title, subtitle, rows: list, t = s => s, rtl = false }) {
+    const head = ['Date', 'Amount', 'Method', 'Note', 'Orders paid', 'Receipt'].map(h => t(h)), first = 5, rows = [];
+    rows.push(`<row r="1" ht="24" customHeight="1">${str('A1', title, 1)}</row>`, `<row r="2">${str('A2', subtitle, 2)}</row>`);
+    rows.push(`<row r="4" ht="20" customHeight="1">${head.map((h, i) => str(col(i) + 4, h, 3)).join('')}</row>`);
+    list.forEach((p, i) => { const r = first + i, ds = serial(p.paidAt);
+      rows.push(`<row r="${r}">${ds != null ? num('A' + r, ds, 6) : str('A' + r, p.paidAt || '', 4)}${num('B' + r, Math.round(Number(p.amount || 0) * 100) / 100, 5)}${str('C' + r, p.method || '—', 4)}${str('D' + r, p.note || '', 4)}${str('E' + r, p.orders || '—', 4)}${str('F' + r, p.receipt ? t('Yes') : t('No'), 7)}</row>`); });
+    const last = first + Math.max(list.length, 1) - 1, s = last + 2;
+    rows.push(`<row r="${s}">${str('A' + s, t('Total'), 8)}${formula('B' + s, `SUM(B${first}:B${last})`, 9)}</row>`);
+    const widths = [12, 14, 18, 30, 40, 10];
+    const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
+      + `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:F${s}"/>`
+      + `<sheetViews><sheetView workbookViewId="0"${rtl ? ' rightToLeft="1"' : ''}><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+      + `<sheetFormatPr defaultRowHeight="15"/><cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>`
+      + `<sheetData>${rows.join('')}</sheetData><autoFilter ref="A4:F${last}"/>`
+      + `<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup orientation="landscape" paperSize="9" fitToWidth="1" fitToHeight="0"/></worksheet>`;
+    return book(sheet, x(t('Payments')).slice(0, 31), title, `$A$4:$F$${last}`);
+  }
+  // One-sheet workbook around a worksheet XML (orders and payments exports).
+  function book(sheet, sheetName, title, filterRef) {
     const files = [
       ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>'],
       ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>'],
       ['docProps/core.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${x(title)}</dc:title><dc:creator>Direct Line</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString().replace(/\.\d+Z$/, 'Z')}</dcterms:created></cp:coreProperties>`],
-      ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets><sheet name="${sheetName}" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">'${sheetName.replace(/'/g, "''")}'!$A$4:$H$${last}</definedName></definedNames><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`],
+      ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets><sheet name="${sheetName}" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">'${sheetName.replace(/'/g, "''")}'!${filterRef}</definedName></definedNames><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`],
       ['xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
       ['xl/styles.xml', STYLES],
       ['xl/worksheets/sheet1.xml', sheet],
     ];
     return zip(files);
   }
+
   function download(blob, filename) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
     document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
-  window.DLExcelExport = { orders, download, zip, crc32, MIME };
+  window.DLExcelExport = { orders, payments, download, zip, crc32, MIME };
 })();
