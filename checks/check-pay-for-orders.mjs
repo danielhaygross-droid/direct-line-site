@@ -57,7 +57,7 @@ try {
     const ctx = await session(client, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     // Home: the strip, then its button opens Payments at the pay section.
     await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.reload(); await page.waitForSelector('.pay-strip');
-    if (lang === 'en') assert.match(await page.locator('.pay-strip').innerText(), /3 orders not paid yet\s*\$75\.00\s*Pay for orders/, tag);
+    if (lang === 'en') assert.match(await page.locator('.pay-strip').innerText(), /3 orders not paid yet\s*\$75\.00[^\n]*\s*Pay for orders/, tag);
     else assert.match(await page.locator('.pay-strip').innerText(), /3 הזמנות שעוד לא שולמו[\s\S]*תשלום על הזמנות/, tag);
     await page.locator('.pay-strip').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-home-strip.png`) });
     await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('.pay-strip');

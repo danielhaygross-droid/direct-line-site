@@ -16,7 +16,10 @@
   // Short "N orders not paid yet · $X  [Pay for orders]" line for Home and Orders (nothing when all is paid).
   function payStrip() {
     const list = unpaidOrders(); if (!list.length || S.me.preview) return '';
-    return `<a class="pay-strip" href="#/payments?pay=1" data-pay-go><span class="pay-strip-ic">${ic('wallet')}</span><span class="pay-strip-txt"><b>${list.length} ${list.length === 1 ? 'order' : 'orders'} not paid yet</b><small>${money(unpaidCents() / 100)}</small></span><span class="btn btn-primary btn-sm">Pay for orders</span></a>`;
+    // Reminder (portal review, 28 Oct 2026): once the oldest unpaid order is more than 14 days old the strip turns red and
+    // says since when. Only a reminder: nothing is blocked or charged.
+    const oldest = list.map(o => window.DLClientStoreMath.dateKey(o)).sort()[0], days = oldest ? Math.floor((Date.now() - Date.parse(oldest + 'T12:00:00Z')) / 864e5) : 0, late = days > 14;
+    return `<a class="pay-strip${late ? ' late' : ''}" href="#/payments?pay=1" data-pay-go><span class="pay-strip-ic">${ic('wallet')}</span><span class="pay-strip-txt"><b>${list.length} ${list.length === 1 ? 'order' : 'orders'} not paid yet</b><small>${money(unpaidCents() / 100)}${late ? ` · <span>oldest from</span> <span data-no-i18n>${esc(window.DLPayOrders.day(oldest))}</span> (<span>${days} days ago</span>)` : ''}</small></span><span class="btn btn-primary btn-sm">Pay for orders</span></a>`;
   }
   // "Not paid yet": the orders still to pay, so the client can see what the balance is made of (preview mode only;
   // clients get the same list as step 1 of "Pay for your orders").
