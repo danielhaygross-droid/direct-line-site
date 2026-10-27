@@ -412,3 +412,5 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-we
 .rev-admin-p{display:grid;gap:6px;padding:12px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--orange) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--orange) 35%,var(--line))}.rev-admin-p p{margin:0}
 .rev-keep-row{display:flex;gap:8px;flex-wrap:wrap}.rev-keep-row input{flex:1 1 200px;min-height:40px}
 @media(max-width:560px){.rev-form{grid-template-columns:1fr}}
+.rev-ask{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 14px;padding:12px 14px;border-radius:var(--radius-sm);border:1px solid color-mix(in srgb,var(--gold) 45%,var(--line));background:color-mix(in srgb,var(--gold) 10%,var(--surface))}
+.rev-ask-txt{display:grid;gap:2px;flex:1 1 220px;min-width:0}.rev-ask-txt b{font-size:14px}.rev-ask-txt small{color:var(--muted);font-size:12.5px}.rev-ask .btn{flex:none}

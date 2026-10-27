@@ -106,7 +106,7 @@ try {
   console.log('PASS products: ask after a price, new quote answers it, keep with reply');
   // From the screen: the form needs the price, then the request is sent.
   const B = await mk('REV-3', 25), c2 = await session(client, 390), pg2 = await c2.newPage();
-  await pg2.goto(`${base}/portal/?lang=he#/orders`); await pg2.reload(); await pg2.locator(`[data-open-order="${B}"]`).first().click(); await pg2.locator('[data-ask-revision]').click();
+  await pg2.goto(`${base}/portal/?lang=he#/orders`); await pg2.reload(); await pg2.locator(`[data-open-order="${B}"]`).first().click(); await pg2.locator('.rev-ask').scrollIntoViewIfNeeded(); await pg2.screenshot({ path: path.join(out, 'he-390-client-ask.png') }); await pg2.locator('[data-ask-revision]').click();
   await pg2.locator('[data-rev-form] [type=submit]').click(); assert.equal(await pg2.locator('[data-rev-msg].err').count(), 1, 'required on screen');
   await pg2.locator('[data-rev-form] [name=competitorPrice]').fill('21.5'); await pg2.screenshot({ path: path.join(out, 'he-390-client-form.png') });
   await pg2.locator('[data-rev-form] [type=submit]').click(); await pg2.waitForSelector('.rev-line.wait');
