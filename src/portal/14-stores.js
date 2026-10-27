@@ -1,5 +1,8 @@
-  function viewStores(){return `${S.me.preview?'':`<section class="card card-pad">${window.DLClientStoreUI.form(null,S.me.id)}</section>`}${S.stores.map(s=>`<section class="card card-pad">${window.DLClientStoreUI.label(s)}${S.me.preview?'':window.DLClientStoreUI.form(s,S.me.id)}</section>`).join('')}`;}
+  // Shop status filter (Erwin, 27 Oct 2026): All / Active / Suspended, remembered on this device.
+  function viewStores(){const f=store.get('dl-store-status','all'),n=k=>S.stores.filter(s=>k==='all'||s.status===k).length,shown=S.stores.filter(s=>f==='all'||s.status===f);
+    return `<div class="chips store-filter" role="group" aria-label="Shop status">${[['all','All'],['active','Active'],['suspended','Suspended']].map(([k,t])=>`<button type="button" class="chip${f===k?' on':''}" aria-pressed="${f===k}" data-store-status="${k}"><span>${t}</span> <b data-no-i18n>${n(k)}</b></button>`).join('')}</div>${S.me.preview?'':`<section class="card card-pad">${window.DLClientStoreUI.form(null,S.me.id)}</section>`}${shown.length?shown.map(s=>`<section class="card card-pad store-card${s.status==='suspended'?' is-suspended':''}">${window.DLClientStoreUI.label(s)}${S.me.preview?'':window.DLClientStoreUI.form(s,S.me.id)}</section>`).join(''):'<p class="muted card card-pad">No shops with this status.</p>'}`;}
   function bindStores(){
+    for(const b of $$('[data-store-status]'))b.addEventListener('click',()=>{store.set('dl-store-status',b.dataset.storeStatus);renderView();});
     for(const f of $$('[data-client-store-form]')){
       f.addEventListener('input',e=>{f.dataset.dirty='1';if(e.target.name==='color')f.dataset.colourEdited='1';});
       f.addEventListener('submit',async e=>{
@@ -7,7 +10,7 @@
         if(b.disabled)return;
         b.disabled=true;f.dataset.dirty='1';m.textContent='Saving store...';
         try{
-          const result=await api('/client-stores'+(f.dataset.clientStoreForm?'/'+f.dataset.clientStoreForm:''),{method:'POST',body:{name:f.storeName.value,platform:f.platform.value,link:f.link.value,color:f.dataset.clientStoreForm||f.dataset.colourEdited?f.color.value:undefined,archived:!!f.archived?.checked}});
+          const result=await api('/client-stores'+(f.dataset.clientStoreForm?'/'+f.dataset.clientStoreForm:''),{method:'POST',body:{name:f.storeName.value,platform:f.platform.value,link:f.link.value,color:f.dataset.clientStoreForm||f.dataset.colourEdited?f.color.value:undefined,archived:!!f.archived?.checked,status:f.status?.value||'active'}});
           // Save succeeds independently of unrelated background requests. Keep other drafts.
           const drafts=$$('[data-client-store-form]').filter(other=>other!==f&&other.dataset.dirty).map(other=>({id:other.dataset.clientStoreForm,colourEdited:other.dataset.colourEdited,values:[...other.elements].filter(el=>el.name).map(el=>[el.name,el.type==='checkbox'?el.checked:el.value])}));
           S.stores=S.stores.filter(s=>s.id!==result.store.id).concat(result.store).sort((a,b)=>a.id-b.id);
