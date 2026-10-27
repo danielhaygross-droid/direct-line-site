@@ -13,7 +13,7 @@ test('client order responses never include the product/shipping breakdown', () =
 });
 
 test('client portal shows the total only', () => {
-  assert.ok(!/productCost|shippingFee|Shipping fee|Product cost/.test(portal));
+  assert.ok(!/productCost|shippingFee|Shipping fee|Product cost/.test(portal.replaceAll('Product cost updated', ''))) // the bell title Erwin asked for (28 Oct 2026) is not a cost breakdown;
   assert.ok(!/shipping cost|shipping fee/i.test(portal.replace(/On Etsy: Orders &amp; Shipping/g, '')));
   assert.ok(portal.includes('Sale &amp; cost'));
 });
