@@ -38,7 +38,7 @@ export const QUOTE_SHEET_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS quoted_shipping DOUBLE PRECISION',
 ];
 const STATUS = { awaiting_quote: 'Waiting for price', approved: 'Quoted', not_available: 'Not available' };
-const TAB = 'quote_tab', OPTIONS_FORMAT = 'quote_tab_options_v1', LAYOUT = 'quote_tab_layout', LAYOUT_NOW = '4';
+const TAB = 'quote_tab', OPTIONS_FORMAT = 'quote_tab_options_v1', REVISION_ALERTS = 'quote_tab_revision_alerts_v1', LAYOUT = 'quote_tab_layout', LAYOUT_NOW = '4';
 // Competitor price (N): light blue, open for anyone with the sheet to type in.
 const COMP = 13;
 const competitorFormat = sheetId => [
@@ -96,7 +96,7 @@ export function quoteCells(env, p, photoIds) {
   const ai = [txt(new Date(Number(p.created_at) * 1000).toISOString().slice(0, 10)), 'P-' + p.id,
     urls[0] ? `=IMAGE("${q(urls[0])}",1)` : '', urls[1] ? `=HYPERLINK("${q(urls[1])}","Photo 2")` : '', urls[2] ? `=HYPERLINK("${q(urls[2])}","Photo 3")` : '',
     p.link ? `=HYPERLINK("${q(p.link)}","Open product")` : '', txt(p.name), txt(p.variant), p.expected_quantity == null ? '' : Number(p.expected_quantity)];
-  return { ai, no: [txt(competitorCell(p.competitor_price, p.revision_status)), p.revision_status ? 'Cost revision requested' : STATUS[p.status] || p.status, String(p.id)] };
+  return { ai, no: [txt(competitorCell(p.competitor_price, p.revision_status)), p.revision_status ? REV_STATUS : STATUS[p.status] || p.status, String(p.id)] };
 }
 
 async function tabId(env, f) {
@@ -237,6 +237,23 @@ export async function ensureQuoteOptionsFormat(DB, env, fetchImpl = fetch) {
   return true;
 }
 
+// Cost revision alerts (Erwin, 28 Oct 2026): A3 counts the products whose client asked for a lower price (orange, empty
+// when none) and those rows turn light orange (Status "Cost revision requested", column O). One-time, no columns move.
+const REV_STATUS = 'Cost revision requested';
+export async function ensureQuoteRevisionAlerts(DB, env, fetchImpl = fetch) {
+  if (await setting(DB, REVISION_ALERTS) === '1') return false;
+  const sheetId = await tabId(env, fetchImpl);
+  if (sheetId == null) return false;
+  const F = QUOTE_FIRST_ROW;
+  await batch(env, [
+    { repeatCell: { range: { sheetId, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 12, foregroundColor: { red: 0.8, green: 0.35, blue: 0 } }, wrapStrategy: 'OVERFLOW_CELL' } }, fields: 'userEnteredFormat(textFormat,wrapStrategy)' } },
+    { addConditionalFormatRule: { rule: { ranges: [{ sheetId, startRowIndex: F - 1, startColumnIndex: 0, endColumnIndex: 16 }], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=$O${F}="${REV_STATUS}"` }] }, format: { backgroundColor: { red: 1, green: 0.88, blue: 0.75 } } } } } },
+  ], fetchImpl);
+  await batchValues(env, [{ range: `${QT}!A3`, values: [[`=IF(COUNTIF(O${F}:O,"${REV_STATUS}")=0,"","⚠ "&COUNTIF(O${F}:O,"${REV_STATUS}")&" COST REVISION REQUEST(S) WAITING: see the orange rows and type a new Price per item")`]] }], fetchImpl);
+  await putSetting(DB, REVISION_ALERTS, '1');
+  return true;
+}
+
 // Adds or refreshes one product's row (website columns only; the supplier's columns are never overwritten).
 export async function syncQuoteRow(DB, env, productId, fetchImpl = fetch) {
   if (!googleSheetsConfigured(env) || await setting(DB, 'supplier_sheet') !== '1') return { enabled: false };
@@ -286,6 +303,7 @@ export async function applyQuoteRow(DB, p, cells, settings, t = Math.floor(Date.
 export async function pollQuoteTab(DB, env, settings, fetchImpl = fetch) {
   if (!await ensureQuoteTab(DB, env, fetchImpl)) return { waiting: true, changed: 0 };
   await ensureQuoteOptionsFormat(DB, env, fetchImpl);
+  await ensureQuoteRevisionAlerts(DB, env, fetchImpl);
   await ensureQuoteLayout(DB, env, fetchImpl);
   if (await setting(DB, 'quote_reread_v1') !== '1') {
     await DB.prepare("UPDATE portal_products SET sheet_status=NULL WHERE status='awaiting_quote'").run();

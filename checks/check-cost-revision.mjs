@@ -72,6 +72,7 @@ try {
     await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter=revision]').click(); await ui.locator(`[data-open-order="${A}"]`).first().click(); await ui.waitForSelector('[data-rev-admin]'); await page.waitForTimeout(300);
     await ui.locator('[data-rev-admin]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-admin-order.png`) });
     assert.equal(await ui.locator('[data-rev-answer] [name=cost]').inputValue(), '20', tag + ' supplier cost filled in');
+    const wa = await ui.locator('[data-rev-wa]').getAttribute('href'); assert.ok(wa.startsWith('https://wa.me/?text=') && decodeURIComponent(wa).includes('REV-1') && decodeURIComponent(wa).includes('$24.90'), tag + ' WhatsApp message to the supplier');
     assert.deepEqual(errors, [], tag); await ctx.close();
     ctx = await session(client, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.reload(); await page.waitForSelector(`[data-open-order="${A}"]`); await page.locator(`[data-open-order="${A}"]`).first().click(); await page.waitForSelector('[data-rev-box]');
