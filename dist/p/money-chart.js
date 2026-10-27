@@ -27,11 +27,11 @@
   function svg(rows, series, money, W = 720) {
     const H = 240, L = 46, B = 26, T = 10, plotW = W - L - 8, plotH = H - B - T;
     const [max, steps] = niceTop(Math.max(0, ...rows.flatMap(r => series.map(s => Number(r[s.key] || 0)))));
-    const slot = plotW / Math.max(rows.length, 1), gap = Math.min(10, slot * 0.25), bw = Math.max(1.5, (slot - gap) / series.length);
+    const slot = plotW / Math.max(rows.length, 1), gap = Math.min(10, slot * 0.25), bw = Math.min(40, Math.max(1.5, (slot - gap) / series.length));
     const y = v => T + plotH - (v / max) * plotH, every = Math.ceil(rows.length / Math.max(2, Math.floor(plotW / 56)));
     const grid = Array.from({ length: steps + 1 }, (_, i) => i / steps).map(f => `<line x1="${L}" x2="${W - 8}" y1="${y(max * f)}" y2="${y(max * f)}" class="mc-grid"/><text x="${L - 6}" y="${y(max * f) + 4}" class="mc-ax" text-anchor="end">${esc(compact(max * f))}</text>`).join('');
     const bars = rows.map((r, i) => {
-      const x0 = L + i * slot + gap / 2, tip = `${long(r.month)}\n` + series.map(s => `${s.label}: ${money(r[s.key] || 0)}`).join('\n');
+      const x0 = L + i * slot + (slot - bw * series.length) / 2, tip = `${long(r.month)}\n` + series.map(s => `${s.label}: ${money(r[s.key] || 0)}`).join('\n');
       return `<g class="mc-month"><title>${esc(tip)}</title><rect x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}" class="mc-hit"/>${series.map((s, j) => { const v = Number(r[s.key] || 0); return v > 0 ? `<rect x="${(x0 + j * bw).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw - 1).toFixed(1)}" height="${(T + plotH - y(v)).toFixed(1)}" rx="2" style="fill:${s.tone}"/>` : ''; }).join('')}`
         + (i % every === 0 || i === rows.length - 1 ? `<text x="${L + i * slot + slot / 2}" y="${H - 8}" class="mc-ax" text-anchor="middle">${esc(short(r.month))}</text>` : '') + '</g>';
     }).join('');

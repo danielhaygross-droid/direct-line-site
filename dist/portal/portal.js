@@ -409,7 +409,8 @@
           ${items.length ? `<div data-home-feed class="tw:grid tw:px-2.5 tw:pt-2 tw:pb-3">${items.map(x => `<button type="button" class="tw:grid tw:grid-cols-[36px_1fr] tw:gap-3 tw:items-start tw:px-3 tw:py-2.5 tw:border-0 tw:rounded-xl tw:bg-transparent tw:text-start tw:cursor-pointer tw:hover:bg-surface-2" ${x.product ? 'data-product-note="1"' : x.invoice ? 'data-invoice-note="1"' : `data-open-order="${x.orderId}"`} data-focus="${x.focus || ''}" data-note="${x.id}"><span class="dln-ic t-${x.tone} tw:size-9!">${N.icon(x.icon)}</span><span class="tw:grid tw:min-w-0"><b class="tw:block tw:text-14 tw:font-semibold${x.unread ? ' tw:after:inline-block tw:after:size-[7px] tw:after:ms-[7px] tw:after:rounded-full tw:after:bg-gold tw:after:align-middle' : ''}">${esc(x.title)}</b><span class="tw:block tw:text-muted tw:text-13 tw:truncate">${esc(x.text)}</span><time class="tw:block tw:text-dim tw:text-12">${esc(N.timeAgo(x.time))}</time></span></button>`).join('')}</div>`
             : empty('bell', 'No updates yet', 'When we change an order’s status or reply to you, it shows up here.')}
         </section>
-        <section class="card card-pad mc" data-client-chart></section>
+        <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
+        <section class="card card-pad mc tw:col-span-full" data-client-chart></section>
       </div>`;
   }
 
@@ -433,7 +434,19 @@
     const { stats } = earnedNumbers();
     return `${!S.storeId && S.stores.length > 1 ? `<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>` : ''}
       ${statCardsHTML()}
+      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
       <section class="card card-pad mc" data-client-chart></section>`;
+  }
+  function profitChart(){
+    const range=homeRange(),[fy,fm]=range.from.split('-').map(Number),[ty,tm]=range.to.split('-').map(Number),span=(ty-fy)*12+tm-fm+1,buckets=[];
+    // One month: a bar per day (labels every 5 days). Up to 2 years: a bar per month. Longer: a bar per year.
+    const daily=span===1;
+    if(daily){const days=Number(range.to.slice(8,10)),pre=range.from.slice(0,8);for(let d=1;d<=days;d++){const key=pre+String(d).padStart(2,'0');buckets.push({from:key,to:key,label:d===1||d%5===0?String(d):''});}}
+    else if(span<=24){for(let n=0;n<span;n++){const date=new Date(fy,fm-1+n,1),y=date.getFullYear(),m=date.getMonth()+1,key=y+'-'+String(m).padStart(2,'0');buckets.push({from:key+'-01',to:key+'-31',label:date.toLocaleDateString(undefined,{month:'short',year:fy!==ty?'2-digit':undefined})});}}
+    else {for(const year of [...new Set(storeOrders().filter(o=>inRange(o,range)).map(o=>window.DLClientStoreMath.dateKey(o).slice(0,4)))].sort())buckets.push({from:year+'-01-01',to:year+'-12-31',label:year});}
+    for(const b of buckets){const r={from:b.from<range.from?range.from:b.from,to:b.to>range.to?range.to:b.to},tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,r).totals;b.profit=tot.profit;b.orders=tot.orders;}
+    const max=Math.max(1,...buckets.map(b=>Math.abs(b.profit))),tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,range).totals;
+    return `<div class="bars${daily?' days':''}" role="img" aria-label="Profit over selected period">${buckets.map(b=>`<div class="bar-col" title="${daily?esc(b.from)+' · ':''}${money(b.profit)}"><span class="bar-val">${!daily&&(b.orders||b.profit)?money(b.profit):''}</span><i class="${b.profit<0?'neg':''}" style="height:${b.orders||b.profit?Math.max(4,Math.abs(b.profit)/max*100):0}%"></i><small data-no-i18n>${esc(b.label)}</small></div>`).join('')}</div><div class="chart-legend"><span>Profit</span><b>${money(tot.profit)}</b></div>`;
   }
   // Money by month (Erwin, 27 Oct 2026: "upgrade their graphs"): what the client earned on Etsy, our bill, their profit
   // and what they paid us, per order month, for the shop picked at the top (payments are for the whole account, so

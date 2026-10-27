@@ -10,7 +10,7 @@ test('the earnings cards and profit chart are on the Orders page, built from the
   // one source for the cards and the chart: Home and Orders cannot drift apart
   assert.equal(portal.split('function statCardsHTML()').length, 2, 'one definition of the cards');
   assert.ok(portal.includes('${statCardsHTML()}'), 'used by Home');
-  assert.ok(portal.includes('function earningsInner()') && portal.includes('${statCardsHTML()}\n      <section class="card card-pad mc" data-client-chart></section>'), 'used by Orders, with the chart');
+  assert.ok(portal.includes('function earningsInner()') && portal.includes('${statCardsHTML()}\n      <section class="card"><div class="card-head"><h3>Profit over selected period</h3>'), 'used by Orders, with the chart');
   assert.ok(portal.includes('const viewOrders = () => `${payStrip()}<details class="earn-box" data-earn'), 'Orders starts with the earnings block (after the unpaid-orders strip)');
   assert.ok(portal.includes('${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details><div class="toolbar">'), 'above the toolbar and the list');
 });
