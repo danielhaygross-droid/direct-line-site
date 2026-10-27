@@ -62,6 +62,7 @@
   // Drawer actions (the drawer lives outside #app).
   document.addEventListener('click', async e => {
     const t = e.target;
+    const reorder = t.closest('[data-reorder]'); if (reorder) S.reorderFrom = Number(reorder.dataset.reorder);
     const orderProduct = t.closest('[data-order-product]'); if (orderProduct) S.orderProduct = Number(orderProduct.dataset.orderProduct);
     if (t.closest('[data-close-drawer]')) { UI.getDrawer().close(); return; }
     const openP = t.closest('[data-open-product]'); if (openP && !t.closest('a')) { openProduct(openP.dataset.openProduct); return; }

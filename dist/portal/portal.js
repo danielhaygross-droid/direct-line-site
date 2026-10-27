@@ -436,8 +436,7 @@
     const { stats } = earnedNumbers();
     return `${!S.storeId && S.stores.length > 1 ? `<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>` : ''}
       ${statCardsHTML()}
-      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
-      <section class="card card-pad mc" data-client-chart></section>`;
+      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>`;
   }
   function profitChart(){
     const range=homeRange(),[fy,fm]=range.from.split('-').map(Number),[ty,tm]=range.to.split('-').map(Number),span=(ty-fy)*12+tm-fm+1,buckets=[];
@@ -577,7 +576,7 @@
         </form></section>`}`;
     bindNumbers(o);
     if (keepFoot && d.foot.dataset.confirm) return;
-    d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>${['pending','processing','cancellation_requested'].includes(o.status) ? 'This order is already being processed. Need a change? Send us a message.' : 'Questions about this order? Send us a message.'}</a>`}${canChangeCustomer(o) ? `<button type="button" class="btn" data-change-customer="${o.id}">${ic('edit')}Change customer details</button>` : ''}<span class="spacer"></span>${['pending','processing','shipped'].includes(o.status) ? `<div><button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Request cancellation</button><p class="muted" style="font-size:12px">Free before the item reaches our warehouse. $4 after it arrives at the warehouse, or if the parcel is intercepted.</p></div>` : ''}${o.status === 'shipped' ? `<button type="button" class="btn btn-primary" data-delivered="${o.id}">Mark as delivered</button>` : ''}${!S.claims.some(c=>c.orderId===o.id) && (o.claimEligibility?.problem || o.claimEligibility?.lost) ? `<button type="button" class="btn" data-report-claim="${o.id}">${o.claimEligibility.lost ? 'Report lost parcel' : 'Report a problem'}</button>` : ''}`;
+    d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>${['pending','processing','cancellation_requested'].includes(o.status) ? 'This order is already being processed. Need a change? Send us a message.' : 'Questions about this order? Send us a message.'}</a>`}${!S.me.preview && o.status !== 'cancelled' ? `<a class="btn" style="align-self:flex-start" href="#/new" data-reorder="${o.id}" data-close-drawer>${ic('plus')}Send this product again</a>` : ''}${canChangeCustomer(o) ? `<button type="button" class="btn" data-change-customer="${o.id}">${ic('edit')}Change customer details</button>` : ''}<span class="spacer"></span>${['pending','processing','shipped'].includes(o.status) ? `<div><button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Request cancellation</button><p class="muted" style="font-size:12px">Free before the item reaches our warehouse. $4 after it arrives at the warehouse, or if the parcel is intercepted.</p></div>` : ''}${o.status === 'shipped' ? `<button type="button" class="btn btn-primary" data-delivered="${o.id}">Mark as delivered</button>` : ''}${!S.claims.some(c=>c.orderId===o.id) && (o.claimEligibility?.problem || o.claimEligibility?.lost) ? `<button type="button" class="btn" data-report-claim="${o.id}">${o.claimEligibility.lost ? 'Report lost parcel' : 'Report a problem'}</button>` : ''}`;
   }
   // ---------- cost revision (Erwin, 27 Oct 2026) ----------
   // The client asks for a lower cost on a priced order or a quoted product; the competitor price (what their Etsy
@@ -626,7 +625,7 @@
     return `<form class="form-layout" id="order-form" novalidate>
       <div class="form-main">
         <section class="card card-pad"><h3 class="form-sec"><i>1</i>Store order number</h3><div class="form-grid">
-          <label class="field full" data-f="storeId"${S.stores.filter(s=>!s.archived).length===1&&(!ed||!S.stores.find(s=>s.id===ed.storeId)?.archived)?' hidden':''}><span>Store</span><select name="storeId" required><option value="">Choose a store</option>${S.stores.filter(s=>!s.archived||s.id===ed?.storeId).map(st=>`<option value="${st.id}"${st.id===(ed?.storeId||(S.stores.some(s=>s.id===S.storeId&&!s.archived)?S.storeId:0)||(S.stores.filter(s=>!s.archived).length===1?S.stores.find(s=>!s.archived).id:0))?' selected':''}>${esc(st.name)}</option>`).join('')}</select></label>
+          <label class="field full" data-f="storeId"${S.stores.filter(s=>!s.archived).length===1&&(!ed||!S.stores.find(s=>s.id===ed.storeId)?.archived)?' hidden':''}><span>Store</span><select name="storeId" required><option value="">Choose a store</option>${S.stores.filter(s=>!s.archived||s.id===ed?.storeId).map(st=>`<option value="${st.id}"${st.id===(ed?.storeId||(S.stores.some(s=>s.id===S.storeId&&!s.archived)?S.storeId:0)||(S.stores.filter(s=>!s.archived).length===1?S.stores.find(s=>!s.archived).id:0))?' selected':''}>${esc(st.name)}${st.status==='suspended'?' · Suspended':''}</option>`).join('')}</select></label>
           <label class="field" data-f="orderRef"><span>Order number</span><input name="orderRef" required maxlength="120" inputmode="text" placeholder="e.g. 3412345678" value="${esc(ed?.orderRef)}">
             <em class="help">The order number from your store’s order page.</em></label>
           <label class="field" data-f="orderDate"><span>Order date</span><input name="orderDate" required type="date" value="${esc(ed?.orderDate || today)}"></label>
@@ -727,7 +726,11 @@
     // Lines grouped by link (in order). Editing an older order: its first link with its quantity; other links need their own.
     const groups = list => { const out = []; for (const it of list) { const g = out.find(x => x.link === it.link && it.link); if (g) g.vars.push(it); else out.push({ link: it.link, vars: [it] }); } return out; };
     const oldLinks = ed?.productLinks?.length ? ed.productLinks : String(ed?.etsyUrl || '').split(/\s+/).filter(Boolean);
-    const start = ed?.items?.length ? groups(ed.items) : ed ? [{ link: oldLinks[0] || '', vars: [{ quantity: ed.quantity || 1, variant: ed.variant || '' }] }, ...oldLinks.slice(1).map(link => ({ link, vars: [{ quantity: '', variant: '' }] }))] : [{}];
+    // "Send this product again" (portal review, 28 Oct 2026): a new order starts with the products of an earlier one; the
+    // customer, address and photo are new every time.
+    const again = !ed && S.reorderFrom ? S.orders.find(o => o.id === S.reorderFrom) : null; S.reorderFrom = null;
+    const src = ed || again, srcLinks = src?.productLinks?.length ? src.productLinks : String(src?.etsyUrl || '').split(/\s+/).filter(Boolean);
+    const start = src?.items?.length ? groups(src.items) : src ? [{ link: srcLinks[0] || '', vars: [{ quantity: src.quantity || 1, variant: src.variant || '' }] }, ...srcLinks.slice(1).map(link => ({ link, vars: [{ quantity: '', variant: '' }] }))] : [{}];
     prodBox.innerHTML = start.map(prodBlock).join('');
     // Function declarations: the photo box updates the summary before the boxes are drawn.
     function prodRows() { return $$('[data-prod]', form); }
@@ -838,6 +841,7 @@
     });
     updateSum();
     // Came from "Order this product": that product is already chosen.
+    if (again) { if (form.storeId && S.stores.some(s => s.id === again.storeId && !s.archived)) form.storeId.value = String(again.storeId); if (form.competitorPrice && again.competitorPrice) form.competitorPrice.value = again.competitorPrice; if (again.productId && S.products.some(p => p.id === again.productId && p.status === 'approved')) S.orderProduct = again.productId; N.popup({ icon: 'order', title: 'Products copied from ' + orderName(again), text: 'Add the new order number, customer and a screenshot.' }, { duration: 6000 }); }
     if (!ed && S.orderProduct && form.productId && S.products.some(p => p.id === S.orderProduct && p.status === 'approved')) { form.productId.value = String(S.orderProduct); form.productId.dispatchEvent(new Event('change')); }
     S.orderProduct = null;
     if (!ed) form.orderRef.focus({ preventScroll: true });
@@ -1172,6 +1176,7 @@
   // Drawer actions (the drawer lives outside #app).
   document.addEventListener('click', async e => {
     const t = e.target;
+    const reorder = t.closest('[data-reorder]'); if (reorder) S.reorderFrom = Number(reorder.dataset.reorder);
     const orderProduct = t.closest('[data-order-product]'); if (orderProduct) S.orderProduct = Number(orderProduct.dataset.orderProduct);
     if (t.closest('[data-close-drawer]')) { UI.getDrawer().close(); return; }
     const openP = t.closest('[data-open-product]'); if (openP && !t.closest('a')) { openProduct(openP.dataset.openProduct); return; }
