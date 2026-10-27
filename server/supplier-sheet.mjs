@@ -497,7 +497,11 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
       await DB.prepare('UPDATE client_orders SET supplier_cost=?, product_cost=?, shipping_fee=NULL, price=?, sheet_cost=?, price_source=NULL, updated_at=? WHERE id=?').bind(n, price, price, cost, t, order.id).run();
       // Remembered for the next identical order (see saved-prices.mjs).
       await rememberPrice(DB, order, n, t);
-      if (price !== round2(order.price || 0) || order.product_cost == null) { await event(DB, order, 'billed', price.toFixed(2), t); done.push('billed ' + price.toFixed(2)); }
+      // First bill: 'billed'. A later cost change on an order already billed: 'price_changed' with old|new, so the
+      // client sees "Order price changed" instead of another "Order billed" (Erwin, 27 Oct 2026).
+      const before = order.product_cost == null ? null : round2(order.price || 0);
+      if (before != null && before > 0 && price !== before) { await event(DB, order, 'price_changed', before.toFixed(2) + '|' + price.toFixed(2), t); done.push('price changed ' + before.toFixed(2) + ' -> ' + price.toFixed(2)); }
+      else if (price !== round2(order.price || 0) || order.product_cost == null) { await event(DB, order, 'billed', price.toFixed(2), t); done.push('billed ' + price.toFixed(2)); }
     }
   }
   if (tracking !== norm(order.sheet_tracking)) {

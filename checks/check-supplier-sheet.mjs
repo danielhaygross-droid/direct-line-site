@@ -160,7 +160,8 @@ const g = sheets.get(WQ).grid, body = g.splice(FIRST_ROW - 1); body.reverse(); g
 supplierTypes(A.id, N, '$20.00');
 r = await cron();
 a = await order(A.id);
-assert.equal(Number(a.price), 22); assert.equal((await events(A.id, 'billed')).length, 2);
+assert.equal(Number(a.price), 22); assert.equal((await events(A.id, 'billed')).length, 1);
+assert.deepEqual((await events(A.id, 'price_changed')).map(e => e.detail), ['14.50|22.00'], 'a later cost change is a price change, not a second bill');
 assert.equal((await call('/me', 'GET', null, client)).data.summary.outstanding, 22);
 console.log('PASS cost changed after sorting: re-billed to the right order (22.00), balance follows');
 
