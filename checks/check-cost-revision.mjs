@@ -1,7 +1,7 @@
 // Check: cost revisions (Erwin, 27 Oct 2026). A client asks for a lower cost on a priced order and on a quoted product;
 // the competitor price is required, one open request at a time, and they can ask again after an answer. The
 // supplier's new cost from the sheet waits for an admin; the admin approves (bill = cost + our fee, the client sees
-// "Order price changed" and the answer) or keeps the price with a reply. A new product quote answers the product
+// "Product cost updated" and the answer) or keeps the price with a reply. A new product quote answers the product
 // request and is used from then on. Screenshots EN/HE at 1440 and 390 px.
 //   node checks/check-cost-revision.mjs      (run from the repo root)
 // Real SQL on in-memory Postgres (PGlite) + the real screens in Chrome. No live data.
