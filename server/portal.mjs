@@ -15,6 +15,7 @@ import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms 
 import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } from './files.mjs';
 import { BILLING_SCHEMA, getBilling, saveBilling } from './billing.mjs';
 import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund } from './cancellations.mjs';
+import { cancelledTotals, moneyMonths } from './money-overview.mjs';
 import { PAYMENT_ORDER_SCHEMA, orderIdList, checkOrders, setPaymentOrders, paymentOrderIds, withPaid, dropTakenOrders } from './payment-orders.mjs';
 
 import { STATUS_SCHEMA, changeStatus, balanceAdjustments } from './order-status.mjs';
@@ -1046,7 +1047,9 @@ async function routePortal(request, url, ctx, meta) {
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
-    return json({ ok: true, settings, termsPolicy, totals, clients, admins, archived, rates: SHIPPING_RATES, googleSheets: { configured: googleSheetsConfigured(env) } });
+    // All clients together for the Overview: cancelled-order money and money per month (Erwin, 27 Oct 2026).
+    const cancelled = await cancelledTotals(DB, clients), months = await moneyMonths(DB);
+    return json({ ok: true, settings, termsPolicy, totals, clients, admins, archived, cancelled, months, rates: SHIPPING_RATES, googleSheets: { configured: googleSheetsConfigured(env) } });
   }
   // ----- Daniel's stores (dashboard store list) -----
   if (path === '/admin/stores' && method === 'GET') {
