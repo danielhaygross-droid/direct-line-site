@@ -32,6 +32,7 @@
             : empty('bell', 'No updates yet', 'When we change an order’s status or reply to you, it shows up here.')}
         </section>
         <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
+        <section class="card card-pad mc tw:col-span-full" data-client-chart></section>
       </div>`;
   }
 

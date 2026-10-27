@@ -18,9 +18,9 @@
     const { stats } = earnedNumbers();
     return `${!S.storeId && S.stores.length > 1 ? `<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>` : ''}
       ${statCardsHTML()}
-      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>`;
+      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
+      <section class="card card-pad mc" data-client-chart></section>`;
   }
-
   function profitChart(){
     const range=homeRange(),[fy,fm]=range.from.split('-').map(Number),[ty,tm]=range.to.split('-').map(Number),span=(ty-fy)*12+tm-fm+1,buckets=[];
     // One month: a bar per day (labels every 5 days). Up to 2 years: a bar per month. Longer: a bar per year.
@@ -31,6 +31,21 @@
     for(const b of buckets){const r={from:b.from<range.from?range.from:b.from,to:b.to>range.to?range.to:b.to},tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,r).totals;b.profit=tot.profit;b.orders=tot.orders;}
     const max=Math.max(1,...buckets.map(b=>Math.abs(b.profit))),tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,range).totals;
     return `<div class="bars${daily?' days':''}" role="img" aria-label="Profit over selected period">${buckets.map(b=>`<div class="bar-col" title="${daily?esc(b.from)+' · ':''}${money(b.profit)}"><span class="bar-val">${!daily&&(b.orders||b.profit)?money(b.profit):''}</span><i class="${b.profit<0?'neg':''}" style="height:${b.orders||b.profit?Math.max(4,Math.abs(b.profit)/max*100):0}%"></i><small data-no-i18n>${esc(b.label)}</small></div>`).join('')}</div><div class="chart-legend"><span>Profit</span><b>${money(tot.profit)}</b></div>`;
+  }
+  // Money by month (Erwin, 27 Oct 2026: "upgrade their graphs"): what the client earned on Etsy, our bill, their profit
+  // and what they paid us, per order month, for the shop picked at the top (payments are for the whole account, so
+  // that line shows only with All stores). Same math as the cards: cancelled orders and other currencies left out.
+  function mountClientChart() {
+    const el = $('[data-client-chart]'); if (!el) return;
+    const M = window.DLClientStoreMath, c = n => Math.round(n) / 100, by = new Map(), at = k => { if (!by.has(k)) by.set(k, { month: k, earned: 0, billed: 0, profit: 0, paid: 0 }); return by.get(k); };
+    for (const o of storeOrders()) { if (o.status === 'cancelled') continue; const r = at(M.dateKey(o).slice(0, 7)), e = (o.currency || 'USD') === 'USD' ? M.earnedCents(o) : null; r.billed += Math.round(Number(o.price || 0) * 100); if (e != null) { r.earned += e; r.profit += e - Math.round(Number(o.price || 0) * 100); } }
+    if (!S.storeId) for (const p of S.payments) at(new Date(p.paidAt * 1000).toISOString().slice(0, 7)).paid += Math.round(p.amount * 100);
+    const months = [...by.values()].map(r => ({ month: r.month, earned: c(r.earned), billed: c(r.billed), profit: c(r.profit), paid: c(r.paid) }));
+    window.DLMoneyChart.mount(el, { title: 'Money by month', key: 'dl-client-money-' + S.me.id, months, money, series: [
+      { key: 'earned', label: 'Earned on Etsy', tone: 'var(--gold)', note: 'What you earned on your orders after Etsy’s fees' },
+      { key: 'billed', label: 'Our bill', tone: 'var(--blue)', note: 'What Direct Line billed you for these orders' },
+      { key: 'profit', label: 'Your profit', tone: 'var(--mint)', note: 'Earned minus our bill (orders with Etsy earnings filled in)' },
+      ...(S.storeId ? [] : [{ key: 'paid', label: 'You paid us', tone: 'var(--orange)', note: 'Payments we received from you' }])] });
   }
 
   const unreadOrderIds=()=>new Set(noteItems().filter(x=>x.unread).map(x=>x.orderId));

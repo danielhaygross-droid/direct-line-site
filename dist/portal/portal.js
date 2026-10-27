@@ -349,11 +349,12 @@
     if(soft && S.route==='products' && ($('#product-form')?.dataset.dirty || document.activeElement?.matches?.('[data-pq]')))return;
     if (soft && S.route === 'payments' && ($('#transfer-form')?.dataset.dirty || $('#billing-form')?.dataset.dirty)) return;
     if(soft && S.route==='stores' && [...document.querySelectorAll('[data-client-store-form]')].some(f=>f.dataset.dirty))return;
-    if (soft && S.route === 'orders' && $('[data-orders-list]')) {const sw=$('[data-store-switcher]');if(sw)sw.outerHTML=storeSwitcher(); const er=$('[data-earnings]'); if(er)er.innerHTML=earningsInner(); renderChips(); renderOrdersList(); return; }
+    if (soft && S.route === 'orders' && $('[data-orders-list]')) {const sw=$('[data-store-switcher]');if(sw)sw.outerHTML=storeSwitcher(); const er=$('[data-earnings]'); if(er){er.innerHTML=earningsInner();mountClientChart();} renderChips(); renderOrdersList(); return; }
     if (!soft && S.route === 'products' && !S.me.preview) { S.productsSeenBefore = store.get(productsSeenKey(), 0); store.set(productsSeenKey(), Math.floor(Date.now() / 1000)); }
     view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, products:viewProducts, stores:viewStores, terms: viewTerms }[S.route]();
     if(['home','orders','payments'].includes(S.route))view.insertAdjacentHTML('afterbegin',storeSwitcher());
     if (soft) view.querySelectorAll(':scope > *').forEach(el => { el.style.animation = 'none'; });
+    mountClientChart();
     ({ orders: bindOrders, new: bindForm, edit: bindForm, terms: bindTerms, payments: bindPayments, products:bindProducts, stores:bindStores })[S.route]?.();
     if (S.route === 'products' && S.openProductId) { const id = S.openProductId; S.openProductId = null; openProduct(id); }
   }
@@ -409,6 +410,7 @@
             : empty('bell', 'No updates yet', 'When we change an order’s status or reply to you, it shows up here.')}
         </section>
         <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
+        <section class="card card-pad mc tw:col-span-full" data-client-chart></section>
       </div>`;
   }
 
@@ -432,9 +434,9 @@
     const { stats } = earnedNumbers();
     return `${!S.storeId && S.stores.length > 1 ? `<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>` : ''}
       ${statCardsHTML()}
-      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>`;
+      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
+      <section class="card card-pad mc" data-client-chart></section>`;
   }
-
   function profitChart(){
     const range=homeRange(),[fy,fm]=range.from.split('-').map(Number),[ty,tm]=range.to.split('-').map(Number),span=(ty-fy)*12+tm-fm+1,buckets=[];
     // One month: a bar per day (labels every 5 days). Up to 2 years: a bar per month. Longer: a bar per year.
@@ -445,6 +447,21 @@
     for(const b of buckets){const r={from:b.from<range.from?range.from:b.from,to:b.to>range.to?range.to:b.to},tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,r).totals;b.profit=tot.profit;b.orders=tot.orders;}
     const max=Math.max(1,...buckets.map(b=>Math.abs(b.profit))),tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,range).totals;
     return `<div class="bars${daily?' days':''}" role="img" aria-label="Profit over selected period">${buckets.map(b=>`<div class="bar-col" title="${daily?esc(b.from)+' · ':''}${money(b.profit)}"><span class="bar-val">${!daily&&(b.orders||b.profit)?money(b.profit):''}</span><i class="${b.profit<0?'neg':''}" style="height:${b.orders||b.profit?Math.max(4,Math.abs(b.profit)/max*100):0}%"></i><small data-no-i18n>${esc(b.label)}</small></div>`).join('')}</div><div class="chart-legend"><span>Profit</span><b>${money(tot.profit)}</b></div>`;
+  }
+  // Money by month (Erwin, 27 Oct 2026: "upgrade their graphs"): what the client earned on Etsy, our bill, their profit
+  // and what they paid us, per order month, for the shop picked at the top (payments are for the whole account, so
+  // that line shows only with All stores). Same math as the cards: cancelled orders and other currencies left out.
+  function mountClientChart() {
+    const el = $('[data-client-chart]'); if (!el) return;
+    const M = window.DLClientStoreMath, c = n => Math.round(n) / 100, by = new Map(), at = k => { if (!by.has(k)) by.set(k, { month: k, earned: 0, billed: 0, profit: 0, paid: 0 }); return by.get(k); };
+    for (const o of storeOrders()) { if (o.status === 'cancelled') continue; const r = at(M.dateKey(o).slice(0, 7)), e = (o.currency || 'USD') === 'USD' ? M.earnedCents(o) : null; r.billed += Math.round(Number(o.price || 0) * 100); if (e != null) { r.earned += e; r.profit += e - Math.round(Number(o.price || 0) * 100); } }
+    if (!S.storeId) for (const p of S.payments) at(new Date(p.paidAt * 1000).toISOString().slice(0, 7)).paid += Math.round(p.amount * 100);
+    const months = [...by.values()].map(r => ({ month: r.month, earned: c(r.earned), billed: c(r.billed), profit: c(r.profit), paid: c(r.paid) }));
+    window.DLMoneyChart.mount(el, { title: 'Money by month', key: 'dl-client-money-' + S.me.id, months, money, series: [
+      { key: 'earned', label: 'Earned on Etsy', tone: 'var(--gold)', note: 'What you earned on your orders after Etsy’s fees' },
+      { key: 'billed', label: 'Our bill', tone: 'var(--blue)', note: 'What Direct Line billed you for these orders' },
+      { key: 'profit', label: 'Your profit', tone: 'var(--mint)', note: 'Earned minus our bill (orders with Etsy earnings filled in)' },
+      ...(S.storeId ? [] : [{ key: 'paid', label: 'You paid us', tone: 'var(--orange)', note: 'Payments we received from you' }])] });
   }
 
   const unreadOrderIds=()=>new Set(noteItems().filter(x=>x.unread).map(x=>x.orderId));
@@ -927,8 +944,11 @@
   const storeOrders=()=>S.orders.filter(o=>!S.storeId||o.storeId===S.storeId);
   function storeSwitcher(){return `<div data-store-switcher>${S.stores.length>1?`<div class="chips store-switcher"><button class="chip${!S.storeId?' on':''}" type="button" data-select-store="0">All stores</button>${S.stores.map(s=>`<button class="chip${s.id===S.storeId?' on':''}" type="button" data-select-store="${s.id}">${window.DLClientStoreUI.label(s)}</button>`).join('')}<a class="chip" href="#/stores">+ Add store</a></div>`:''}</div>`;}
   function selectStore(id){S.storeId=Number(id)||0;store.set('dl-client-store-'+S.me.id,S.storeId);location.hash='#/'+S.route+(S.id?'/'+S.id:'')+'?store='+S.storeId;}
-  function viewStores(){return `${S.me.preview?'':`<section class="card card-pad">${window.DLClientStoreUI.form(null,S.me.id)}</section>`}${S.stores.map(s=>`<section class="card card-pad">${window.DLClientStoreUI.label(s)}${S.me.preview?'':window.DLClientStoreUI.form(s,S.me.id)}</section>`).join('')}`;}
+  // Shop status filter (Erwin, 27 Oct 2026): All / Active / Suspended, remembered on this device.
+  function viewStores(){const f=store.get('dl-store-status','all'),n=k=>S.stores.filter(s=>k==='all'||s.status===k).length,shown=S.stores.filter(s=>f==='all'||s.status===f);
+    return `<div class="chips store-filter" role="group" aria-label="Shop status">${[['all','All'],['active','Active'],['suspended','Suspended']].map(([k,t])=>`<button type="button" class="chip${f===k?' on':''}" aria-pressed="${f===k}" data-store-status="${k}"><span>${t}</span> <b data-no-i18n>${n(k)}</b></button>`).join('')}</div>${S.me.preview?'':`<section class="card card-pad">${window.DLClientStoreUI.form(null,S.me.id)}</section>`}${shown.length?shown.map(s=>`<section class="card card-pad store-card${s.status==='suspended'?' is-suspended':''}">${window.DLClientStoreUI.label(s)}${S.me.preview?'':window.DLClientStoreUI.form(s,S.me.id)}</section>`).join(''):'<p class="muted card card-pad">No shops with this status.</p>'}`;}
   function bindStores(){
+    for(const b of $$('[data-store-status]'))b.addEventListener('click',()=>{store.set('dl-store-status',b.dataset.storeStatus);renderView();});
     for(const f of $$('[data-client-store-form]')){
       f.addEventListener('input',e=>{f.dataset.dirty='1';if(e.target.name==='color')f.dataset.colourEdited='1';});
       f.addEventListener('submit',async e=>{
@@ -936,7 +956,7 @@
         if(b.disabled)return;
         b.disabled=true;f.dataset.dirty='1';m.textContent='Saving store...';
         try{
-          const result=await api('/client-stores'+(f.dataset.clientStoreForm?'/'+f.dataset.clientStoreForm:''),{method:'POST',body:{name:f.storeName.value,platform:f.platform.value,link:f.link.value,color:f.dataset.clientStoreForm||f.dataset.colourEdited?f.color.value:undefined,archived:!!f.archived?.checked}});
+          const result=await api('/client-stores'+(f.dataset.clientStoreForm?'/'+f.dataset.clientStoreForm:''),{method:'POST',body:{name:f.storeName.value,platform:f.platform.value,link:f.link.value,color:f.dataset.clientStoreForm||f.dataset.colourEdited?f.color.value:undefined,archived:!!f.archived?.checked,status:f.status?.value||'active'}});
           // Save succeeds independently of unrelated background requests. Keep other drafts.
           const drafts=$$('[data-client-store-form]').filter(other=>other!==f&&other.dataset.dirty).map(other=>({id:other.dataset.clientStoreForm,colourEdited:other.dataset.colourEdited,values:[...other.elements].filter(el=>el.name).map(el=>[el.name,el.type==='checkbox'?el.checked:el.value])}));
           S.stores=S.stores.filter(s=>s.id!==result.store.id).concat(result.store).sort((a,b)=>a.id-b.id);
