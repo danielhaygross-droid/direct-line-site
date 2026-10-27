@@ -239,9 +239,9 @@
     else if (e.kind === 'status') {
       const words = { processing: 'We’re working on it now.', shipped: 'It’s on its way to your customer.', delivered: 'It was delivered to your customer.', cancelled: 'This order was cancelled.', pending: 'It’s back to pending.' };
       it = { ...base, icon: e.detail === 'cancelled' ? 'alert' : e.detail === 'delivered' ? 'check' : 'status', tone: { processing: 'blue', shipped: 'gold', delivered: 'mint', cancelled: 'red' }[e.detail] || 'orange', title: `${ref} is now ${e.detail}`, text: words[e.detail] || '' };
-    } else if (e.kind === 'price_changed') { const [was, now] = String(e.detail || '').split('|'); it = { ...base, icon: 'wallet', tone: 'gold', title: 'Order price changed', text: `${ref} · ${money(was)} → ${money(now)}` }; }
-    // Older cost changes were saved as a second "billed": an earlier bill for the same order means the price changed.
-    else if (e.kind === 'billed') { const prev = S.notes.find(x => x.kind === 'billed' && x.orderId === e.orderId && (x.createdAt < e.createdAt || x.createdAt === e.createdAt && x.id < e.id)); it = { ...base, icon: 'wallet', tone: 'gold', title: prev ? 'Order price changed' : 'Order billed', text: prev ? `${ref} · ${money(prev.detail)} → ${money(e.detail)}` : `${ref} · ${money(e.detail)}` }; }
+    } else if (e.kind === 'price_changed') { const [was, now] = String(e.detail || '').split('|'); it = { ...base, icon: 'wallet', tone: 'gold', title: 'Product cost updated', text: `${ref} · ${money(was)} → ${money(now)}` }; }
+    // Older cost changes were saved as a second "billed": the server sends the bill before it (prevBill).
+    else if (e.kind === 'billed') it = { ...base, icon: 'wallet', tone: 'gold', title: e.prevBill ? 'Product cost updated' : 'Order billed', text: e.prevBill ? `${ref} · ${money(e.prevBill)} → ${money(e.detail)}` : `${ref} · ${money(e.detail)}` };
     else if (e.kind === 'revision_answered') { const [res, reply] = String(e.detail || '').split('|'); it = { ...base, icon: 'wallet', tone: res === 'lowered' ? 'mint' : 'gold', title: 'Cost revision answered', text: `${ref} · ${res === 'lowered' ? 'Cost lowered' : res === 'raised' ? 'Cost changed' : 'Cost kept'}${reply ? ' · ' + reply : ''}` }; }
     else if (e.kind === 'cancel_fee') it = { ...base, icon: 'wallet', tone: 'red', title: Number(e.detail) > 0 ? 'Cancellation fee added' : 'Cancellation fee removed', text: Number(e.detail) > 0 ? `${ref} · ${money(e.detail)}` : ref };
     else if (e.kind === 'delayed') it = { ...base, icon: 'alert', tone: 'orange', title: 'Order possibly delayed', text: e.detail ? `${ref} · ${e.detail}` : ref };
@@ -594,7 +594,7 @@
     const asked = r ? `<span class="rev-meta"><span>Your competitor price</span>: <b data-no-i18n>${money(r.competitorPrice)}</b></span>` : '';
     const answer = r && r.status === 'done' ? `<p class="rev-line ${r.result === 'lowered' ? 'pos' : ''}"><b>${r.result === 'lowered' ? 'Cost lowered' : r.result === 'raised' ? 'Cost changed' : 'Cost kept'}</b>${r.newPrice != null ? ` · <span data-no-i18n>${money(r.oldPrice)} → ${money(r.newPrice)}</span>` : ''}${r.reply ? `<span class="rev-reply" data-no-i18n>${esc(r.reply)}</span>` : ''}</p>` : '';
     return `<div class="rev-box" data-rev-box>${waiting ? `<p class="rev-line wait"><b>Cost revision requested</b>${asked}<span class="rev-reply">We’re checking it with the supplier. We’ll let you know.</span></p>` : answer}
-      ${!waiting && canAsk && !S.me.preview ? `<button type="button" class="btn btn-sm" data-ask-revision="${kind}:${item.id}">${ic('chart')}Ask for a cost revision</button>` : ''}</div>`;
+      ${!waiting && canAsk && !S.me.preview ? `<div class="rev-ask"><span class="rev-ask-txt"><b>Is our cost too high for your Etsy price?</b><small>Tell us your competitor price and we’ll ask the supplier for a lower cost.</small></span><button type="button" class="btn btn-primary btn-sm" data-ask-revision="${kind}:${item.id}">${ic('chart')}Ask for a cost revision</button></div>` : ''}</div>`;
   }
   function revisionForm(kind, id) {
     const foot = UI.getDrawer().foot; foot.dataset.confirm = '1';

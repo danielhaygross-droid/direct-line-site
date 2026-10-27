@@ -1,7 +1,7 @@
 // Check: cost revisions (Erwin, 27 Oct 2026). A client asks for a lower cost on a priced order and on a quoted product;
 // the competitor price is required, one open request at a time, and they can ask again after an answer. The
 // supplier's new cost from the sheet waits for an admin; the admin approves (bill = cost + our fee, the client sees
-// "Order price changed" and the answer) or keeps the price with a reply. A new product quote answers the product
+// "Product cost updated" and the answer) or keeps the price with a reply. A new product quote answers the product
 // request and is used from then on. Screenshots EN/HE at 1440 and 390 px.
 //   node checks/check-cost-revision.mjs      (run from the repo root)
 // Real SQL on in-memory Postgres (PGlite) + the real screens in Chrome. No live data.
@@ -106,7 +106,7 @@ try {
   console.log('PASS products: ask after a price, new quote answers it, keep with reply');
   // From the screen: the form needs the price, then the request is sent.
   const B = await mk('REV-3', 25), c2 = await session(client, 390), pg2 = await c2.newPage();
-  await pg2.goto(`${base}/portal/?lang=he#/orders`); await pg2.reload(); await pg2.locator(`[data-open-order="${B}"]`).first().click(); await pg2.locator('[data-ask-revision]').click();
+  await pg2.goto(`${base}/portal/?lang=he#/orders`); await pg2.reload(); await pg2.locator(`[data-open-order="${B}"]`).first().click(); await pg2.locator('.rev-ask').scrollIntoViewIfNeeded(); await pg2.screenshot({ path: path.join(out, 'he-390-client-ask.png') }); await pg2.locator('[data-ask-revision]').click();
   await pg2.locator('[data-rev-form] [type=submit]').click(); assert.equal(await pg2.locator('[data-rev-msg].err').count(), 1, 'required on screen');
   await pg2.locator('[data-rev-form] [name=competitorPrice]').fill('21.5'); await pg2.screenshot({ path: path.join(out, 'he-390-client-form.png') });
   await pg2.locator('[data-rev-form] [type=submit]').click(); await pg2.waitForSelector('.rev-line.wait');

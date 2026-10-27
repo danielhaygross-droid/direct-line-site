@@ -445,7 +445,7 @@ async function withMessages(DB, orders, forAdmin) {
   });
 }
 const messageOut = m => ({ id: m.id, orderId: m.order_id, author: m.author, body: m.body, createdAt: Number(m.created_at) });
-const eventOut = e => ({ id: e.id, orderId: e.order_id, clientId: e.client_id, kind: e.kind, actor: e.actor, detail: e.detail, createdAt: Number(e.created_at),
+const eventOut = e => ({ id: e.id, orderId: e.order_id, clientId: e.client_id, kind: e.kind, actor: e.actor, detail: e.detail, createdAt: Number(e.created_at), ...(e.prev_bill ? { prevBill: e.prev_bill } : {}),
   ...(e.order_ref !== undefined ? { orderRef: e.order_ref, status: e.status } : {}), ...(e.client_name !== undefined ? { clientName: e.client_name } : {}) });
 async function logEvent(DB, orderId, clientId, kind, actor, detail = '') {
   await DB.prepare('INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,?,?,?,?)')
@@ -803,7 +803,9 @@ async function routePortal(request, url, ctx, meta) {
   }
   // ----- notifications: what the other side did, newest first -----
   if (path === '/notifications' && method === 'GET' && !who.admin) {
-    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND NOT o.archived AND e.actor = 'admin' AND e.kind <> 'supplier_sheet' ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
+    // prev_bill: for a "billed" event, the order's bill before it (an earlier billed / price change), so a later
+    // cost change reads "Product cost updated" even when the first bill is no longer among the latest 50 (Erwin, 28 Oct 2026).
+    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, CASE WHEN e.kind = 'billed' THEN (SELECT CASE WHEN p.kind = 'price_changed' THEN split_part(p.detail, '|', 2) ELSE p.detail END FROM order_events p WHERE p.order_id = e.order_id AND p.kind IN ('billed', 'price_changed') AND p.id < e.id ORDER BY p.id DESC LIMIT 1) END AS prev_bill FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND NOT o.archived AND e.actor = 'admin' AND e.kind <> 'supplier_sheet' ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
     // A receipt: "amount|YYYY-MM-DD" of its payment (the portal shows "For your $1301.00 payment of 21 Oct 2026"), else the file name.
     const pays = new Map((((await DB.prepare('SELECT id, amount, paid_at FROM client_payments WHERE client_id = ? AND NOT archived').bind(who.clientId).all()).results) || []).map(p => [Number(p.id), p]));
     for(const f of await invoices(DB,who.clientId)) { const p = pays.get(f.paymentId); rows.push({id:'invoice-'+f.id,order_id:f.orderIds[0]||null,client_id:who.clientId,kind:'invoice',actor:'admin',detail:p ? Number(p.amount).toFixed(2) + '|' + new Date(Number(p.paid_at) * 1000).toISOString().slice(0, 10) : f.filename,created_at:f.createdAt}); }
