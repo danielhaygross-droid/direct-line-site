@@ -198,7 +198,7 @@
     'Request cancellation?': 'לבקש ביטול?',
     'Reason': 'סיבה',
     'Send cancellation request': 'שליחת בקשת ביטול', 'Keep it': 'להשאיר את ההזמנה',
-    'Order billed': 'ההזמנה חויבה', 'Per item': 'לפריט', 'Supplier sheet': 'גיליון הספק', 'Set up supplier sheet': 'הגדרת גיליון הספק', 'Rebuild supplier sheet': 'בנייה מחדש של גיליון הספק', 'Check sheet now': 'בדיקת הגיליון עכשיו',
+    'Order billed': 'ההזמנה חויבה', 'Order price changed': 'מחיר ההזמנה השתנה', 'Per item': 'לפריט', 'Supplier sheet': 'גיליון הספק', 'Set up supplier sheet': 'הגדרת גיליון הספק', 'Rebuild supplier sheet': 'בנייה מחדש של גיליון הספק', 'Check sheet now': 'בדיקת הגיליון עכשיו',
     'The website reads the supplier columns every minute.': 'האתר קורא את עמודות הספק כל דקה.', 'Last check': 'בדיקה אחרונה', 'orders checked': 'הזמנות נבדקו', 'updated': 'עודכנו',
     'Needs a look:': 'דורש בדיקה:', 'On.': 'פעיל.', 'Supplier total': 'סה״כ ספק', '(from supplier sheet)': '(מגיליון הספק)', 'The Google Sheet isn’t connected.': 'גיליון Google אינו מחובר.',
     'Set up adds three yellow columns to the Orders tab for the supplier: Total cost (whole order, USD), Tracking number and Shipping status. The website then bills clients (total + fee), adds tracking and marks orders Shipped within a minute. The current tab is kept as a hidden backup tab.': 'ההגדרה מוסיפה שלוש עמודות צהובות ללשונית Orders עבור הספק: עלות כוללת (כל ההזמנה, בדולרים), מספר מעקב וסטטוס משלוח. לאחר מכן האתר מחייב את הלקוחות (עלות + עמלה), מוסיף מעקב ומסמן הזמנות כנשלחו תוך דקה. הלשונית הנוכחית נשמרת כלשונית גיבוי מוסתרת.',

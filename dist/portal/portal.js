@@ -238,7 +238,9 @@
     else if (e.kind === 'status') {
       const words = { processing: 'We’re working on it now.', shipped: 'It’s on its way to your customer.', delivered: 'It was delivered to your customer.', cancelled: 'This order was cancelled.', pending: 'It’s back to pending.' };
       it = { ...base, icon: e.detail === 'cancelled' ? 'alert' : e.detail === 'delivered' ? 'check' : 'status', tone: { processing: 'blue', shipped: 'gold', delivered: 'mint', cancelled: 'red' }[e.detail] || 'orange', title: `${ref} is now ${e.detail}`, text: words[e.detail] || '' };
-    } else if (e.kind === 'billed') it = { ...base, icon: 'wallet', tone: 'gold', title: 'Order billed', text: `${ref} · ${money(e.detail)}` };
+    } else if (e.kind === 'price_changed') { const [was, now] = String(e.detail || '').split('|'); it = { ...base, icon: 'wallet', tone: 'gold', title: 'Order price changed', text: `${ref} · ${money(was)} → ${money(now)}` }; }
+    // Older cost changes were saved as a second "billed": an earlier bill for the same order means the price changed.
+    else if (e.kind === 'billed') { const prev = S.notes.find(x => x.kind === 'billed' && x.orderId === e.orderId && (x.createdAt < e.createdAt || x.createdAt === e.createdAt && x.id < e.id)); it = { ...base, icon: 'wallet', tone: 'gold', title: prev ? 'Order price changed' : 'Order billed', text: prev ? `${ref} · ${money(prev.detail)} → ${money(e.detail)}` : `${ref} · ${money(e.detail)}` }; }
     else if (e.kind === 'cancel_fee') it = { ...base, icon: 'wallet', tone: 'red', title: Number(e.detail) > 0 ? 'Cancellation fee added' : 'Cancellation fee removed', text: Number(e.detail) > 0 ? `${ref} · ${money(e.detail)}` : ref };
     else if (e.kind === 'delayed') it = { ...base, icon: 'alert', tone: 'orange', title: 'Order possibly delayed', text: e.detail ? `${ref} · ${e.detail}` : ref };
     else if (e.kind === 'delay_cleared') it = { ...base, icon: 'check', tone: 'mint', title: 'Order no longer delayed', text: ref };
