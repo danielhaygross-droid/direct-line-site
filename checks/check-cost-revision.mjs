@@ -105,6 +105,13 @@ try {
   ok(await call('/admin/products/' + pr.id + '/cost-revision', 'POST', { action: 'keep', reply: 'Best price' }, admin));
   p = ok(await call('/products', 'GET', null, client)).products.find(x => x.id === pr.id); assert.equal(p.revision.result, 'kept'); assert.equal(p.revision.reply, 'Best price');
   console.log('PASS products: ask after a price, new quote answers it, keep with reply');
+  // A cancelled order closes its open request, so its sheet row is red (cancelled), not orange.
+  const X = await mk('REV-X', 18); ok(await ask('orders', X, { competitorPrice: 15 }));
+  ok(await call('/orders/' + X + '/request-cancellation', 'POST', { reason: 'Store suspended' }, client)); ok(await call('/orders/' + X + '/approve-cancellation', 'POST', {}, admin));
+  const xr = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(X).first(); assert.equal(xr.revision_status, '', 'no longer flagged');
+  assert.equal(competitorCell(xr.competitor_price, xr.revision_status), '$15.00', 'the sheet shows the plain competitor price');
+  assert.equal(ok(await call('/orders', 'GET', null, client)).orders.find(o => o.id === X).revision.result, 'closed');
+  console.log('PASS cancelled order closes its cost revision');
   // From the screen: the form needs the price, then the request is sent.
   const B = await mk('REV-3', 25), c2 = await session(client, 390), pg2 = await c2.newPage();
   await pg2.goto(`${base}/portal/?lang=he#/orders`); await pg2.reload(); await pg2.locator(`[data-open-order="${B}"]`).first().click(); await pg2.locator('.rev-ask').scrollIntoViewIfNeeded(); await pg2.screenshot({ path: path.join(out, 'he-390-client-ask.png') }); await pg2.locator('[data-ask-revision]').click();
