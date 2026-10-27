@@ -71,7 +71,7 @@ export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Pho
 // filters them to sort out refunds per store). Picking it in the sheet does not cancel anything on the website.
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', CANCELLED_SHIP = 'Cancelled', CANCEL_REQ_SHIP = 'Cancel requested', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'CANCELLED - do not ship' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '12';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '13';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 const markPaidDirtyDb = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
@@ -224,6 +224,13 @@ const delayFormat = (sheetId, email) => [
 // text in D; they come first (index 0-2), so they win over the paid / delayed colours on those rows.
 // Competitor price (O) in orange while the client asks for a cost revision (Erwin, 27 Oct 2026; text starts with REVISION_FLAG).
 const revisionFormat = sheetId => ({ addConditionalFormatRule: { index: 0, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: COMP, endColumnIndex: COMP + 1 }], booleanRule: { condition: { type: 'TEXT_STARTS_WITH', values: [{ userEnteredValue: REVISION_FLAG }] }, format: { backgroundColor: { red: 1, green: 0.62, blue: 0.25 }, textFormat: { bold: true } } } } } });
+// Cost revision alerts for the supplier (Erwin, 28 Oct 2026): A4 counts the open requests (big orange text, empty
+// when none) and every row with an open request is light orange, so they can't be missed or filtered out of sight.
+const revisionCounter = wq => ({ range: `${wq}!A4`, values: [[`=IF(COUNTIF(O${FIRST_ROW}:O,"${REVISION_FLAG}*")=0,"","⚠ "&COUNTIF(O${FIRST_ROW}:O,"${REVISION_FLAG}*")&" COST REVISION REQUEST(S) WAITING: see the orange rows, check the cost, type the new Total cost")`]] });
+const revisionAlerts = sheetId => [
+  { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 12, foregroundColor: { red: 0.8, green: 0.35, blue: 0 } }, wrapStrategy: 'OVERFLOW_CELL' } }, fields: 'userEnteredFormat(textFormat,wrapStrategy)' } },
+  { addConditionalFormatRule: { rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: 34 }], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=LEFT($O${FIRST_ROW},${REVISION_FLAG.length})="${REVISION_FLAG}"` }] }, format: { backgroundColor: { red: 1, green: 0.88, blue: 0.75 } } } } } },
+];
 const cancelFormat = sheetId => {
   const rows = (c1, c2) => [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: c1, endColumnIndex: c2 }];
   const is = v => ({ type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=$D${FIRST_ROW}="${v}"` }] });
@@ -333,8 +340,10 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     const addCancelFee = h[FEE] !== CANCEL_FEE;
     // 12) Cost revision requests (Erwin, 27 Oct 2026): Competitor price (O) turns orange while one is open. Rule only.
     const addRevision = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 12;
+    // 13) Cost revision alerts: the counter in A4 and light orange rows while a request is open. Rule + one cell only.
+    const addRevisionAlerts = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 13;
     if (addDomestic || addCancelFee) await ensureColumns(env, sheetId, FEE + 1, fetchImpl);
-    await batchValues(env, [{ range: `${wq}!A5:AH5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
+    await batchValues(env, [revisionCounter(wq), { range: `${wq}!A5:AH5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
     const idCol = colName(h.indexOf('Order ID') >= 0 ? h.indexOf('Order ID') : 27);
     const ranges = [`${wq}!O${FIRST_ROW}:O`, `${wq}!${idCol}${FIRST_ROW}:${idCol}`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
@@ -343,7 +352,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     await batch(env, [courierRule(sheetId, courierList(await getSetting(DB, 'couriers'))), ...competitorFormat(sheetId),
       ...[11, 12, 17].map(i => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: WIDTHS[i] }, fields: 'pixelSize' } })),
       ...(addPaid ? [...paidFormat(sheetId), { addProtectedRange: { protectedRange: { range: { sheetId, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }, description: 'Filled in by the Direct Line website', editors: { users: [googleSheetsConfig(env).email] } } } }] : []),
-      ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : []), ...(addCancel ? cancelFormat(sheetId) : []), ...(addDomestic ? domesticFormat(sheetId) : []), ...(hideShopStatus ? [hideCD(sheetId)] : []), ...(addCancelStatus ? [statusRule(sheetId), showShop(sheetId)] : []), ...(addRevision ? [revisionFormat(sheetId)] : []), ...(addCancelFee ? cancelFeeFormat(sheetId) : [])], fetchImpl);
+      ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : []), ...(addCancel ? cancelFormat(sheetId) : []), ...(addDomestic ? domesticFormat(sheetId) : []), ...(hideShopStatus ? [hideCD(sheetId)] : []), ...(addCancelStatus ? [statusRule(sheetId), showShop(sheetId)] : []), ...(addRevision ? [revisionFormat(sheetId)] : []), ...(addRevisionAlerts ? revisionAlerts(sheetId) : []), ...(addCancelFee ? cancelFeeFormat(sheetId) : [])], fetchImpl);
     if (addPaid) await markPaidDirty(DB);
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested') OR revision_status <> '')").run();
@@ -701,7 +710,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   const last = FIRST_ROW + Math.max(rows.length, 1) - 1;
   await batchValues(env, [
     { range: `${wq}!A2:A3`, values: [['Direct Line — Orders'], [instructions]] },
-    { range: `${wq}!A5:AH5`, values: [HEADERS] }, totalsRow(wq),
+    { range: `${wq}!A5:AH5`, values: [HEADERS] }, totalsRow(wq), revisionCounter(wq),
     ...(rows.length ? [{ range: `${wq}!A${FIRST_ROW}:AF${last}`, values: rows }] : []),
   ], fetchImpl);
 
@@ -727,7 +736,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 } } },
     { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
     { setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 30 } } } },
-    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId), hideCD(sheetId), statusRule(sheetId), showShop(sheetId), revisionFormat(sheetId), ...cancelFeeFormat(sheetId),
+    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId), hideCD(sheetId), statusRule(sheetId), showShop(sheetId), revisionFormat(sheetId), ...revisionAlerts(sheetId), ...cancelFeeFormat(sheetId),
     // Only the supplier columns (and Competitor price) are editable by others; the rest is written by the website.
     { addProtectedRange: { protectedRange: { range: cols(0, 14), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
     { addProtectedRange: { protectedRange: { range: cols(21, 32), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
