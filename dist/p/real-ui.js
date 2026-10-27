@@ -52,6 +52,9 @@
       if (d.f === 'cancel_fee') return { ...base, icon: 'alert', tone: 'red', title: L('Supplier set a cancellation fee', 'הספק קבע עמלת ביטול'), text: `${ref} · ${who} · ${usd(d.to)}` };
       return { ...base, icon: 'alert', tone: 'orange', title: L('Supplier changed a cost in the sheet', 'הספק שינה עלות בגיליון'), text: `${ref} · ${who} · ${usd(d.from)} ${L('→', '←')} ${usd(d.to)}` }; }
     if(e.kind==='claim')return {...base,icon:'alert',tone:'orange',title:L(`${who} reported an order problem`,`${who} דיווח/ה על בעיה בהזמנה`),text:ref};
+    // Cost revision requests (Erwin, 27 Oct 2026): the client's competitor price is in the detail.
+    if (e.kind === 'revision_requested') return { ...base, icon: 'alert', tone: 'orange', title: L(`${who} asked for a cost revision`, `${who} ביקש/ה עדכון עלות`), text: `${ref} · ${L('competitor', 'מתחרה')} ${e.detail}` };
+    if(e.kind==='product'&&/^Cost revision requested/.test(e.detail||''))return {...base,view:'client-products',action:L('View products','צפייה במוצרים'),icon:'alert',tone:'orange',title:L(`${who} asked for a cost revision`,`${who} ביקש/ה עדכון עלות`),text:`${e.productName} · ${String(e.detail).replace(/^Cost revision requested · /,'')}`};
     if(e.kind==='product')return {...base,view:'client-products',action:L('View products','צפייה במוצרים'),icon:'order',tone:'gold',title:L(`${who} submitted a product for quote`,`${who} שלח/ה מוצר להצעת מחיר`),text:e.productName};
     if (e.kind === 'created') return { ...base, icon: 'order', tone: 'gold', title: L(`${who} added a new order`, `${who} הוסיף/ה הזמנה חדשה`), text: L(`${ref} · waiting to be processed`, `${ref} · ממתינה לטיפול`) };
     if (e.kind === 'message') return { ...base, icon: 'message', tone: 'blue', focus: 'chat', action: L('Reply', 'השב'), title: L(`${who} sent a follow-up`, `${who} שלח/ה פנייה`), text: `${ref}: ${e.detail}` };

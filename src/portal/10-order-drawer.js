@@ -52,7 +52,7 @@
         ${(st => st ? `<div><span>Payment</span><span>${st === 'paid' ? `<span class="pay-tag paid">Paid</span> <small class="dim" data-no-i18n>${esc(window.DLPayOrders.day(o.paidAt))}</small>` : st === 'unpaid' ? '<span class="pay-tag unpaid">Not paid yet</span>' : '<span class="dim">No bill yet</span>'}</span></div>` : '')(window.DLPayOrders.state(o, S.adjustments))}
         ${o.priced && o.quotedUnitPrice != null ? `<div><span><span>Per item</span> <small class="dim" data-no-i18n>× ${esc(o.quantity || 1)}</small></span><span>${money(o.quotedUnitPrice)}</span></div>${o.quotedShipping != null ? `<div><span>Shipping per order</span><span>${money(o.quotedShipping)}</span></div>` : ''}` : o.priced ? `<div><span><span>Per item</span> <small class="dim" data-no-i18n>× ${esc(o.quantity || 1)}</small></span><span>${money(Math.round(o.price / (o.quantity || 1) * 100) / 100)}</span></div>` : ''}
         ${profitOf(o) == null ? '' : `<div><span>Your profit</span><span class="${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}"><b>${money(profitOf(o))}</b></span></div>`}</div>
-        ${o.priced && earnedOf(o) == null && o.status !== 'cancelled' ? '<p class="note" style="margin:10px 0 0">Add the Etsy fee, or what Etsy says you earned, to see your profit.</p>' : o.priced && notUsd(o) && o.status !== 'cancelled' ? '<p class="note" style="margin:10px 0 0">Profit is only worked out for orders in USD, so this order is not in your profit totals.</p>' : ''}</section>
+        ${o.priced && earnedOf(o) == null && o.status !== 'cancelled' ? '<p class="note" style="margin:10px 0 0">Add the Etsy fee, or what Etsy says you earned, to see your profit.</p>' : o.priced && notUsd(o) && o.status !== 'cancelled' ? '<p class="note" style="margin:10px 0 0">Profit is only worked out for orders in USD, so this order is not in your profit totals.</p>' : ''}${o.priced || o.revision ? revisionBlock('order', o, o.priced && !['cancelled', 'cancellation_requested', 'delivered'].includes(o.status)) : ''}</section>
       ${S.me.preview || o.status === 'cancelled' ? '' : `<section class="card card-pad"><h3 class="sec-title">Your numbers</h3><p class="note">Copy these from your Etsy order screen: what the buyer paid and the Etsy fee, or just what Etsy says you earned (Earnings tab). They only change your profit figures, never your bill.</p>
         <form id="numbers-form" class="form-grid" novalidate>
           <label class="field"><span>Customer paid <small>what the buyer paid</small></span><input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal" value="${o.sellingPrice == null ? '' : Number(o.sellingPrice).toFixed(2)}"></label>
@@ -65,6 +65,24 @@
     bindNumbers(o);
     if (keepFoot && d.foot.dataset.confirm) return;
     d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>${['pending','processing','cancellation_requested'].includes(o.status) ? 'This order is already being processed. Need a change? Send us a message.' : 'Questions about this order? Send us a message.'}</a>`}${canChangeCustomer(o) ? `<button type="button" class="btn" data-change-customer="${o.id}">${ic('edit')}Change customer details</button>` : ''}<span class="spacer"></span>${['pending','processing','shipped'].includes(o.status) ? `<div><button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Request cancellation</button><p class="muted" style="font-size:12px">Free before the item reaches our warehouse. $4 after it arrives at the warehouse, or if the parcel is intercepted.</p></div>` : ''}${o.status === 'shipped' ? `<button type="button" class="btn btn-primary" data-delivered="${o.id}">Mark as delivered</button>` : ''}${!S.claims.some(c=>c.orderId===o.id) && (o.claimEligibility?.problem || o.claimEligibility?.lost) ? `<button type="button" class="btn" data-report-claim="${o.id}">${o.claimEligibility.lost ? 'Report lost parcel' : 'Report a problem'}</button>` : ''}`;
+  }
+  // ---------- cost revision (Erwin, 27 Oct 2026) ----------
+  // The client asks for a lower cost on a priced order or a quoted product; the competitor price (what their Etsy
+  // listing is based on) is required. Shows the open request, or the last answer, and the "Ask" button.
+  function revisionBlock(kind, item, canAsk) {
+    const r = item.revision, waiting = r && ['open', 'offered'].includes(r.status);
+    const asked = r ? `<span class="rev-meta"><span>Your competitor price</span>: <b data-no-i18n>${money(r.competitorPrice)}</b></span>` : '';
+    const answer = r && r.status === 'done' ? `<p class="rev-line ${r.result === 'lowered' ? 'pos' : ''}"><b>${r.result === 'lowered' ? 'Cost lowered' : r.result === 'raised' ? 'Cost changed' : 'Cost kept'}</b>${r.newPrice != null ? ` · <span data-no-i18n>${money(r.oldPrice)} → ${money(r.newPrice)}</span>` : ''}${r.reply ? `<span class="rev-reply" data-no-i18n>${esc(r.reply)}</span>` : ''}</p>` : '';
+    return `<div class="rev-box" data-rev-box>${waiting ? `<p class="rev-line wait"><b>Cost revision requested</b>${asked}<span class="rev-reply">We’re checking it with the supplier. We’ll let you know.</span></p>` : answer}
+      ${!waiting && canAsk && !S.me.preview ? `<button type="button" class="btn btn-sm" data-ask-revision="${kind}:${item.id}">${ic('chart')}Ask for a cost revision</button>` : ''}</div>`;
+  }
+  function revisionForm(kind, id) {
+    const foot = UI.getDrawer().foot; foot.dataset.confirm = '1';
+    foot.innerHTML = `<form class="rev-form" data-rev-form="${kind}:${id}" novalidate><b class="rev-title">Ask for a cost revision</b>
+      <label class="field"><span>Competitor price (USD) <small>the price your listing is based on</small></span><span class="money"><input name="competitorPrice" type="number" min="0.01" step="0.01" inputmode="decimal" required></span></label>
+      <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="1000" placeholder="e.g. Sold for $24.90 on Etsy, link…"></label>
+      <div class="form-actions"><button type="button" class="btn" data-keep>Cancel</button><button type="submit" class="btn btn-primary">Send request</button></div><p class="form-msg" data-rev-msg role="alert"></p></form>`;
+    $('[name=competitorPrice]', foot).focus();
   }
   // "Your numbers": the client's own accounting for one order. Allowed at any time (it never changes the bill).
   function bindNumbers(o) {

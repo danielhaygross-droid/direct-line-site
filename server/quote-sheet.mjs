@@ -14,6 +14,7 @@
 // The supplier never sees who the client is. Admins can still set or change a quote in admin → Products.
 import { sheetsRequest, googleSheetsConfig, googleSheetsConfigured } from './google-sheets.mjs';
 import { sheetProductPhotoUrl } from './sheet-photos.mjs';
+import { competitorCell, productRequoted } from './cost-revisions.mjs';
 
 export const QT = 'Product Quotes';
 export const QUOTE_FIRST_ROW = 5;
@@ -95,7 +96,7 @@ export function quoteCells(env, p, photoIds) {
   const ai = [txt(new Date(Number(p.created_at) * 1000).toISOString().slice(0, 10)), 'P-' + p.id,
     urls[0] ? `=IMAGE("${q(urls[0])}",1)` : '', urls[1] ? `=HYPERLINK("${q(urls[1])}","Photo 2")` : '', urls[2] ? `=HYPERLINK("${q(urls[2])}","Photo 3")` : '',
     p.link ? `=HYPERLINK("${q(p.link)}","Open product")` : '', txt(p.name), txt(p.variant), p.expected_quantity == null ? '' : Number(p.expected_quantity)];
-  return { ai, no: [txt(p.competitor_price || ''), STATUS[p.status] || p.status, String(p.id)] };
+  return { ai, no: [txt(competitorCell(p.competitor_price, p.revision_status)), p.revision_status ? 'Cost revision requested' : STATUS[p.status] || p.status, String(p.id)] };
 }
 
 async function tabId(env, f) {
@@ -299,7 +300,7 @@ export async function pollQuoteTab(DB, env, settings, fetchImpl = fetch) {
     const p = await DB.prepare('SELECT p.*, u.commission_per_order FROM portal_products p JOIN users u ON u.id=p.client_id WHERE p.id=? AND NOT u.archived').bind(id).first();
     if (!p) continue;
     const out = await applyQuoteRow(DB, p, { price: inputs?.[i]?.[0] ?? '', shipping: inputs?.[i]?.[1] ?? '', status: inputs?.[i]?.[2] ?? '', note: inputs?.[i]?.[3] ?? '' }, settings);
-    if (out === 'approved' || out === 'not_available') { changed++; await syncQuoteRow(DB, env, id, fetchImpl); }
+    if (out === 'approved' || out === 'not_available') { changed++; await productRequoted(DB, id); await syncQuoteRow(DB, env, id, fetchImpl); }
     else if (out) {
       skipped.push({ productId: id, why: out });
       // Tell the supplier in the Status column (the website's own column) that the price wasn't understood.

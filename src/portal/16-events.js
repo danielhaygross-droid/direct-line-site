@@ -33,6 +33,20 @@
   document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
   document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
+  document.addEventListener('input', e => { const f = e.target.closest?.('[data-rev-form]'); if (!f) return; e.target.closest('.field')?.classList.remove('bad'); const m = $('[data-rev-msg]', f); m.textContent = ''; m.className = 'form-msg'; });
+  // Cost revision request: the competitor price is required (the server checks it too).
+  document.addEventListener('submit', async e => {
+    const f = e.target.closest('[data-rev-form]'); if (!f) return; e.preventDefault();
+    const [kind, id] = f.dataset.revForm.split(':'), m = $('[data-rev-msg]', f), b = $('[type=submit]', f), v = Number(f.competitorPrice.value);
+    if (!(v > 0)) { m.textContent = 'Enter the competitor price in USD (the price your listing is based on).'; m.className = 'form-msg err'; f.competitorPrice.closest('.field').classList.add('bad'); f.competitorPrice.focus(); return; }
+    b.disabled = true; m.textContent = '';
+    try {
+      await api(`/${kind === 'order' ? 'orders' : 'products'}/${id}/cost-revision`, { method: 'POST', body: { competitorPrice: v, note: f.note.value } });
+      const d = UI.getDrawer(); d.foot.dataset.confirm = ''; await refresh();
+      if (kind === 'product') openProduct(id); else fillDrawer(S.orders.find(x => x.id === Number(id)));
+      N.popup({ icon: 'check', title: 'Cost revision requested', text: 'We’ll check it with the supplier and let you know.' }, { duration: 6000 });
+    } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
+  });
   function onInput(e) { if (e.target.matches('[data-q]')) { S.q = e.target.value; renderOrdersList(); } }
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches?.('tr[data-open-order]')) openOrder(e.target.dataset.openOrder); });
   // Paste a screenshot (Ctrl+V) anywhere on the order form to attach it. Normal text pasting into fields is left alone.
@@ -69,13 +83,14 @@
     if(delivered){const foot=UI.getDrawer().foot;foot.dataset.confirm='1';foot.innerHTML=`<span style="font-weight:600">Has your customer received the parcel?</span><p class="muted" style="font-size:12px;margin:0">Only mark it as delivered once it has arrived.</p><span class="spacer"></span><button type="button" class="btn" data-keep>Not yet</button><button type="button" class="btn btn-primary" data-really-delivered="${delivered.dataset.delivered}">Yes, mark as delivered</button>`;return;}
     const reallyDelivered=t.closest('[data-really-delivered]');
     if(reallyDelivered){reallyDelivered.disabled=true;try{await api('/orders/'+reallyDelivered.dataset.reallyDelivered+'/mark-delivered',{method:'POST',body:{}});UI.getDrawer().foot.dataset.confirm='';await refresh();N.popup({icon:'check',title:'Marked as delivered'});}catch(ex){reallyDelivered.disabled=false;N.popup({icon:'alert',title:ex.message});}return;}
+    const ar = t.closest('[data-ask-revision]'); if (ar) { const [k, id] = ar.dataset.askRevision.split(':'); revisionForm(k, id); return; }
     const c = t.closest('[data-cancel-order]');
     if (c) {
       const foot = UI.getDrawer().foot; foot.dataset.confirm = '1';
       foot.innerHTML = `<span style="font-weight:600">Request cancellation?</span><label class="field"><span>Reason <small>optional</small></span><input name="cancellationReason" maxlength="1000"></label><span class="spacer"></span><button type="button" class="btn" data-keep>Keep it</button><button type="button" class="btn btn-danger" data-really-cancel="${c.dataset.cancelOrder}">Send cancellation request</button>`;
       return;
     }
-    if (t.closest('[data-keep]')) { const d = UI.getDrawer(); d.foot.dataset.confirm = ''; fillDrawer(S.orders.find(x => x.id === d.key)); return; }
+    if (t.closest('[data-keep]')) { const d = UI.getDrawer(); d.foot.dataset.confirm = ''; if (String(d.key).startsWith('p')) openProduct(String(d.key).slice(1)); else fillDrawer(S.orders.find(x => x.id === d.key)); return; }
     const rc = t.closest('[data-really-cancel]');
     if (rc) {
       rc.disabled = true;

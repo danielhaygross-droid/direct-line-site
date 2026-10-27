@@ -18,7 +18,7 @@ function database() {
       assert.match(sql,/INSERT INTO client_terms_acceptances/);
       const key=args.slice(0,2).join(':');
       if (!records.has(key)) records.set(key,{ version:args[1],accepted_at:args[2],ip:args[3] });
-    }, async all() { assert.match(sql,/FROM client_orders/);return {results:[]}; } };
+    }, async all() { assert.match(sql,/FROM (client_orders|cost_revisions)/);return {results:[]}; } };
   } };
 }
 test('portal routes require explicit current-version acceptance and preserve the original audit record', async () => {

@@ -232,7 +232,8 @@
     const o = S.orders.find(x => x.id === e.orderId), ref = e.orderRef || (o ? orderName(o) : '#' + e.orderId);
     const base = { id: 'n' + e.id, orderId: e.orderId, time: e.createdAt * 1000, action: 'View order' };
     let it;
-    if(e.kind==='product')it={...base,product:true,productId:e.productId,action:'View product',icon:'order',tone:'gold',title:'Product quote updated',text:e.productName};
+    if(e.kind==='product'&&/^revision_kept/.test(e.detail||''))it={...base,product:true,productId:e.productId,action:'View product',icon:'wallet',tone:'gold',title:'Cost revision answered',text:e.productName};
+    else if(e.kind==='product')it={...base,product:true,productId:e.productId,action:'View product',icon:'order',tone:'gold',title:'Product quote updated',text:e.productName};
     else if (e.kind === 'invoice') { const [amt, day] = String(e.detail || '').split('|'); it = {...base, invoice:true, action:'View payments', icon:'wallet',tone:'mint',title:'New receipt',text:day ? `For your ${money(amt)} payment of ${window.DLPayOrders.day(day)}` : e.detail}; }
     else if(e.kind==='claim')it={...base,icon:'alert',tone:'gold',title:'Claim updated',text:ref};
     else if (e.kind === 'status') {
@@ -241,6 +242,7 @@
     } else if (e.kind === 'price_changed') { const [was, now] = String(e.detail || '').split('|'); it = { ...base, icon: 'wallet', tone: 'gold', title: 'Order price changed', text: `${ref} · ${money(was)} → ${money(now)}` }; }
     // Older cost changes were saved as a second "billed": an earlier bill for the same order means the price changed.
     else if (e.kind === 'billed') { const prev = S.notes.find(x => x.kind === 'billed' && x.orderId === e.orderId && (x.createdAt < e.createdAt || x.createdAt === e.createdAt && x.id < e.id)); it = { ...base, icon: 'wallet', tone: 'gold', title: prev ? 'Order price changed' : 'Order billed', text: prev ? `${ref} · ${money(prev.detail)} → ${money(e.detail)}` : `${ref} · ${money(e.detail)}` }; }
+    else if (e.kind === 'revision_answered') { const [res, reply] = String(e.detail || '').split('|'); it = { ...base, icon: 'wallet', tone: res === 'lowered' ? 'mint' : 'gold', title: 'Cost revision answered', text: `${ref} · ${res === 'lowered' ? 'Cost lowered' : res === 'raised' ? 'Cost changed' : 'Cost kept'}${reply ? ' · ' + reply : ''}` }; }
     else if (e.kind === 'cancel_fee') it = { ...base, icon: 'wallet', tone: 'red', title: Number(e.detail) > 0 ? 'Cancellation fee added' : 'Cancellation fee removed', text: Number(e.detail) > 0 ? `${ref} · ${money(e.detail)}` : ref };
     else if (e.kind === 'delayed') it = { ...base, icon: 'alert', tone: 'orange', title: 'Order possibly delayed', text: e.detail ? `${ref} · ${e.detail}` : ref };
     else if (e.kind === 'delay_cleared') it = { ...base, icon: 'check', tone: 'mint', title: 'Order no longer delayed', text: ref };
@@ -563,7 +565,7 @@
         ${(st => st ? `<div><span>Payment</span><span>${st === 'paid' ? `<span class="pay-tag paid">Paid</span> <small class="dim" data-no-i18n>${esc(window.DLPayOrders.day(o.paidAt))}</small>` : st === 'unpaid' ? '<span class="pay-tag unpaid">Not paid yet</span>' : '<span class="dim">No bill yet</span>'}</span></div>` : '')(window.DLPayOrders.state(o, S.adjustments))}
         ${o.priced && o.quotedUnitPrice != null ? `<div><span><span>Per item</span> <small class="dim" data-no-i18n>× ${esc(o.quantity || 1)}</small></span><span>${money(o.quotedUnitPrice)}</span></div>${o.quotedShipping != null ? `<div><span>Shipping per order</span><span>${money(o.quotedShipping)}</span></div>` : ''}` : o.priced ? `<div><span><span>Per item</span> <small class="dim" data-no-i18n>× ${esc(o.quantity || 1)}</small></span><span>${money(Math.round(o.price / (o.quantity || 1) * 100) / 100)}</span></div>` : ''}
         ${profitOf(o) == null ? '' : `<div><span>Your profit</span><span class="${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}"><b>${money(profitOf(o))}</b></span></div>`}</div>
-        ${o.priced && earnedOf(o) == null && o.status !== 'cancelled' ? '<p class="note" style="margin:10px 0 0">Add the Etsy fee, or what Etsy says you earned, to see your profit.</p>' : o.priced && notUsd(o) && o.status !== 'cancelled' ? '<p class="note" style="margin:10px 0 0">Profit is only worked out for orders in USD, so this order is not in your profit totals.</p>' : ''}</section>
+        ${o.priced && earnedOf(o) == null && o.status !== 'cancelled' ? '<p class="note" style="margin:10px 0 0">Add the Etsy fee, or what Etsy says you earned, to see your profit.</p>' : o.priced && notUsd(o) && o.status !== 'cancelled' ? '<p class="note" style="margin:10px 0 0">Profit is only worked out for orders in USD, so this order is not in your profit totals.</p>' : ''}${o.priced || o.revision ? revisionBlock('order', o, o.priced && !['cancelled', 'cancellation_requested', 'delivered'].includes(o.status)) : ''}</section>
       ${S.me.preview || o.status === 'cancelled' ? '' : `<section class="card card-pad"><h3 class="sec-title">Your numbers</h3><p class="note">Copy these from your Etsy order screen: what the buyer paid and the Etsy fee, or just what Etsy says you earned (Earnings tab). They only change your profit figures, never your bill.</p>
         <form id="numbers-form" class="form-grid" novalidate>
           <label class="field"><span>Customer paid <small>what the buyer paid</small></span><input name="sellingPrice" type="number" min="0" step="0.01" inputmode="decimal" value="${o.sellingPrice == null ? '' : Number(o.sellingPrice).toFixed(2)}"></label>
@@ -576,6 +578,24 @@
     bindNumbers(o);
     if (keepFoot && d.foot.dataset.confirm) return;
     d.foot.innerHTML = `${editable(o) ? `<div><a class="btn" href="#/edit/${o.id}" data-close-drawer>${ic('edit')}Edit order</a><p class="muted" style="font-size:12px">You can edit for ${hoursLeft(o)} more hours.</p></div>` : `<a class="muted" href="#/messages/${o.id}" data-close-drawer>${['pending','processing','cancellation_requested'].includes(o.status) ? 'This order is already being processed. Need a change? Send us a message.' : 'Questions about this order? Send us a message.'}</a>`}${canChangeCustomer(o) ? `<button type="button" class="btn" data-change-customer="${o.id}">${ic('edit')}Change customer details</button>` : ''}<span class="spacer"></span>${['pending','processing','shipped'].includes(o.status) ? `<div><button type="button" class="btn btn-danger" data-cancel-order="${o.id}">Request cancellation</button><p class="muted" style="font-size:12px">Free before the item reaches our warehouse. $4 after it arrives at the warehouse, or if the parcel is intercepted.</p></div>` : ''}${o.status === 'shipped' ? `<button type="button" class="btn btn-primary" data-delivered="${o.id}">Mark as delivered</button>` : ''}${!S.claims.some(c=>c.orderId===o.id) && (o.claimEligibility?.problem || o.claimEligibility?.lost) ? `<button type="button" class="btn" data-report-claim="${o.id}">${o.claimEligibility.lost ? 'Report lost parcel' : 'Report a problem'}</button>` : ''}`;
+  }
+  // ---------- cost revision (Erwin, 27 Oct 2026) ----------
+  // The client asks for a lower cost on a priced order or a quoted product; the competitor price (what their Etsy
+  // listing is based on) is required. Shows the open request, or the last answer, and the "Ask" button.
+  function revisionBlock(kind, item, canAsk) {
+    const r = item.revision, waiting = r && ['open', 'offered'].includes(r.status);
+    const asked = r ? `<span class="rev-meta"><span>Your competitor price</span>: <b data-no-i18n>${money(r.competitorPrice)}</b></span>` : '';
+    const answer = r && r.status === 'done' ? `<p class="rev-line ${r.result === 'lowered' ? 'pos' : ''}"><b>${r.result === 'lowered' ? 'Cost lowered' : r.result === 'raised' ? 'Cost changed' : 'Cost kept'}</b>${r.newPrice != null ? ` · <span data-no-i18n>${money(r.oldPrice)} → ${money(r.newPrice)}</span>` : ''}${r.reply ? `<span class="rev-reply" data-no-i18n>${esc(r.reply)}</span>` : ''}</p>` : '';
+    return `<div class="rev-box" data-rev-box>${waiting ? `<p class="rev-line wait"><b>Cost revision requested</b>${asked}<span class="rev-reply">We’re checking it with the supplier. We’ll let you know.</span></p>` : answer}
+      ${!waiting && canAsk && !S.me.preview ? `<button type="button" class="btn btn-sm" data-ask-revision="${kind}:${item.id}">${ic('chart')}Ask for a cost revision</button>` : ''}</div>`;
+  }
+  function revisionForm(kind, id) {
+    const foot = UI.getDrawer().foot; foot.dataset.confirm = '1';
+    foot.innerHTML = `<form class="rev-form" data-rev-form="${kind}:${id}" novalidate><b class="rev-title">Ask for a cost revision</b>
+      <label class="field"><span>Competitor price (USD) <small>the price your listing is based on</small></span><span class="money"><input name="competitorPrice" type="number" min="0.01" step="0.01" inputmode="decimal" required></span></label>
+      <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="1000" placeholder="e.g. Sold for $24.90 on Etsy, link…"></label>
+      <div class="form-actions"><button type="button" class="btn" data-keep>Cancel</button><button type="submit" class="btn btn-primary">Send request</button></div><p class="form-msg" data-rev-msg role="alert"></p></form>`;
+    $('[name=competitorPrice]', foot).focus();
   }
   // "Your numbers": the client's own accounting for one order. Allowed at any time (it never changes the bill).
   function bindNumbers(o) {
@@ -1033,7 +1053,7 @@
     const row=(label,value)=>value?`<div><dt>${label}</dt><dd>${value}</dd></div>`:'';
     const price=p.status==='not_available'?'<span class="dim">—</span>':p.priceOptions?`<ul class="price-options">${p.priceOptions.map(o=>`<li><span data-no-i18n>${esc(o.label)}</span> <b>${money(o.unitPrice)}</b></li>`).join('')}</ul>`:p.unitPrice!=null?`<b>${money(p.unitPrice)}</b>`:'<span class="dim">Our supplier is checking the price.</span>';
     d.body.innerHTML=`${p.photoIds.length?`<section class="mp-photos">${p.photoIds.map(ph=>`<a href="/api/portal/products/${p.id}/photos/${ph}" title="Open full size"><img src="/api/portal/products/${p.id}/photos/${ph}" alt="Product photo"></a>`).join('')}</section>`:''}
-      <section class="card card-pad"><h3 class="sec-title">Price per item</h3>${price}${p.status==='approved'?`<div class="money-rows" style="margin-top:10px"><div><span>Shipping per order</span><span>${p.shipping!=null?`<b>${money(p.shipping)}</b>`:'<span class="dim">Not added yet</span>'}</span></div></div><p class="note" style="margin:10px 0 0">Shipping is added once to each order, whatever the quantity.</p>`:''}${p.note?`<p class="mp-note" data-no-i18n>${esc(p.note)}</p>`:''}</section>
+      <section class="card card-pad"><h3 class="sec-title">Price per item</h3>${price}${p.status==='approved'?`<div class="money-rows" style="margin-top:10px"><div><span>Shipping per order</span><span>${p.shipping!=null?`<b>${money(p.shipping)}</b>`:'<span class="dim">Not added yet</span>'}</span></div></div><p class="note" style="margin:10px 0 0">Shipping is added once to each order, whatever the quantity.</p>`:''}${p.note?`<p class="mp-note" data-no-i18n>${esc(p.note)}</p>`:''}${p.status==='approved'||p.revision?revisionBlock('product',p,p.status==='approved'):''}</section>
       <section class="card card-pad"><h3 class="sec-title">Competitor price</h3>${S.me.preview?(p.competitorPrice?`<p data-no-i18n><bdi>${esc(p.competitorPrice)}</bdi></p>`:'<p class="dim">Not added</p>'):`<form id="comp-form" class="comp-form"><input name="competitorPrice" dir="auto" maxlength="200" autocomplete="off" aria-label="Competitor price" placeholder="e.g. $24.90 on Etsy shop X" value="${esc(p.competitorPrice)}"><button type="submit" class="btn">Save</button></form><p class="form-msg" data-comp-msg></p>`}<p class="note" style="margin:6px 0 0">What other shops charge for this product. Our supplier sees it next to your product.</p></section>
       <section class="card card-pad"><dl class="kv">${row('Variation',p.variant?`<span data-no-i18n>${esc(p.variant)}</span>`:'')}${row('Expected per month',p.expectedQuantity?String(p.expectedQuantity):'')}${row('Sent for quote',`<time data-no-i18n>${esc(fullDate(p.createdAt))}</time>`)}${row('Updated',`<time data-no-i18n>${esc(fullDate(p.updatedAt))}</time>`)}${row('Product link',`<a href="${esc(p.link)}" target="_blank" rel="noopener" data-no-i18n>${esc(p.link)}</a>`)}</dl></section>`;
     const cf=$('#comp-form',d.body);if(cf)cf.addEventListener('submit',async e=>{e.preventDefault();const b=$('[type=submit]',cf),m=$('[data-comp-msg]',d.body);b.disabled=true;m.textContent='';m.className='form-msg';try{await api('/products/'+p.id,{method:'PUT',body:{competitorPrice:cf.competitorPrice.value}});await refresh();N.popup({icon:'check',title:'Competitor price saved'},{duration:4000});}catch(ex){m.textContent=ex.message;m.className='form-msg err';}b.disabled=false;});
@@ -1123,6 +1143,20 @@
   document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
   document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
+  document.addEventListener('input', e => { const f = e.target.closest?.('[data-rev-form]'); if (!f) return; e.target.closest('.field')?.classList.remove('bad'); const m = $('[data-rev-msg]', f); m.textContent = ''; m.className = 'form-msg'; });
+  // Cost revision request: the competitor price is required (the server checks it too).
+  document.addEventListener('submit', async e => {
+    const f = e.target.closest('[data-rev-form]'); if (!f) return; e.preventDefault();
+    const [kind, id] = f.dataset.revForm.split(':'), m = $('[data-rev-msg]', f), b = $('[type=submit]', f), v = Number(f.competitorPrice.value);
+    if (!(v > 0)) { m.textContent = 'Enter the competitor price in USD (the price your listing is based on).'; m.className = 'form-msg err'; f.competitorPrice.closest('.field').classList.add('bad'); f.competitorPrice.focus(); return; }
+    b.disabled = true; m.textContent = '';
+    try {
+      await api(`/${kind === 'order' ? 'orders' : 'products'}/${id}/cost-revision`, { method: 'POST', body: { competitorPrice: v, note: f.note.value } });
+      const d = UI.getDrawer(); d.foot.dataset.confirm = ''; await refresh();
+      if (kind === 'product') openProduct(id); else fillDrawer(S.orders.find(x => x.id === Number(id)));
+      N.popup({ icon: 'check', title: 'Cost revision requested', text: 'We’ll check it with the supplier and let you know.' }, { duration: 6000 });
+    } catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
+  });
   function onInput(e) { if (e.target.matches('[data-q]')) { S.q = e.target.value; renderOrdersList(); } }
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches?.('tr[data-open-order]')) openOrder(e.target.dataset.openOrder); });
   // Paste a screenshot (Ctrl+V) anywhere on the order form to attach it. Normal text pasting into fields is left alone.
@@ -1159,13 +1193,14 @@
     if(delivered){const foot=UI.getDrawer().foot;foot.dataset.confirm='1';foot.innerHTML=`<span style="font-weight:600">Has your customer received the parcel?</span><p class="muted" style="font-size:12px;margin:0">Only mark it as delivered once it has arrived.</p><span class="spacer"></span><button type="button" class="btn" data-keep>Not yet</button><button type="button" class="btn btn-primary" data-really-delivered="${delivered.dataset.delivered}">Yes, mark as delivered</button>`;return;}
     const reallyDelivered=t.closest('[data-really-delivered]');
     if(reallyDelivered){reallyDelivered.disabled=true;try{await api('/orders/'+reallyDelivered.dataset.reallyDelivered+'/mark-delivered',{method:'POST',body:{}});UI.getDrawer().foot.dataset.confirm='';await refresh();N.popup({icon:'check',title:'Marked as delivered'});}catch(ex){reallyDelivered.disabled=false;N.popup({icon:'alert',title:ex.message});}return;}
+    const ar = t.closest('[data-ask-revision]'); if (ar) { const [k, id] = ar.dataset.askRevision.split(':'); revisionForm(k, id); return; }
     const c = t.closest('[data-cancel-order]');
     if (c) {
       const foot = UI.getDrawer().foot; foot.dataset.confirm = '1';
       foot.innerHTML = `<span style="font-weight:600">Request cancellation?</span><label class="field"><span>Reason <small>optional</small></span><input name="cancellationReason" maxlength="1000"></label><span class="spacer"></span><button type="button" class="btn" data-keep>Keep it</button><button type="button" class="btn btn-danger" data-really-cancel="${c.dataset.cancelOrder}">Send cancellation request</button>`;
       return;
     }
-    if (t.closest('[data-keep]')) { const d = UI.getDrawer(); d.foot.dataset.confirm = ''; fillDrawer(S.orders.find(x => x.id === d.key)); return; }
+    if (t.closest('[data-keep]')) { const d = UI.getDrawer(); d.foot.dataset.confirm = ''; if (String(d.key).startsWith('p')) openProduct(String(d.key).slice(1)); else fillDrawer(S.orders.find(x => x.id === d.key)); return; }
     const rc = t.closest('[data-really-cancel]');
     if (rc) {
       rc.disabled = true;

@@ -8,7 +8,7 @@ test('admin: fixed-quote orders are billed, and the needs-cost alert opens those
   const admin = await read('admin/admin.js');
   assert.ok(admin.includes("const needsCost = o => o.status !== 'cancelled' && o.productCost == null && o.shippingFee == null && o.quotedUnitPrice == null;"));
   assert.ok(admin.includes("noCost = os.filter(needsCost)") && admin.includes('data-go-filter="needscost"'));
-  assert.ok(admin.includes("f === 'needscost' ? needsCost(o)") && admin.includes("'all', 'followups', 'needscost'"));
+  assert.ok(admin.includes("f === 'needscost' ? needsCost(o)") && admin.includes("'all', 'followups', 'revision', 'needscost'"));
   assert.ok(admin.includes("needsCost(o) ? 'Pending costs'"), 'profit uses the same rule');
 });
 

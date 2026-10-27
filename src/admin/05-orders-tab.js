@@ -3,13 +3,13 @@
   const customerPaid = o => o.sellingPrice == null ? '<span class="dim">Not entered</span>' : `${esc(o.currency || 'USD')} ${Number(o.sellingPrice).toFixed(2)}`;
   // Not billed yet: no product cost or shipping fee, and no fixed unit quote (quoted orders are billed from the quote).
   const needsCost = o => o.status !== 'cancelled' && o.productCost == null && o.shippingFee == null && o.quotedUnitPrice == null;
-  const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'followups' ? o.unreadMessages > 0 : f === 'needscost' ? needsCost(o) : f === 'unpaid' ? window.DLPayOrders.state(o) === 'unpaid' : o.status === f));
+  const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'followups' ? o.unreadMessages > 0 : f === 'needscost' ? needsCost(o) : f === 'revision' ? ['open', 'offered'].includes(o.revision?.status) : f === 'unpaid' ? window.DLPayOrders.state(o) === 'unpaid' : o.status === f));
   function renderOrders() {
     const all = [...S.orders,...S.archivedOrders];
     const inClient = all.filter(o => !S.client || String(o.clientId) === S.client);
     const count = f => inClient.filter(o => matches(o, f)).length;
-    const label = f => (f === 'archived' ? 'Archived orders' : f === 'all' ? 'All' : f === 'followups' ? 'New follow-ups' : f === 'needscost' ? 'Needs cost' : f === 'unpaid' ? 'Not paid' : UI.LABEL[f]);
-    $('[data-chips]').innerHTML = ['all', 'followups', 'needscost', 'unpaid', ...STATUSES, 'archived'].filter(f => f === 'archived' || f === 'all' || count(f) || f === S.filter)
+    const label = f => (f === 'archived' ? 'Archived orders' : f === 'all' ? 'All' : f === 'followups' ? 'New follow-ups' : f === 'needscost' ? 'Needs cost' : f === 'revision' ? 'Cost revision' : f === 'unpaid' ? 'Not paid' : UI.LABEL[f]);
+    $('[data-chips]').innerHTML = ['all', 'followups', 'revision', 'needscost', 'unpaid', ...STATUSES, 'archived'].filter(f => f === 'archived' || f === 'all' || count(f) || f === S.filter)
       .map(f => `<button type="button" class="chip t-${f}${f === 'followups' ? ' alert' : ''}${S.filter === f ? ' on' : ''}" data-filter="${f}">${f !== 'all' && f !== 'followups' ? '<i class="dot"></i>' : ''}${label(f)} <span>${count(f)}</span></button>`).join('');
     const sel = $('[data-client-filter]');
     sel.innerHTML = '<option value="">All clients</option>' + S.ov.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');

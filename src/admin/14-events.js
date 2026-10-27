@@ -144,6 +144,9 @@
       catch(ex){toast(ex.message);direct.disabled=false;}
       return;
     }
+    // Cost revision: keep the price (with the optional reply).
+    const rkp=t.closest('[data-rev-keep-product]');if(rkp){const f=rkp.closest('form');rkp.disabled=true;try{await api('/admin/products/'+rkp.dataset.revKeepProduct+'/cost-revision',{method:'POST',body:{action:'keep',reply:f.revReply.value}});await loadAll();renderTab();toast('Price kept. The client was told.');}catch(ex){rkp.disabled=false;toast(ex.message);}return;}
+    const rk=t.closest('[data-rev-keep]');if(rk){const f=rk.closest('form');rk.disabled=true;try{await api('/admin/orders/'+rk.dataset.revKeep+'/cost-revision',{method:'POST',body:{action:'keep',reply:f.reply.value}});await loadAll();renderList();refreshDrawer();toast('Price kept. The client was told.');}catch(ex){rk.disabled=false;toast(ex.message);}return;}
     const decision=t.closest('[data-cancel-decision]');
     if(decision){decision.disabled=true;try{await api('/orders/'+decision.dataset.id+'/'+decision.dataset.cancelDecision+'-cancellation',{method:'POST',body:{fee:$('[name=cancellationFee]').value}});await loadAll();renderList();refreshDrawer();toast('Cancellation request updated.');}catch(ex){decision.disabled=false;toast(ex.message);}return;}
     const tracking=t.closest('[data-tracking-update]');if(tracking){tracking.disabled=true;try{await api('/admin/orders/'+tracking.dataset.trackingUpdate+'/tracking-update',{method:'POST',body:{}});await loadAll();refreshDrawer();toast('Tracking update recorded.');}catch(ex){tracking.disabled=false;toast(ex.message);}return;}
@@ -198,6 +201,10 @@
     }
   });
   document.addEventListener('submit', async e => {
+    // Cost revision: approve the new supplier cost (bill = cost + our fee); the client is told.
+    const ra = e.target.closest('[data-rev-answer]');
+    if (ra) { e.preventDefault(); const b = $('[type=submit]', ra), cost = ra.cost.value; if (cost === '' || !(Number(cost) >= 0)) { toast('Enter the new supplier cost.'); ra.cost.focus(); return; } b.disabled = true;
+      try { await api('/admin/orders/' + ra.dataset.revAnswer + '/cost-revision', { method: 'POST', body: { action: 'approve', cost: Number(cost), reply: ra.reply.value } }); await loadAll(); renderList(); refreshDrawer(); toast('New cost approved. The client was told.'); } catch (ex) { b.disabled = false; toast(ex.message); } return; }
     const pe = e.target.closest('[data-payment-edit-form]');
     if (pe) {
       e.preventDefault();
