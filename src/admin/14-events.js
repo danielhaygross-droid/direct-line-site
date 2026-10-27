@@ -32,7 +32,7 @@
     if (rs) { setArchived(Number(rs.dataset.restore), false, rs); return; }
     const bk = t.closest('[data-bulk]'); if (bk) { runBulk(bk.dataset.bulk, bk); return; }
     if (t.closest('select') || t.closest('[data-bulk-bar]') || t.closest('td.pick, th.pick')) return;
-    const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
+    const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient, oc.dataset.clientTab || 'orders'); return; }
     const oo = t.closest('[data-open-order]'); if (oo) openOrder(oo.dataset.openOrder);
   }
   async function setArchived(id, archived, el) {
@@ -58,7 +58,7 @@
   document.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
     const row = e.target.closest?.('tr[data-open-order], tr[data-open-client]');
-    if (row) { if (row.dataset.openOrder) openOrder(row.dataset.openOrder); else openClient(row.dataset.openClient); }
+    if (row) { if (row.dataset.openOrder) openOrder(row.dataset.openOrder); else openClient(row.dataset.openClient, row.dataset.clientTab || 'orders'); }
   });
   // Admins can add product photos to an order (e.g. when a client sends them on WhatsApp).
   document.addEventListener('change', async e => {
@@ -150,7 +150,7 @@
     const ss = t.closest('[data-set-status]'); if (ss) { if (!ss.classList.contains('on')) setStatus(ss.dataset.id, ss.dataset.setStatus, ss); return; }
     const eo = t.closest('[data-edit-order]'); if (eo) { openOrderForm(S.orders.find(o => o.id === Number(eo.dataset.editOrder))); return; }
     const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
-    const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient); return; }
+    const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient, oc.dataset.clientTab || 'orders'); return; }
     const oo = t.closest('[data-open-order]'); if (oo) { openOrder(oo.dataset.openOrder, null, oo.dataset.back ? Number(oo.dataset.back) : null); return; }
     const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; S.drawer.last = { ...S.drawer.last, [groupOf(ct.dataset.ctab)]: ct.dataset.ctab }; fillClient(clientOf(S.drawer.id)); if (ct.dataset.ctab==='payments') await loadPayments(S.drawer.id); if (ct.dataset.ctab==='prices') await loadSavedPrices(S.drawer.id); if (ct.dataset.ctab==='activity') await loadActivity(S.drawer.id); return; }
     const fp = t.closest('[data-forget-price]');
