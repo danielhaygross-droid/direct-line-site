@@ -16,6 +16,7 @@ import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } fr
 import { BILLING_SCHEMA, getBilling, saveBilling } from './billing.mjs';
 import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund } from './cancellations.mjs';
 import { cancelledTotals, moneyMonths } from './money-overview.mjs';
+import { REVISION_SCHEMA, withRevisions, requestRevision, answerOrder, productRequoted, keepProduct } from './cost-revisions.mjs';
 import { PAYMENT_ORDER_SCHEMA, orderIdList, checkOrders, setPaymentOrders, paymentOrderIds, withPaid, dropTakenOrders } from './payment-orders.mjs';
 
 import { STATUS_SCHEMA, changeStatus, balanceAdjustments } from './order-status.mjs';
@@ -206,7 +207,7 @@ SCHEMA.push(`CREATE TABLE IF NOT EXISTS payment_edits (
   id SERIAL PRIMARY KEY, payment_id INTEGER NOT NULL REFERENCES client_payments(id), field TEXT NOT NULL,
   old_value TEXT NOT NULL DEFAULT '', new_value TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`);
 // Which orders each payment is for (payment-orders.mjs).
-SCHEMA.push(...PAYMENT_ORDER_SCHEMA, ...BILLING_SCHEMA, ...REFUND_SCHEMA);
+SCHEMA.push(...PAYMENT_ORDER_SCHEMA, ...BILLING_SCHEMA, ...REFUND_SCHEMA, ...REVISION_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -734,7 +735,8 @@ async function routePortal(request, url, ctx, meta) {
   // ----- client routes -----
   if (path === '/orders' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? AND NOT archived ORDER BY created_at DESC, id DESC').bind(who.clientId).all()).results || [];
-    return json({ ok: true, orders: await withPaid(DB, await withPhotos(DB, await withMessages(DB, rows.map(orderOut).map(clientOrder), false)), who.clientId) });
+    const revs = (await withRevisions(DB, rows.map(r => ({ id: r.id })), 'order', who.clientId)).map(x => x.revision && { ...x.revision, offeredCost: undefined });
+    return json({ ok: true, orders: (await withPaid(DB, await withPhotos(DB, await withMessages(DB, rows.map(orderOut).map(clientOrder), false)), who.clientId)).map((o, i) => ({ ...o, revision: revs[i] || null })) });
   }
   if (path === '/payments' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? AND NOT archived ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
@@ -744,7 +746,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path==='/invoices/month' && method==='GET' && !who.admin) return monthlyInvoices(DB,who.clientId,url.searchParams.get('month'),env);
   if(path==='/client-stores'&&!who.admin){if(method==='GET')return json({ok:true,stores:await clientStores(DB,who.clientId)});if(method==='POST'){try{const store=await saveStore(DB,who.clientId,null,await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}}
   const storeEdit=/^\/client-stores\/(\d+)$/.exec(path);if(storeEdit&&method==='POST'&&!who.admin){try{const store=await saveStore(DB,who.clientId,Number(storeEdit[1]),await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
-  if(path==='/products' && !who.admin){if(method==='GET')return json({ok:true,products:await products(DB,who.clientId)});if(method==='POST'){let product;try{product=await addProduct(DB,who.clientId,await readBody(request));}catch(e){return json({ok:false,error:e.message},400);}const qs=syncQuoteRow(DB,env,product.id).catch(e=>console.error('Product Quotes row failed',e));if(waitUntil)waitUntil(qs);else await qs;return json({ok:true,product});}}
+  if(path==='/products' && !who.admin){if(method==='GET')return json({ok:true,products:await withRevisions(DB,await products(DB,who.clientId),'product',who.clientId)});if(method==='POST'){let product;try{product=await addProduct(DB,who.clientId,await readBody(request));}catch(e){return json({ok:false,error:e.message},400);}const qs=syncQuoteRow(DB,env,product.id).catch(e=>console.error('Product Quotes row failed',e));if(waitUntil)waitUntil(qs);else await qs;return json({ok:true,product});}}
   // The client (or an admin) sets the competitor price of a product; the Product Quotes row follows.
   const productComp=/^\/products\/(\d+)$/.exec(path);
   if(productComp&&method==='PUT'&&!who.preview){const body=(await readBody(request))||{};if(Object.keys(body).some(k=>k!=='competitorPrice'))return json({ok:false,error:'Only the competitor price can be changed here.'},400);const product=await setCompetitorPrice(DB,Number(productComp[1]),who.admin?null:who.clientId,body.competitorPrice);if(!product)return json({ok:false,error:'Not found'},404);const qs=syncQuoteRow(DB,env,product.id).catch(e=>console.error('Product Quotes row failed',e));if(waitUntil)waitUntil(qs);else await qs;return json({ok:true,product});}
@@ -839,6 +841,21 @@ async function routePortal(request, url, ctx, meta) {
   }
   if(path==='/claims'&&method==='GET'&&!who.admin)return json({ok:true,claims:await claims(DB,who.clientId)});
   const newClaim=/^\/orders\/(\d+)\/claims$/.exec(path);if(newClaim&&method==='POST'&&!who.admin){const order=await DB.prepare('SELECT * FROM client_orders WHERE id=? AND client_id=?').bind(Number(newClaim[1]),who.clientId).first();if(!order)return json({ok:false,error:'Not found'},404);try{return json({ok:true,claim:await submitClaim(DB,order,await readBody(request))});}catch(e){return json({ok:false,error:e.message},409);}}
+  // Cost revisions (Erwin, 27 Oct 2026): the client asks (competitor price required); the admin answers.
+  const askRevision = /^\/(orders|products)\/(\d+)\/cost-revision$/.exec(path);
+  if (askRevision && method === 'POST' && !who.admin && !who.preview) {
+    const kind = askRevision[1] === 'orders' ? 'order' : 'product', id = Number(askRevision[2]);
+    try { await requestRevision(DB, kind, id, who.clientId, await readBody(request)); } catch (e) { return json({ ok: false, error: e.message }, e.status || 400); }
+    const sync = (kind === 'order' ? syncPortalOrderToGoogleSheet(DB, env, id) : syncQuoteRow(DB, env, id)).catch(e => console.error('Cost revision sheet sync failed', e)); if (waitUntil) waitUntil(sync); else await sync;
+    return json({ ok: true });
+  }
+  const answerRevision = /^\/admin\/(orders|products)\/(\d+)\/cost-revision$/.exec(path);
+  if (answerRevision && method === 'POST' && who.admin) {
+    const kind = answerRevision[1] === 'orders' ? 'order' : 'product', id = Number(answerRevision[2]), body = await readBody(request);
+    try { if (kind === 'order') await answerOrder(DB, id, body); else await keepProduct(DB, id, body); } catch (e) { return json({ ok: false, error: e.message }, e.status || 400); }
+    const sync = (kind === 'order' ? syncPortalOrderToGoogleSheet(DB, env, id) : syncQuoteRow(DB, env, id)).catch(e => console.error('Cost revision sheet sync failed', e)); if (waitUntil) waitUntil(sync); else await sync;
+    return json({ ok: true });
+  }
   const statusAction = /^\/orders\/(\d+)\/(request-cancellation|approve-cancellation|reject-cancellation|mark-delivered)$/.exec(path);
   if (statusAction && method === 'POST') {
     const existing = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(Number(statusAction[1])).first();
@@ -1098,14 +1115,14 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/admin/orders' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0), archived = url.searchParams.get('archived') === '1';
     const rows = (await DB.prepare(`SELECT * FROM client_orders WHERE archived=? ${clientId ? 'AND client_id=?' : 'AND client_id NOT IN (SELECT id FROM users WHERE archived)'} ORDER BY created_at DESC, id DESC`).bind(archived,...(clientId ? [clientId] : [])).all()).results;
-    return json({ ok: true, orders: await withPaid(DB, await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)), clientId || null) });
+    return json({ ok: true, orders: await withRevisions(DB, await withPaid(DB, await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)), clientId || null), 'order') });
   }
   if(path==='/admin/client-stores'&&method==='GET'){const clientId=url.searchParams.has('clientId')?Number(url.searchParams.get('clientId')):null;return json({ok:true,stores:await clientStores(DB,clientId)});}
   const adminStore=/^\/admin\/client-stores(?:\/(\d+))?$/.exec(path);if(adminStore&&method==='POST'){const body=await readBody(request);try{const store=await saveStore(DB,Number(body.clientId),adminStore[1]?Number(adminStore[1]):null,body);return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
   if(path==='/admin/claims'&&method==='GET')return json({ok:true,claims:await claims(DB)});
   const claimDecision=/^\/admin\/claims\/(\d+)$/.exec(path);if(claimDecision&&method==='POST'){try{const claim=await decideClaim(DB,Number(claimDecision[1]),await readBody(request));if(claim.reshipmentOrderId){const sync=syncPortalOrderToGoogleSheet(DB,env,claim.reshipmentOrderId).catch(()=>{});if(waitUntil)waitUntil(sync);}return json({ok:true,claim});}catch(e){return json({ok:false,error:e.message},409);}}
   const trackingUpdate=/^\/admin\/orders\/(\d+)\/tracking-update$/.exec(path);if(trackingUpdate&&method==='POST'){const order=await DB.prepare('UPDATE client_orders SET last_tracking_update_at=?,updated_at=? WHERE id=? AND NOT archived RETURNING *').bind(now(),now(),Number(trackingUpdate[1])).first();if(!order)return json({ok:false,error:'Not found'},404);await logEvent(DB,order.id,order.client_id,'tracking_update','admin');return json({ok:true,order:orderOut(order)});}
-  if(path==='/admin/products'&&method==='GET')return json({ok:true,products:await products(DB)});
+  if(path==='/admin/products'&&method==='GET')return json({ok:true,products:await withRevisions(DB,await products(DB),'product')});
   // Saved prices of one client (admin → client → Saved prices).
   // A client's activity: when they last signed in / used the portal, what they did, and what admins did logged in as them.
   const activity = /^\/admin\/clients\/(\d+)\/activity$/.exec(path);
@@ -1122,7 +1139,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/admin/saved-prices' && method === 'GET') { const cid = Number(url.searchParams.get('clientId')); if (!(cid > 0)) return json({ ok: false, error: 'Choose a client' }, 400); return json({ ok: true, prices: await savedPricesFor(DB, cid) }); }
   const spForget = /^\/admin\/saved-prices\/(\d+)\/forget$/.exec(path);
   if (spForget && method === 'POST') return (await forgetSavedPrice(DB, Number(spForget[1]))) ? json({ ok: true }) : json({ ok: false, error: 'Not found' }, 404);
-  const productQuote=/^\/admin\/products\/(\d+)$/.exec(path);if(productQuote&&method==='POST'){try{const product=await quoteProduct(DB,Number(productQuote[1]),await readBody(request));if(!product)return json({ok:false,error:'Not found'},404);const qs=syncQuoteRow(DB,env,product.id).catch(e=>console.error('Product Quotes row failed',e));if(waitUntil)waitUntil(qs);else await qs;return json({ok:true,product});}catch(e){return json({ok:false,error:e.message},400);}}
+  const productQuote=/^\/admin\/products\/(\d+)$/.exec(path);if(productQuote&&method==='POST'){try{const product=await quoteProduct(DB,Number(productQuote[1]),await readBody(request));if(!product)return json({ok:false,error:'Not found'},404);await productRequoted(DB,product.id);const qs=syncQuoteRow(DB,env,product.id).catch(e=>console.error('Product Quotes row failed',e));if(waitUntil)waitUntil(qs);else await qs;return json({ok:true,product});}catch(e){return json({ok:false,error:e.message},400);}}
   if (path==='/admin/invoices' && method==='GET') return json({ok:true,invoices:await invoices(DB,Number(url.searchParams.get('clientId')))});
   // Remove a receipt sent by mistake: archived (kept in the database), the client no longer sees it.
   const receiptArchive = /^\/admin\/invoices\/(\d+)\/archive$/.exec(path);

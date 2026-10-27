@@ -3,13 +3,15 @@
     const box = $('[data-overview]'); if (!box) return;
     const os = S.orders, cl = S.ov.clients;
     const pending = os.filter(o => o.status === 'pending'), follow = os.filter(o => o.unreadMessages > 0);
-    const noTrack = os.filter(o => o.status === 'processing' && !o.trackingNumber), noCost = os.filter(needsCost);
+    const noTrack = os.filter(o => o.status === 'processing' && !o.trackingNumber), noCost = os.filter(needsCost), revs = os.filter(o => ['open', 'offered'].includes(o.revision?.status)), revProducts = (S.products || []).filter(p => ['open', 'offered'].includes(p.revision?.status));
     const owing = cl.filter(c => c.outstanding > 0);
     const trialSoon = cl.filter(c => c.subscription?.status === 'trial' && c.subscription.trialDaysLeft !== null && c.subscription.trialDaysLeft >= 0 && c.subscription.trialDaysLeft <= 7);
     const subDue = cl.filter(c => (c.subscription?.status === 'trial' && c.subscription.trialEnded) || c.subscription?.status === 'overdue');
     const todo = [
       [pending.length, `order${pending.length === 1 ? '' : 's'} waiting to be processed`, 'data-go-filter="pending"', 'var(--orange)'],
       [follow.length, `order${follow.length === 1 ? '' : 's'} with unread client messages`, 'data-go-filter="followups"', 'var(--red)'],
+      [revs.length, `order${revs.length === 1 ? '' : 's'} with a cost revision request`, 'data-go-filter="revision"', 'var(--orange)'],
+      [revProducts.length, `product${revProducts.length === 1 ? '' : 's'} with a cost revision request`, 'data-go-tab="products"', 'var(--orange)'],
       [noCost.length, `order${noCost.length === 1 ? '' : 's'} still need product + shipping cost`, 'data-go-filter="needscost"', 'var(--gold)'],
       [noTrack.length, `order${noTrack.length === 1 ? '' : 's'} in processing without tracking`, 'data-go-filter="processing"', 'var(--blue)'],
       [trialSoon.length, `client${trialSoon.length === 1 ? '' : 's'} with the free month ending in the next 7 days`, 'data-go-tab="clients"', 'var(--gold)'],

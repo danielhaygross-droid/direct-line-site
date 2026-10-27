@@ -401,3 +401,14 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-we
 .seg-pick input:focus-visible+span{outline:2px solid var(--gold);outline-offset:2px}
 .store-filter{margin-bottom:2px}.store-filter .chip.on{background:var(--text);color:var(--surface);border-color:var(--text)}
 .store-card.is-suspended{border-inline-start:3px solid var(--red)}
+/* Cost revision (client asks for a lower cost; admin answers) */
+.rev-box{display:grid;gap:8px;margin-top:12px}.rev-box:empty{display:none}.rev-box>.btn{justify-self:start}
+.rev-line{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;margin:0;padding:10px 12px;border-radius:var(--radius-sm);background:var(--surface-2);border:1px solid var(--line);font-size:14px}
+.rev-line.wait{background:color-mix(in srgb,var(--orange) 10%,var(--surface));border-color:color-mix(in srgb,var(--orange) 35%,var(--line))}
+.rev-line.pos{border-color:color-mix(in srgb,var(--mint) 40%,var(--line))}
+.rev-reply{flex-basis:100%;color:var(--muted);font-size:13px}.rev-meta{flex-basis:100%}.rev-line>b:first-child{flex-basis:100%}
+.rev-form{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;width:100%;align-items:end}.rev-form .rev-title{grid-column:1/-1}.rev-form .form-actions,.rev-form .form-msg{grid-column:1/-1}
+.rev-admin{border-inline-start:3px solid var(--orange)}.rev-answer{margin-top:12px}
+.rev-admin-p{display:grid;gap:6px;padding:12px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--orange) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--orange) 35%,var(--line))}.rev-admin-p p{margin:0}
+.rev-keep-row{display:flex;gap:8px;flex-wrap:wrap}.rev-keep-row input{flex:1 1 200px;min-height:40px}
+@media(max-width:560px){.rev-form{grid-template-columns:1fr}}
