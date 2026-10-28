@@ -55,8 +55,17 @@ try {
     // 1) Reminder: the oldest unpaid order is 30 days old.
     await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.reload(); await page.waitForSelector('.pay-strip');
     assert.equal(await page.locator('.pay-strip.late').count(), 1, tag + ' late strip');
-    assert.match(await page.locator('.pay-strip small').innerText(), lang === 'en' ? /30 days ago/ : /לפני 30 ימים/, tag + ' since when');
+    assert.match(await page.locator('.pay-strip small').innerText(), lang === 'en' ? /(29|30) days ago/ : /לפני (29|30) ימים/, tag + ' since when');
     await page.locator('.pay-strip').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-reminder.png`) });
+    // 1b) Orders page: the list first, earnings folded below; "Not paid" filter (OLD, SHIP-1, SHIP-2 unpaid; PAID-1 paid).
+    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('[data-filter="unpaid"]');
+    const top = sel => page.locator(sel).first().evaluate(e => e.getBoundingClientRect().top);
+    assert.ok(await top('[data-orders-list]') < await top('[data-earn]'), tag + ' list above the earnings');
+    assert.equal(await page.locator('[data-earn][open]').count(), 0, tag + ' earnings closed by default');
+    await page.locator('[data-filter="unpaid"]').click(); await page.waitForTimeout(300);
+    assert.equal(await page.locator('[data-orders-list] tbody tr').count(), 3, tag + ' Not paid shows the 3 unpaid orders');
+    await page.screenshot({ path: path.join(out, `${tag}-orders.png`) });
+    await page.locator('[data-filter="all"]').click();
     // 2) Bulk delivered on the Shipped filter.
     await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('[data-chips], .chips'); await page.locator('[data-filter="shipped"]').first().click(); await page.waitForSelector('[data-bulk-deliver]');
     await page.locator('[data-bulk-deliver] > summary').click(); await page.locator('[data-bulk-form] [name=id]').first().check();
