@@ -233,7 +233,7 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .store-switcher .store-label{min-width:0;max-width:100%}
 .store-switcher .store-label>span{min-width:0;overflow-wrap:anywhere}
 /* store names in the shop chips use the normal font (.chip span is the mono counter style) */
-.store-switcher .store-label>span{font:inherit;color:inherit}
+.store-switcher .chip .store-label,.store-switcher .store-label>span{font-family:inherit;font-size:inherit;color:inherit}
 .chip.t-unpaid{--tone:var(--orange)}
 .view{grid-template-columns:minmax(0,1fr)}
 .card-head:has(#invoice-month-form){flex-wrap:wrap}
