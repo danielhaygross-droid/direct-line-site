@@ -27,7 +27,7 @@
     }
   }
   // The earnings block on Orders can be folded away; the choice is remembered on this device.
-  document.addEventListener('toggle', e => { if (e.target.matches?.('[data-earn]')) store.set('dl-earn-open', e.target.open); }, true);
+  document.addEventListener('toggle', e => { if (e.target.matches?.('[data-earn]')) store.set('dl-earn-open-v2', e.target.open); }, true);
   // Bulk "Mark as delivered": the button counts the ticked orders; each is marked like a single one.
   document.addEventListener('change', e => { const f = e.target.closest?.('[data-bulk-form]'); if (!f) return; const n = $$('[name=id]:checked', f).length, b = $('[data-bulk-go]', f); b.disabled = !n; b.textContent = n ? (window.DLi18n?.lang === 'he' ? `סימון ${n} כנמסרו` : `Mark ${n} as delivered`) : (window.DLi18n?.lang === 'he' ? 'סימון כנמסרו' : 'Mark as delivered'); });
   document.addEventListener('submit', async e => {

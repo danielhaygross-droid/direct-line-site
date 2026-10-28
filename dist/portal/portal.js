@@ -456,6 +456,9 @@
     const el = $('[data-client-chart]'); if (!el) return;
     const M = window.DLClientStoreMath, c = n => Math.round(n) / 100, by = new Map(), at = k => { if (!by.has(k)) by.set(k, { month: k, earned: 0, billed: 0, profit: 0, paid: 0 }); return by.get(k); };
     for (const o of storeOrders()) { if (o.status === 'cancelled') continue; const r = at(M.dateKey(o).slice(0, 7)), e = (o.currency || 'USD') === 'USD' ? M.earnedCents(o) : null; r.billed += Math.round(Number(o.price || 0) * 100); if (e != null) { r.earned += e; r.profit += e - Math.round(Number(o.price || 0) * 100); } }
+    // Cancellation fees and other bill changes count against the order's month, as in the cards above.
+    const mine = new Map(storeOrders().map(o => [o.id, o]));
+    for (const a of S.adjustments) { const o = mine.get(a.orderId); if (!o) continue; const r = at(M.dateKey(o).slice(0, 7)), v = Math.round(Number(a.amount || 0) * 100); r.billed += v; r.profit -= v; }
     if (!S.storeId) for (const p of S.payments) at(new Date(p.paidAt * 1000).toISOString().slice(0, 7)).paid += Math.round(p.amount * 100);
     const months = [...by.values()].map(r => ({ month: r.month, earned: c(r.earned), billed: c(r.billed), profit: c(r.profit), paid: c(r.paid) }));
     window.DLMoneyChart.mount(el, { title: 'Money by month', key: 'dl-client-money-' + S.me.id, months, money, series: [
@@ -481,17 +484,21 @@
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
   }
-  const viewOrders = () => `${payStrip()}<details class="earn-box" data-earn${store.get('dl-earn-open', true) ? ' open' : ''}><summary><b>Your earnings</b><small>profit, billing and the chart for the selected period</small></summary>${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details><div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
-      <section class="card" data-orders-list></section>`;
+  // Orders page (Erwin, 28 Oct 2026: "he cant even properly sort out the orders"): the list and its filters come first;
+  // the earnings (store table, cards, profit chart) are folded below it and closed until the client opens them.
+  const viewOrders = () => `${payStrip()}<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
+      <section class="card" data-orders-list></section><details class="earn-box" data-earn${store.get('dl-earn-open-v2', false) ? ' open' : ''}><summary><b>Your earnings</b><small>profit, billing and the chart for the selected period</small></summary>${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details>`;
+  const isUnpaid = o => window.DLPayOrders.state(o, S.adjustments) === 'unpaid';
+  const byFilter = (o, f) => f === 'all' || (f === 'unpaid' ? isUnpaid(o) : o.status === f);
   function renderChips() {
-    const c = st => storeOrders().filter(o => st === 'all' || o.status === st).length;
-    $('[data-chips]').innerHTML = ['all', ...STATUSES].filter(st => st === 'all' || c(st) || st === S.filter)
-      .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
+    const c = st => storeOrders().filter(o => byFilter(o, st)).length;
+    $('[data-chips]').innerHTML = ['all', 'unpaid', ...STATUSES].filter(st => st === 'all' || c(st) || st === S.filter)
+      .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}" aria-pressed="${S.filter === st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : st === 'unpaid' ? 'Not paid' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
   }
   // The orders on screen: store, status chip, search and sort (also what "Export to Excel" exports).
   function shownOrders() {
     const q = S.q.toLowerCase();
-    return sortList(storeOrders().filter(o => (S.filter === 'all' || o.status === S.filter)
+    return sortList(storeOrders().filter(o => byFilter(o, S.filter)
       && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination),S.stores.find(s=>s.id===o.storeId)?.name].join(' ').toLowerCase().includes(q))), 'portal-orders', ORDER_SORTS);
   }
   // "Export to Excel": the orders on screen as an .xlsx with prices, a Yes / No "Paid" column and paid / not paid totals.
@@ -499,7 +506,7 @@
     const list = shownOrders(); if (!list.length) { N.popup({ icon: 'alert', title: 'No orders to export' }); return; }
     const he = window.DLi18n?.lang === 'he', t = he ? window.DLi18n.t : s => s;
     const storeName = S.storeId ? S.stores.find(s => s.id === S.storeId)?.name : t('All stores');
-    const parts = [storeName, S.filter === 'all' ? t('All statuses') : t(UI.LABEL[S.filter]), S.q ? `"${S.q}"` : '', [t('Exported'), new Date().toLocaleDateString('en-GB')]].filter(Boolean);
+    const parts = [storeName, S.filter === 'all' ? t('All statuses') : S.filter === 'unpaid' ? t('Not paid') : t(UI.LABEL[S.filter]), S.q ? `"${S.q}"` : '', [t('Exported'), new Date().toLocaleDateString('en-GB')]].filter(Boolean);
     const blob = window.DLExcelExport.orders({ title: t('Orders') + ' — ' + S.me.name, subtitle: parts.map(p => Array.isArray(p) ? p.join(' ') : p).join(' · '), orders: list, statusLabel: s => t(UI.LABEL[s] || s), t, rtl: he });
     window.DLExcelExport.download(blob, `Direct-Line-orders-${localDay()}.xlsx`);
   }
@@ -1169,7 +1176,7 @@
     }
   }
   // The earnings block on Orders can be folded away; the choice is remembered on this device.
-  document.addEventListener('toggle', e => { if (e.target.matches?.('[data-earn]')) store.set('dl-earn-open', e.target.open); }, true);
+  document.addEventListener('toggle', e => { if (e.target.matches?.('[data-earn]')) store.set('dl-earn-open-v2', e.target.open); }, true);
   // Bulk "Mark as delivered": the button counts the ticked orders; each is marked like a single one.
   document.addEventListener('change', e => { const f = e.target.closest?.('[data-bulk-form]'); if (!f) return; const n = $$('[name=id]:checked', f).length, b = $('[data-bulk-go]', f); b.disabled = !n; b.textContent = n ? (window.DLi18n?.lang === 'he' ? `סימון ${n} כנמסרו` : `Mark ${n} as delivered`) : (window.DLi18n?.lang === 'he' ? 'סימון כנמסרו' : 'Mark as delivered'); });
   document.addEventListener('submit', async e => {
