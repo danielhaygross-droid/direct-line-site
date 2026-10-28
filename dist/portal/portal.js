@@ -447,7 +447,7 @@
     else {for(const year of [...new Set(storeOrders().filter(o=>inRange(o,range)).map(o=>window.DLClientStoreMath.dateKey(o).slice(0,4)))].sort())buckets.push({from:year+'-01-01',to:year+'-12-31',label:year});}
     for(const b of buckets){const r={from:b.from<range.from?range.from:b.from,to:b.to>range.to?range.to:b.to},tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,r).totals;b.profit=tot.profit;b.orders=tot.orders;}
     const max=Math.max(1,...buckets.map(b=>Math.abs(b.profit))),tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,range).totals;
-    return `<div class="bars${daily?' days':''}" role="img" aria-label="Profit over selected period">${buckets.map(b=>`<div class="bar-col" title="${daily?esc(b.from)+' · ':''}${money(b.profit)}"><span class="bar-val">${!daily&&(b.orders||b.profit)?money(b.profit):''}</span><i class="${b.profit<0?'neg':''}" style="height:${b.orders||b.profit?Math.max(4,Math.abs(b.profit)/max*100):0}%"></i><small data-no-i18n>${esc(b.label)}</small></div>`).join('')}</div><div class="chart-legend"><span>Profit</span><b>${money(tot.profit)}</b></div>`;
+    return `<div class="bars${daily?' days':''}" role="img" aria-label="Profit over selected period">${buckets.map(b=>`<div class="bar-col" data-tip="${daily?esc(b.from)+' · ':''}${money(b.profit)}"><span class="bar-val">${!daily&&(b.orders||b.profit)?money(b.profit):''}</span><i class="${b.profit<0?'neg':''}" style="height:${b.orders||b.profit?Math.max(4,Math.abs(b.profit)/max*100):0}%"></i><small data-no-i18n>${esc(b.label)}</small></div>`).join('')}</div><div class="chart-legend"><span>Profit</span><b>${money(tot.profit)}</b></div>`;
   }
   // Money by month (Erwin, 27 Oct 2026: "upgrade their graphs"): what the client earned on Etsy, our bill, their profit
   // and what they paid us, per order month, for the shop picked at the top (payments are for the whole account, so
@@ -462,10 +462,10 @@
     if (!S.storeId) for (const p of S.payments) at(new Date(p.paidAt * 1000).toISOString().slice(0, 7)).paid += Math.round(p.amount * 100);
     const months = [...by.values()].map(r => ({ month: r.month, earned: c(r.earned), billed: c(r.billed), profit: c(r.profit), paid: c(r.paid) }));
     window.DLMoneyChart.mount(el, { title: 'Money by month', key: 'dl-client-money-' + S.me.id, months, money, series: [
-      { key: 'earned', label: 'Earned on Etsy', tone: 'var(--gold)', note: 'What you earned on your orders after Etsy’s fees' },
-      { key: 'billed', label: 'Our bill', tone: 'var(--blue)', note: 'What Direct Line billed you for these orders' },
-      { key: 'profit', label: 'Your profit', tone: 'var(--mint)', note: 'Earned minus our bill (orders with Etsy earnings filled in)' },
-      ...(S.storeId ? [] : [{ key: 'paid', label: 'You paid us', tone: 'var(--orange)', note: 'Payments we received from you' }])] });
+      { key: 'earned', label: 'Earned on Etsy', tone: 'var(--mc-gold)', note: 'What you earned on your orders after Etsy’s fees' },
+      { key: 'billed', label: 'Our bill', tone: 'var(--mc-blue)', note: 'What Direct Line billed you for these orders' },
+      { key: 'profit', label: 'Your profit', tone: 'var(--mc-teal)', note: 'Earned minus our bill (orders with Etsy earnings filled in)' },
+      ...(S.storeId ? [] : [{ key: 'paid', label: 'You paid us', tone: 'var(--mc-orange)', note: 'Payments we received from you' }])] });
   }
 
   const unreadOrderIds=()=>new Set(noteItems().filter(x=>x.unread).map(x=>x.orderId));

@@ -250,12 +250,12 @@
     const months = (S.ov.months || []).map(r => ({ ...r, unpaid: Math.round((unpaid.get(r.month) || 0) * 100) / 100 }));
     for (const [m, v] of unpaid) if (!months.some(r => r.month === m)) months.push({ month: m, unpaid: v });
     window.DLMoneyChart.mount($('[data-money-chart]'), { title: 'Money by month, all clients', key: 'dl-admin-money', months, money, series: [
-      { key: 'billed', label: 'Billed', tone: 'var(--gold)', note: 'What clients were billed for their orders (cancelled orders not counted)' },
-      { key: 'paid', label: 'Paid', tone: 'var(--mint)', note: 'Payments received from clients' },
-      { key: 'unpaid', label: 'Not paid yet', tone: 'var(--red)', note: 'Billed orders with no payment yet, by order month' },
-      { key: 'earned', label: 'Our earnings', tone: 'var(--blue)', note: 'Our share of the fees on those orders' },
-      { key: 'fees', label: 'Cancellation fees', tone: 'var(--orange)', note: 'Cancellation fees billed' },
-      { key: 'refunds', label: 'Refunds', tone: 'var(--muted)', note: 'Money sent back to clients' }] });
+      { key: 'billed', label: 'Billed', tone: 'var(--mc-gold)', note: 'What clients were billed for their orders (cancelled orders not counted)' },
+      { key: 'paid', label: 'Paid', tone: 'var(--mc-teal)', note: 'Payments received from clients' },
+      { key: 'unpaid', label: 'Not paid yet', tone: 'var(--mc-red)', note: 'Billed orders with no payment yet, by order month' },
+      { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Our share of the fees on those orders' },
+      { key: 'fees', label: 'Cancellation fees', tone: 'var(--mc-orange)', note: 'Cancellation fees billed' },
+      { key: 'refunds', label: 'Refunds', tone: 'var(--mc-violet)', note: 'Money sent back to clients' }] });
   }
 
   // ---------- orders tab ----------
