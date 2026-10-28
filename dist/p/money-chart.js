@@ -47,11 +47,14 @@
     return { groupW, html: `<svg class="mc-svg${enter && !still() ? ' enter' : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true" data-no-i18n dir="ltr">${grid}${months}</svg>`, L, slot, W };
   }
 
+  // Bars grow in once per page; the data refreshes every minute or so and must not replay it.
+  const grown = new Set();
   function mount(el, opt) {
     if (!el) return;
     el.classList.add('mc');
     const all = fill(opt.months || []), key = opt.key || 'dl-mc';
-    let range = get(key + ':range', opt.range ?? 12), off = new Set(get(key + ':off', [])), drawn = 0, geo = null, rows = [], on = [], active = -1, pinned = false, enter = true;
+    let range = get(key + ':range', opt.range ?? 12), off = new Set(get(key + ':off', [])), drawn = 0, geo = null, rows = [], on = [], active = -1, pinned = false, enter = !grown.has(key);
+    grown.add(key);
     // The inner width of the card (its padding left out); redrawn when the card gets noticeably wider or narrower.
     const measure = () => { const cs = getComputedStyle(el); return Math.max(300, Math.round((el.clientWidth || 760) - parseFloat(cs.paddingLeft || 0) - parseFloat(cs.paddingRight || 0))); };
     const tip = () => el.querySelector('.mc-tip'), plot = () => el.querySelector('.mc-plot');

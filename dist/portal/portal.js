@@ -351,7 +351,7 @@
     if(soft && S.route==='products' && ($('#product-form')?.dataset.dirty || document.activeElement?.matches?.('[data-pq]')))return;
     if (soft && S.route === 'payments' && ($('#transfer-form')?.dataset.dirty || $('#billing-form')?.dataset.dirty)) return;
     if(soft && S.route==='stores' && [...document.querySelectorAll('[data-client-store-form]')].some(f=>f.dataset.dirty))return;
-    if (soft && S.route === 'orders' && $('[data-orders-list]')) {const sw=$('[data-store-switcher]');if(sw)sw.outerHTML=storeSwitcher(); const er=$('[data-earnings]'); if(er){er.innerHTML=earningsInner();mountClientChart();} renderChips(); renderOrdersList(); return; }
+    if (soft && S.route === 'orders' && $('[data-orders-list]')) {const sw=$('[data-store-switcher]');if(sw)sw.outerHTML=storeSwitcher(); renderChips(); renderOrdersList(); return; }
     if (!soft && S.route === 'products' && !S.me.preview) { S.productsSeenBefore = store.get(productsSeenKey(), 0); store.set(productsSeenKey(), Math.floor(Date.now() / 1000)); }
     view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, products:viewProducts, stores:viewStores, terms: viewTerms }[S.route]();
     if(['home','orders','payments'].includes(S.route))view.insertAdjacentHTML('afterbegin',storeSwitcher());
@@ -379,6 +379,19 @@
   }
 
   // ---------- home ----------
+  // "Your money" (Erwin, 29 Oct 2026: "all money matters should be clearly seen first even at home"): the account's
+  // balance, what was billed and paid, and the cancellation fees and credit, at the top of Home. Account-wide, like
+  // the Payments page; every tile opens Payments for the details.
+  function moneyNow() {
+    const s = S.me.summary, c = S.cancelled, credit = s.outstanding < 0, n = (k, one, many) => `<b data-no-i18n>${k}</b> <span>${k === 1 ? one : many}</span>`;
+    const tile = (cls, label, value, note, tone = '') => `<a class="mn-tile ${cls}" href="#/payments"><small>${label}</small><strong class="${tone}" data-no-i18n>${value}</strong><em>${note}</em></a>`;
+    return `<section class="card card-pad money-now" data-money-now><div class="mn-head"><h3 class="sec-title">Your money</h3><a class="link" href="#/payments">Payments details</a></div><div class="mn-grid">
+      ${tile('hero', credit ? 'Credit on your account' : 'Balance due', money(Math.abs(s.outstanding)), credit ? 'It counts toward your next orders' : s.outstanding > 0 ? 'Please send this to Direct Line' : 'You’re all paid up')}
+      ${tile('', 'Total billed', money(s.billed), n(s.orders, 'order', 'orders'))}
+      ${tile('', 'Paid', money(s.paid), n(S.payments.length, 'payment', 'payments'), 'pos')}
+      ${c && c.count ? tile('', 'Cancellation fees', money(c.fees), n(c.count, 'cancelled order', 'cancelled orders'), c.fees > 0 ? 'neg' : '') + tile('', 'Credit from cancelled orders', money(c.credit), 'Already counted in your balance', c.credit > 0 ? 'pos' : '') : ''}
+    </div></section>`;
+  }
   function viewHome() {
     const me = S.me, range=homeRange(), stats=window.DLClientStoreMath.performance(S.stores,S.orders,S.adjustments,range),selected=S.storeId?stats.rows.find(s=>s.id===S.storeId):stats.totals, s={...me.summary,orders:selected?.orders||0,billed:selected?.billed||0,clientProfit:selected?.profit||0};
     const h = new Date().getHours(), hello = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
@@ -391,6 +404,8 @@
     return `
       <section data-home-hello class="tw:flex tw:items-end tw:justify-between tw:gap-5 tw:flex-wrap"><div><h2 class="tw:mt-2 tw:text-[clamp(26px,3vw,36px)] tw:font-semibold tw:tracking-[-.02em]">${hello}, <span class="tw:text-gold">${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p class="tw:m-0 tw:mt-1 tw:text-muted">${all.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Send us your first order to get started.'}</p></div>
         <div class="hello-actions tw:flex tw:gap-2 tw:flex-wrap tw:max-md:hidden"><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a></div></section>
+      ${moneyNow()}
+      ${payStrip()}
       ${window.DLClientStoreUI.periodFields(S.period,S.from,S.to,window.DLClientStoreMath.monthsOf(S.orders))}
       ${!S.storeId&&S.stores.length>1?`<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>`:''}
       ${subBanner(me.subscription)}
@@ -402,16 +417,14 @@
         </ol>
         <div class="tw:flex tw:flex-wrap tw:gap-2.5 tw:mt-4"><a class="btn btn-primary btn-big tw:max-[901px]:flex-[1_1_100%] tw:max-[901px]:justify-center" href="#/new">${ic('plus')}Send a new order</a></div></section>` : ''}
       ${statCardsHTML()}
-      ${payStrip()}
       <div data-home-grid class="tw:grid tw:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] tw:gap-4 tw:max-lg:grid-cols-1">
         <section class="card tw:col-span-full"><div class="card-head"><h3>Your latest orders</h3><a class="link" href="#/orders">See all ${all.length ? '(' + all.length + ')' : ''}</a></div>
           ${all.length ? `<div class="table-wrap">${ordersTable(all.slice(0, 5), true)}</div>` : empty('orders', 'No orders yet', 'When you get a sale in your store, send it to us here. We take care of the rest.', '<a class="btn btn-primary" href="#/new">Send a new order</a>')}
         </section>
-        <section class="card"><div class="card-head"><h3>Latest updates</h3><button type="button" class="link" data-open-bell>See all</button></div>
+        <section class="card tw:col-span-full"><div class="card-head"><h3>Latest updates</h3><button type="button" class="link" data-open-bell>See all</button></div>
           ${items.length ? `<div data-home-feed class="tw:grid tw:px-2.5 tw:pt-2 tw:pb-3">${items.map(x => `<button type="button" class="tw:grid tw:grid-cols-[36px_1fr] tw:gap-3 tw:items-start tw:px-3 tw:py-2.5 tw:border-0 tw:rounded-xl tw:bg-transparent tw:text-start tw:cursor-pointer tw:hover:bg-surface-2" ${x.product ? 'data-product-note="1"' : x.invoice ? 'data-invoice-note="1"' : `data-open-order="${x.orderId}"`} data-focus="${x.focus || ''}" data-note="${x.id}"><span class="dln-ic t-${x.tone} tw:size-9!">${N.icon(x.icon)}</span><span class="tw:grid tw:min-w-0"><b class="tw:block tw:text-14 tw:font-semibold${x.unread ? ' tw:after:inline-block tw:after:size-[7px] tw:after:ms-[7px] tw:after:rounded-full tw:after:bg-gold tw:after:align-middle' : ''}">${esc(x.title)}</b><span class="tw:block tw:text-muted tw:text-13 tw:truncate">${esc(x.text)}</span><time class="tw:block tw:text-dim tw:text-12">${esc(N.timeAgo(x.time))}</time></span></button>`).join('')}</div>`
             : empty('bell', 'No updates yet', 'When we change an order’s status or reply to you, it shows up here.')}
         </section>
-        <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
         <section class="card card-pad mc tw:col-span-full" data-client-chart></section>
       </div>`;
   }
@@ -430,25 +443,9 @@
         <div class="stat" style="--tone:var(--gold)"><span class="stat-ic">${ic('chart')}</span><small>Your profit</small><strong class="${s.clientProfit < 0 ? 'neg' : ''}">${money(s.clientProfit)}</strong><em>What you earned after Etsy fees, minus our bill</em>${selected?.missingSalePrice ? `<small><b data-no-i18n>${selected.missingSalePrice}</b> <span>orders missing Etsy earnings</span></small>` : ''}${selected?.otherCurrency ? `<small><b data-no-i18n>${selected.otherCurrency}</b> <span>orders in other currencies not counted</span></small>` : ''}</div>
       </section>`;
   }
-  // Orders page: period picker on top, then (refreshed on its own) the per-store table, the cards and the chart.
-  const earningsTop = () => `<div data-earnings-top>${window.DLClientStoreUI.periodFields(S.period, S.from, S.to, window.DLClientStoreMath.monthsOf(S.orders))}</div>`;
-  function earningsInner() {
-    const { stats } = earnedNumbers();
-    return `${!S.storeId && S.stores.length > 1 ? `<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>` : ''}
-      ${statCardsHTML()}
-      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>`;
-  }
-  function profitChart(){
-    const range=homeRange(),[fy,fm]=range.from.split('-').map(Number),[ty,tm]=range.to.split('-').map(Number),span=(ty-fy)*12+tm-fm+1,buckets=[];
-    // One month: a bar per day (labels every 5 days). Up to 2 years: a bar per month. Longer: a bar per year.
-    const daily=span===1;
-    if(daily){const days=Number(range.to.slice(8,10)),pre=range.from.slice(0,8);for(let d=1;d<=days;d++){const key=pre+String(d).padStart(2,'0');buckets.push({from:key,to:key,label:d===1||d%5===0?String(d):''});}}
-    else if(span<=24){for(let n=0;n<span;n++){const date=new Date(fy,fm-1+n,1),y=date.getFullYear(),m=date.getMonth()+1,key=y+'-'+String(m).padStart(2,'0');buckets.push({from:key+'-01',to:key+'-31',label:date.toLocaleDateString(undefined,{month:'short',year:fy!==ty?'2-digit':undefined})});}}
-    else {for(const year of [...new Set(storeOrders().filter(o=>inRange(o,range)).map(o=>window.DLClientStoreMath.dateKey(o).slice(0,4)))].sort())buckets.push({from:year+'-01-01',to:year+'-12-31',label:year});}
-    for(const b of buckets){const r={from:b.from<range.from?range.from:b.from,to:b.to>range.to?range.to:b.to},tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,r).totals;b.profit=tot.profit;b.orders=tot.orders;}
-    const max=Math.max(1,...buckets.map(b=>Math.abs(b.profit))),tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,range).totals;
-    return `<div class="bars${daily?' days':''}" role="img" aria-label="Profit over selected period">${buckets.map(b=>`<div class="bar-col" data-tip="${daily?esc(b.from)+' · ':''}${money(b.profit)}"><span class="bar-val">${!daily&&(b.orders||b.profit)?money(b.profit):''}</span><i class="${b.profit<0?'neg':''}" style="height:${b.orders||b.profit?Math.max(4,Math.abs(b.profit)/max*100):0}%"></i><small data-no-i18n>${esc(b.label)}</small></div>`).join('')}</div><div class="chart-legend"><span>Profit</span><b>${money(tot.profit)}</b></div>`;
-  }
+  // 29 Oct 2026 (Erwin: "remove duplicate graphs that shows the same thing even if you go to other sections"): the
+  // Orders page has only the orders; the store table, cards and charts live on Home. The old "Profit over selected
+  // period" bars are gone too: Money by month shows the profit.
   // Money by month (Erwin, 27 Oct 2026: "upgrade their graphs"): what the client earned on Etsy, our bill, their profit
   // and what they paid us, per order month, for the shop picked at the top (payments are for the whole account, so
   // that line shows only with All stores). Same math as the cards: cancelled orders and other currencies left out.
@@ -487,7 +484,7 @@
   // Orders page (Erwin, 28 Oct 2026: "he cant even properly sort out the orders"): the list and its filters come first;
   // the earnings (store table, cards, profit chart) are folded below it and closed until the client opens them.
   const viewOrders = () => `${payStrip()}<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
-      <section class="card" data-orders-list></section><details class="earn-box" data-earn${store.get('dl-earn-open-v2', false) ? ' open' : ''}><summary><b>Your earnings</b><small>profit, billing and the chart for the selected period</small></summary>${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details>`;
+      <section class="card" data-orders-list></section>`;
   const isUnpaid = o => window.DLPayOrders.state(o, S.adjustments) === 'unpaid';
   const byFilter = (o, f) => f === 'all' || (f === 'unpaid' ? isUnpaid(o) : o.status === f);
   function renderChips() {
@@ -1176,7 +1173,6 @@
     }
   }
   // The earnings block on Orders can be folded away; the choice is remembered on this device.
-  document.addEventListener('toggle', e => { if (e.target.matches?.('[data-earn]')) store.set('dl-earn-open-v2', e.target.open); }, true);
   // Bulk "Mark as delivered": the button counts the ticked orders; each is marked like a single one.
   document.addEventListener('change', e => { const f = e.target.closest?.('[data-bulk-form]'); if (!f) return; const n = $$('[name=id]:checked', f).length, b = $('[data-bulk-go]', f); b.disabled = !n; b.textContent = n ? (window.DLi18n?.lang === 'he' ? `סימון ${n} כנמסרו` : `Mark ${n} as delivered`) : (window.DLi18n?.lang === 'he' ? 'סימון כנמסרו' : 'Mark as delivered'); });
   document.addEventListener('submit', async e => {

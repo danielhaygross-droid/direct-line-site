@@ -60,8 +60,7 @@ try {
     // 1b) Orders page: the list first, earnings folded below; "Not paid" filter (OLD, SHIP-1, SHIP-2 unpaid; PAID-1 paid).
     await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('[data-filter="unpaid"]');
     const top = sel => page.locator(sel).first().evaluate(e => e.getBoundingClientRect().top);
-    assert.ok(await top('[data-orders-list]') < await top('[data-earn]'), tag + ' list above the earnings');
-    assert.equal(await page.locator('[data-earn][open]').count(), 0, tag + ' earnings closed by default');
+    assert.ok(await top('[data-orders-list]') > 0, tag + ' the list'); assert.equal(await page.locator('[data-earn], .stats').count(), 0, tag + ' no earnings repeated on Orders');
     await page.locator('[data-filter="unpaid"]').click(); await page.waitForTimeout(300);
     assert.equal(await page.locator('[data-orders-list] tbody tr').count(), 3, tag + ' Not paid shows the 3 unpaid orders');
     await page.screenshot({ path: path.join(out, `${tag}-orders.png`) });

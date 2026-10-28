@@ -5,21 +5,16 @@ import { readFile } from 'node:fs/promises';
 // The files use Windows line endings on disk; compare with plain \n.
 const read = p => readFile(new URL('../' + p, import.meta.url), 'utf8').then(t => t.split('\r\n').join('\n'));
 
-test('the earnings cards and profit chart are on the Orders page, built from the same pieces as Home', async () => {
-  const portal = await read('dist/portal/portal.js');
-  // one source for the cards and the chart: Home and Orders cannot drift apart
+// 29 Oct 2026 (Erwin: "all money matters should be clearly seen first even at home" and "remove duplicate graphs that
+// shows the same thing even if you go to other sections"): the money comes first on Home, the earnings cards and
+// charts are only on Home, and the Orders page only lists orders.
+test('Home starts with the money, and the earnings live only on Home', async () => {
+  const portal = await read('dist/portal/portal.js'), i18n = await read('dist/p/i18n.js');
   assert.equal(portal.split('function statCardsHTML()').length, 2, 'one definition of the cards');
-  assert.ok(portal.includes('${statCardsHTML()}'), 'used by Home');
-  assert.ok(portal.includes('function earningsInner()') && portal.includes('${statCardsHTML()}\n      <section class="card"><div class="card-head"><h3>Profit over selected period</h3>'), 'used by Orders, with the chart');
-  // 28 Oct 2026: the order list comes first, the earnings block is folded below it.
-  assert.ok(portal.includes('const viewOrders = () => `${payStrip()}<div class="toolbar">'), 'Orders starts with the toolbar and the list (after the unpaid-orders strip)');
-  assert.ok(portal.includes('<section class="card" data-orders-list></section><details class="earn-box" data-earn'), 'the earnings block is below the list');
-});
-
-test('the earnings block follows the period and store, refreshes on its own, and can be folded away', async () => {
-  const portal = await read('dist/portal/portal.js'), css = await read('dist/portal/portal.css'), i18n = await read('dist/p/i18n.js');
-  assert.ok(portal.includes("const er=$('[data-earnings]'); if(er){er.innerHTML=earningsInner();mountClientChart();}"), 'the periodic refresh keeps the numbers current without redrawing the period picker');
-  assert.ok(portal.includes("store.set('dl-earn-open-v2', e.target.open)") && portal.includes("store.get('dl-earn-open-v2', false)"), 'the choice is remembered, closed by default');
-  assert.ok(css.includes('.earn-box>summary'));
-  for (const s of ['Your earnings', 'profit, billing and the chart for the selected period']) assert.ok(i18n.includes(`'${s}':`), s);
+  assert.ok(portal.includes('${moneyNow()}\n      ${payStrip()}\n      ${window.DLClientStoreUI.periodFields('), 'Your money and the unpaid strip right under the greeting');
+  assert.ok(portal.includes("'Cancellation fees', money(c.fees)") && portal.includes("'Credit from cancelled orders', money(c.credit)"), 'cancellation fees and credit on Home');
+  assert.ok(!portal.includes('profitChart') && !portal.includes('Profit over selected period'), 'the old profit bars are gone (Money by month shows the profit)');
+  assert.ok(!portal.includes('earningsInner') && !portal.includes('data-earn'), 'no earnings block on the Orders page');
+  assert.ok(portal.includes('const viewOrders = () => `${payStrip()}<div class="toolbar">'), 'Orders starts with the toolbar and the list');
+  for (const s of ['Your money', 'Payments details', 'Credit from cancelled orders', 'Already counted in your balance']) assert.ok(i18n.includes(`'${s}':`), s);
 });

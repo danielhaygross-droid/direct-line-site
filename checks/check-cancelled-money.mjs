@@ -75,6 +75,11 @@ try {
     await page.goto(`${base}/portal/?lang=${lang}#/payments`); await page.reload(); await page.waitForSelector('[data-cancelled-box]'); await page.waitForTimeout(400);
     await page.locator('[data-cancelled-box]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-client.png`) });
     assert.equal(await page.locator('[data-cancelled-box] tbody tr').count(), 3, tag); assert.equal(await page.locator('[data-refund-form]').count(), 0, tag + ' client cannot record refunds');
+    // Home starts with the money, cancellation fees and credit included (29 Oct 2026).
+    await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('[data-money-now]'); await page.waitForTimeout(600);
+    const tiles = await page.locator('[data-money-now] .mn-tile').allInnerTexts(); assert.equal(tiles.length, 5, tag + ' balance, billed, paid, fees, credit');
+    assert.ok(tiles.some(t => t.includes('$8.00')) && tiles.some(t => t.includes('$32.00')), tag + ' fees $8 and credit $32 on Home: ' + tiles.join(' | '));
+    await page.screenshot({ path: path.join(out, `${tag}-home.png`) });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
     assert.deepEqual(errors, [], tag); await ctx.close();
     ctx = await session(admin, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));

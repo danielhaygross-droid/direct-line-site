@@ -12,25 +12,9 @@
         <div class="stat" style="--tone:var(--gold)"><span class="stat-ic">${ic('chart')}</span><small>Your profit</small><strong class="${s.clientProfit < 0 ? 'neg' : ''}">${money(s.clientProfit)}</strong><em>What you earned after Etsy fees, minus our bill</em>${selected?.missingSalePrice ? `<small><b data-no-i18n>${selected.missingSalePrice}</b> <span>orders missing Etsy earnings</span></small>` : ''}${selected?.otherCurrency ? `<small><b data-no-i18n>${selected.otherCurrency}</b> <span>orders in other currencies not counted</span></small>` : ''}</div>
       </section>`;
   }
-  // Orders page: period picker on top, then (refreshed on its own) the per-store table, the cards and the chart.
-  const earningsTop = () => `<div data-earnings-top>${window.DLClientStoreUI.periodFields(S.period, S.from, S.to, window.DLClientStoreMath.monthsOf(S.orders))}</div>`;
-  function earningsInner() {
-    const { stats } = earnedNumbers();
-    return `${!S.storeId && S.stores.length > 1 ? `<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>` : ''}
-      ${statCardsHTML()}
-      <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>`;
-  }
-  function profitChart(){
-    const range=homeRange(),[fy,fm]=range.from.split('-').map(Number),[ty,tm]=range.to.split('-').map(Number),span=(ty-fy)*12+tm-fm+1,buckets=[];
-    // One month: a bar per day (labels every 5 days). Up to 2 years: a bar per month. Longer: a bar per year.
-    const daily=span===1;
-    if(daily){const days=Number(range.to.slice(8,10)),pre=range.from.slice(0,8);for(let d=1;d<=days;d++){const key=pre+String(d).padStart(2,'0');buckets.push({from:key,to:key,label:d===1||d%5===0?String(d):''});}}
-    else if(span<=24){for(let n=0;n<span;n++){const date=new Date(fy,fm-1+n,1),y=date.getFullYear(),m=date.getMonth()+1,key=y+'-'+String(m).padStart(2,'0');buckets.push({from:key+'-01',to:key+'-31',label:date.toLocaleDateString(undefined,{month:'short',year:fy!==ty?'2-digit':undefined})});}}
-    else {for(const year of [...new Set(storeOrders().filter(o=>inRange(o,range)).map(o=>window.DLClientStoreMath.dateKey(o).slice(0,4)))].sort())buckets.push({from:year+'-01-01',to:year+'-12-31',label:year});}
-    for(const b of buckets){const r={from:b.from<range.from?range.from:b.from,to:b.to>range.to?range.to:b.to},tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,r).totals;b.profit=tot.profit;b.orders=tot.orders;}
-    const max=Math.max(1,...buckets.map(b=>Math.abs(b.profit))),tot=window.DLClientStoreMath.performance(S.stores,storeOrders(),S.adjustments,range).totals;
-    return `<div class="bars${daily?' days':''}" role="img" aria-label="Profit over selected period">${buckets.map(b=>`<div class="bar-col" data-tip="${daily?esc(b.from)+' · ':''}${money(b.profit)}"><span class="bar-val">${!daily&&(b.orders||b.profit)?money(b.profit):''}</span><i class="${b.profit<0?'neg':''}" style="height:${b.orders||b.profit?Math.max(4,Math.abs(b.profit)/max*100):0}%"></i><small data-no-i18n>${esc(b.label)}</small></div>`).join('')}</div><div class="chart-legend"><span>Profit</span><b>${money(tot.profit)}</b></div>`;
-  }
+  // 29 Oct 2026 (Erwin: "remove duplicate graphs that shows the same thing even if you go to other sections"): the
+  // Orders page has only the orders; the store table, cards and charts live on Home. The old "Profit over selected
+  // period" bars are gone too: Money by month shows the profit.
   // Money by month (Erwin, 27 Oct 2026: "upgrade their graphs"): what the client earned on Etsy, our bill, their profit
   // and what they paid us, per order month, for the shop picked at the top (payments are for the whole account, so
   // that line shows only with All stores). Same math as the cards: cancelled orders and other currencies left out.
@@ -69,7 +53,7 @@
   // Orders page (Erwin, 28 Oct 2026: "he cant even properly sort out the orders"): the list and its filters come first;
   // the earnings (store table, cards, profit chart) are folded below it and closed until the client opens them.
   const viewOrders = () => `${payStrip()}<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
-      <section class="card" data-orders-list></section><details class="earn-box" data-earn${store.get('dl-earn-open-v2', false) ? ' open' : ''}><summary><b>Your earnings</b><small>profit, billing and the chart for the selected period</small></summary>${earningsTop()}<div data-earnings style="display:grid;gap:14px">${earningsInner()}</div></details>`;
+      <section class="card" data-orders-list></section>`;
   const isUnpaid = o => window.DLPayOrders.state(o, S.adjustments) === 'unpaid';
   const byFilter = (o, f) => f === 'all' || (f === 'unpaid' ? isUnpaid(o) : o.status === f);
   function renderChips() {
