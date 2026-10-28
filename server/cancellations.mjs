@@ -20,9 +20,12 @@ export async function refundedTotal(DB, clientId) {
 
 // Every cancelled order with what was paid for it and its fee; totals; the refunds.
 //   paid       what the client paid for cancelled orders (their linked payments)
-//   fees       all cancellation fees (also on unpaid orders: those are simply owed on the balance)
-//   dueBack    paid minus the fees on those paid orders = what goes back to the client
+//   fees       all cancellation fees
+//   dueBack    paid minus all the fees = what goes back to the client
 //   refunded   recorded refunds;  credit = dueBack - refunded (stays on the balance for next orders)
+// Erwin, 28 Oct 2026 ("deduct the 100 … automatically"): the fee of a cancelled order that was never paid is taken from
+// that credit (oldest cancellation first, while the credit covers it), so the order counts as paid (fromCredit) and
+// the box shows one number. A fee the credit can't cover stays owed as before.
 export async function cancelledSummary(DB, clientId) {
   const rows = (await DB.prepare(`SELECT o.id, o.order_ref, o.price, o.updated_at, s.name AS store, COALESCE(a.amount, 0) AS fee
     FROM client_orders o LEFT JOIN client_stores s ON s.id = o.store_id
@@ -34,9 +37,21 @@ export async function cancelledSummary(DB, clientId) {
   });
   const refunds = ((await DB.prepare('SELECT * FROM client_refunds WHERE client_id = ? AND NOT archived ORDER BY refunded_at DESC, id DESC').bind(clientId).all()).results || [])
     .map(r => ({ id: Number(r.id), amount: r2(r.amount), refundedAt: Number(r.refunded_at), method: r.method || '', note: r.note || '' }));
-  const sum = k => r2(orders.reduce((n, o) => n + o[k], 0));
-  const dueBack = sum('back'), refunded = r2(refunds.reduce((n, r) => n + r.amount, 0));
+  const sum = k => r2(orders.reduce((n, o) => n + o[k], 0)), refunded = r2(refunds.reduce((n, r) => n + r.amount, 0));
+  let pool = Math.round((sum('back') - refunded) * 100);
+  for (const o of [...orders].filter(o => !o.paid && o.fee > 0).sort((a, b) => a.cancelledAt - b.cancelledAt || a.id - b.id)) {
+    const fee = Math.round(o.fee * 100); if (fee > pool) continue;
+    pool -= fee; o.fromCredit = true; o.back = r2(-o.fee);
+  }
+  const dueBack = sum('back');
   return { orders, refunds, count: orders.length, paidCount: orders.filter(o => o.paid > 0).length, paid: sum('paid'), fees: sum('fee'), dueBack, refunded, credit: r2(dueBack - refunded) };
+}
+
+// Adds paidFromCredit (true / false) to order objects: cancelled orders whose fee the cancellation credit paid.
+export async function withCreditPaid(DB, orders) {
+  const covered = new Set(), clients = [...new Set(orders.filter(o => o.status === 'cancelled' && !o.paymentId).map(o => Number(o.clientId)))];
+  for (const id of clients) for (const o of (await cancelledSummary(DB, id)).orders) if (o.fromCredit) covered.add(o.id);
+  return orders.map(o => ({ ...o, paidFromCredit: covered.has(Number(o.id)) }));
 }
 
 export async function addRefund(DB, body, t = Math.floor(Date.now() / 1000)) {

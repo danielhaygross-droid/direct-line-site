@@ -10,7 +10,8 @@
   const cents = n => Math.round(Number(n || 0) * 100);
   const adjOf = (adjustments, id) => (adjustments || []).filter(a => Number(a.orderId) === Number(id)).reduce((n, a) => n + cents(a.amount), 0);
   const dueCents = (o, adjustments) => (o.status === 'cancelled' ? 0 : cents(o.price)) + adjOf(adjustments, o.id);
-  const state = (o, adjustments) => o.paymentId ? 'paid' : dueCents(o, adjustments) > 0 ? 'unpaid' : o.status === 'cancelled' ? null : 'unbilled';
+  // A cancelled order's fee taken from the client's cancellation credit counts as paid (server: paidFromCredit).
+  const state = (o, adjustments) => o.paymentId || o.paidFromCredit ? 'paid' : dueCents(o, adjustments) > 0 ? 'unpaid' : o.status === 'cancelled' ? null : 'unbilled';
   const fmt = c => (c < 0 ? '-$' : '$') + (Math.abs(c) / 100).toFixed(2);
   const he = () => root.DLi18n?.lang === 'he';
   // "14 Oct 2026" from 'YYYY-MM-DD' or from seconds, in the page language.
@@ -106,10 +107,10 @@
     if (!c || (!c.count && !c.refunds?.length)) return '';
     const stat = (label, value, note, cls = '') => `<div class="cx-stat ${cls}"><small>${label}</small><b data-no-i18n>${value}</b>${note ? `<em>${note}</em>` : ''}</div>`;
     const rows = c.orders.map(o => `<tr><td><button type="button" class="link-btn" data-open-order="${o.id}"><bdi data-no-i18n>${esc(o.orderRef || '#' + o.id)}</bdi></button>${o.store ? `<small data-no-i18n>${esc(o.store)}</small>` : ''}</td>`
-      + `<td class="num" data-no-i18n>${o.paid ? usd(o.paid) : '—'}</td><td class="num" data-no-i18n>${o.fee ? usd(o.fee) : '—'}</td><td class="num" data-no-i18n><b>${o.paid ? usd(o.back) : '—'}</b></td></tr>`).join('');
+      + `<td class="num" data-no-i18n>${o.paid ? usd(o.paid) : '—'}</td><td class="num" data-no-i18n>${o.fee ? usd(o.fee) : '—'}</td><td class="num" data-no-i18n><b><bdi dir="ltr">${o.paid || o.fromCredit ? usd(o.back) : '—'}</bdi></b>${o.fromCredit ? `<small class="cx-from-credit">${he() ? 'מהזיכוי' : 'From credit'}</small>` : ''}</td></tr>`).join('');
     const refunds = (c.refunds || []).map(r => `<div class="cx-refund"><span data-no-i18n>${day(r.refundedAt)}</span><b data-no-i18n>${usd(r.amount)}</b><span data-no-i18n>${esc([r.method, r.note].filter(Boolean).join(' · '))}</span>${admin ? `<button type="button" class="btn btn-sm btn-ghost" data-refund-undo="${r.id}">Undo</button>` : ''}</div>`).join('');
     return `<section class="card card-pad cx-box" data-cancelled-box><h3 class="sec-title">Cancelled orders</h3>
-      <div class="cx-stats">${stat('Cancelled orders', String(c.count), c.paidCount ? `${c.paidCount} already paid` : '')}${stat('Paid for them', usd(c.paid))}${stat('Cancellation fees', usd(c.fees), '', c.fees ? 'neg' : '')}${stat(admin ? 'Due back to the client' : 'Due back to you', usd(c.dueBack), 'Paid minus fees')}${stat('Refunded', usd(c.refunded))}${stat('Kept as credit', usd(c.credit), admin ? 'Counts toward their next orders' : 'Counts toward your next orders', c.credit > 0 ? 'pos' : '')}</div>
+      <div class="cx-stats">${stat('Cancelled orders', String(c.count), c.paidCount ? `${c.paidCount} already paid` : '')}${stat('Paid for them', usd(c.paid))}${stat('Cancellation fees', usd(c.fees), '', c.fees ? 'neg' : '')}${stat(admin ? 'Due back to the client' : 'Due back to you', usd(c.dueBack), 'Paid minus all fees')}${stat('Refunded', usd(c.refunded))}${stat('Kept as credit', usd(c.credit), admin ? 'Counts toward their next orders' : 'Counts toward your next orders', c.credit > 0 ? 'pos' : '')}</div>
       ${rows ? `<div class="table-wrap"><table class="tbl cx-table"><thead><tr><th>Order</th><th class="num">Paid</th><th class="num">Fee</th><th class="num">Back</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
       ${refunds ? `<h4 class="cx-sub">Refunds</h4><div class="cx-refunds">${refunds}</div>` : ''}
       ${admin ? `<details class="cx-add"${c.credit > 0 ? '' : ''}><summary class="btn btn-sm">Record refund</summary><form class="form-grid" data-refund-form novalidate>

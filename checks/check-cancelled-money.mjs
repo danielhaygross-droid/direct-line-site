@@ -46,12 +46,16 @@ const A = await mk('KUMO-1', 20), B = await mk('KUMO-2', 30), C = await mk('KUMO
 // A, B, C paid; A cancelled free, B cancelled with the supplier's $5 fee, C cancelled with no payment... (C unpaid), D stays.
 ok(await call('/admin/payments', 'POST', { clientId: id, amount: A.price + B.price, paidAt: '2026-10-20', method: 'Bank transfer', orderIds: [A.id, B.id] }, admin));
 await DB.prepare('UPDATE client_orders SET supplier_cancel_fee=5 WHERE id=?').bind(B.id).run();
+await DB.prepare('UPDATE client_orders SET supplier_cancel_fee=3 WHERE id=?').bind(C.id).run(); // C never paid: its fee comes from the credit
 for (const o of [A, B, C]) { ok(await call('/orders/' + o.id + '/request-cancellation', 'POST', { reason: 'Store suspended' }, client)); ok(await call('/orders/' + o.id + '/approve-cancellation', 'POST', {}, admin)); }
 let c = ok(await call('/payments', 'GET', null, client)).cancelled;
 assert.equal(c.count, 3); assert.equal(c.paidCount, 2);
 assert.equal(c.paid, A.price + B.price, 'paid for cancelled orders');
-assert.equal(c.fees, 5, 'the supplier fee was used at cancellation');
-assert.equal(c.dueBack, A.price + B.price - 5, 'paid minus the fees on paid orders');
+assert.equal(c.fees, 8, 'the supplier fees were used at cancellation');
+assert.equal(c.dueBack, Math.round((A.price + B.price - 8) * 100) / 100, 'paid minus all the fees (the fee of C taken from the credit)');
+assert.equal(c.orders.find(o => o.id === C.id).fromCredit, true);
+const cl = ok(await call('/orders', 'GET', null, client)).orders.find(o => o.id === C.id); assert.equal(cl.paidFromCredit, true, 'C counts as paid');
+assert.equal(ok(await call('/admin/orders', 'GET', null, admin)).orders.find(o => o.id === C.id).paidFromCredit, true, 'admin sees it too');
 assert.equal(c.credit, c.dueBack, 'all kept as credit so far');
 const owes0 = ok(await call('/me', 'GET', null, client)).summary.outstanding;
 assert.equal(owes0, Math.round((D.price - c.dueBack) * 100) / 100, 'balance: D still owed, minus the credit');
