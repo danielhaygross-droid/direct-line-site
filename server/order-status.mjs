@@ -1,3 +1,4 @@
+import { closeRevisionOnCancel } from './cost-revisions.mjs';
 export const STATUS_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS cancellation_previous_status TEXT',
   "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS cancellation_reason TEXT NOT NULL DEFAULT ''",
@@ -67,6 +68,8 @@ export async function changeStatus(DB, order, action, body, admin, actorName) {
   if(!row)throw new Error('The order changed. Refresh and try again.');
   // Reopened after a cancellation: the cancellation fee no longer applies (the row stays for the record, at 0).
   if(admin&&order.status==='cancelled'&&row.status!=='cancelled') await DB.prepare("UPDATE client_balance_adjustments SET amount=0 WHERE order_id=? AND kind='cancellation_fee'").bind(order.id).run();
+  // Cancelled: an open cost revision is closed (the sheet row turns red, not orange).
+  if(row.status==='cancelled'&&row.revision_status&&await closeRevisionOnCancel(DB,order.id))row.revision_status='';
   return row;
 }
 export async function balanceAdjustments(DB,clientId) {

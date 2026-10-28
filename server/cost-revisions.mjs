@@ -104,6 +104,14 @@ export async function answerOrder(DB, id, body, t = now()) {
   return changed;
 }
 
+// A cancelled order closes its open request (result 'closed'), so the sheet row shows the red "cancelled" colour, not
+// the orange revision one (Erwin, 28 Oct 2026).
+export async function closeRevisionOnCancel(DB, orderId, t = now()) {
+  const r = await DB.prepare("UPDATE cost_revisions SET status='done', result='closed', answered_at=? WHERE order_id=? AND status IN ('open','offered') RETURNING competitor_price").bind(t, orderId).first();
+  if (!r) return false;
+  await DB.prepare("UPDATE client_orders SET revision_status='' WHERE id=?").bind(orderId).run();
+  return true;
+}
 // Products: a new quote (sheet or admin) answers an open request; an admin can also keep the price with a reply.
 export async function productRequoted(DB, productId, t = now()) {
   const rev = await DB.prepare("SELECT r.*, p.unit_price, p.status AS pstatus FROM cost_revisions r JOIN portal_products p ON p.id = r.product_id WHERE r.product_id=? AND r.status IN ('open','offered') ORDER BY r.id DESC LIMIT 1").bind(productId).first();
