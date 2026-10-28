@@ -14,7 +14,7 @@ import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms 
 
 import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } from './files.mjs';
 import { BILLING_SCHEMA, getBilling, saveBilling } from './billing.mjs';
-import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund } from './cancellations.mjs';
+import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund, withCreditPaid } from './cancellations.mjs';
 import { cancelledTotals, moneyMonths } from './money-overview.mjs';
 import { REVISION_SCHEMA, withRevisions, requestRevision, answerOrder, productRequoted, keepProduct } from './cost-revisions.mjs';
 import { PAYMENT_ORDER_SCHEMA, orderIdList, checkOrders, setPaymentOrders, paymentOrderIds, withPaid, dropTakenOrders } from './payment-orders.mjs';
@@ -736,7 +736,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/orders' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_orders WHERE client_id = ? AND NOT archived ORDER BY created_at DESC, id DESC').bind(who.clientId).all()).results || [];
     const revs = (await withRevisions(DB, rows.map(r => ({ id: r.id })), 'order', who.clientId)).map(x => x.revision && { ...x.revision, offeredCost: undefined });
-    return json({ ok: true, orders: (await withPaid(DB, await withPhotos(DB, await withMessages(DB, rows.map(orderOut).map(clientOrder), false)), who.clientId)).map((o, i) => ({ ...o, revision: revs[i] || null })) });
+    return json({ ok: true, orders: (await withCreditPaid(DB, await withPaid(DB, await withPhotos(DB, await withMessages(DB, rows.map(orderOut).map(clientOrder), false)), who.clientId))).map((o, i) => ({ ...o, revision: revs[i] || null })) });
   }
   if (path === '/payments' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? AND NOT archived ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
@@ -1117,7 +1117,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/admin/orders' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0), archived = url.searchParams.get('archived') === '1';
     const rows = (await DB.prepare(`SELECT * FROM client_orders WHERE archived=? ${clientId ? 'AND client_id=?' : 'AND client_id NOT IN (SELECT id FROM users WHERE archived)'} ORDER BY created_at DESC, id DESC`).bind(archived,...(clientId ? [clientId] : [])).all()).results;
-    return json({ ok: true, orders: await withRevisions(DB, await withPaid(DB, await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)), clientId || null), 'order') });
+    return json({ ok: true, orders: await withRevisions(DB, await withCreditPaid(DB, await withPaid(DB, await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)), clientId || null)), 'order') });
   }
   if(path==='/admin/client-stores'&&method==='GET'){const clientId=url.searchParams.has('clientId')?Number(url.searchParams.get('clientId')):null;return json({ok:true,stores:await clientStores(DB,clientId)});}
   const adminStore=/^\/admin\/client-stores(?:\/(\d+))?$/.exec(path);if(adminStore&&method==='POST'){const body=await readBody(request);try{const store=await saveStore(DB,Number(body.clientId),adminStore[1]?Number(adminStore[1]):null,body);return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
