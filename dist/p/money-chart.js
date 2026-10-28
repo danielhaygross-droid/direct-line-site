@@ -44,7 +44,7 @@
       return `<g class="mc-month" data-i="${i}"><rect class="mc-band" x="${(L + i * slot + 1).toFixed(1)}" y="${T}" width="${Math.max(0, slot - 2).toFixed(1)}" height="${plotH}" rx="8"/>${bars}`
         + (i % every === 0 || i === rows.length - 1 ? `<text x="${(L + i * slot + slot / 2).toFixed(1)}" y="${H - 9}" class="mc-ax mc-x" text-anchor="middle">${esc(short(r.month))}</text>` : '') + '</g>';
     }).join('');
-    return { html: `<svg class="mc-svg${enter && !still() ? ' enter' : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true" data-no-i18n dir="ltr">${grid}${months}</svg>`, L, slot, W };
+    return { groupW, html: `<svg class="mc-svg${enter && !still() ? ' enter' : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true" data-no-i18n dir="ltr">${grid}${months}</svg>`, L, slot, W };
   }
 
   function mount(el, opt) {
@@ -72,8 +72,9 @@
         const n = document.createElement('span'); n.textContent = t(s.label);
         row.append(k, v, n); box.append(row);
       }
-      // Beside the month: to its right in the left half of the chart, to its left in the right half; kept inside the box.
-      const scale = wrap.clientWidth / geo.W, mid = (geo.L + (i + 0.5) * geo.slot) * scale, half = geo.slot * scale / 2;
+      // Beside the month's bars (not on top of them): to their right in the left half of the chart, to their left in the
+      // right half; kept inside the box.
+      const scale = wrap.clientWidth / geo.W, mid = (geo.L + (i + 0.5) * geo.slot) * scale, half = Math.min(geo.slot / 2, geo.groupW / 2 + 10) * scale;
       box.classList.toggle('still', !was); box.hidden = false;
       const bw = box.offsetWidth, room = wrap.clientWidth;
       let x = mid < room / 2 ? mid + half + 6 : mid - half - 6 - bw;

@@ -81,6 +81,9 @@ try {
     await ui.waitForSelector('[data-money-chart] .mc-tip.show', { timeout: 400 });
     assert.equal(await ui.locator('[data-money-chart] .mc-tip-row').count(), 6, tag + ' every series in the month card');
     assert.equal(await ui.locator('[data-money-chart] .mc-month.on').count(), 1, tag + ' the month is highlighted');
+    { const t = await ui.locator('[data-money-chart] .mc-tip').boundingBox(), bars = await ui.locator('[data-money-chart] .mc-month.on .mc-bar').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return [r.left, r.right]; }));
+      await page.waitForTimeout(250); const t2 = await ui.locator('[data-money-chart] .mc-tip').boundingBox();
+      if (width === 1440) assert.ok(bars.every(([l, r]) => r <= t2.x || l >= t2.x + t2.width), tag + ' the card does not cover the month bars'); }
     await page.waitForTimeout(250); await page.screenshot({ path: path.join(out, `${tag}-chart-tip.png`) });
     if (width === 1440) await page.mouse.move(box.x + box.width / 2, box.y - 60); else await page.mouse.click(tapX, tapY);
     await ui.waitForSelector('[data-money-chart] .mc-tip[hidden]', { state: 'attached', timeout: 400 });
