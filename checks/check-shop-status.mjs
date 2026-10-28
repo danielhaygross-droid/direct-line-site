@@ -70,6 +70,13 @@ try {
     await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('[data-client-chart] .mc-svg'); await page.waitForTimeout(300);
     assert.equal(await page.locator('[data-client-chart] [data-mc-key]').count(), 4, tag + ' 4 lines with All stores');
     await page.locator('[data-client-chart]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-home-chart.png`) });
+    // Month card on tap / hover (29 Oct 2026), and the profit bars' quick tip instead of the slow browser tooltip.
+    { const bx = await page.locator('[data-client-chart] .mc-plot').boundingBox(), x = bx.x + bx.width - 40, y = bx.y + bx.height / 2;
+      if (width === 1440) await page.mouse.move(x, y); else await page.mouse.click(x, y);
+      await page.waitForSelector('[data-client-chart] .mc-tip.show', { timeout: 400 }); assert.equal(await page.locator('[data-client-chart] .mc-tip-row').count(), 4, tag + ' month card');
+      await page.waitForTimeout(200); await page.screenshot({ path: path.join(out, `${tag}-home-chart-tip.png`) });
+      await page.locator('.bar-col[data-tip]').last().scrollIntoViewIfNeeded(); await page.locator('.bar-col[data-tip]').last().click();
+      await page.waitForSelector('.mc-quick.show', { timeout: 400 }); assert.match(await page.locator('.mc-quick').innerText(), /\$/, tag + ' profit bar tip'); }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
     assert.deepEqual(errors, [], tag); await ctx.close();
     ctx = await session(admin, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));

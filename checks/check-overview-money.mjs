@@ -74,6 +74,16 @@ try {
     await ui.locator('[data-tab=overview]').click(); await ui.waitForSelector('[data-money-chart] .mc-svg'); await page.waitForTimeout(400);
     await ui.locator('[data-money-chart]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-chart.png`) });
     assert.equal(await ui.locator('[data-mc-key]').count(), 6, tag);
+    // v2 (29 Oct 2026): the month card shows at once, on hover (desktop) or tap (phone), with every series of that month.
+    const plot = ui.locator('[data-money-chart] .mc-plot'), box = await plot.boundingBox();
+    const tapX = box.x + box.width - 30, tapY = box.y + box.height / 2;
+    if (width === 1440) await page.mouse.move(tapX, tapY); else await page.mouse.click(tapX, tapY);
+    await ui.waitForSelector('[data-money-chart] .mc-tip.show', { timeout: 400 });
+    assert.equal(await ui.locator('[data-money-chart] .mc-tip-row').count(), 6, tag + ' every series in the month card');
+    assert.equal(await ui.locator('[data-money-chart] .mc-month.on').count(), 1, tag + ' the month is highlighted');
+    await page.waitForTimeout(250); await page.screenshot({ path: path.join(out, `${tag}-chart-tip.png`) });
+    if (width === 1440) await page.mouse.move(box.x + box.width / 2, box.y - 60); else await page.mouse.click(tapX, tapY);
+    await ui.waitForSelector('[data-money-chart] .mc-tip[hidden]', { state: 'attached', timeout: 400 });
     await ui.locator('[data-mc-key="billed"]').click(); assert.equal(await ui.locator('[data-mc-key="billed"].off').count(), 1, tag + ' line off');
     await ui.locator('[data-mc-key="billed"]').click(); await ui.locator('[data-mc-range="6"]').click(); assert.equal(await ui.locator('[data-mc-range="6"].on').count(), 1, tag + ' range');
     await ui.locator('[data-ovw-cancelled]').scrollIntoViewIfNeeded(); await page.waitForTimeout(200); await page.screenshot({ path: path.join(out, `${tag}-cancelled.png`) });

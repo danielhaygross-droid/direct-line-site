@@ -135,11 +135,13 @@
 .me button+button{margin-inline-start:0}
 .bars{display:flex;align-items:flex-end;gap:12px;height:220px;padding:22px 22px 10px}
 .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;height:100%;min-width:0}
-.bar-col i{display:block;width:min(52px,100%);max-height:calc(100% - 44px);border-radius:9px 9px 3px 3px;background:linear-gradient(180deg,var(--gold),color-mix(in srgb,var(--gold) 55%,transparent));transition:height .5s var(--ease)}
-.bar-col i.neg{background:var(--red)}
+.bar-col i{display:block;width:min(24px,100%);max-height:calc(100% - 44px);border-radius:4px 4px 0 0;background:var(--mc-teal);transition:height .5s var(--ease),opacity .15s}
+.bar-col i.neg{background:var(--mc-red)}
+/* Profit bars (29 Oct 2026): same look as Money by month; the hovered day or month stays, the others fade back. */
+.bars:hover .bar-col:not(:hover) i{opacity:.4}@media(prefers-reduced-motion:reduce){.bar-col i{transition:none}}
 .bar-col i.none{height:3px!important;background:var(--line-2)}
-.bar-val{font:600 11.5px var(--mono);color:var(--muted);white-space:nowrap}
-.bar-col small{font:500 11.5px var(--mono);color:var(--dim)}
+.bar-val{font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.bar-col small{font-size:11.5px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--dim)}
 .brand>span{display:block}
 @media(max-width:560px){.bars{gap:6px;padding-inline:14px}.bar-val{font-size:10px}}
 /* admin opening the client portal */
