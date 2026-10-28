@@ -54,14 +54,17 @@ try {
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
     const tag = `${lang} ${width}px`, ctx = await session(width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('.stats .stat'); const home = await earnings(page);
-    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('.stats .stat'); await page.waitForSelector('tr[data-open-order]');
+    // 28 Oct 2026: the list comes first and the earnings block starts closed; open it to read it.
+    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('tr[data-open-order]');
+    assert.equal(await page.locator('.earn-box').evaluate(d => d.open), false, tag + ' earnings closed at first');
+    await page.locator('.earn-box > summary').click(); await page.waitForSelector('.stats .stat');
     const ord = await earnings(page);
     assert.ok(ord.chart, tag + ' chart on Orders'); assert.equal(ord.cards.length, 3, tag + ' three cards on Orders');
     assert.deepEqual(ord.cards, home.cards, tag + ' same cards as Home'); assert.deepEqual(ord.bars, home.bars, tag + ' same chart as Home');
     assert.ok(ord.stores >= 3, tag + ' per-store table (two shops + total) on Orders, rows: ' + ord.stores);
-    // the earnings block is above the list
+    // the list is above the earnings block
     const order = await page.evaluate(() => { const y = s => document.querySelector(s)?.getBoundingClientRect().top; return { cards: y('.stats'), chart: y('.bars'), list: y('[data-orders-list]') }; });
-    assert.ok(order.cards < order.chart && order.chart < order.list, tag + ' earnings above the orders list');
+    assert.ok(order.list < order.cards && order.cards < order.chart, tag + ' orders list above the earnings');
     assert.match(ord.cards.at(-1), /= \$80\.00$/, tag + ' this month: profit 60 + 20');
     // period change on Orders: This month -> Last month (no orders then). The orders list is NOT filtered by it.
     const rows = await page.locator('tr[data-open-order]').count(); assert.equal(rows, 3, tag + ' all orders listed');

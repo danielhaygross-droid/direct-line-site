@@ -63,7 +63,7 @@ try {
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
   }
   // Orders page: the profit chart stays; the monthly chart is on Home only.
-  const ctx = await session(client, 1440), page = await ctx.newPage(); await page.goto(`${base}/portal/?lang=en#/orders`); await page.reload(); await page.waitForSelector('.stats .stat');
+  const ctx = await session(client, 1440), page = await ctx.newPage(); await page.goto(`${base}/portal/?lang=en#/orders`); await page.reload(); await page.waitForSelector('[data-earn]'); await page.locator('.earn-box > summary').click(); await page.waitForSelector('.stats .stat');
   assert.equal(await page.locator('[data-client-chart]').count(), 0, 'no monthly chart on Orders');
   await page.goto(`${base}/portal/?lang=en#/home`); await page.waitForSelector('[data-client-chart] .mc-head'); await ctx.close();
   console.log('PASS Orders page lighter; Money by month on Home');
