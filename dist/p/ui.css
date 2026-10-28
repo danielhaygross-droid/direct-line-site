@@ -381,11 +381,11 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-we
 .mc-range button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.06),0 4px 12px rgba(0,0,0,.06)}
 .mc-range button:active{transform:scale(.97)}
 .mc-keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
-.mc-key{display:grid;gap:6px;align-content:start;min-height:64px;padding:10px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--text);font:inherit;text-align:start;cursor:pointer;transition:border-color .15s,opacity .15s,background-color .15s}
+.mc-key{display:grid;gap:3px;align-content:center;min-height:52px;padding:8px 12px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--text);font:inherit;text-align:start;cursor:pointer;transition:border-color .15s,opacity .15s,background-color .15s}
 .mc-key-top{display:flex;align-items:center;gap:8px;min-width:0}
 .mc-key i{flex:none;width:10px;height:10px;border-radius:3px;background:var(--tone)}
-.mc-key-top span{font-size:12.5px;color:var(--muted);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mc-key b{font-size:19px;font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.mc-key-top span{line-height:1.3;font-size:12.5px;color:var(--muted);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc-key b{font-size:18px;line-height:1.2;font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
 .mc-key:hover{border-color:color-mix(in srgb,var(--tone) 55%,var(--line))}
 .mc-key:active{transform:scale(.98)}
 .mc-key.off{background:transparent}.mc-key.off b,.mc-key.off span{color:var(--dim)}.mc-key.off i{background:transparent;box-shadow:inset 0 0 0 2px var(--tone)}
@@ -418,7 +418,7 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-we
 .mc-quick{position:fixed;top:0;left:0;z-index:60;padding:6px 10px;border-radius:9px;background:var(--text);color:var(--surface);font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;pointer-events:none;opacity:0;transition:opacity .1s;white-space:nowrap}
 .mc-quick.show{opacity:1}
 [data-tip]{cursor:default}
-@media(max-width:480px){.mc-keys{grid-template-columns:1fr 1fr}.mc-key{min-height:58px;padding:9px 12px}.mc-key b{font-size:17px}.mc-range{width:100%}.mc-range button{flex:1;padding:0 6px}.mc-tip{min-width:160px}}
+@media(max-width:480px){.mc-keys{grid-template-columns:1fr 1fr}.mc-key{min-height:50px;padding:8px 10px}.mc-key b{font-size:17px}.mc-range{width:100%}.mc-range button{flex:1;padding:0 6px}.mc-tip{min-width:160px}}
 @media(prefers-reduced-motion:reduce){.mc-key,.mc-tip,.mc-quick,.mc-svg .mc-band,.mc-svg .mc-bar{transition:none}.mc-svg.enter .mc-bar{animation:none}.mc-key:active,.mc-range button:active{transform:none}}
 /* Shop status (Active / Suspended), set by the client on My Stores */
 .store-status{display:inline-flex;align-items:center;min-height:20px;padding:0 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.02em;margin-inline-start:6px;background:color-mix(in srgb,var(--mint) 14%,transparent);color:var(--mint)}
