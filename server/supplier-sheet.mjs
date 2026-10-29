@@ -79,9 +79,11 @@ export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Pho
   'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID', DOMESTIC, CANCEL_FEE];
 // CANCELLED_SHIP: written by the website in Shipping status for cancelled orders (Erwin, 26 Oct 2026: the supplier
 // filters them to sort out refunds per store). Picking it in the sheet does not cancel anything on the website.
+// REFUNDED_SHIP (Erwin, 29 Oct 2026): a cancelled order our client had paid for (Client paid = Paid) says "Refunded".
+export const REFUNDED_SHIP = 'Refunded';
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', CANCELLED_SHIP = 'Cancelled', CANCEL_REQ_SHIP = 'Cancel requested', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'CANCELLED - do not ship' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '15';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '16';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 const markPaidDirtyDb = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
@@ -220,7 +222,7 @@ const putSetting = (DB, key, value) => DB.prepare('INSERT INTO portal_settings (
 const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. ORANGE Competitor price = COST REVISION REQUESTED: our client sells at that price; please check if you can lower the cost and type the new Total cost (we confirm it before billing). Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Domestic Express Tracking Number (yellow, far right after Client paid): the tracking of the domestic express in China. RED rows are cancelled orders: do not buy or ship them. Orange rows: the client asked to cancel, wait for Direct Line. Other columns are filled in by Direct Line. Newest orders are at the top. An order moves to the Shipped tab by itself once it is Shipped and has a tracking number, and to the Cancelled tab when it is cancelled.';
 const tabText = {
   [SHIPPED_TAB]: ['Direct Line — Shipped orders', 'Shipped orders with a tracking number, newest on top. They move here from the Orders tab by themselves. You can still correct the Total cost, Tracking number or Courier here: the website reads this tab too.'],
-  [CANCELLED_TAB]: ['Direct Line — Cancelled orders', 'Cancelled orders: do not buy or ship them. They move here from the Orders tab by themselves, newest on top. If you charge a cancellation fee, type it in Cancellation fee (USD), the last yellow column: the website reads this tab too and bills it.'],
+  [CANCELLED_TAB]: ['Direct Line — Cancelled orders', 'Cancelled orders: do not buy or ship them. They move here from the Orders tab by themselves, newest on top. If you charge a cancellation fee, type it in Cancellation fee (USD), the last yellow column: the website reads this tab too and bills it. Shipping status says Refunded when our client had already paid for the order.'],
 };
 // Competitor price (O): light blue, open for anyone with the sheet to type in.
 const COMP = 14, blue = { red: 0.85, green: 0.92, blue: 1 }, blueHead = { red: 0.62, green: 0.79, blue: 0.97 };
@@ -294,7 +296,7 @@ const cancelFeeFormat = sheetId => [
 const hideCD = sheetId => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 4 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } });
 // Layout 10: Shop (C) shown again, Status (D) stays hidden.
 const showShop = sheetId => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 3 }, properties: { hiddenByUser: false }, fields: 'hiddenByUser' } });
-const statusRule = sheetId => ({ setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: 18, endColumnIndex: 19 }, rule: { condition: { type: 'ONE_OF_LIST', values: [NOT_SHIPPED, SHIPPED, CANCEL_REQ_SHIP, CANCELLED_SHIP].map(userEnteredValue => ({ userEnteredValue })) }, showCustomUi: true, strict: false } } });
+const statusRule = sheetId => ({ setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: 18, endColumnIndex: 19 }, rule: { condition: { type: 'ONE_OF_LIST', values: [NOT_SHIPPED, SHIPPED, CANCEL_REQ_SHIP, CANCELLED_SHIP, REFUNDED_SHIP].map(userEnteredValue => ({ userEnteredValue })) }, showCustomUi: true, strict: false } } });
 // Sheets made with 32 columns (A-AF) get one more column for AG first.
 async function ensureColumns(env, sheetId, count, fetchImpl) {
   const props = ((await sheetsRequest(env, '?fields=sheets.properties', {}, fetchImpl)).sheets || []).map(x => x.properties || {}).find(x => x.sheetId === sheetId);
@@ -309,6 +311,17 @@ export async function refreshPaidColumn(DB, env, fetchImpl = fetch) {
   const labels = await paidLabels(DB, rows.map(r => r.orderId).filter(id => id > 0));
   await batchValues(env, allTabs(wq).map(tab => rows.filter(r => r.tab === tab)).filter(x => x.length)
     .map(x => ({ range: `${x[0].tab}!V${FIRST_ROW}:V${x.at(-1).row}`, values: x.map(r => [labels.get(r.orderId) || '']) })), fetchImpl);
+  // Cancelled orders: "Refunded" once paid, "Cancelled" if not (a payment can be added or archived later).
+  const cancelled = rows.filter(r => r.tab === CANCELLED_TAB && r.orderId > 0), fix = [];
+  for (let i = 0; i < cancelled.length; i += 200) {
+    const part = cancelled.slice(i, i + 200), seen = new Map();
+    for (const o of (await DB.prepare(`SELECT id, status, sheet_shipped, sheet_ref FROM client_orders WHERE id IN (${part.map(() => '?').join(',')})`).bind(...part.map(r => r.orderId)).all()).results || []) seen.set(Number(o.id), o);
+    for (const r of part) { const o = seen.get(r.orderId), want = labels.get(r.orderId) === PAID ? REFUNDED_SHIP : CANCELLED_SHIP; if (o?.status === 'cancelled' && !rowOutOfLine(r, o) && norm(o.sheet_shipped) !== want) fix.push([r, want]); }
+  }
+  if (fix.length) {
+    await batchValues(env, fix.map(([r, want]) => ({ range: `${CANCELLED_TAB}!S${r.row}`, values: [[want]] })), fetchImpl);
+    for (const [r, want] of fix) await DB.prepare('UPDATE client_orders SET sheet_shipped=? WHERE id=?').bind(want, r.orderId).run();
+  }
   return true;
 }
 const courierRule = (sheetId, couriers) => ({ setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 17, endColumnIndex: 18 }, rule: {
@@ -382,6 +395,8 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     const addTabs = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 14;
     // 15) The filter covers A-AH on every supplier tab (it was A-AD, so a sort split rows from their hidden ids).
     const widenFilter = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 15;
+    // 16) "Refunded" in the Shipping status list (all three tabs); the cancelled rows get it from refreshPaidColumn.
+    const addRefunded = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 16;
     if (addDomestic || addCancelFee) await ensureColumns(env, sheetId, FEE + 1, fetchImpl);
     await batchValues(env, [revisionCounter(wq), { range: `${wq}!A5:AH5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
@@ -404,6 +419,10 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
         const o = await DB.prepare('SELECT id, order_ref FROM client_orders WHERE id=?').bind(r.orderId).first();
         if (o && cellStr(r.ref) === refOf(o)) await saveRef(DB, o);
       }
+    }
+    if (addRefunded) {
+      const ids = []; for (const tab of allTabs(wq)) { const id = await workQueueSheetId(env, fetchImpl, true, tab); if (id != null) ids.push(id); }
+      await batch(env, ids.map(statusRule), fetchImpl); await markPaidDirty(DB);
     }
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested') OR revision_status <> '')").run();
@@ -548,17 +567,18 @@ function websiteSupplierCells(o) {
   if (norm(o.tracking_number) && norm(o.tracking_number) !== norm(o.sheet_tracking)) out.push([1, txt(o.tracking_number), 'sheet_tracking', norm(o.tracking_number)]);
   if (norm(o.courier) && norm(o.courier) !== norm(o.sheet_courier)) out.push([2, txt(o.courier), 'sheet_courier', norm(o.courier)]);
   if (shippedNow && !isShipped(s)) out.push([3, SHIPPED, 'sheet_shipped', SHIPPED]);
-  const want = o.status === 'cancelled' ? CANCELLED_SHIP : o.status === 'cancellation_requested' ? CANCEL_REQ_SHIP : NOT_SHIPPED, cancelWords = [CANCELLED_SHIP, CANCEL_REQ_SHIP];
+  const want = o.status === 'cancelled' ? cancelledWord(o) : o.status === 'cancellation_requested' ? CANCEL_REQ_SHIP : NOT_SHIPPED, cancelWords = [CANCELLED_SHIP, CANCEL_REQ_SHIP, REFUNDED_SHIP];
   if (!shippedNow && want !== s && (cancelWords.includes(want) || cancelWords.includes(s))) out.push([3, want, 'sheet_shipped', want]);
   return out;
 }
 const saveRef = (DB, o) => DB.prepare('UPDATE client_orders SET sheet_ref=? WHERE id=?').bind(refOf(o), o.id).run();
+const cancelledWord = o => (o.client_paid === PAID ? REFUNDED_SHIP : CANCELLED_SHIP);
 const saveSheetCells = async (DB, o, changes) => { for (const [, , col, v] of changes) await DB.prepare(`UPDATE client_orders SET ${col}=? WHERE id=?`).bind(v, o.id).run(); };
 // AG / AH for a row written from the website (new row, setup): what the sheet last showed, so nothing is cleared.
 const extraCells = o => { const fee = norm(o.sheet_cancel_fee); return [txt(o.domestic_tracking), /^\d+(\.\d+)?$/.test(fee) ? Number(fee) : txt(fee)]; };
 
 // The supplier's columns P–U for a new row: what the website knows about the order.
-const supplierCells = o => [o.supplier_cost == null ? '' : Number(o.supplier_cost), txt(o.tracking_number), txt(o.courier), ['shipped', 'delivered'].includes(o.status) ? SHIPPED : o.status === 'cancelled' ? CANCELLED_SHIP : o.status === 'cancellation_requested' ? CANCEL_REQ_SHIP : NOT_SHIPPED,
+const supplierCells = o => [o.supplier_cost == null ? '' : Number(o.supplier_cost), txt(o.tracking_number), txt(o.courier), ['shipped', 'delivered'].includes(o.status) ? SHIPPED : o.status === 'cancelled' ? cancelledWord(o) : o.status === 'cancellation_requested' ? CANCEL_REQ_SHIP : NOT_SHIPPED,
   o.delayed_at ? DELAYED : '', o.delayed_at ? txt(o.delay_reason) : ''];
 // What the website last wrote to P-U, so only the supplier's own later edits are applied.
 const rememberSupplierCells = (DB, o, s) => DB.prepare('UPDATE client_orders SET sheet_cost=?, sheet_tracking=?, sheet_courier=?, sheet_shipped=?, sheet_delayed=?, sheet_delay_reason=? WHERE id=?')

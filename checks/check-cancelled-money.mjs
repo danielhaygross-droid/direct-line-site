@@ -79,6 +79,10 @@ try {
     await page.goto(`${base}/portal/?lang=${lang}#/payments`); await page.reload(); await page.waitForSelector('[data-cancelled-box]'); await page.waitForTimeout(400);
     await page.locator('[data-cancelled-box]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-client.png`) });
     assert.equal(await page.locator('[data-cancelled-box] tbody tr').count(), 3, tag); assert.equal(await page.locator('[data-refund-form]').count(), 0, tag + ' client cannot record refunds');
+    // Refunded (29 Oct 2026): the paid cancelled orders (A, B) say Refunded; C (paid from the credit) does not.
+    await page.locator(`[data-cancelled-box] [data-open-order="${A.id}"]`).click(); await page.waitForSelector('.pay-tag.refunded'); await page.waitForTimeout(300);
+    await page.locator('.pay-tag.refunded').first().scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-refunded.png`) });
+    assert.equal(await page.locator('.pay-tag.refunded').first().innerText(), lang === 'he' ? 'הוחזר' : 'Refunded', tag);
     // Home starts with the money, cancellation fees and credit included (29 Oct 2026).
     await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('[data-money-now]'); await page.waitForTimeout(600);
     const tiles = await page.locator('[data-money-now] .mn-tile').allInnerTexts(); assert.equal(tiles.length, 5, tag + ' balance, billed, paid, fees, credit');
@@ -95,6 +99,9 @@ try {
     await page.screenshot({ path: path.join(out, `${tag}-admin.png`) });
     assert.equal(await ui.locator('[data-refund-undo]').count(), 1, tag);
     if (lang === 'en') assert.match(await ui.locator('[data-cancelled-box] .cx-stats').innerText(), /Includes \$[\d.]+ of our fees kept/, tag + ' admin sees our fee kept');
+    await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+    await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter=cancelled]').first().click(); await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(out, `${tag}-admin-orders.png`) }); assert.equal(await ui.locator('.pay-tag.refunded').count(), 2, tag + ' admin Orders: A and B Refunded');
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
   }
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }
