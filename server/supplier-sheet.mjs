@@ -45,6 +45,8 @@ export const SUPPLIER_SHEET_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_cancel_fee TEXT',
   // B (Order) as the website last wrote it: a row whose B no longer matches is out of line (see rowOutOfLine).
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_ref TEXT',
+  // AI Cost per product (USD), as the supplier typed it (Erwin, 30 Oct 2026); see itemPrices in portal.mjs.
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS item_costs TEXT',
 ];
 
 export const WQ = 'Work Queue';
@@ -74,16 +76,19 @@ export const DOMESTIC = 'Domestic Express Tracking Number';
 // AH (Erwin, 26 Oct 2026): the supplier's cancellation fee for a cancelled / cancel-requested order. Read by the website;
 // the admin approves it and the client pays exactly that (no Direct Line fee on cancellations).
 export const CANCEL_FEE = 'Cancellation fee (USD)';
+// AI (Erwin, 30 Oct 2026: the client wants each product's cost on an order with several products): the supplier types
+// one cost per product, in the order of Product 1, 2, 3 in Product / variation, e.g. "10.90, 9.00, 11.00". Copied as typed.
+export const ITEM_COSTS = 'Cost per product (USD)';
 export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Photo 1', 'Product link', 'Qty', 'Product / variation',
   'Customer', 'Delivery address & phone', 'Tax number', 'Gift message', 'Notes', 'Competitor price', 'Total cost (USD)', 'Tracking number', 'Courier', 'Shipping status', 'Delayed?', 'Delay reason', 'Client paid',
-  'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID', DOMESTIC, CANCEL_FEE];
+  'Photo 2', 'Photo 3', 'Photo 4', 'Photo 5', 'Photo 6', 'Photo 7', 'Photo 8', 'More product links', 'Order ID', 'Client ID', DOMESTIC, CANCEL_FEE, ITEM_COSTS];
 // CANCELLED_SHIP: written by the website in Shipping status for cancelled orders (Erwin, 26 Oct 2026: the supplier
 // filters them to sort out refunds per store). Picking it in the sheet does not cancel anything on the website.
 // REFUNDED_SHIP (Erwin, 29 Oct 2026): a cancelled order our client had paid for (Client paid = Paid) says "Refunded".
 export const REFUNDED_SHIP = 'Refunded';
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', CANCELLED_SHIP = 'Cancelled', CANCEL_REQ_SHIP = 'Cancel requested', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'CANCELLED - do not ship' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '17';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '18';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 const markPaidDirtyDb = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
@@ -174,11 +179,11 @@ const cellStr = v => (typeof v === 'number' || typeof v === 'boolean' ? String(v
 const refOf = o => norm(o.order_ref || '#' + o.id);
 export const rowOutOfLine = (row, o) => !!norm(o?.sheet_ref) && cellStr(row.ref) !== norm(o.sheet_ref);
 // The filter (header arrows) covers every column, so sorting in the sheet always moves whole rows.
-const fullFilter = sheetId => ({ setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 34 } } } });
+const fullFilter = sheetId => ({ setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 35 } } } });
 const batchValues = (env, data, fetchImpl) => sheetsRequest(env, '/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data }) }, fetchImpl);
 const batch = (env, requests, fetchImpl) => sheetsRequest(env, ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests }) }, fetchImpl);
 // Column widths (px) for A–AF, sized to their content. AE–AF (ids) are hidden; W–AD (more photos/links) are grouped.
-export const WIDTHS = [95, 125, 135, 110, 130, 80, 115, 55, 170, 140, 230, 150, 220, 260, 150, 115, 180, 120, 125, 125, 220, 100, 80, 80, 80, 80, 80, 80, 80, 220, 60, 60, 190, 150];
+export const WIDTHS = [95, 125, 135, 110, 130, 80, 115, 55, 170, 140, 230, 150, 220, 260, 150, 115, 180, 120, 125, 125, 220, 100, 80, 80, 80, 80, 80, 80, 80, 220, 60, 60, 190, 150, 190];
 // Row height that fits the wrapped text of a row (about 7 px per character at the default font), at least
 // 100 px for the photo preview.
 export function rowPx(cells) {
@@ -219,7 +224,7 @@ export async function removeClientFromWorkQueue(DB, env, clientId, fetchImpl = f
 // ---------- layout ----------
 const getSetting = async (DB, key) => (await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(key).first())?.value;
 const putSetting = (DB, key, value) => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key, value).run();
-const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. ORANGE Competitor price = COST REVISION REQUESTED: our client sells at that price; please check if you can lower the cost and type the new Total cost (we confirm it before billing). Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Domestic Express Tracking Number (yellow, far right after Client paid): the tracking of the domestic express in China. RED rows are cancelled orders: do not buy or ship them. Orange rows: the client asked to cancel, wait for Direct Line. Other columns are filled in by Direct Line. Newest orders are at the top. An order moves to the Shipped tab by itself once it is Shipped and has a tracking number, and to the Cancelled tab when it is cancelled.';
+const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. ORANGE Competitor price = COST REVISION REQUESTED: our client sells at that price; please check if you can lower the cost and type the new Total cost (we confirm it before billing). Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Domestic Express Tracking Number (yellow, far right after Client paid): the tracking of the domestic express in China. Cost per product (USD, last yellow column): for an order with several products, type the cost of each product in order, e.g. 10.90, 9.00, 11.00. RED rows are cancelled orders: do not buy or ship them. Orange rows: the client asked to cancel, wait for Direct Line. Other columns are filled in by Direct Line. Newest orders are at the top. An order moves to the Shipped tab by itself once it is Shipped and has a tracking number, and to the Cancelled tab when it is cancelled.';
 const tabText = {
   [SHIPPED_TAB]: ['Direct Line — Shipped orders', 'Shipped orders with a tracking number, newest on top. They move here from the Orders tab by themselves. You can still correct the Total cost, Tracking number or Courier here: the website reads this tab too.'],
   [CANCELLED_TAB]: ['Direct Line — Cancelled orders', 'Cancelled orders: do not buy or ship them. They move here from the Orders tab by themselves, newest on top. If you charge a cancellation fee, type it in Cancellation fee (USD), the last yellow column: the website reads this tab too and bills it. Shipping status says Refunded when our client had already paid for the order.'],
@@ -269,7 +274,7 @@ const revisionCounter = wq => ({ range: `${wq}!A4`, values: [[`=IF(COUNTIF(${all
 const summaryRows = tabs => tabs.flatMap(t => [totalsRow(t), revisionCounter(t)]);
 const revisionAlerts = sheetId => [
   { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 12, foregroundColor: { red: 0.8, green: 0.35, blue: 0 } }, wrapStrategy: 'OVERFLOW_CELL' } }, fields: 'userEnteredFormat(textFormat,wrapStrategy)' } },
-  { addConditionalFormatRule: { rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: 34 }], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=LEFT($O${FIRST_ROW},${REVISION_FLAG.length})="${REVISION_FLAG}"` }] }, format: { backgroundColor: { red: 1, green: 0.88, blue: 0.75 } } } } } },
+  { addConditionalFormatRule: { rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: 35 }], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=LEFT($O${FIRST_ROW},${REVISION_FLAG.length})="${REVISION_FLAG}"` }] }, format: { backgroundColor: { red: 1, green: 0.88, blue: 0.75 } } } } } },
 ];
 const cancelFormat = sheetId => {
   const rows = (c1, c2) => [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: c1, endColumnIndex: c2 }];
@@ -296,6 +301,14 @@ const cancelFeeFormat = sheetId => [
   { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: FEE, endColumnIndex: FEE + 1 }, cell: { note: 'Supplier: only for orders with Shipping status "Cancel requested" or "Cancelled". Type the cancellation fee in USD if you charge one (e.g. already bought or shipped); leave empty if none. Direct Line checks it before the client is charged.' }, fields: 'note' } },
   { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: FEE, endColumnIndex: FEE + 1 }, rule: { condition: { type: 'NUMBER_GREATER_THAN_EQ', values: [{ userEnteredValue: '0' }] }, inputMessage: 'Cancellation fee in USD (empty = no fee)', strict: false } } },
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: FEE, endIndex: FEE + 1 }, properties: { pixelSize: WIDTHS[FEE] }, fields: 'pixelSize' } },
+];
+// AI: yellow, open to the supplier, kept as text (several numbers in one cell).
+const ITEMS = 34;
+const itemCostsFormat = sheetId => [
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,textFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
+  { repeatCell: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.95, blue: 0.7 }, numberFormat: { type: 'TEXT' }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,numberFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 }, cell: { note: 'Supplier: only for orders with several products (Product 1, 2, 3 in Product / variation). Type the cost of each product in that order, separated by commas, e.g. 10.90, 9.00, 11.00. Together they should make the Total cost. Our client sees each product\'s price.' }, fields: 'note' } },
+  { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: ITEMS, endIndex: ITEMS + 1 }, properties: { pixelSize: WIDTHS[ITEMS] }, fields: 'pixelSize' } },
 ];
 const hideCD = sheetId => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 4 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } });
 // Layout 10: Shop (C) shown again, Status (D) stays hidden.
@@ -356,7 +369,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     const { wq } = await tabNames(DB);
     const sheetId = await workQueueSheetId(env, fetchImpl, true, wq);
     if (sheetId == null) throw new Error('Work Queue tab not found');
-    const header = async () => (await sheetsRequest(env, '/values/' + encodeURIComponent(`${wq}!A5:AH5`), {}, fetchImpl)).values?.[0]?.map(norm) || [];
+    const header = async () => (await sheetsRequest(env, '/values/' + encodeURIComponent(`${wq}!A5:AI5`), {}, fetchImpl)).values?.[0]?.map(norm) || [];
     let h = await header();
     // 1) Country (L) becomes Tax number, and Gift message is added after it. The column is inserted inside the
     //    website's protected columns (A–M), so it stays protected. Nothing is deleted.
@@ -403,8 +416,11 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     const addRefunded = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 16;
     // 17) Row 4 (totals + cost revision counter) written again on all three tabs, with formulas that rows can't move.
     const fixTotals = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 17;
+    // 18) AI Cost per product (USD) on all three tabs (Erwin, 30 Oct 2026). Added at the far right, so no column moves; the
+    //     filter grows to A-AI so a sort still moves whole rows.
+    const addItemCosts = h[ITEMS] !== ITEM_COSTS;
     if (addDomestic || addCancelFee) await ensureColumns(env, sheetId, FEE + 1, fetchImpl);
-    await batchValues(env, [revisionCounter(wq), { range: `${wq}!A5:AH5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
+    await batchValues(env, [revisionCounter(wq), { range: `${wq}!A5:AI5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
     const idCol = colName(h.indexOf('Order ID') >= 0 ? h.indexOf('Order ID') : 27);
     const ranges = [`${wq}!O${FIRST_ROW}:O`, `${wq}!${idCol}${FIRST_ROW}:${idCol}`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
@@ -427,6 +443,12 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
       }
     }
     if (fixTotals) await batchValues(env, summaryRows(allTabs(wq)), fetchImpl);
+    if (addItemCosts) {
+      const tabs = []; for (const tab of allTabs(wq)) { const id = await workQueueSheetId(env, fetchImpl, true, tab); if (id != null) tabs.push([tab, id]); }
+      for (const [, id] of tabs) await ensureColumns(env, id, ITEMS + 1, fetchImpl);
+      await batchValues(env, tabs.map(([tab]) => ({ range: `${tab}!A5:AI5`, values: [HEADERS] })).concat({ range: `${wq}!A3`, values: [[instructions]] }), fetchImpl);
+      await batch(env, tabs.flatMap(([, id]) => [...itemCostsFormat(id), fullFilter(id)]), fetchImpl);
+    }
     if (addRefunded) {
       const ids = []; for (const tab of allTabs(wq)) { const id = await workQueueSheetId(env, fetchImpl, true, tab); if (id != null) ids.push(id); }
       await batch(env, ids.map(statusRule), fetchImpl); await markPaidDirty(DB);
@@ -548,12 +570,12 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
   const from = found[0];
   let supplier, extra;
   if (from) {
-    const v = (await sheetsRequest(env, '/values/' + encodeURIComponent(`${from.tab}!P${from.row}:AH${from.row}`) + '?majorDimension=ROWS&valueRenderOption=FORMULA', {}, fetchImpl)).values?.[0] || [];
+    const v = (await sheetsRequest(env, '/values/' + encodeURIComponent(`${from.tab}!P${from.row}:AI${from.row}`) + '?majorDimension=ROWS&valueRenderOption=FORMULA', {}, fetchImpl)).values?.[0] || [];
     const keep = x => (typeof x === 'number' || typeof x === 'boolean' ? x : txt(x));
-    supplier = [0, 1, 2, 3, 4, 5].map(i => keep(v[i] ?? '')); extra = [keep(v[17] ?? ''), keep(v[18] ?? '')];
+    supplier = [0, 1, 2, 3, 4, 5].map(i => keep(v[i] ?? '')); extra = [keep(v[17] ?? ''), keep(v[18] ?? ''), keep(v[19] ?? '')];
     for (const [i, val] of changes) supplier[i] = val;
   } else { supplier = supplierCells(order); extra = extraCells(order); }
-  const res = await sheetsRequest(env, '/values/' + encodeURIComponent(`${tab}!A${FIRST_ROW}:AH`) + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+  const res = await sheetsRequest(env, '/values/' + encodeURIComponent(`${tab}!A${FIRST_ROW}:AI`) + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
     method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values: [[...am, ...supplier, ...qz, ...extra]] }),
   }, fetchImpl);
   if (from) await saveSheetCells(DB, order, changes); else await rememberSupplierCells(DB, order, supplier);
@@ -581,8 +603,8 @@ function websiteSupplierCells(o) {
 const saveRef = (DB, o) => DB.prepare('UPDATE client_orders SET sheet_ref=? WHERE id=?').bind(refOf(o), o.id).run();
 const cancelledWord = o => (o.client_paid === PAID ? REFUNDED_SHIP : CANCELLED_SHIP);
 const saveSheetCells = async (DB, o, changes) => { for (const [, , col, v] of changes) await DB.prepare(`UPDATE client_orders SET ${col}=? WHERE id=?`).bind(v, o.id).run(); };
-// AG / AH for a row written from the website (new row, setup): what the sheet last showed, so nothing is cleared.
-const extraCells = o => { const fee = norm(o.sheet_cancel_fee); return [txt(o.domestic_tracking), /^\d+(\.\d+)?$/.test(fee) ? Number(fee) : txt(fee)]; };
+// AG / AH / AI for a row written from the website (new row, setup): what the sheet last showed, so nothing is cleared.
+const extraCells = o => { const fee = norm(o.sheet_cancel_fee); return [txt(o.domestic_tracking), /^\d+(\.\d+)?$/.test(fee) ? Number(fee) : txt(fee), txt(o.item_costs)]; };
 
 // The supplier's columns P–U for a new row: what the website knows about the order.
 const supplierCells = o => [o.supplier_cost == null ? '' : Number(o.supplier_cost), txt(o.tracking_number), txt(o.courier), ['shipped', 'delivered'].includes(o.status) ? SHIPPED : o.status === 'cancelled' ? cancelledWord(o) : o.status === 'cancellation_requested' ? CANCEL_REQ_SHIP : NOT_SHIPPED,
@@ -706,7 +728,7 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
 // The last fingerprint is kept on the spreadsheet itself (invisible developer metadata), not in the database.
 const SEEN_KEY = 'dl-supplier-sheet-seen', FULL_EVERY = 3 * 3600;
 export async function supplierSheetFingerprint(env, fetchImpl = fetch, tabs = [WQ_NEW]) {
-  const ranges = [...[].concat(tabs).flatMap(tab => [`${tab}!P${FIRST_ROW}:U`, `${tab}!AE${FIRST_ROW}:AE`, `${tab}!AG${FIRST_ROW}:AH`]), `${QT}!A1:Z`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+  const ranges = [...[].concat(tabs).flatMap(tab => [`${tab}!P${FIRST_ROW}:U`, `${tab}!AE${FIRST_ROW}:AE`, `${tab}!AG${FIRST_ROW}:AI`]), `${QT}!A1:Z`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
   const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
   return createHash('sha256').update(JSON.stringify((data.valueRanges || []).map(v => v.values || []))).digest('hex');
 }
@@ -753,13 +775,13 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
     if (await getSetting(DB, PAID_DIRTY)) { const seen = await getSetting(DB, PAID_DIRTY); await refreshPaidColumn(DB, env, fetchImpl); await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(PAID_DIRTY, seen).run(); }
     // All three tabs (Orders, Shipped, Cancelled): the supplier can edit in any of them.
     const tabs = allTabs(wq);
-    const ranges = tabs.flatMap(tab => [`${tab}!P${FIRST_ROW}:U`, `${tab}!AE${FIRST_ROW}:AE`, `${tab}!AG${FIRST_ROW}:AH`, `${tab}!B${FIRST_ROW}:B`]).map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+    const ranges = tabs.flatMap(tab => [`${tab}!P${FIRST_ROW}:U`, `${tab}!AE${FIRST_ROW}:AE`, `${tab}!AG${FIRST_ROW}:AI`, `${tab}!B${FIRST_ROW}:B`]).map(r => 'ranges=' + encodeURIComponent(r)).join('&');
     const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
     const got = (data.valueRanges || []).map(v => v.values || []), byOrder = new Map();
     tabs.forEach((tab, k) => {
       const [inputs, ids, domestic, refs] = got.slice(k * 4, k * 4 + 4);
       (ids || []).forEach((r, i) => {
-        const row = { orderId: Number(r?.[0]), cost: inputs?.[i]?.[0] ?? '', tracking: inputs?.[i]?.[1] ?? '', courier: inputs?.[i]?.[2] ?? '', shipped: inputs?.[i]?.[3] ?? '', delayed: inputs?.[i]?.[4] ?? '', reason: inputs?.[i]?.[5] ?? '', domestic: domestic?.[i]?.[0] ?? '', cancelFee: domestic?.[i]?.[1] ?? '', ref: refs?.[i]?.[0] ?? '', tab, sheetRow: FIRST_ROW + i };
+        const row = { orderId: Number(r?.[0]), cost: inputs?.[i]?.[0] ?? '', tracking: inputs?.[i]?.[1] ?? '', courier: inputs?.[i]?.[2] ?? '', shipped: inputs?.[i]?.[3] ?? '', delayed: inputs?.[i]?.[4] ?? '', reason: inputs?.[i]?.[5] ?? '', domestic: domestic?.[i]?.[0] ?? '', cancelFee: domestic?.[i]?.[1] ?? '', itemCosts: domestic?.[i]?.[2] ?? '', ref: refs?.[i]?.[0] ?? '', tab, sheetRow: FIRST_ROW + i };
         // An order in two tabs (a move that stopped halfway) is read once.
         if (Number.isSafeInteger(row.orderId) && row.orderId > 0 && !byOrder.has(row.orderId)) byOrder.set(row.orderId, row);
       });
@@ -770,7 +792,7 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
     const seen = new Map();
     for (let i = 0; i < rows.length; i += 200) {
       const ids = rows.slice(i, i + 200).map(r => r.orderId);
-      const found = (await DB.prepare(`SELECT id, order_ref, sheet_ref, sheet_cost, sheet_tracking, sheet_courier, sheet_shipped, sheet_delayed, sheet_delay_reason, sheet_cancel_fee, domestic_tracking FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
+      const found = (await DB.prepare(`SELECT id, order_ref, sheet_ref, sheet_cost, sheet_tracking, sheet_courier, sheet_shipped, sheet_delayed, sheet_delay_reason, sheet_cancel_fee, domestic_tracking, item_costs FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
       for (const f of found) seen.set(Number(f.id), f);
     }
     // Out-of-line rows: their supplier cells belong to another order, so nothing is applied from them.
@@ -799,6 +821,11 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
     for (const r of rows) {
       const v = norm(r.domestic).slice(0, 120);
       if (seen.has(r.orderId) && norm(seen.get(r.orderId).domestic_tracking) !== v) await DB.prepare('UPDATE client_orders SET domestic_tracking=? WHERE id=?').bind(v || null, r.orderId).run();
+    }
+    // AI: the supplier's cost per product, copied as typed (the client sees each product's price, see itemPrices).
+    for (const r of rows) {
+      const v = (typeof r.itemCosts === 'number' ? String(r.itemCosts) : norm(r.itemCosts)).slice(0, 300);
+      if (seen.has(r.orderId) && norm(seen.get(r.orderId).item_costs) !== v) await DB.prepare('UPDATE client_orders SET item_costs=? WHERE id=?').bind(v || null, r.orderId).run();
     }
     // Once: remember the prices the supplier already gave (saved prices).
     result.savedPrices = await backfillSavedPrices(DB);
@@ -842,7 +869,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   // Shipped / Cancelled are rebuilt too (from the new supplier tab, see splitSupplierTabs).
   const split = props.filter(p => [SHIPPED_TAB, CANCELLED_TAB].includes(p.title));
   if (split.length) { await batch(env, split.map(p => ({ deleteSheet: { sheetId: p.sheetId } })), fetchImpl); for (const p of split) sheetIdCache.delete(cacheKey(env, p.title)); }
-  const add = { addSheet: { properties: { title: wq, index: 0, gridProperties: { rowCount: 1000, columnCount: 33, frozenRowCount: 5 }, ...(oldId != null ? { sheetId: oldId } : {}) } } };
+  const add = { addSheet: { properties: { title: wq, index: 0, gridProperties: { rowCount: 1000, columnCount: 35, frozenRowCount: 5 }, ...(oldId != null ? { sheetId: oldId } : {}) } } };
   let created;
   try { created = await batch(env, [add], fetchImpl); }
   catch (e) { delete add.addSheet.properties.sheetId; created = await batch(env, [add], fetchImpl); }
@@ -868,8 +895,8 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   const last = FIRST_ROW + Math.max(rows.length, 1) - 1;
   await batchValues(env, [
     { range: `${wq}!A2:A3`, values: [['Direct Line — Orders'], [instructions]] },
-    { range: `${wq}!A5:AH5`, values: [HEADERS] }, totalsRow(wq), revisionCounter(wq),
-    ...(rows.length ? [{ range: `${wq}!A${FIRST_ROW}:AH${last}`, values: rows }] : []),
+    { range: `${wq}!A5:AI5`, values: [HEADERS] }, totalsRow(wq), revisionCounter(wq),
+    ...(rows.length ? [{ range: `${wq}!A${FIRST_ROW}:AI${last}`, values: rows }] : []),
   ], fetchImpl);
 
   const { email } = googleSheetsConfig(env);
@@ -894,7 +921,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 } } },
     { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
     fullFilter(sheetId),
-    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId), hideCD(sheetId), statusRule(sheetId), showShop(sheetId), revisionFormat(sheetId), ...revisionAlerts(sheetId), ...cancelFeeFormat(sheetId),
+    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId), ...itemCostsFormat(sheetId), hideCD(sheetId), statusRule(sheetId), showShop(sheetId), revisionFormat(sheetId), ...revisionAlerts(sheetId), ...cancelFeeFormat(sheetId),
     // Only the supplier columns (and Competitor price) are editable by others; the rest is written by the website.
     { addProtectedRange: { protectedRange: { range: cols(0, 14), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
     { addProtectedRange: { protectedRange: { range: cols(21, 32), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },

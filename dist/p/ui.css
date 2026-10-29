@@ -249,6 +249,7 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .link-add{justify-self:start;margin-top:2px}
 .pm-linkrow{display:grid;gap:8px}
 .pm-linkline{display:flex;align-items:center;gap:10px;min-width:0}
+.pm-price{flex:none;margin-inline-start:auto;font-variant-numeric:tabular-nums;direction:ltr}
 
 /* Right-to-left (Hebrew) */
 [dir=rtl] .brand,[dir=rtl] .brand span{direction:ltr;unicode-bidi:isolate}
