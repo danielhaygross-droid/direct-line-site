@@ -14,7 +14,7 @@ import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms 
 
 import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } from './files.mjs';
 import { BILLING_SCHEMA, getBilling, saveBilling } from './billing.mjs';
-import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund, withCreditPaid } from './cancellations.mjs';
+import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund, withCreditPaid, syncKeptFees } from './cancellations.mjs';
 import { cancelledTotals, moneyMonths } from './money-overview.mjs';
 import { REVISION_SCHEMA, withRevisions, requestRevision, answerOrder, productRequoted, keepProduct } from './cost-revisions.mjs';
 import { PAYMENT_ORDER_SCHEMA, orderIdList, checkOrders, setPaymentOrders, paymentOrderIds, withPaid, dropTakenOrders } from './payment-orders.mjs';
@@ -609,6 +609,7 @@ async function insertOrder(DB, env, waitUntil, client, f, photos, actor, source,
 }
 
 async function clientSummary(DB, clientId, settings) {
+  await syncKeptFees(DB, clientId);
   const o = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(price),0) AS billed, COALESCE(SUM(commission),0) AS commission, COALESCE(SUM(LEAST(supplier_share, commission)),0) AS supplier, COALESCE(SUM(selling_price - price) FILTER (WHERE selling_price IS NOT NULL),0) AS profit FROM client_orders WHERE client_id = ? AND status <> 'cancelled'").bind(clientId).first();
   const p = await DB.prepare('SELECT COALESCE(SUM(amount),0) AS paid FROM client_payments WHERE client_id = ? AND NOT archived').bind(clientId).first();
   const performance=await clientPerformance(DB,clientId);
