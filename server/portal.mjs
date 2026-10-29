@@ -14,7 +14,7 @@ import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms 
 
 import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } from './files.mjs';
 import { BILLING_SCHEMA, getBilling, saveBilling } from './billing.mjs';
-import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund, withCreditPaid, syncKeptFees } from './cancellations.mjs';
+import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund, withCreditPaid, syncKeptFees, clientCancelled, clientAdjustments } from './cancellations.mjs';
 import { cancelledTotals, moneyMonths } from './money-overview.mjs';
 import { REVISION_SCHEMA, withRevisions, requestRevision, answerOrder, productRequoted, keepProduct } from './cost-revisions.mjs';
 import { PAYMENT_ORDER_SCHEMA, orderIdList, checkOrders, setPaymentOrders, paymentOrderIds, withPaid, dropTakenOrders } from './payment-orders.mjs';
@@ -743,7 +743,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/payments' && method === 'GET' && !who.admin) {
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? AND NOT archived ORDER BY paid_at DESC, id DESC').bind(who.clientId).all()).results || [];
     const linked = await paymentOrderIds(DB, who.clientId);
-    return json({ ok: true, cancelled: await cancelledSummary(DB, who.clientId), billing: await getBilling(DB, who.clientId), payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), orderIds: linked.get(Number(r.id)) || [] })), invoices: await invoices(DB,who.clientId), adjustments: await balanceAdjustments(DB,who.clientId), transfers: await transfers(DB,who.clientId) });
+    return json({ ok: true, cancelled: clientCancelled(await cancelledSummary(DB, who.clientId)), billing: await getBilling(DB, who.clientId), payments: rows.map(r => ({ id: r.id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at), orderIds: linked.get(Number(r.id)) || [] })), invoices: await invoices(DB,who.clientId), adjustments: clientAdjustments(await balanceAdjustments(DB,who.clientId)), transfers: await transfers(DB,who.clientId) });
   }
   if (path==='/invoices/month' && method==='GET' && !who.admin) return monthlyInvoices(DB,who.clientId,url.searchParams.get('month'),env);
   if(path==='/client-stores'&&!who.admin){if(method==='GET')return json({ok:true,stores:await clientStores(DB,who.clientId)});if(method==='POST'){try{const store=await saveStore(DB,who.clientId,null,await readBody(request));return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}}

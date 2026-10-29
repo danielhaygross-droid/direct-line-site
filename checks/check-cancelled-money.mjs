@@ -53,8 +53,9 @@ assert.equal(c.count, 3); assert.equal(c.paidCount, 2);
 assert.equal(c.paid, A.price + B.price, 'paid for cancelled orders');
 // Our own fee on the paid cancelled orders A and B stays billed (Erwin, 29 Oct 2026); C was never paid, so none on C.
 const kept = Number((await DB.prepare('SELECT SUM(commission) AS n FROM client_orders WHERE id IN (?,?)').bind(A.id, B.id).first()).n);
-assert.ok(kept > 0); assert.equal(c.kept, kept, 'our fee kept on A and B only');
-assert.equal(c.orders.find(o => o.id === C.id).kept, 0, 'nothing kept on the unpaid order');
+const ac = ok(await call('/admin/payments?clientId=' + id, 'GET', null, admin)).cancelled;
+assert.ok(kept > 0); assert.equal(ac.kept, kept, 'our fee kept on A and B only (admin)');
+assert.equal(ac.orders.find(o => o.id === C.id).kept, 0, 'nothing kept on the unpaid order');
 assert.equal(c.fees, 8 + kept, 'the supplier fees were used at cancellation, plus our fee kept');
 assert.equal(c.dueBack, Math.round((A.price + B.price - 8 - kept) * 100) / 100, 'paid minus all the fees (the fee of C taken from the credit), our fee not given back');
 assert.equal(c.orders.find(o => o.id === C.id).fromCredit, true);
@@ -70,7 +71,12 @@ const rf = ok(await call('/admin/refunds', 'POST', { clientId: id, amount: 10, d
 assert.equal(rf.cancelled.refunded, 10); assert.equal(rf.cancelled.credit, Math.round((c.dueBack - 10) * 100) / 100);
 assert.equal(ok(await call('/me', 'GET', null, client)).summary.outstanding, Math.round((owes0 + 10) * 100) / 100, 'refund raises the balance');
 const adm = ok(await call('/admin/payments?clientId=' + id, 'GET', null, admin)).cancelled;
-assert.deepEqual(adm, ok(await call('/payments', 'GET', null, client)).cancelled, 'admin and client see the same numbers');
+const mine = ok(await call('/payments', 'GET', null, client));
+const { kept: _k, ...admNoKept } = adm; admNoKept.orders = adm.orders.map(({ kept: _o, ...o }) => o);
+assert.deepEqual(mine.cancelled, admNoKept, 'admin and client see the same numbers (the client without our kept part)');
+// Clients never see that we keep a fee per order (29 Oct 2026): no kept field, no separate line; one fee per order.
+assert.ok(!JSON.stringify(mine).includes('kept'), 'nothing about our kept fee in the client data');
+const feeB = mine.adjustments.filter(x => x.orderId === B.id); assert.deepEqual(feeB.map(x => [x.kind, x.amount]), [['cancellation_fee', 5 + Number(adm.orders.find(o => o.id === B.id).kept)]], 'one cancellation fee line for B');
 console.log('PASS cancelled money: paid, fees, due back, refund, credit; balance includes refunds; admin = client');
 try {
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {

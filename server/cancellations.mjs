@@ -56,6 +56,24 @@ export async function cancelledSummary(DB, clientId) {
 // cancellation fee. It goes back to 0 when the order is reopened, archived or no longer paid. Brought up to date before
 // any balance is worked out (cancelledSummary, clientSummary).
 export const KEPT_FEE = 'kept_fee';
+// What a client gets: our kept fee is only ever part of the order's cancellation fee, never its own line or field
+// (Erwin, 29 Oct 2026: "we cant let the client [know] we take fees per order").
+export function clientCancelled(c) {
+  if (!c) return c;
+  const { kept, ...rest } = c;
+  return { ...rest, orders: c.orders.map(({ kept: _, ...o }) => o) };
+}
+export function clientAdjustments(list) {
+  const out = [], fee = new Map();
+  for (const a of list) {
+    if (a.kind !== KEPT_FEE && a.kind !== 'cancellation_fee') { out.push(a); continue; }
+    const f = fee.get(a.orderId);
+    if (!f) { const row = { ...a, kind: 'cancellation_fee', note: 'Cancellation fee' }; fee.set(a.orderId, row); out.push(row); continue; }
+    f.amount = r2(f.amount + a.amount);
+    if (a.kind === 'cancellation_fee') Object.assign(f, { id: a.id, createdAt: a.createdAt });
+  }
+  return out;
+}
 export async function syncKeptFees(DB, clientId, t = Math.floor(Date.now() / 1000)) {
   const rows = (await DB.prepare(`SELECT o.id, o.status, o.archived, o.commission, k.amount AS kept FROM client_orders o
     LEFT JOIN client_balance_adjustments k ON k.order_id = o.id AND k.kind = '${KEPT_FEE}'
