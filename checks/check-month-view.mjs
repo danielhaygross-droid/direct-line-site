@@ -66,13 +66,12 @@ try {
     assert.equal(await ui2.locator('[data-kpi-month]').inputValue(), prevMonth, 'remembered');
     await ui2.locator('[data-kpi-month]').selectOption('all');
     assert.deepEqual(errors, [], tag); await ctx.close();
-    // Client portal: pick last month in the Period picker: the cards follow, the chart has a bar per day.
+    // Client portal: pick last month in the Period picker: the cards follow (the per-day bars were removed 29 Oct 2026).
     ctx = await session(client, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.reload(); await page.waitForSelector('[data-period-form] [name=period]');
     await page.locator('[data-period-form] [name=period]').first().selectOption('m:' + prevMonth); await page.waitForTimeout(400);
-    assert.equal(await page.locator('.bars.days .bar-col').count(), prevDays, tag + ' a bar per day');
-    if (lang === 'en') assert.match(await page.locator('.chart-legend').first().innerText(), /\$45\.00/, tag + ' profit for the month');
-    await page.locator('.bars').first().scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-portal.png`) });
+    assert.ok(prevDays > 27); if (lang === 'en') assert.match(await page.locator('.stats .stat', { hasText: /profit/i }).first().innerText(), /\$45\.00/, tag + ' profit for the month');
+    await page.locator('.stats').first().scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-portal.png`) });
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
   }
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }

@@ -53,40 +53,29 @@ const earnings = page => page.evaluate(() => ({
 try {
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
     const tag = `${lang} ${width}px`, ctx = await session(width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
+    // 29 Oct 2026: Home starts with "Your money" (balance, billed, paid), then the period, store table and cards.
     await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('.stats .stat'); const home = await earnings(page);
-    // 28 Oct 2026: the list comes first and the earnings block starts closed; open it to read it.
-    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('tr[data-open-order]');
-    assert.equal(await page.locator('.earn-box').evaluate(d => d.open), false, tag + ' earnings closed at first');
-    await page.locator('.earn-box > summary').click(); await page.waitForSelector('.stats .stat');
-    const ord = await earnings(page);
-    assert.ok(ord.chart, tag + ' chart on Orders'); assert.equal(ord.cards.length, 3, tag + ' three cards on Orders');
-    assert.deepEqual(ord.cards, home.cards, tag + ' same cards as Home'); assert.deepEqual(ord.bars, home.bars, tag + ' same chart as Home');
-    assert.ok(ord.stores >= 3, tag + ' per-store table (two shops + total) on Orders, rows: ' + ord.stores);
-    // the list is above the earnings block
-    const order = await page.evaluate(() => { const y = s => document.querySelector(s)?.getBoundingClientRect().top; return { cards: y('.stats'), chart: y('.bars'), list: y('[data-orders-list]') }; });
-    assert.ok(order.list < order.cards && order.cards < order.chart, tag + ' orders list above the earnings');
-    assert.match(ord.cards.at(-1), /= \$80\.00$/, tag + ' this month: profit 60 + 20');
-    // period change on Orders: This month -> Last month (no orders then). The orders list is NOT filtered by it.
-    const rows = await page.locator('tr[data-open-order]').count(); assert.equal(rows, 3, tag + ' all orders listed');
-    await page.locator('[data-period-form] select[name=period]').selectOption('last_month'); await page.waitForTimeout(500);
-    const all = await earnings(page);
-    assert.notDeepEqual(all.cards, ord.cards, tag + ' a longer period changes the numbers'); assert.equal(await page.locator('tr[data-open-order]').count(), 3, tag + ' list unchanged by the period');
-    assert.match(all.cards.at(-1), /= \$0\.00$/, tag + ' last month: no profit');
-    // The block can be folded away, and the choice is remembered (also after a reload and on the Home page it does not exist).
-    await page.locator('.earn-box > summary').click(); await page.waitForTimeout(300);
-    assert.equal(await page.locator('.earn-box').evaluate(d => d.open), false, tag + ' folded');
-    assert.equal(await page.locator('.stats').isVisible(), false, tag + ' cards hidden when folded');
-    assert.ok(await page.locator('[data-orders-list]').isVisible(), tag + ' the list is still there');
-    await page.reload(); await page.waitForSelector('tr[data-open-order]');
-    assert.equal(await page.locator('.earn-box').evaluate(d => d.open), false, tag + ' stays folded after reload');
-    await page.locator('.earn-box > summary').click(); await page.waitForTimeout(300);
-    assert.equal(await page.locator('.earn-box').evaluate(d => d.open), true, tag + ' unfolded'); assert.ok(await page.locator('.stats').isVisible());
-    // store switch keeps the block in step with the list
+    const y = await page.evaluate(() => { const t = s => document.querySelector(s)?.getBoundingClientRect().top; return { money: t('[data-money-now]'), period: t('[data-period-form]'), cards: t('.stats') }; });
+    assert.ok(y.money < y.period && y.period < y.cards, tag + ' money first, then the period and the cards');
+    assert.ok(await page.locator('[data-money-now] .mn-tile').count() >= 3, tag + ' balance, billed, paid');
+    assert.equal(home.cards.length, 3, tag + ' three cards'); assert.ok(home.stores >= 3, tag + ' per-store table, rows: ' + home.stores);
+    assert.equal(home.chart, false, tag + ' no old profit bars (Money by month shows the profit)');
+    assert.match(home.cards.at(-1), /= \$80\.00$/, tag + ' this month: profit 60 + 20');
+    await page.locator('[data-period-form] select[name=period]').first().selectOption('last_month'); await page.waitForTimeout(500);
+    const last = await earnings(page); assert.match(last.cards.at(-1), /= \$0\.00$/, tag + ' last month: no profit');
+    await page.locator('[data-period-form] select[name=period]').first().selectOption('month'); await page.waitForTimeout(300);
     await page.locator('[data-select-store]').nth(1).click(); await page.waitForTimeout(500);
-    const oneStore = await earnings(page); assert.equal(oneStore.stores, 0, tag + ' no per-store table when one store is selected');
+    assert.equal((await earnings(page)).stores, 0, tag + ' no per-store table when one store is selected');
+    await page.locator('[data-select-store="0"]').click(); await page.waitForTimeout(300);
+    // The Orders page only lists the orders: no cards, charts or store table repeated from Home.
+    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('tr[data-open-order]');
+    const ord = await earnings(page);
+    assert.deepEqual([ord.cards.length, ord.chart, ord.stores], [0, false, 0], tag + ' nothing repeated from Home on Orders');
+    assert.equal(await page.locator('[data-client-chart], [data-earn]').count(), 0, tag + ' no chart on Orders');
+    assert.equal(await page.locator('tr[data-open-order]').count(), 3, tag + ' all orders listed');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
-    if (width === 1440) { await page.locator('[data-select-store="0"]').click(); await page.waitForTimeout(400); await page.screenshot({ path: path.join(out, `${lang}-orders.png`) }); }
-    assert.deepEqual(errors, [], tag); console.log(`PASS ${tag}: cards + chart + per-store table on Orders equal Home, above the list, period and store switch, no sideways scroll`);
+    if (width === 1440) { await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('[data-money-now]'); await page.screenshot({ path: path.join(out, `${lang}-home.png`) }); }
+    assert.deepEqual(errors, [], tag); console.log(`PASS ${tag}: money first on Home, cards and store table on Home only, Orders lists orders, no sideways scroll`);
     await ctx.close();
   }
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }

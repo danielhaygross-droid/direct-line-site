@@ -1,4 +1,17 @@
   // ---------- home ----------
+  // "Your money" (Erwin, 29 Oct 2026: "all money matters should be clearly seen first even at home"): the account's
+  // balance, what was billed and paid, and the cancellation fees and credit, at the top of Home. Account-wide, like
+  // the Payments page; every tile opens Payments for the details.
+  function moneyNow() {
+    const s = S.me.summary, c = S.cancelled, credit = s.outstanding < 0, n = (k, one, many) => `<b data-no-i18n>${k}</b> <span>${k === 1 ? one : many}</span>`;
+    const tile = (cls, label, value, note, tone = '') => `<a class="mn-tile ${cls}" href="#/payments"><small>${label}</small><strong class="${tone}" data-no-i18n>${value}</strong><em>${note}</em></a>`;
+    return `<section class="card card-pad money-now" data-money-now><div class="mn-head"><h3 class="sec-title">Your money</h3><a class="link" href="#/payments">Payments details</a></div><div class="mn-grid">
+      ${tile('hero', credit ? 'Credit on your account' : 'Balance due', money(Math.abs(s.outstanding)), credit ? 'It counts toward your next orders' : s.outstanding > 0 ? 'Please send this to Direct Line' : 'You’re all paid up')}
+      ${tile('', 'Total billed', money(s.billed), n(s.orders, 'order', 'orders'))}
+      ${tile('', 'Paid', money(s.paid), n(S.payments.length, 'payment', 'payments'), 'pos')}
+      ${c && c.count ? tile('', 'Cancellation fees', money(c.fees), n(c.count, 'cancelled order', 'cancelled orders'), c.fees > 0 ? 'neg' : '') + tile('', 'Credit from cancelled orders', money(c.credit), 'Already counted in your balance', c.credit > 0 ? 'pos' : '') : ''}
+    </div></section>`;
+  }
   function viewHome() {
     const me = S.me, range=homeRange(), stats=window.DLClientStoreMath.performance(S.stores,S.orders,S.adjustments,range),selected=S.storeId?stats.rows.find(s=>s.id===S.storeId):stats.totals, s={...me.summary,orders:selected?.orders||0,billed:selected?.billed||0,clientProfit:selected?.profit||0};
     const h = new Date().getHours(), hello = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
@@ -11,6 +24,8 @@
     return `
       <section data-home-hello class="tw:flex tw:items-end tw:justify-between tw:gap-5 tw:flex-wrap"><div><h2 class="tw:mt-2 tw:text-[clamp(26px,3vw,36px)] tw:font-semibold tw:tracking-[-.02em]">${hello}, <span class="tw:text-gold">${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p class="tw:m-0 tw:mt-1 tw:text-muted">${all.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Send us your first order to get started.'}</p></div>
         <div class="hello-actions tw:flex tw:gap-2 tw:flex-wrap tw:max-md:hidden"><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a></div></section>
+      ${moneyNow()}
+      ${payStrip()}
       ${window.DLClientStoreUI.periodFields(S.period,S.from,S.to,window.DLClientStoreMath.monthsOf(S.orders))}
       ${!S.storeId&&S.stores.length>1?`<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>`:''}
       ${subBanner(me.subscription)}
@@ -22,16 +37,14 @@
         </ol>
         <div class="tw:flex tw:flex-wrap tw:gap-2.5 tw:mt-4"><a class="btn btn-primary btn-big tw:max-[901px]:flex-[1_1_100%] tw:max-[901px]:justify-center" href="#/new">${ic('plus')}Send a new order</a></div></section>` : ''}
       ${statCardsHTML()}
-      ${payStrip()}
       <div data-home-grid class="tw:grid tw:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] tw:gap-4 tw:max-lg:grid-cols-1">
         <section class="card tw:col-span-full"><div class="card-head"><h3>Your latest orders</h3><a class="link" href="#/orders">See all ${all.length ? '(' + all.length + ')' : ''}</a></div>
           ${all.length ? `<div class="table-wrap">${ordersTable(all.slice(0, 5), true)}</div>` : empty('orders', 'No orders yet', 'When you get a sale in your store, send it to us here. We take care of the rest.', '<a class="btn btn-primary" href="#/new">Send a new order</a>')}
         </section>
-        <section class="card"><div class="card-head"><h3>Latest updates</h3><button type="button" class="link" data-open-bell>See all</button></div>
+        <section class="card tw:col-span-full"><div class="card-head"><h3>Latest updates</h3><button type="button" class="link" data-open-bell>See all</button></div>
           ${items.length ? `<div data-home-feed class="tw:grid tw:px-2.5 tw:pt-2 tw:pb-3">${items.map(x => `<button type="button" class="tw:grid tw:grid-cols-[36px_1fr] tw:gap-3 tw:items-start tw:px-3 tw:py-2.5 tw:border-0 tw:rounded-xl tw:bg-transparent tw:text-start tw:cursor-pointer tw:hover:bg-surface-2" ${x.product ? 'data-product-note="1"' : x.invoice ? 'data-invoice-note="1"' : `data-open-order="${x.orderId}"`} data-focus="${x.focus || ''}" data-note="${x.id}"><span class="dln-ic t-${x.tone} tw:size-9!">${N.icon(x.icon)}</span><span class="tw:grid tw:min-w-0"><b class="tw:block tw:text-14 tw:font-semibold${x.unread ? ' tw:after:inline-block tw:after:size-[7px] tw:after:ms-[7px] tw:after:rounded-full tw:after:bg-gold tw:after:align-middle' : ''}">${esc(x.title)}</b><span class="tw:block tw:text-muted tw:text-13 tw:truncate">${esc(x.text)}</span><time class="tw:block tw:text-dim tw:text-12">${esc(N.timeAgo(x.time))}</time></span></button>`).join('')}</div>`
             : empty('bell', 'No updates yet', 'When we change an order’s status or reply to you, it shows up here.')}
         </section>
-        <section class="card"><div class="card-head"><h3>Profit over selected period</h3><span class="tag">Selected period</span></div>${profitChart()}</section>
         <section class="card card-pad mc tw:col-span-full" data-client-chart></section>
       </div>`;
   }
