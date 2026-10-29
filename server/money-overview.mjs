@@ -35,11 +35,14 @@ export async function moneyMonths(DB) {
       COUNT(*) FILTER (WHERE o.status <> 'cancelled') AS orders, COUNT(*) FILTER (WHERE o.status = 'cancelled') AS cancelled
     FROM client_orders o ${live} WHERE NOT o.archived GROUP BY 1`);
   const paid = await q(`SELECT ${month('p.paid_at')} AS m, SUM(p.amount) AS n FROM client_payments p JOIN users u ON u.id = p.client_id AND NOT u.archived WHERE NOT p.archived GROUP BY 1`);
+  // Our fee kept on paid cancelled orders (cancellations.mjs) is ours: it counts as earned in the month it was kept.
+  const kept = await q(`SELECT ${month('a.created_at')} AS m, SUM(a.amount) AS n FROM client_balance_adjustments a JOIN client_orders o ON o.id = a.order_id AND NOT o.archived ${live} WHERE a.kind = 'kept_fee' GROUP BY 1`);
   const fees = await q(`SELECT ${month('a.created_at')} AS m, SUM(a.amount) AS n FROM client_balance_adjustments a JOIN client_orders o ON o.id = a.order_id AND NOT o.archived ${live} WHERE a.kind = 'cancellation_fee' GROUP BY 1`);
   const refunds = await q(`SELECT ${month('r.refunded_at')} AS m, SUM(r.amount) AS n FROM client_refunds r JOIN users u ON u.id = r.client_id AND NOT u.archived WHERE NOT r.archived GROUP BY 1`);
   const map = new Map();
   const at = m => { if (!map.has(m)) map.set(m, { month: m, billed: 0, earned: 0, paid: 0, fees: 0, refunds: 0, orders: 0, cancelled: 0 }); return map.get(m); };
   for (const r of orders) Object.assign(at(r.m), { billed: r2(r.billed), earned: r2(r.earned), orders: Number(r.orders), cancelled: Number(r.cancelled) });
   for (const [rows, k] of [[paid, 'paid'], [fees, 'fees'], [refunds, 'refunds']]) for (const r of rows) at(r.m)[k] = r2(r.n);
+  for (const r of kept) at(r.m).earned = r2(at(r.m).earned + Number(r.n));
   return [...map.values()].filter(x => /^\d{4}-\d{2}$/.test(x.month)).sort((a, b) => a.month.localeCompare(b.month));
 }

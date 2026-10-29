@@ -576,7 +576,7 @@
     [/^(\d+) days ago$/, (_, n) => `לפני ${n} ימים`], [/^(\d+) orders? marked as delivered$/, (_, n) => n === '1' ? 'הזמנה אחת סומנה כנמסרה' : `${n} הזמנות סומנו כנמסרו`],
     [/^Products copied from (.+)$/, (_, r) => `המוצרים הועתקו מ-${r}`], [/^(.+) · Suspended$/, (_, n) => `${n} · מושעית`],
     [/^(\d+) (orders?|products?) with a cost revision request$/, (_, n, w) => `${n} ${w.startsWith('order') ? 'הזמנות' : 'מוצרים'} עם בקשה לעדכון עלות`],
-    [/^(\d+) already paid$/, (_, n) => n === '1' ? 'אחת כבר שולמה' : `${n} כבר שולמו`],
+    [/^(\d+) already paid$/, (_, n) => n === '1' ? 'אחת כבר שולמה' : `${n} כבר שולמו`], [/^Includes (\$[\d,.]+) of our fees kept$/, (_, v) => `כולל ${v} מהעמלות שלנו שנשארות`],
     [/^Click again to cancel (\d+) \(supplier fees\)$/, (_, n) => `לחצו שוב כדי לבטל ${n} (עמלות הספק)`],
     [/^Select (.+)$/, (_, n) => `בחירת ${tr(n)}`],
     [/^([^:]{1,40}): (Show .+|Open .+)$/, (_, a, b) => { const x = tr(a), y = tr(b); return x !== a || y !== b ? `${x}: ${y}` : null; }],

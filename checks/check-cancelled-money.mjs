@@ -51,8 +51,12 @@ for (const o of [A, B, C]) { ok(await call('/orders/' + o.id + '/request-cancell
 let c = ok(await call('/payments', 'GET', null, client)).cancelled;
 assert.equal(c.count, 3); assert.equal(c.paidCount, 2);
 assert.equal(c.paid, A.price + B.price, 'paid for cancelled orders');
-assert.equal(c.fees, 8, 'the supplier fees were used at cancellation');
-assert.equal(c.dueBack, Math.round((A.price + B.price - 8) * 100) / 100, 'paid minus all the fees (the fee of C taken from the credit)');
+// Our own fee on the paid cancelled orders A and B stays billed (Erwin, 29 Oct 2026); C was never paid, so none on C.
+const kept = Number((await DB.prepare('SELECT SUM(commission) AS n FROM client_orders WHERE id IN (?,?)').bind(A.id, B.id).first()).n);
+assert.ok(kept > 0); assert.equal(c.kept, kept, 'our fee kept on A and B only');
+assert.equal(c.orders.find(o => o.id === C.id).kept, 0, 'nothing kept on the unpaid order');
+assert.equal(c.fees, 8 + kept, 'the supplier fees were used at cancellation, plus our fee kept');
+assert.equal(c.dueBack, Math.round((A.price + B.price - 8 - kept) * 100) / 100, 'paid minus all the fees (the fee of C taken from the credit), our fee not given back');
 assert.equal(c.orders.find(o => o.id === C.id).fromCredit, true);
 const cl = ok(await call('/orders', 'GET', null, client)).orders.find(o => o.id === C.id); assert.equal(cl.paidFromCredit, true, 'C counts as paid');
 assert.equal(ok(await call('/admin/orders', 'GET', null, admin)).orders.find(o => o.id === C.id).paidFromCredit, true, 'admin sees it too');
@@ -78,7 +82,8 @@ try {
     // Home starts with the money, cancellation fees and credit included (29 Oct 2026).
     await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('[data-money-now]'); await page.waitForTimeout(600);
     const tiles = await page.locator('[data-money-now] .mn-tile').allInnerTexts(); assert.equal(tiles.length, 5, tag + ' balance, billed, paid, fees, credit');
-    assert.ok(tiles.some(t => t.includes('$8.00')) && tiles.some(t => t.includes('$32.00')), tag + ' fees $8 and credit $32 on Home: ' + tiles.join(' | '));
+    const usd = n => '$' + n.toFixed(2);
+    assert.ok(tiles.some(t => t.includes(usd(8 + kept))) && tiles.some(t => t.includes(usd(c.dueBack - 10))), tag + ' fees and credit on Home: ' + tiles.join(' | '));
     await page.screenshot({ path: path.join(out, `${tag}-home.png`) });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
     assert.deepEqual(errors, [], tag); await ctx.close();
@@ -89,6 +94,7 @@ try {
     await ui.locator('.cx-add > summary').click(); await ui.locator('[data-cancelled-box]').scrollIntoViewIfNeeded(); await page.waitForTimeout(300);
     await page.screenshot({ path: path.join(out, `${tag}-admin.png`) });
     assert.equal(await ui.locator('[data-refund-undo]').count(), 1, tag);
+    if (lang === 'en') assert.match(await ui.locator('[data-cancelled-box] .cx-stats').innerText(), /Includes \$[\d.]+ of our fees kept/, tag + ' admin sees our fee kept');
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
   }
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }
