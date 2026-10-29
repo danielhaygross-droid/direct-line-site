@@ -30,6 +30,7 @@ async function fakeFetch(url, opts = {}) {
   const path = decodeURIComponent(url.replace('https://sheets.googleapis.com/v4/spreadsheets/sheet-id', ''));
   const body = opts.body ? JSON.parse(opts.body) : null;
   calls.push(path.split('?')[0]);
+  if (path.startsWith('?fields=sheets(')) return ok({ sheets: [] }); // protection check after the Shipped / Cancelled tabs are made
   if (path.startsWith('?fields=sheets.properties')) return ok({ sheets: [...new Set(['Work Queue', ...tabs.keys()])].map((title, i) => ({ properties: { title, sheetId: title === 'Work Queue' ? WQ_ID : 100 + i } })) });
   if (path.startsWith(':batchUpdate') && body.requests.some(r => r.addSheet)) { const t = body.requests.find(r => r.addSheet).addSheet.properties.title; grid(t); calls.push('addSheet ' + t); return ok({ replies: [{ addSheet: { properties: { title: t, sheetId: 500 } } }] }); }
   if (path.startsWith(':batchUpdate')) {

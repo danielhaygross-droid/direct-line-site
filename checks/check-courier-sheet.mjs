@@ -22,15 +22,23 @@ function parse(range) {
 const read = range => { const { tab, c1, r1, c2, r2 } = parse(range), g = grid(tab), out = []; for (let r = r1; r <= Math.min(r2, g.length - 1); r++) out.push((g[r] || []).slice(c1, c2 + 1).map(v => v ?? '')); while (out.length && out.at(-1).every(v => v === '')) out.pop(); return out; };
 const write = (range, values) => { const { tab, c1, r1 } = parse(range), g = grid(tab); values.forEach((row, i) => { g[r1 + i] = g[r1 + i] || []; row.forEach((v, j) => { g[r1 + i][c1 + j] = v; }); }); };
 const calls = [], rules = [];
-const WQ_ID = 77;
+const WQ_ID = 77, sheetIds = new Map([['Work Queue', WQ_ID]]);
+const idOf = t => { if (!sheetIds.has(t)) sheetIds.set(t, 100 + sheetIds.size); return sheetIds.get(t); }, tabOf = id => [...sheetIds].find(([, v]) => v === id)?.[0];
 async function fakeFetch(url, opts = {}) {
   const ok = data => ({ ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) });
   if (url.startsWith('https://oauth2.googleapis.com/token')) return ok({ access_token: 't', expires_in: 3600 });
   const path = decodeURIComponent(url.replace('https://sheets.googleapis.com/v4/spreadsheets/sheet-id', ''));
   const body = opts.body ? JSON.parse(opts.body) : null;
   calls.push(path.split('?')[0]);
-  if (path.startsWith('?fields=sheets.properties')) return ok({ sheets: [...new Set(['Work Queue', ...tabs.keys()])].map((title, i) => ({ properties: { title, sheetId: title === 'Work Queue' ? WQ_ID : 100 + i } })) });
+  if (path.startsWith('?fields=sheets(')) return ok({ sheets: [] }); // protection check after the Shipped / Cancelled tabs are made
+  if (path.startsWith('?fields=sheets.properties')) return ok({ sheets: [...new Set(['Work Queue', ...tabs.keys()])].map(title => ({ properties: { title, sheetId: idOf(title) } })) });
   if (path.startsWith(':batchUpdate')) {
+    // Shipped / Cancelled tabs (layout 14): copies of the supplier tab; rows are deleted and moved by sheet id.
+    for (const r of body.requests) {
+      if (r.duplicateSheet) { sheetIds.set(r.duplicateSheet.newSheetName, r.duplicateSheet.newSheetId); tabs.set(r.duplicateSheet.newSheetName, JSON.parse(JSON.stringify(grid(tabOf(r.duplicateSheet.sourceSheetId))))); }
+      if (r.deleteDimension?.range.dimension === 'ROWS') { const { sheetId, startIndex, endIndex } = r.deleteDimension.range; grid(tabOf(sheetId)).splice(startIndex, endIndex - startIndex); }
+      if (r.moveDimension) { const { sheetId, startIndex, endIndex } = r.moveDimension.source, g = grid(tabOf(sheetId)), d = r.moveDimension.destinationIndex; const items = g.splice(startIndex, endIndex - startIndex); g.splice(d > startIndex ? d - items.length : d, 0, ...items); }
+    }
     for (const r of body.requests) if (r.addConditionalFormatRule) rules.push(r.addConditionalFormatRule.rule);
     for (const r of body.requests) if (r.updateDimensionProperties?.properties?.hiddenByUser && r.updateDimensionProperties.range.startIndex === 2) calls.push('hide C-D');
     for (const r of body.requests) if (r.updateDimensionProperties?.properties?.hiddenByUser === false && r.updateDimensionProperties.range.startIndex === 2 && r.updateDimensionProperties.range.endIndex === 3) calls.push('show C');
@@ -64,6 +72,8 @@ wq[5] = oldRow(a, 55.9, 'UL602450763YP'); wq[6] = oldRow(b, '', '');
 await DB.prepare("INSERT INTO portal_settings (key, value) VALUES ('supplier_sheet','1') ON CONFLICT(key) DO UPDATE SET value='1'").run();
 await DB.prepare("UPDATE client_orders SET sheet_cost='55.9', sheet_tracking='UL602450763YP', sheet_shipped='Not shipped', supplier_cost=55.9 WHERE id=?").bind(a.id).run();
 await DB.prepare("UPDATE client_orders SET sheet_cost='', sheet_tracking='', sheet_shipped='Not shipped' WHERE id=?").bind(b.id).run();
+// Layout 14 puts the newest order on top: a is the newer one, so the rows keep their places in this check.
+await DB.prepare('UPDATE client_orders SET created_at=created_at+10 WHERE id=?').bind(a.id).run();
 
 // An order from before the new fields: the IOSS number and gift message were typed into the notes.
 const FR_NOTES = ["Etsy's IOSS number: IM3720000224", ' EUR 72.37', '', 'Gift message:', 'Un petit cadeau retardaire pour accompagner cette belle étape de vie à deux.', '', '-- Jamel, Driss et Clara'].join(String.fromCharCode(10));
@@ -83,7 +93,7 @@ console.log('PASS old notes split into Tax number / Gift message');
 assert.equal(wq[5][15], 55.9, 'cost moved to P'); assert.equal(wq[5][16], 'UL602450763YP', 'tracking moved to Q'); assert.equal(wq[5][14], '', 'competitor price O empty');
 assert.equal(wq[5][17], '', 'empty courier'); assert.equal(wq[5][18], 'Not shipped', 'status moved to S');
 assert.equal(wq[5][30], String(a.id), 'order id in AE'); assert.equal(wq[5][31], String(id), 'client id in AF');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '13', 'up to date: layout 13 (Delayed? + Delay reason, red cancelled rows, Domestic Express Tracking Number, cost revision colour)');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '14', 'up to date: layout 14 (Shipped / Cancelled tabs, Delayed? + Delay reason, red cancelled rows, Domestic Express Tracking Number, cost revision colour)');
 assert.ok(rules.some(r => r.booleanRule?.condition?.type === 'TEXT_STARTS_WITH' && r.booleanRule.condition.values[0].userEnteredValue === 'COST REVISION REQUESTED'), 'layout 12: Competitor price turns orange while a cost revision is open');
 assert.ok(rules.some(r => r.booleanRule?.condition?.type === 'CUSTOM_FORMULA' && r.booleanRule.condition.values[0].userEnteredValue.startsWith('=LEFT($O6,23)="COST REVISION REQUESTED"')), 'layout 13: rows with an open cost revision turn orange');
 const o1 = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(a.id).first();
@@ -193,7 +203,7 @@ assert.deepEqual(wq[4].slice(0, HEADERS.length), HEADERS);
 assert.equal(wq[5][15], costBefore, 'cost stays in P'); assert.equal(wq[6][16], trackBefore, 'tracking stays in Q');
 assert.equal(wq[5][17], courierBefore, 'courier stays in R'); assert.equal(wq[5][19], '', 'new Delayed? cell is empty'); assert.equal(wq[5][30], String(a.id), 'ids moved to AE');
 assert.equal(p.changed.length, 0, 'nothing applied by the switch');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '13');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '14');
 console.log('PASS live layout 5 -> 8: two columns added after Shipping status, everything else moved with its data');
 
 // 10) Layout 6 -> 7 (the live sheet on 23 Oct): only the red / orange row rules are added, no columns move.
@@ -206,17 +216,20 @@ const redRow = cancelRules().find(x => x.ranges[0].startColumnIndex === 0 && x.b
 assert.equal(redRow.ranges[0].endColumnIndex, 30, 'the whole row up to the photos'); assert.equal(redRow.ranges[0].startRowIndex, 5, 'from the first order row');
 assert.match(wq[3][18], /COUNTIF\(D6:D,"CANCELLED - do not ship"\)&" cancelled"/, 'row 4 counts cancelled orders');
 assert.match(wq[2][0], /RED rows are cancelled orders: do not buy or ship them/, 'the instructions say so');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '13');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '14');
 // Running it again adds nothing.
 rules.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(cancelRules().length, 0, 'rules added once');
 // Cancelling an order: its Status cell says so, in the text the rules look for.
 const rowOf = o => wq.findIndex(row => row && row[30] === String(o.id));
+// The order's row in whichever supplier tab it is (Orders / Shipped / Cancelled, layout 14).
+const at = o => ['Work Queue', 'Shipped', 'Cancelled'].map(t => grid(t).find(row => row && row[30] === String(o.id))).find(Boolean);
 assert.equal((await call('/orders/' + b.id, 'PUT', { status: 'cancelled', fee: 0 }, admin)).status, 200);
 await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch);
-assert.equal(wq[rowOf(b)][3], 'CANCELLED - do not ship'); assert.equal(wq[rowOf(b)][18], 'Cancelled', 'Shipping status says Cancelled (supplier filters refunds)');
+assert.equal(at(b)[3], 'CANCELLED - do not ship'); assert.equal(at(b)[18], 'Cancelled', 'Shipping status says Cancelled (supplier filters refunds)');
+assert.ok(grid('Cancelled').some(row => row && row[30] === String(b.id)) && rowOf(b) < 0, 'and moves to the Cancelled tab (layout 14)');
 assert.equal((await call('/orders/' + b.id, 'PUT', { status: 'processing' }, admin)).status, 200);
 await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch);
-assert.equal(wq[rowOf(b)][3], 'In Progress', 'reopened: back to normal'); assert.equal(wq[rowOf(b)][18], 'Not shipped', 'reopened: Not shipped again');
+assert.equal(at(b)[3], 'In Progress', 'reopened: back to normal'); assert.equal(at(b)[18], 'Not shipped', 'reopened: Not shipped again');
 console.log('PASS layout 6 -> 8: cancelled rows turn red (whole row), requests orange, counted in row 4');
 
 // 11) Layout 7 -> 8 (live sheet on 26 Oct): AG 'Domestic Express Tracking Number' at the far right for the supplier (Ye).
@@ -227,7 +240,7 @@ calls.length = 0; rules.length = 0; p = await pollSupplierSheet(DB, env, { fetch
 assert.deepEqual(calls.filter(c => c.startsWith('insert')), [], 'no columns inserted');
 assert.equal(wq[4][32], 'Domestic Express Tracking Number'); assert.equal(wq[4][30], 'Order ID', 'ids stay in AE/AF');
 assert.match(wq[2][0], /Domestic Express Tracking Number \(yellow, far right/);
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '13');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '14');
 const rA = wq.findIndex(row => row && row[30] === String(a.id)); wq[rA][32] = 'SF1234567890';
 await syncPortalOrderToGoogleSheet(DB, env, a.id, fakeFetch);
 assert.equal(wq[rA][32], 'SF1234567890', 'the supplier’s domestic tracking is kept when the website rewrites the row');
@@ -237,7 +250,7 @@ console.log('PASS layout 7 -> 8: Domestic Express Tracking Number in AG, kept on
 await DB.prepare("UPDATE portal_settings SET value='8' WHERE key='supplier_sheet_layout'").run();
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
 assert.equal(calls.filter(c => c === 'hide C-D').length, 1, 'Shop and Status hidden'); assert.deepEqual(calls.filter(c => c.startsWith('insert')), [], 'nothing inserted or deleted');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '13');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '14');
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(calls.filter(c => c === 'hide C-D').length, 0, 'only once');
 assert.equal((await DB.prepare('SELECT domestic_tracking FROM client_orders WHERE id=?').bind(a.id).first()).domestic_tracking, 'SF1234567890', 'AG copied to the order');
 const listed = (await call('/admin/orders', 'GET', null, admin)).data.orders.find(o => o.id === a.id); assert.equal(listed.domesticTracking, 'SF1234567890', 'admin sees it');
@@ -247,13 +260,13 @@ console.log('PASS layout 8 -> 9: Shop + Status hidden; domestic tracking from AG
 
 // 13) Layout 9 -> 10 (26 Oct): "Cancelled" in the Shipping status list, Shop (C) shown again; cancelled rows rewritten.
 assert.equal((await call('/orders/' + b.id, 'PUT', { status: 'cancelled', fee: 0 }, admin)).status, 200);
-await DB.prepare("UPDATE client_orders SET sheet_shipped='Not shipped' WHERE id=?").bind(b.id).run(); wq[rowOf(b)][18] = 'Not shipped'; // as before layout 10
+await DB.prepare("UPDATE client_orders SET sheet_shipped='Not shipped' WHERE id=?").bind(b.id).run(); at(b)[18] = 'Not shipped'; // as before layout 10
 await DB.prepare("UPDATE portal_settings SET value='9' WHERE key='supplier_sheet_layout'").run();
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
 assert.deepEqual(calls.filter(c => c === 'show C' || c.startsWith('status list')).sort(), ['show C', 'status list Not shipped/Shipped/Cancel requested/Cancelled'], 'list + Shop column, once');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '13');
-await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(wq[rowOf(b)][18], 'Cancelled', 'existing cancelled row rewritten');
-wq[rowOf(a)][18] = 'Cancelled'; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '14');
+await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(at(b)[18], 'Cancelled', 'existing cancelled row rewritten');
+at(a)[18] = 'Cancelled'; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
 assert.notEqual((await DB.prepare('SELECT status FROM client_orders WHERE id=?').bind(a.id).first()).status, 'cancelled', 'the supplier picking Cancelled does not cancel the order');
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(calls.filter(c => c === 'show C').length, 0, 'only once');
 console.log('PASS layout 9 -> 10: Cancelled in Shipping status, Shop column back; supplier cannot cancel from the sheet');
@@ -261,10 +274,10 @@ console.log('PASS layout 9 -> 10: Cancelled in Shipping status, Shop column back
 // 14) Layout 11 (26 Oct, KumoBags suspended): "Cancel requested" in S, the supplier's Cancellation fee (USD) in AH.
 assert.equal(wq[4][33], 'Cancellation fee (USD)', 'AH header');
 assert.equal((await call('/orders/' + b.id, 'PUT', { status: 'processing' }, admin)).status, 200);
-await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(wq[rowOf(b)][18], 'Not shipped', 'reopened');
+await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(at(b)[18], 'Not shipped', 'reopened');
 assert.equal((await call('/orders/' + b.id + '/request-cancellation', 'POST', { reason: 'Store suspended' }, client)).status, 200);
-await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(wq[rowOf(b)][18], 'Cancel requested', 'S says Cancel requested');
-wq[rowOf(b)][33] = 6.5; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
+await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(at(b)[18], 'Cancel requested', 'S says Cancel requested');
+at(b)[33] = 6.5; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
 assert.equal((await DB.prepare('SELECT supplier_cancel_fee FROM client_orders WHERE id=?').bind(b.id).first()).supplier_cancel_fee, 6.5, 'fee saved on the order');
 const adminOrder = (await call('/admin/orders', 'GET', null, admin)).data.orders.find(o => o.id === b.id); assert.equal(adminOrder.supplierCancelFee, 6.5, 'admin sees it');
 const clientOrder = (await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === b.id); assert.equal(clientOrder.supplierCancelFee, undefined, 'client does not (until approved)');
@@ -272,14 +285,14 @@ assert.ok(((await call('/admin/notifications', 'GET', null, admin)).data.items |
 assert.equal((await DB.prepare('SELECT status FROM client_orders WHERE id=?').bind(b.id).first()).status, 'cancellation_requested', 'nothing approved by the supplier');
 { const r = await call('/orders/' + b.id + '/approve-cancellation', 'POST', { fee: adminOrder.supplierCancelFee }, admin); assert.equal(r.status, 200, JSON.stringify(r.data)); }
 assert.equal((await DB.prepare("SELECT amount FROM client_balance_adjustments WHERE order_id=? AND kind='cancellation_fee'").bind(b.id).first()).amount, 6.5, 'client billed exactly the supplier fee');
-await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(wq[rowOf(b)][18], 'Cancelled');
-wq[rowOf(b)][33] = 'abc'; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(at(b)[18], 'Cancelled');
+at(b)[33] = 'abc'; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
 assert.equal((await DB.prepare('SELECT supplier_cancel_fee FROM client_orders WHERE id=?').bind(b.id).first()).supplier_cancel_fee, 6.5, 'not a number: ignored');
 // Cancelled first, fee later: the supplier's fee is billed straight away and the client is notified (Erwin, 26 Oct 2026).
-wq[rowOf(b)][33] = ''; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+at(b)[33] = ''; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
 const feeNow = async () => Number((await DB.prepare("SELECT amount FROM client_balance_adjustments WHERE order_id=? AND kind='cancellation_fee'").bind(b.id).first()).amount);
 assert.equal(await feeNow(), 0, 'fee cleared in the sheet = no fee');
-wq[rowOf(b)][33] = 3.25; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
+at(b)[33] = 3.25; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
 assert.equal(await feeNow(), 3.25, 'fee typed after the cancellation is billed at once');
 const feeNotes = ((await call('/notifications', 'GET', null, client)).data.items || []).filter(e => e.kind === 'cancel_fee');
 assert.equal(feeNotes[0]?.detail, '3.25', 'the client is notified');

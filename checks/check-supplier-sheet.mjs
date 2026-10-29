@@ -5,12 +5,12 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { DB, env, call, seed, pg } from './lib.mjs';
 import { route } from '../api/index.mjs';
-import { WQ, WQ_NEW, LOG_NEW, TAB_NAMES, FIRST_ROW, HEADERS, SHIPPED, NOT_SHIPPED } from '../server/supplier-sheet.mjs';
+import { WQ, WQ_NEW, LOG_NEW, TAB_NAMES, FIRST_ROW, HEADERS, SHIPPED, NOT_SHIPPED, SHIPPED_TAB, CANCELLED_TAB } from '../server/supplier-sheet.mjs';
 
 // ---------- fake Google Sheets ----------
-const sheets = new Map(); // title -> { sheetId, hidden, grid: array of rows (arrays) }
+const sheets = new Map(); // title -> { sheetId, hidden, grid: array of rows (arrays), prot: protected ranges }
 let nextId = 100;
-const addTab = (title, sheetId = nextId++) => { sheets.set(title, { sheetId, hidden: false, grid: [] }); return sheets.get(title); };
+const addTab = (title, sheetId = nextId++) => { sheets.set(title, { sheetId, hidden: false, grid: [], prot: [] }); return sheets.get(title); };
 const col = s => [...s].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
 function parseRange(a1) {
   const [name, ref = ''] = decodeURIComponent(a1).replace(/^'|'(?=!)/g, '').split('!');
@@ -40,13 +40,16 @@ globalThis.fetch = (real => async (url, opt = {}) => {
   const path = url.split('/spreadsheets/sheet-id')[1], body = opt.body ? JSON.parse(opt.body) : null, method = opt.method || 'GET';
   requests.push(method + ' ' + decodeURIComponent(path).slice(0, 80));
   if (path.startsWith('?fields=developerMetadata')) return Response.json({ developerMetadata: meta, sheets: [...sheets.keys()].map(title => ({ properties: { title } })) });
+  if (path.startsWith('?fields=sheets(properties(sheetId),protectedRanges')) return Response.json({ sheets: [...sheets.values()].map(s => ({ properties: { sheetId: s.sheetId }, protectedRanges: s.prot.map((p, i) => ({ protectedRangeId: i + 1 })) })) });
   if (path.startsWith('?fields=sheets.properties')) return Response.json({ sheets: [...sheets].map(([title, s]) => ({ properties: { title, sheetId: s.sheetId, hidden: s.hidden } })) });
   if (path === ':batchUpdate') {
     const replies = [];
     for (const rq of body.requests) {
       const [kind, a] = Object.entries(rq)[0];
       const byId = id => [...sheets].find(([, s]) => s.sheetId === id);
-      if (kind === 'duplicateSheet') { const [, src] = byId(a.sourceSheetId); const t = addTab(a.newSheetName); t.grid = JSON.parse(JSON.stringify(src.grid)); }
+      if (kind === 'duplicateSheet') { const [, src] = byId(a.sourceSheetId); if (sheets.has(a.newSheetName) || (a.newSheetId != null && byId(a.newSheetId))) return Response.json({ error: { message: 'taken' } }, { status: 400 }); const t = addTab(a.newSheetName, a.newSheetId ?? nextId++); t.grid = JSON.parse(JSON.stringify(src.grid)); t.prot = [...src.prot]; t.hidden = src.hidden; }
+      else if (kind === 'addProtectedRange') byId(a.protectedRange.range.sheetId)[1].prot.push(a.protectedRange);
+      else if (kind === 'moveDimension') { const [, s] = byId(a.source.sheetId), n = a.source.endIndex - a.source.startIndex; while (s.grid.length < a.source.endIndex) s.grid.push([]); const items = s.grid.splice(a.source.startIndex, n); s.grid.splice(a.destinationIndex > a.source.startIndex ? a.destinationIndex - n : a.destinationIndex, 0, ...items); }
       else if (kind === 'updateSheetProperties') {
         const [title, tab] = byId(a.properties.sheetId);
         if (a.fields.includes('hidden')) tab.hidden = a.properties.hidden;
@@ -85,9 +88,14 @@ Object.assign(env, {
 const later = () => { for (const m of meta) m.metadataValue = String(m.metadataValue).split('|')[0] + '|0'; }; // 3+ hours since the last full check
 const settle = () => new Promise(r => setTimeout(r, 300)); // background sheet syncs (waitUntil absent → awaited, but be safe)
 const cron = async () => (await route(new Request('http://x/api/cron/supplier-sheet', { headers: { authorization: 'Bearer cron-test' } }), { db: DB, env })).json();
-const wq = () => { const g = sheets.get(WQ).grid; const ids = {}; for (let r = FIRST_ROW - 1; r < g.length; r++) if (g[r]?.[30]) ids[Number(g[r][30])] = r; return ids; };
-const cell = (orderId, c) => sheets.get(WQ).grid[wq()[orderId]][c];
-const supplierTypes = (orderId, c, v) => { sheets.get(WQ).grid[wq()[orderId]][c] = v; };
+const main = () => (sheets.has(WQ) ? WQ : WQ_NEW), TABS = () => [main(), SHIPPED_TAB, CANCELLED_TAB];
+const idsIn = tab => { const g = sheets.get(tab)?.grid || []; const ids = {}; for (let r = FIRST_ROW - 1; r < g.length; r++) if (Number(g[r]?.[30]) > 0) ids[Number(g[r][30])] = r; return ids; };
+const wq = () => idsIn(main()); // the supplier tab (orders still to do)
+// [tab, grid index] of an order, in whichever of the three tabs it is.
+const where = id => { for (const t of TABS()) { const r = idsIn(t)[id]; if (r !== undefined) return [t, r]; } return null; };
+const cell = (orderId, c) => { const [t, r] = where(orderId); return sheets.get(t).grid[r][c]; };
+const supplierTypes = (orderId, c, v) => { const [t, r] = where(orderId); sheets.get(t).grid[r][c] = v; };
+const count = id => TABS().filter(t => idsIn(t)[id] !== undefined).length;
 const N = 15, O = 16, P = 18, D = 3; // layout 3: O Competitor price, P Total cost, Q Tracking, S Shipping status (AE = order id)
 const order = async id => (await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(id).first());
 const events = async (id, kind) => (await DB.prepare('SELECT * FROM order_events WHERE order_id=? AND kind=? ORDER BY id').bind(id, kind).all()).results;
@@ -109,6 +117,10 @@ const backup = sheets.get('Work Queue (old formulas)');
 assert.ok(backup && backup.hidden && backup.grid[6][0].startsWith('=IF('), 'old formula tab kept as hidden backup');
 assert.deepEqual(sheets.get(WQ).grid[4], HEADERS);
 assert.deepEqual(Object.keys(wq()).map(Number).sort((a, b) => a - b), [A.id, B.id, C.id, X.id], 'archived order not listed');
+assert.deepEqual(Object.entries(wq()).sort((a, b) => a[1] - b[1]).map(([id]) => Number(id)), [X.id, C.id, B.id, A.id], 'newest order on top');
+assert.ok(sheets.has(SHIPPED_TAB) && sheets.has(CANCELLED_TAB), 'Shipped and Cancelled tabs made');
+assert.deepEqual(sheets.get(SHIPPED_TAB).grid[4], HEADERS, 'same columns'); assert.equal(Object.keys(idsIn(SHIPPED_TAB)).length, 0, 'nothing shipped yet');
+assert.ok(sheets.get(SHIPPED_TAB).prot.length >= 3 && sheets.get(CANCELLED_TAB).prot.length >= 3, 'website columns protected in the new tabs');
 assert.equal(cell(A.id, P), NOT_SHIPPED); assert.equal(cell(A.id, N) ?? '', '');
 assert.equal(cell(A.id, 13), '=HYPERLINK("http://evil","x")', 'client text is stored as text, never run as a formula');
 assert.match(String(cell(A.id, 6)), /^=HYPERLINK\("https:\/\/example.com\/a","Open product 1"\)$/, 'two links: numbered');
@@ -119,7 +131,7 @@ assert.equal(cell(A.id, 2), shopName, 'column C shows the shop, not the client')
 assert.equal(HEADERS[2], 'Shop');
 assert.ok(!JSON.stringify(sheets.get(WQ).grid).includes('Local Client'), 'client name appears nowhere in the Work Queue');
 assert.equal(sheets.get('Clients').hidden, true, 'Clients tab hidden from suppliers');
-assert.deepEqual([...sheets].filter(([, s]) => !s.hidden).map(([t]) => t), [WQ], 'only the Work Queue is visible; no temporary tab left');
+assert.deepEqual([...sheets].filter(([, s]) => !s.hidden).map(([t]) => t), [WQ, SHIPPED_TAB, CANCELLED_TAB], 'only the supplier tabs are visible; no temporary tab left');
 assert.equal((await call('/admin/supplier-sheet', 'GET', null, admin)).data.enabled, true);
 console.log('PASS setup: backup tab, same tab id, headers, active orders only, text-safe cells');
 
@@ -137,6 +149,8 @@ let b = await order(B.id);
 assert.equal(b.tracking_number, '9400111899223197428490'); assert.equal(b.status, 'shipped'); assert.ok(b.edit_locked);
 assert.equal((await events(B.id, 'status')).at(-1).detail, 'shipped');
 assert.equal(cell(B.id, D), 'Shipped', 'Work Queue status column refreshed from the website');
+assert.deepEqual(where(B.id), [SHIPPED_TAB, FIRST_ROW - 1], 'shipped with tracking: moved to the Shipped tab, on top'); assert.equal(count(B.id), 1, 'in one tab only');
+assert.equal(cell(B.id, O), '9400111899223197428490', 'the supplier’s tracking moved with it, still text');
 assert.equal(Number((await order(X.id)).price), 0, 'invalid cost is not billed');
 assert.ok(r.skipped.some(s => s.orderId === X.id && /not a number/.test(s.why[0])), 'invalid cost reported to admin');
 // Client side: billed, notified, supplier cost hidden.
@@ -189,6 +203,7 @@ console.log('PASS Shipped on a cancelled order is not applied and is reported');
 const before = Object.keys(wq()).length;
 const D2 = await mk('D-NEW'); await settle();
 assert.equal(Object.keys(wq()).length, before + 1); assert.equal(cell(D2.id, P), NOT_SHIPPED);
+assert.deepEqual(where(D2.id), [main(), FIRST_ROW - 1], 'a new order goes on top of the supplier tab');
 await call('/admin/orders/' + D2.id + '/archive', 'POST', { archived: true }, admin); await settle();
 assert.equal(wq()[D2.id], undefined, 'archived order row removed');
 console.log('PASS new order appended; archived order removed');
@@ -209,7 +224,8 @@ assert.equal(Number((await order(A.id)).price), 27, 'pending supplier change app
 assert.equal(cell(A.id, N), 25); assert.equal(cell(B.id, O), '9400111899223197428490'); assert.equal(cell(B.id, P), SHIPPED);
 assert.equal(cell(A.id, 14), '$24.90 on Etsy shop X', 'competitor price kept through a rebuild');
 assert.ok(sheets.get('Work Queue (old formulas)').grid[6][0].startsWith('=IF('), 'original backup kept, not replaced');
-assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t), [WQ], 'rebuild works; besides the supplier Product Quotes tab only the Work Queue is visible');
+assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t).sort(), [WQ, SHIPPED_TAB, CANCELLED_TAB].sort(), 'rebuild works; besides the supplier Product Quotes tab only the three supplier tabs are visible');
+assert.equal(where(B.id)[0], SHIPPED_TAB, 'rebuilt: the shipped order is in Shipped again'); assert.equal(count(B.id), 1);
 assert.equal(sheets.get(WQ).sheetId, 2026101301);
 console.log('PASS running setup again keeps supplier values and the original backup');
 
@@ -224,7 +240,7 @@ later(); const switched = await cron(); assert.equal(switched.ok, true, JSON.str
 assert.equal((await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(TAB_NAMES).first()).value, 'done');
 assert.ok(!sheets.has(WQ) && sheets.get(WQ_NEW).sheetId === 2026101301, 'the supplier tab is now "Orders" (same tab id, links still open it)');
 assert.equal(sheets.get(LOG_NEW).sheetId, logId); assert.equal(sheets.get(WQ_NEW).grid[1][0], 'Direct Line — Orders');
-assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t), [WQ_NEW], 'only "Orders" is visible');
+assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t).sort(), [WQ_NEW, SHIPPED_TAB, CANCELLED_TAB].sort(), 'only "Orders", Shipped and Cancelled are visible');
 const rowOf = id => sheets.get(WQ_NEW).grid.findIndex(r => r && Number(r[30]) === id);
 const T = await mk('T-TABS'); await settle();
 assert.ok(rowOf(T.id) > 0, 'a new order lands in "Orders"');
@@ -271,6 +287,48 @@ const c = await cron(); assert.equal(c.ok, true); assert.ok(c.retry.attempted >=
 assert.notEqual(gW[rW][D], 'stale', 'the cron rewrote the waiting row');
 assert.equal((await order(W.id)).sheet_sync_status, 'synced');
 console.log('PASS the cron rewrites rows waiting for the sheet (at least every 3 hours)');
+
+// ---------- Shipped / Cancelled tabs (Erwin, 29 Oct 2026): the supplier tab shows only orders still to do ----------
+const S1 = await mk('S-SHIP-NO-TRACK'); await settle();
+supplierTypes(S1.id, N, 9); supplierTypes(S1.id, P, SHIPPED); await cron(); await settle();
+assert.equal((await order(S1.id)).status, 'shipped'); assert.equal(where(S1.id)[0], main(), 'Shipped but no tracking yet: stays in the supplier tab');
+supplierTypes(S1.id, O, 'LATE-TRACK-1'); supplierTypes(S1.id, 32, 'CN-DOMESTIC-1'); await cron(); await settle();
+assert.deepEqual(where(S1.id), [SHIPPED_TAB, FIRST_ROW - 1], 'tracking added: moved to Shipped, on top'); assert.equal(count(S1.id), 1);
+assert.equal(cell(S1.id, N), 9); assert.equal(cell(S1.id, P), SHIPPED); assert.equal(cell(S1.id, 32), 'CN-DOMESTIC-1', 'domestic tracking moved with it');
+supplierTypes(S1.id, O, 'FIXED-TRACK-2'); await cron();
+assert.equal((await order(S1.id)).tracking_number, 'FIXED-TRACK-2', 'a tracking fix in the Shipped tab is applied');
+supplierTypes(S1.id, N, 11); await cron();
+assert.equal(Number((await order(S1.id)).price), 13, 'a cost change in the Shipped tab is billed');
+const K = await mk('K-CANCEL'); await settle();
+const cancelled = await call('/orders/' + K.id, 'PUT', { status: 'cancelled', fee: 0 }, admin); assert.equal(cancelled.status, 200, JSON.stringify(cancelled.data)); await settle();
+assert.deepEqual(where(K.id), [CANCELLED_TAB, FIRST_ROW - 1], 'cancelled: moved to the Cancelled tab'); assert.equal(count(K.id), 1);
+assert.equal(cell(K.id, P), 'Cancelled', 'Shipping status says Cancelled'); assert.equal(cell(K.id, D), 'CANCELLED - do not ship');
+supplierTypes(K.id, 33, 4); await cron();
+assert.equal(Number((await order(K.id)).supplier_cancel_fee), 4, 'a fee typed in the Cancelled tab is read');
+assert.equal(Number((await DB.prepare("SELECT amount FROM client_balance_adjustments WHERE order_id=? AND kind='cancellation_fee'").bind(K.id).first())?.amount), 4, 'and billed');
+const back = await call('/orders/' + K.id, 'PUT', { status: 'pending' }, admin); assert.equal(back.status, 200, JSON.stringify(back.data)); await settle();
+assert.deepEqual(where(K.id), [main(), FIRST_ROW - 1], 'reopened: back in the supplier tab'); assert.equal(cell(K.id, 33), 4, 'fee kept with the row');
+// A move that stopped halfway (row in two tabs) is cleaned up on the next write, and read once meanwhile.
+const [kt, kr] = where(K.id); sheets.get(SHIPPED_TAB).grid.splice(FIRST_ROW - 1, 0, [...sheets.get(kt).grid[kr]]);
+assert.equal(count(K.id), 2); assert.equal((await cron()).ok, true);
+await call('/orders/' + K.id, 'PUT', { notes: 'refresh' }, admin); await settle(); assert.equal(count(K.id), 1, 'duplicate removed');
+console.log('PASS Shipped (with tracking) and Cancelled tabs: rows move by themselves, newest on top, supplier edits there are read');
+
+// ---------- one-time switch from layout 13: one tab, oldest first, a broken row ----------
+const allRows = TABS().flatMap(t => Object.values(idsIn(t)).map(r => sheets.get(t).grid[r])).sort((a, b) => Number(a[30]) - Number(b[30]));
+sheets.delete(SHIPPED_TAB); sheets.delete(CANCELLED_TAB);
+const gm = sheets.get(main()).grid; gm.length = FIRST_ROW - 1; gm.push(...allRows.map(r => [...r]), Array(33).fill('2026-10-11'));
+await DB.prepare("UPDATE portal_settings SET value='13' WHERE key='supplier_sheet_layout'").run();
+const ids0 = allRows.map(r => Number(r[30])), st = new Map();
+for (const id of ids0) st.set(id, await order(id));
+later(); const sw = await cron(); assert.equal(sw.ok, true, JSON.stringify(sw));
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '14');
+for (const id of ids0) { const o = st.get(id), want = o.status === 'cancelled' ? CANCELLED_TAB : ['shipped', 'delivered'].includes(o.status) && o.tracking_number ? SHIPPED_TAB : main(); assert.equal(where(id)?.[0], want, 'order ' + id + ' in ' + want); assert.equal(count(id), 1); }
+for (const t of TABS()) { const order0 = Object.entries(idsIn(t)).sort((a, b) => a[1] - b[1]).map(([id]) => st.get(Number(id))); assert.deepEqual(order0.map(o => o.id), [...order0].sort((a, b) => b.created_at - a.created_at || b.id - a.id).map(o => o.id), t + ': newest on top'); }
+assert.ok(sheets.get(main()).grid.some(r => r?.[0] === '2026-10-11'), 'a row without an order id stays in the supplier tab');
+assert.ok(!sheets.get(SHIPPED_TAB).grid.some(r => r?.[0] === '2026-10-11'), 'and is not copied');
+assert.equal(cell(B.id, O), '9400111899223197428490'); assert.equal(sheets.get(SHIPPED_TAB).grid[2][0], 'Shipped orders with a tracking number, newest on top. They move here from the Orders tab by themselves. You can still correct the Total cost, Tracking number or Courier here: the website reads this tab too.');
+console.log('PASS one-time switch: three tabs, every order in exactly one, newest on top, supplier values kept');
 
 // Cron needs the secret.
 assert.equal((await route(new Request('http://x/api/cron/supplier-sheet'), { db: DB, env })).status, 401);
