@@ -314,6 +314,17 @@ assert.equal(count(K.id), 2); assert.equal((await cron()).ok, true);
 await call('/orders/' + K.id, 'PUT', { notes: 'refresh' }, admin); await settle(); assert.equal(count(K.id), 1, 'duplicate removed');
 console.log('PASS Shipped (with tracking) and Cancelled tabs: rows move by themselves, newest on top, supplier edits there are read');
 
+// ---------- Refunded (Erwin, 29 Oct 2026): a cancelled order the client had paid for ----------
+const R = await mk('R-REFUND'); await settle();
+supplierTypes(R.id, N, 10); await cron(); await settle();
+const rp = await call('/admin/payments', 'POST', { clientId, amount: 12, orderIds: [R.id] }, admin); assert.equal(rp.status, 200, JSON.stringify(rp.data)); await cron();
+assert.equal((await call('/orders/' + R.id, 'PUT', { status: 'cancelled', fee: 0 }, admin)).status, 200); await settle();
+assert.equal(where(R.id)[0], CANCELLED_TAB); assert.equal(cell(R.id, P), 'Refunded', 'paid + cancelled: Shipping status says Refunded');
+assert.ok((await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === R.id).paymentId, 'the portal knows it was paid (Refunded tag)');
+await call('/admin/payments/' + rp.data.id + '/delete', 'POST', {}, admin); await cron();
+assert.equal(cell(R.id, P), 'Cancelled', 'payment archived: back to Cancelled');
+console.log('PASS Refunded: paid cancelled orders say Refunded in the Cancelled tab, and follow the payments');
+
 // ---------- one-time switch from layout 13: one tab, oldest first, a broken row ----------
 const allRows = TABS().flatMap(t => Object.values(idsIn(t)).map(r => sheets.get(t).grid[r])).sort((a, b) => Number(a[30]) - Number(b[30]));
 sheets.delete(SHIPPED_TAB); sheets.delete(CANCELLED_TAB);
@@ -322,7 +333,7 @@ await DB.prepare("UPDATE portal_settings SET value='13' WHERE key='supplier_shee
 const ids0 = allRows.map(r => Number(r[30])), st = new Map();
 for (const id of ids0) st.set(id, await order(id));
 later(); const sw = await cron(); assert.equal(sw.ok, true, JSON.stringify(sw));
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '14');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '15');
 for (const id of ids0) { const o = st.get(id), want = o.status === 'cancelled' ? CANCELLED_TAB : ['shipped', 'delivered'].includes(o.status) && o.tracking_number ? SHIPPED_TAB : main(); assert.equal(where(id)?.[0], want, 'order ' + id + ' in ' + want); assert.equal(count(id), 1); }
 for (const t of TABS()) { const order0 = Object.entries(idsIn(t)).sort((a, b) => a[1] - b[1]).map(([id]) => st.get(Number(id))); assert.deepEqual(order0.map(o => o.id), [...order0].sort((a, b) => b.created_at - a.created_at || b.id - a.id).map(o => o.id), t + ': newest on top'); }
 assert.ok(sheets.get(main()).grid.some(r => r?.[0] === '2026-10-11'), 'a row without an order id stays in the supplier tab');

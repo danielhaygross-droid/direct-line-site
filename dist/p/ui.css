@@ -315,7 +315,7 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .po-name{font-size:12px;padding:1px 7px;border-radius:7px;background:var(--surface-3);cursor:pointer;white-space:nowrap}
 .pay-tag{display:inline-block;margin-inline-start:6px;padding:0 7px;border-radius:7px;font-size:11.5px;font-weight:700;line-height:18px;white-space:nowrap;vertical-align:middle}
 .pay-line{margin-top:4px}.pay-line .pay-tag{margin:0}
-.pay-tag.paid{background:color-mix(in srgb,var(--mint) 15%,transparent);color:var(--mint)}.pay-tag.unpaid{background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange)}
+.pay-tag.refunded{background:color-mix(in srgb,var(--mc-blue) 14%,transparent);color:var(--mc-blue)}.pay-tag.paid{background:color-mix(in srgb,var(--mint) 15%,transparent);color:var(--mint)}.pay-tag.unpaid{background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange)}
 .pay-sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .pay-sum>div{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2)}
 .pay-sum small{color:var(--muted);font-size:12px}.pay-sum b{font-size:18px}.pay-sum em{font-style:normal;color:var(--muted);font-size:12px}

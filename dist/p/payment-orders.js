@@ -20,7 +20,8 @@
     return /^\d{4}-\d{2}-\d{2}$/.test(k) ? new Date(k + 'T12:00:00').toLocaleDateString(he() ? 'he-IL' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : k;
   };
   // Small "Paid" / "Not paid" tag for order lists (nothing for orders with no bill yet); line = on its own line (table cells).
-  const tag = (o, adjustments, line = false) => { const s = state(o, adjustments), t = s === 'paid' ? '<span class="pay-tag paid">Paid</span>' : s === 'unpaid' ? '<span class="pay-tag unpaid">Not paid</span>' : ''; return t && line ? `<div class="pay-line">${t}</div>` : t; };
+  // Refunded (Erwin, 29 Oct 2026): a cancelled order the client had paid for (a linked payment), like the sheet.
+  const tag = (o, adjustments, line = false) => { const s = state(o, adjustments), t = o.status === 'cancelled' && o.paymentId ? '<span class="pay-tag refunded">Refunded</span>' : s === 'paid' ? '<span class="pay-tag paid">Paid</span>' : s === 'unpaid' ? '<span class="pay-tag unpaid">Not paid</span>' : ''; return t && line ? `<div class="pay-line">${t}</div>` : t; };
   const orderWord = n => n === 1 ? 'order' : 'orders';
 
   // Compares the amount with the ticked orders: '' when no amount or nothing ticked.
