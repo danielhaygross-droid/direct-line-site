@@ -335,7 +335,7 @@ await DB.prepare("UPDATE portal_settings SET value='13' WHERE key='supplier_shee
 const ids0 = allRows.map(r => Number(r[30])), st = new Map();
 for (const id of ids0) st.set(id, await order(id));
 later(); const sw = await cron(); assert.equal(sw.ok, true, JSON.stringify(sw));
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '17');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '18');
 for (const id of ids0) { const o = st.get(id), want = o.status === 'cancelled' ? CANCELLED_TAB : ['shipped', 'delivered'].includes(o.status) && o.tracking_number ? SHIPPED_TAB : main(); assert.equal(where(id)?.[0], want, 'order ' + id + ' in ' + want); assert.equal(count(id), 1); }
 for (const t of TABS()) { const order0 = Object.entries(idsIn(t)).sort((a, b) => a[1] - b[1]).map(([id]) => st.get(Number(id))); assert.deepEqual(order0.map(o => o.id), [...order0].sort((a, b) => b.created_at - a.created_at || b.id - a.id).map(o => o.id), t + ': newest on top'); }
 assert.ok(sheets.get(main()).grid.some(r => r?.[0] === '2026-10-11'), 'a row without an order id stays in the supplier tab');
@@ -351,7 +351,7 @@ const sortWithFilter = (tab, col, dir = 1) => {
   const rows = g.slice(FIRST_ROW - 1, end).map(r => r || []), sorted = [...rows].sort((a, b) => dir * String(a[col] ?? '').localeCompare(String(b[col] ?? '')));
   sorted.forEach((src, i) => { const r = g[FIRST_ROW - 1 + i] = [...(rows[i] || [])]; for (let c = f.startColumnIndex; c < (f.endColumnIndex ?? 200); c++) r[c] = src[c]; });
 };
-for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 34, t + ': the filter covers A-AH');
+for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 35, t + ': the filter covers A-AI');
 const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 21))])));
 const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);
 const before0 = supplierPart(), costs0 = await costs();

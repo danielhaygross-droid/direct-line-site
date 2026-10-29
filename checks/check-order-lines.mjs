@@ -97,6 +97,8 @@ try {
   assert.equal((await call('/orders', 'POST', { storeId: store.id, orderRef: 'BAD', buyerName: 'X', address1: '1 St', destination: 'US', photos: [photo], items: [{ link: LINK, quantity: 1 }, { link: '', quantity: 1 }] }, client)).status, 400, 'each line needs a link');
   ok(await call('/orders/' + shown.id, 'PUT', { productCost: 40, shippingFee: 0 }, admin));
   assert.equal(ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === shown.id).items.length, 4, 'a cost change keeps the lines');
+  // Cost per product from the supplier (AI, 30 Oct 2026): each product line shows its price.
+  await DB.prepare('UPDATE client_orders SET item_costs=? WHERE id=?').bind('25, 14.50', shown.id).run();
 
   // ---- 2. Screenshots: English + Hebrew, desktop + phone ----
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
@@ -108,6 +110,8 @@ try {
     await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector(`[data-open-order="${shown.id}"]`); await page.locator(`[data-open-order="${shown.id}"]`).first().click();
     await page.waitForSelector('.drawer.open'); await page.waitForTimeout(400);
     const dd = page.locator('.drawer.open dd', { hasText: 'Walnut' }); assert.ok(await dd.count() >= 1, tag); await dd.first().scrollIntoViewIfNeeded();
+    const prices = await page.locator('.drawer.open .pm-price').allInnerTexts(); assert.equal(prices.length, 2, tag + ' a price per product');
+    await page.locator('.drawer.open .pm-linkrow').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-order-prices.png`) });
     await page.screenshot({ path: path.join(out, `${tag}-order.png`) });
     assert.deepEqual(errors, [], tag); await ctx.close();
     ctx = await session(admin, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));

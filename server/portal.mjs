@@ -408,11 +408,13 @@ function orderOut(r) {
     // Supplier's total for the whole order (product + shipping), from the supplier Work Queue. Admin only.
     supplierCost: r.supplier_cost == null ? null : Number(r.supplier_cost),
     supplierCancelFee: r.supplier_cancel_fee == null ? null : Number(r.supplier_cancel_fee),
+    // Cost per product: the supplier's (admin only) and each product's share of the price (client and admin).
+    itemCosts: r.item_costs ? itemCostList(r.item_costs) : null, itemPrices: r.status === 'cancelled' ? null : itemPrices(r),
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   };
 }
 // What a client may see of an order: total only, never the product vs shipping breakdown (item #6).
-const CLIENT_HIDDEN = ['addressChangedAt', 'commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost', 'priceSource', 'supplierCancelFee'];
+const CLIENT_HIDDEN = ['addressChangedAt', 'itemCosts', 'commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost', 'priceSource', 'supplierCancelFee'];
 function clientOrder(o) {
   const out = { ...o, priced: o.productCost != null || o.shippingFee != null || o.quotedUnitPrice != null };
   for (const k of CLIENT_HIDDEN) delete out[k];
@@ -535,6 +537,21 @@ export function itemsSummary(items) {
 }
 function itemsOut(v) {
   try { const a = v ? JSON.parse(v) : null; return Array.isArray(a) && a.length ? a.map(i => ({ link: String(i.link || ''), quantity: Number(i.quantity) || 1, variant: String(i.variant || '') })) : null; } catch { return null; }
+}
+// Cost per product (Erwin, 30 Oct 2026): the supplier types one cost per product in the sheet (AI), e.g. "10.90, 9.00,
+// 11.00", in the order of the product links. The client sees each product's share of the order price (the costs scaled
+// to the price, so they add up to it and nothing else shows); null unless there is one cost for every product.
+export function itemCostList(text) {
+  const parts = String(text ?? '').split(/[,;\n]+/).map(p => p.match(/\d+(?:\.\d+)?/g)).filter(Boolean);
+  return parts.map(m => Number(m.at(-1)));
+}
+export function itemPrices(r) {
+  const links = String(r.etsy_url || '').split(/\s+/).filter(Boolean), costs = itemCostList(r.item_costs), price = Number(r.price || 0);
+  if (links.length < 2 || costs.length !== links.length || !(price > 0)) return null;
+  const sum = costs.reduce((n, c) => n + c, 0); if (!(sum > 0)) return null;
+  const cents = Math.round(price * 100), out = costs.map(c => Math.round(c / sum * cents));
+  out[out.length - 1] += cents - out.reduce((n, c) => n + c, 0);
+  return out.map(c => c / 100);
 }
 // Reads body.items: turns them into etsyUrl / quantity / variant (or returns an error text).
 function applyItems(body, admin) {
