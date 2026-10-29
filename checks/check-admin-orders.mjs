@@ -96,6 +96,10 @@ try {
     await ui.locator(`tr[data-open-order="${o.id}"]`).click(); await ui.waitForSelector('[data-set-status]');
     assert.deepEqual(await ui.locator('[data-set-status]').evaluateAll(b => b.map(x => x.dataset.setStatus)), ['pending', 'processing', 'shipped', 'delivered'], tag + ' all four statuses');
     await ui.locator('[data-set-status="shipped"]').click(); await page.waitForTimeout(900); assert.equal((await row(o)).status, 'shipped', tag);
+    // The Shipped filter is always on the chip row and lists the shipped order (29 Oct 2026).
+    await page.keyboard.press('Escape'); await ui.locator('[data-filter="shipped"]').click(); await page.waitForTimeout(300);
+    assert.ok(await ui.locator(`tr[data-open-order="${o.id}"]`).count(), tag + ' Shipped filter lists it'); await page.screenshot({ path: path.join(out, `${lang}-${width}-shipped.png`) });
+    await ui.locator('[data-filter="all"]').click(); await ui.locator(`tr[data-open-order="${o.id}"]`).click(); await ui.waitForSelector('[data-set-status]');
     await ui.locator('[data-set-status="pending"]').click(); await page.waitForTimeout(900); assert.equal((await row(o)).status, 'pending', tag + ' back to pending');
     // Fee on this order.
     await ui.locator('[data-fees-form] [name=commission]').fill('5');

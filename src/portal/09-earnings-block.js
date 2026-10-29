@@ -58,7 +58,8 @@
   const byFilter = (o, f) => f === 'all' || (f === 'unpaid' ? isUnpaid(o) : o.status === f);
   function renderChips() {
     const c = st => storeOrders().filter(o => byFilter(o, st)).length;
-    $('[data-chips]').innerHTML = ['all', 'unpaid', ...STATUSES].filter(st => st === 'all' || c(st) || st === S.filter)
+    // Shipped is always there, like in admin (29 Oct 2026), even before anything ships.
+    $('[data-chips]').innerHTML = ['all', 'unpaid', ...STATUSES].filter(st => st === 'all' || st === 'shipped' || c(st) || st === S.filter)
       .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}" aria-pressed="${S.filter === st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : st === 'unpaid' ? 'Not paid' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
   }
   // The orders on screen: store, status chip, search and sort (also what "Export to Excel" exports).

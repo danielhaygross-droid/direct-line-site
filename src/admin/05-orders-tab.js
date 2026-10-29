@@ -9,7 +9,8 @@
     const inClient = all.filter(o => !S.client || String(o.clientId) === S.client);
     const count = f => inClient.filter(o => matches(o, f)).length;
     const label = f => (f === 'archived' ? 'Archived orders' : f === 'all' ? 'All' : f === 'followups' ? 'New follow-ups' : f === 'needscost' ? 'Needs cost' : f === 'revision' ? 'Cost revision' : f === 'unpaid' ? 'Not paid' : UI.LABEL[f]);
-    $('[data-chips]').innerHTML = ['all', 'followups', 'revision', 'needscost', 'unpaid', ...STATUSES, 'archived'].filter(f => f === 'archived' || f === 'all' || count(f) || f === S.filter)
+    // Shipped is always there (Erwin, 29 Oct 2026: "we need a sort view for Shipped order"), even before anything ships.
+    $('[data-chips]').innerHTML = ['all', 'followups', 'revision', 'needscost', 'unpaid', ...STATUSES, 'archived'].filter(f => ['archived', 'all', 'shipped'].includes(f) || count(f) || f === S.filter)
       .map(f => `<button type="button" class="chip t-${f}${f === 'followups' ? ' alert' : ''}${S.filter === f ? ' on' : ''}" data-filter="${f}">${f !== 'all' && f !== 'followups' ? '<i class="dot"></i>' : ''}${label(f)} <span>${count(f)}</span></button>`).join('');
     const sel = $('[data-client-filter]');
     sel.innerHTML = '<option value="">All clients</option>' + S.ov.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
