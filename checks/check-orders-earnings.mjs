@@ -71,6 +71,7 @@ try {
     await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('tr[data-open-order]');
     const ord = await earnings(page);
     assert.deepEqual([ord.cards.length, ord.chart, ord.stores], [0, false, 0], tag + ' nothing repeated from Home on Orders');
+    assert.equal((await page.locator('[data-filter="shipped"] span').innerText()).trim(), '0', tag + ' Shipped filter shown even with nothing shipped (29 Oct 2026)');
     assert.equal(await page.locator('[data-client-chart], [data-earn]').count(), 0, tag + ' no chart on Orders');
     assert.equal(await page.locator('tr[data-open-order]').count(), 3, tag + ' all orders listed');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
