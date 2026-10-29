@@ -419,7 +419,8 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     // 18) AI Cost per product (USD) on all three tabs (Erwin, 30 Oct 2026). Added at the far right, so no column moves; the
     //     filter grows to A-AI so a sort still moves whole rows.
     const addItemCosts = h[ITEMS] !== ITEM_COSTS;
-    if (addDomestic || addCancelFee) await ensureColumns(env, sheetId, FEE + 1, fetchImpl);
+    // Google refuses a write past the last column: the sheet gets its columns before the header row is written.
+    if (addDomestic || addCancelFee || addItemCosts) await ensureColumns(env, sheetId, addItemCosts ? ITEMS + 1 : FEE + 1, fetchImpl);
     await batchValues(env, [revisionCounter(wq), { range: `${wq}!A5:AI5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
     const idCol = colName(h.indexOf('Order ID') >= 0 ? h.indexOf('Order ID') : 27);
