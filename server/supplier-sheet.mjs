@@ -83,7 +83,7 @@ export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Pho
 export const REFUNDED_SHIP = 'Refunded';
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', CANCELLED_SHIP = 'Cancelled', CANCEL_REQ_SHIP = 'Cancel requested', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'CANCELLED - do not ship' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '16';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '17';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 const markPaidDirtyDb = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
@@ -242,8 +242,11 @@ const paidFormat = sheetId => [
   { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 15, endColumnIndex: 16 }, cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: PAIDCOL, endIndex: PAIDCOL + 1 }, properties: { pixelSize: WIDTHS[PAIDCOL] }, fields: 'pixelSize' } },
 ];
-const totalsRow = wq => ({ range: `${wq}!O4:V4`, values: [['Totals (USD):', `=SUM(P${FIRST_ROW}:P)`, `="Paid by clients: "&TEXT(SUMIF(V${FIRST_ROW}:V,"${PAID}",P${FIRST_ROW}:P),"$#,##0.00")`,
-  `="Not paid yet: "&TEXT(SUMIF(V${FIRST_ROW}:V,"${NOT_PAID}",P${FIRST_ROW}:P),"$#,##0.00")`, `=COUNTIF(D${FIRST_ROW}:D,"${STATUS.cancelled}")&" cancelled"`, `=COUNTIF(T${FIRST_ROW}:T,"${DELAYED}")&" delayed"`, '', `=COUNTIF(V${FIRST_ROW}:V,"${NOT_PAID}")&" not paid"`]] });
+// Row 4 formulas read the order rows through INDIRECT (29 Oct 2026): a plain P6:P moves when rows are deleted at the top
+// (the Cancelled copy read from row 29 after the split), INDIRECT("P6:P") always starts at row 6.
+const all = c => `INDIRECT("${c}${FIRST_ROW}:${c}")`;
+const totalsRow = wq => ({ range: `${wq}!O4:V4`, values: [['Totals (USD):', `=SUM(${all('P')})`, `="Paid by clients: "&TEXT(SUMIF(${all('V')},"${PAID}",${all('P')}),"$#,##0.00")`,
+  `="Not paid yet: "&TEXT(SUMIF(${all('V')},"${NOT_PAID}",${all('P')}),"$#,##0.00")`, `=COUNTIF(${all('D')},"${STATUS.cancelled}")&" cancelled"`, `=COUNTIF(${all('T')},"${DELAYED}")&" delayed"`, '', `=COUNTIF(${all('V')},"${NOT_PAID}")&" not paid"`]] });
 // Delayed? (T) dropdown + Delay reason (U): yellow supplier columns; a delayed row's T turns orange.
 const DELAY = 19;
 const delayFormat = (sheetId, email) => [
@@ -262,7 +265,8 @@ const delayFormat = (sheetId, email) => [
 const revisionFormat = sheetId => ({ addConditionalFormatRule: { index: 0, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: COMP, endColumnIndex: COMP + 1 }], booleanRule: { condition: { type: 'TEXT_STARTS_WITH', values: [{ userEnteredValue: REVISION_FLAG }] }, format: { backgroundColor: { red: 1, green: 0.62, blue: 0.25 }, textFormat: { bold: true } } } } } });
 // Cost revision alerts for the supplier (Erwin, 28 Oct 2026): A4 counts the open requests (big orange text, empty
 // when none) and every row with an open request is light orange, so they can't be missed or filtered out of sight.
-const revisionCounter = wq => ({ range: `${wq}!A4`, values: [[`=IF(COUNTIF(O${FIRST_ROW}:O,"${REVISION_FLAG}*")=0,"","⚠ "&COUNTIF(O${FIRST_ROW}:O,"${REVISION_FLAG}*")&" COST REVISION REQUEST(S) WAITING: see the orange rows, check the cost, type the new Total cost")`]] });
+const revisionCounter = wq => ({ range: `${wq}!A4`, values: [[`=IF(COUNTIF(${all('O')},"${REVISION_FLAG}*")=0,"","⚠ "&COUNTIF(${all('O')},"${REVISION_FLAG}*")&" COST REVISION REQUEST(S) WAITING: see the orange rows, check the cost, type the new Total cost")`]] });
+const summaryRows = tabs => tabs.flatMap(t => [totalsRow(t), revisionCounter(t)]);
 const revisionAlerts = sheetId => [
   { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 12, foregroundColor: { red: 0.8, green: 0.35, blue: 0 } }, wrapStrategy: 'OVERFLOW_CELL' } }, fields: 'userEnteredFormat(textFormat,wrapStrategy)' } },
   { addConditionalFormatRule: { rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: 34 }], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=LEFT($O${FIRST_ROW},${REVISION_FLAG.length})="${REVISION_FLAG}"` }] }, format: { backgroundColor: { red: 1, green: 0.88, blue: 0.75 } } } } } },
@@ -397,6 +401,8 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     const widenFilter = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 15;
     // 16) "Refunded" in the Shipping status list (all three tabs); the cancelled rows get it from refreshPaidColumn.
     const addRefunded = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 16;
+    // 17) Row 4 (totals + cost revision counter) written again on all three tabs, with formulas that rows can't move.
+    const fixTotals = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 17;
     if (addDomestic || addCancelFee) await ensureColumns(env, sheetId, FEE + 1, fetchImpl);
     await batchValues(env, [revisionCounter(wq), { range: `${wq}!A5:AH5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
@@ -420,6 +426,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
         if (o && cellStr(r.ref) === refOf(o)) await saveRef(DB, o);
       }
     }
+    if (fixTotals) await batchValues(env, summaryRows(allTabs(wq)), fetchImpl);
     if (addRefunded) {
       const ids = []; for (const tab of allTabs(wq)) { const id = await workQueueSheetId(env, fetchImpl, true, tab); if (id != null) ids.push(id); }
       await batch(env, ids.map(statusRule), fetchImpl); await markPaidDirty(DB);
@@ -464,7 +471,7 @@ async function splitSupplierTabs(DB, env, wq, wqId, fetchImpl) {
   }
   await batch(env, requests, fetchImpl);
   for (const [tab, id] of Object.entries(sid)) sheetIdCache.set(cacheKey(env, tab), id);
-  await batchValues(env, Object.entries(tabText).map(([tab, [title, text]]) => ({ range: `${tab}!A2:A3`, values: [[title], [text]] })), fetchImpl);
+  await batchValues(env, [...Object.entries(tabText).map(([tab, [title, text]]) => ({ range: `${tab}!A2:A3`, values: [[title], [text]] })), ...summaryRows([SHIPPED_TAB, CANCELLED_TAB])], fetchImpl);
   // The copies keep the website's protected columns; if Google did not copy the protection, it is added.
   const prot = (await sheetsRequest(env, '?fields=sheets(properties(sheetId),protectedRanges(protectedRangeId))', {}, fetchImpl)).sheets || [];
   const email = googleSheetsConfig(env).email, bare = [sid[SHIPPED_TAB], sid[CANCELLED_TAB]].filter(id => !prot.find(s => s.properties?.sheetId === id)?.protectedRanges?.length);
