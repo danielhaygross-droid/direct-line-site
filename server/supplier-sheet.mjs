@@ -369,6 +369,8 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     const { wq } = await tabNames(DB);
     const sheetId = await workQueueSheetId(env, fetchImpl, true, wq);
     if (sheetId == null) throw new Error('Work Queue tab not found');
+    // Google refuses to read or write past a tab's last column: every supplier tab gets A-AI before anything below reads it.
+    for (const tab of allTabs(wq)) { const id = tab === wq ? sheetId : await workQueueSheetId(env, fetchImpl, true, tab); if (id != null) await ensureColumns(env, id, ITEMS + 1, fetchImpl); }
     const header = async () => (await sheetsRequest(env, '/values/' + encodeURIComponent(`${wq}!A5:AI5`), {}, fetchImpl)).values?.[0]?.map(norm) || [];
     let h = await header();
     // 1) Country (L) becomes Tax number, and Gift message is added after it. The column is inserted inside the
