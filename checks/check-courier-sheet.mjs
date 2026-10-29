@@ -93,7 +93,7 @@ console.log('PASS old notes split into Tax number / Gift message');
 assert.equal(wq[5][15], 55.9, 'cost moved to P'); assert.equal(wq[5][16], 'UL602450763YP', 'tracking moved to Q'); assert.equal(wq[5][14], '', 'competitor price O empty');
 assert.equal(wq[5][17], '', 'empty courier'); assert.equal(wq[5][18], 'Not shipped', 'status moved to S');
 assert.equal(wq[5][30], String(a.id), 'order id in AE'); assert.equal(wq[5][31], String(id), 'client id in AF');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '16', 'up to date: layout 16 (Refunded, filter A-AH, Shipped / Cancelled tabs, Delayed? + Delay reason, red cancelled rows, Domestic Express Tracking Number, cost revision colour)');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '17', 'up to date: layout 17 (row 4 on every tab, Refunded, filter A-AH, Shipped / Cancelled tabs, Delayed? + Delay reason, red cancelled rows, Domestic Express Tracking Number, cost revision colour)');
 assert.ok(rules.some(r => r.booleanRule?.condition?.type === 'TEXT_STARTS_WITH' && r.booleanRule.condition.values[0].userEnteredValue === 'COST REVISION REQUESTED'), 'layout 12: Competitor price turns orange while a cost revision is open');
 assert.ok(rules.some(r => r.booleanRule?.condition?.type === 'CUSTOM_FORMULA' && r.booleanRule.condition.values[0].userEnteredValue.startsWith('=LEFT($O6,23)="COST REVISION REQUESTED"')), 'layout 13: rows with an open cost revision turn orange');
 const o1 = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(a.id).first();
@@ -203,7 +203,7 @@ assert.deepEqual(wq[4].slice(0, HEADERS.length), HEADERS);
 assert.equal(wq[5][15], costBefore, 'cost stays in P'); assert.equal(wq[6][16], trackBefore, 'tracking stays in Q');
 assert.equal(wq[5][17], courierBefore, 'courier stays in R'); assert.equal(wq[5][19], '', 'new Delayed? cell is empty'); assert.equal(wq[5][30], String(a.id), 'ids moved to AE');
 assert.equal(p.changed.length, 0, 'nothing applied by the switch');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '16');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '17');
 console.log('PASS live layout 5 -> 8: two columns added after Shipping status, everything else moved with its data');
 
 // 10) Layout 6 -> 7 (the live sheet on 23 Oct): only the red / orange row rules are added, no columns move.
@@ -214,9 +214,9 @@ assert.deepEqual(calls.filter(c => c.startsWith('insert')), [], 'no columns adde
 assert.equal(cancelRules().length, 3, 'status cell + whole red row + orange row for requests');
 const redRow = cancelRules().find(x => x.ranges[0].startColumnIndex === 0 && x.booleanRule.format.textFormat.strikethrough);
 assert.equal(redRow.ranges[0].endColumnIndex, 30, 'the whole row up to the photos'); assert.equal(redRow.ranges[0].startRowIndex, 5, 'from the first order row');
-assert.match(wq[3][18], /COUNTIF\(D6:D,"CANCELLED - do not ship"\)&" cancelled"/, 'row 4 counts cancelled orders');
+assert.match(wq[3][18], /COUNTIF\(INDIRECT\("D6:D"\),"CANCELLED - do not ship"\)&" cancelled"/, 'row 4 counts cancelled orders');
 assert.match(wq[2][0], /RED rows are cancelled orders: do not buy or ship them/, 'the instructions say so');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '16');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '17');
 // Running it again adds nothing.
 rules.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(cancelRules().length, 0, 'rules added once');
 // Cancelling an order: its Status cell says so, in the text the rules look for.
@@ -240,7 +240,7 @@ calls.length = 0; rules.length = 0; p = await pollSupplierSheet(DB, env, { fetch
 assert.deepEqual(calls.filter(c => c.startsWith('insert')), [], 'no columns inserted');
 assert.equal(wq[4][32], 'Domestic Express Tracking Number'); assert.equal(wq[4][30], 'Order ID', 'ids stay in AE/AF');
 assert.match(wq[2][0], /Domestic Express Tracking Number \(yellow, far right/);
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '16');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '17');
 const rA = wq.findIndex(row => row && row[30] === String(a.id)); wq[rA][32] = 'SF1234567890';
 await syncPortalOrderToGoogleSheet(DB, env, a.id, fakeFetch);
 assert.equal(wq[rA][32], 'SF1234567890', 'the supplier’s domestic tracking is kept when the website rewrites the row');
@@ -250,7 +250,7 @@ console.log('PASS layout 7 -> 8: Domestic Express Tracking Number in AG, kept on
 await DB.prepare("UPDATE portal_settings SET value='8' WHERE key='supplier_sheet_layout'").run();
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
 assert.equal(calls.filter(c => c === 'hide C-D').length, 1, 'Shop and Status hidden'); assert.deepEqual(calls.filter(c => c.startsWith('insert')), [], 'nothing inserted or deleted');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '16');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '17');
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(calls.filter(c => c === 'hide C-D').length, 0, 'only once');
 assert.equal((await DB.prepare('SELECT domestic_tracking FROM client_orders WHERE id=?').bind(a.id).first()).domestic_tracking, 'SF1234567890', 'AG copied to the order');
 const listed = (await call('/admin/orders', 'GET', null, admin)).data.orders.find(o => o.id === a.id); assert.equal(listed.domesticTracking, 'SF1234567890', 'admin sees it');
@@ -265,7 +265,7 @@ await DB.prepare("UPDATE portal_settings SET value='9' WHERE key='supplier_sheet
 calls.length = 0; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p));
 assert.equal(calls.filter(c => c === 'show C').length, 1, 'Shop column, once');
 assert.deepEqual([...new Set(calls.filter(c => c.startsWith('status list')))], ['status list Not shipped/Shipped/Cancel requested/Cancelled/Refunded'], 'status list (Refunded since layout 16, on every supplier tab)');
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '16');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '17');
 await syncPortalOrderToGoogleSheet(DB, env, b.id, fakeFetch); assert.equal(at(b)[18], 'Cancelled', 'existing cancelled row rewritten');
 at(a)[18] = 'Cancelled'; p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
 assert.notEqual((await DB.prepare('SELECT status FROM client_orders WHERE id=?').bind(a.id).first()).status, 'cancelled', 'the supplier picking Cancelled does not cancel the order');
