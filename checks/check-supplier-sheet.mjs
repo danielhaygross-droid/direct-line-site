@@ -47,7 +47,8 @@ globalThis.fetch = (real => async (url, opt = {}) => {
     for (const rq of body.requests) {
       const [kind, a] = Object.entries(rq)[0];
       const byId = id => [...sheets].find(([, s]) => s.sheetId === id);
-      if (kind === 'duplicateSheet') { const [, src] = byId(a.sourceSheetId); if (sheets.has(a.newSheetName) || (a.newSheetId != null && byId(a.newSheetId))) return Response.json({ error: { message: 'taken' } }, { status: 400 }); const t = addTab(a.newSheetName, a.newSheetId ?? nextId++); t.grid = JSON.parse(JSON.stringify(src.grid)); t.prot = [...src.prot]; t.hidden = src.hidden; }
+      if (kind === 'duplicateSheet') { const [, src] = byId(a.sourceSheetId); if (sheets.has(a.newSheetName) || (a.newSheetId != null && byId(a.newSheetId))) return Response.json({ error: { message: 'taken' } }, { status: 400 }); const t = addTab(a.newSheetName, a.newSheetId ?? nextId++); t.grid = JSON.parse(JSON.stringify(src.grid)); t.prot = [...src.prot]; t.hidden = src.hidden; t.filter = src.filter && { ...src.filter, sheetId: t.sheetId }; }
+      else if (kind === 'setBasicFilter') byId(a.filter.range.sheetId)[1].filter = { ...a.filter.range };
       else if (kind === 'addProtectedRange') byId(a.protectedRange.range.sheetId)[1].prot.push(a.protectedRange);
       else if (kind === 'moveDimension') { const [, s] = byId(a.source.sheetId), n = a.source.endIndex - a.source.startIndex; while (s.grid.length < a.source.endIndex) s.grid.push([]); const items = s.grid.splice(a.source.startIndex, n); s.grid.splice(a.destinationIndex > a.source.startIndex ? a.destinationIndex - n : a.destinationIndex, 0, ...items); }
       else if (kind === 'updateSheetProperties') {
@@ -322,13 +323,42 @@ await DB.prepare("UPDATE portal_settings SET value='13' WHERE key='supplier_shee
 const ids0 = allRows.map(r => Number(r[30])), st = new Map();
 for (const id of ids0) st.set(id, await order(id));
 later(); const sw = await cron(); assert.equal(sw.ok, true, JSON.stringify(sw));
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '14');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '15');
 for (const id of ids0) { const o = st.get(id), want = o.status === 'cancelled' ? CANCELLED_TAB : ['shipped', 'delivered'].includes(o.status) && o.tracking_number ? SHIPPED_TAB : main(); assert.equal(where(id)?.[0], want, 'order ' + id + ' in ' + want); assert.equal(count(id), 1); }
 for (const t of TABS()) { const order0 = Object.entries(idsIn(t)).sort((a, b) => a[1] - b[1]).map(([id]) => st.get(Number(id))); assert.deepEqual(order0.map(o => o.id), [...order0].sort((a, b) => b.created_at - a.created_at || b.id - a.id).map(o => o.id), t + ': newest on top'); }
 assert.ok(sheets.get(main()).grid.some(r => r?.[0] === '2026-10-11'), 'a row without an order id stays in the supplier tab');
 assert.ok(!sheets.get(SHIPPED_TAB).grid.some(r => r?.[0] === '2026-10-11'), 'and is not copied');
 assert.equal(cell(B.id, O), '9400111899223197428490'); assert.equal(sheets.get(SHIPPED_TAB).grid[2][0], 'Shipped orders with a tracking number, newest on top. They move here from the Orders tab by themselves. You can still correct the Total cost, Tracking number or Courier here: the website reads this tab too.');
 console.log('PASS one-time switch: three tabs, every order in exactly one, newest on top, supplier values kept');
+
+// ---------- sorting in the sheet (29 Oct 2026 incident) ----------
+// The supplier sorts with the filter arrows: Google moves only the filter's columns. The filter used to stop at AD, so the
+// hidden order ids (AE) stayed put and every row's supplier cells ended up next to another order.
+const sortWithFilter = (tab, col, dir = 1) => {
+  const s = sheets.get(tab), f = s.filter, g = s.grid, end = lastRow(tab);
+  const rows = g.slice(FIRST_ROW - 1, end).map(r => r || []), sorted = [...rows].sort((a, b) => dir * String(a[col] ?? '').localeCompare(String(b[col] ?? '')));
+  sorted.forEach((src, i) => { const r = g[FIRST_ROW - 1 + i] = [...(rows[i] || [])]; for (let c = f.startColumnIndex; c < (f.endColumnIndex ?? 200); c++) r[c] = src[c]; });
+};
+for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 34, t + ': the filter covers A-AH');
+const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 21))])));
+const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);
+const before0 = supplierPart(), costs0 = await costs();
+sortWithFilter(main(), 1, -1); assert.equal((await cron()).ok, true);
+await call('/orders/' + A.id, 'PUT', { notes: 'after the sort' }, admin); await settle();
+assert.deepEqual(supplierPart(), before0, 'sorted with the filter: every row keeps its own supplier cells');
+assert.equal(await costs(), costs0, 'no cost or tracking taken from another order');
+console.log('PASS sorting in the sheet moves whole rows (filter covers A-AH)');
+// An old-style narrow filter (A-AD) splits rows: the check sees it, reads nothing and writes nothing.
+sheets.get(main()).filter.endColumnIndex = 30; sortWithFilter(main(), 1, 1);
+const split = await cron();
+assert.ok(split.outOfLine > 0 && split.skipped.some(x => /out of line/.test(x.why.join())), 'rows out of line reported ' + JSON.stringify(split));
+assert.equal(await costs(), costs0, 'nothing applied from the out-of-line rows');
+const gm2 = sheets.get(main()).grid, aRow = idsIn(main())[A.id], aB = gm2[aRow][1];
+const wrong = (await order(A.id)).sheet_ref !== String(aB);
+await call('/orders/' + A.id, 'PUT', { notes: 'while out of line' }, admin); await settle();
+assert.equal(gm2[aRow][1], aB, 'the website does not rewrite an out-of-line row');
+assert.ok(wrong, 'A’s row is out of line after the narrow sort'); assert.notEqual((await order(A.id)).sheet_sync_status, 'synced', 'its sync is held back (retried later)');
+console.log('PASS out-of-line rows (sorted without the hidden columns): not read, not rewritten, reported');
 
 // Cron needs the secret.
 assert.equal((await route(new Request('http://x/api/cron/supplier-sheet'), { db: DB, env })).status, 401);

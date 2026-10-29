@@ -43,6 +43,8 @@ export const SUPPLIER_SHEET_SCHEMA = [
   // AH Cancellation fee (USD) the supplier charges for a cancelled order (Erwin, 26 Oct 2026); the admin approves it.
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS supplier_cancel_fee DOUBLE PRECISION',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_cancel_fee TEXT',
+  // B (Order) as the website last wrote it: a row whose B no longer matches is out of line (see rowOutOfLine).
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS sheet_ref TEXT',
 ];
 
 export const WQ = 'Work Queue';
@@ -79,7 +81,7 @@ export const HEADERS = ['Date', 'Order', 'Shop', 'Status', 'Photo preview', 'Pho
 // filters them to sort out refunds per store). Picking it in the sheet does not cancel anything on the website.
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', CANCELLED_SHIP = 'Cancelled', CANCEL_REQ_SHIP = 'Cancel requested', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'CANCELLED - do not ship' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '14';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '15';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 const markPaidDirtyDb = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
@@ -156,12 +158,21 @@ async function workQueueSheetId(env, fetchImpl, fresh, wq = WQ) {
   if (s) sheetIdCache.set(cacheKey(env, wq), s.properties.sheetId); else sheetIdCache.delete(cacheKey(env, wq));
   return s ? s.properties.sheetId : null;
 }
-// Order ids (AE) and client ids (AF) of the rows of several tabs, in one read.
+// Order ids (AE), client ids (AF) and the Order cell (B) of the rows of several tabs, in one read.
 async function idRows(env, fetchImpl, tabs) {
-  const ranges = tabs.map(t => 'ranges=' + encodeURIComponent(`${t}!AE${FIRST_ROW}:AF`)).join('&');
-  const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS', {}, fetchImpl);
-  return (data.valueRanges || []).flatMap((v, k) => (v.values || []).map((r, i) => ({ tab: tabs[k], row: FIRST_ROW + i, orderId: Number(r?.[0]), clientId: Number(r?.[1]) })));
+  const ranges = tabs.flatMap(t => [`${t}!AE${FIRST_ROW}:AF`, `${t}!B${FIRST_ROW}:B`]).map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+  const v = ((await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl)).valueRanges || []).map(x => x.values || []);
+  return tabs.flatMap((tab, k) => v[k * 2].map((r, i) => ({ tab, row: FIRST_ROW + i, orderId: Number(r?.[0]), clientId: Number(r?.[1]), ref: v[k * 2 + 1][i]?.[0] ?? '' })));
 }
+// Split rows (29 Oct 2026): the supplier sorted a tab with a filter that did not cover the hidden id columns, so Google
+// moved A-AD but left the order ids (AE) where they were; the website then rewrote its cells by id and read the supplier's
+// cost / tracking from other orders. Every row now carries a check: B (Order) must still be what the website last wrote
+// for the order in AE. If not, the row is out of line: nothing is read from it or written to it, and the admin is told.
+const cellStr = v => (typeof v === 'number' || typeof v === 'boolean' ? String(v) : norm(v));
+const refOf = o => norm(o.order_ref || '#' + o.id);
+export const rowOutOfLine = (row, o) => !!norm(o?.sheet_ref) && cellStr(row.ref) !== norm(o.sheet_ref);
+// The filter (header arrows) covers every column, so sorting in the sheet always moves whole rows.
+const fullFilter = sheetId => ({ setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 34 } } } });
 const batchValues = (env, data, fetchImpl) => sheetsRequest(env, '/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data }) }, fetchImpl);
 const batch = (env, requests, fetchImpl) => sheetsRequest(env, ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests }) }, fetchImpl);
 // Column widths (px) for A–AF, sized to their content. AE–AF (ids) are hidden; W–AD (more photos/links) are grouped.
@@ -369,6 +380,8 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     const addRevisionAlerts = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 13;
     // 14) Shipped and Cancelled tabs, newest orders on top (Erwin, 29 Oct 2026). New tabs and row moves only, no column moves.
     const addTabs = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 14;
+    // 15) The filter covers A-AH on every supplier tab (it was A-AD, so a sort split rows from their hidden ids).
+    const widenFilter = Number(String(v || '').startsWith('migrating:') ? 0 : v || 0) < 15;
     if (addDomestic || addCancelFee) await ensureColumns(env, sheetId, FEE + 1, fetchImpl);
     await batchValues(env, [revisionCounter(wq), { range: `${wq}!A5:AH5`, values: [HEADERS] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
@@ -382,6 +395,16 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
       ...(addDelay || addPaid ? delayFormat(sheetId, googleSheetsConfig(env).email) : []), ...(addCancel ? cancelFormat(sheetId) : []), ...(addDomestic ? domesticFormat(sheetId) : []), ...(hideShopStatus ? [hideCD(sheetId)] : []), ...(addCancelStatus ? [statusRule(sheetId), showShop(sheetId)] : []), ...(addRevision ? [revisionFormat(sheetId)] : []), ...(addRevisionAlerts ? revisionAlerts(sheetId) : []), ...(addCancelFee ? cancelFeeFormat(sheetId) : [])], fetchImpl);
     if (addPaid) await markPaidDirty(DB);
     if (addTabs) await splitSupplierTabs(DB, env, wq, sheetId, fetchImpl);
+    if (widenFilter) {
+      const ids = []; for (const tab of allTabs(wq)) { const id = await workQueueSheetId(env, fetchImpl, true, tab); if (id != null) ids.push(id); }
+      await batch(env, ids.map(fullFilter), fetchImpl);
+      // The check starts from what the rows show now (the sheet was put right by hand on 29 Oct): rows whose B matches.
+      for (const r of await idRows(env, fetchImpl, allTabs(wq))) {
+        if (!(r.orderId > 0)) continue;
+        const o = await DB.prepare('SELECT id, order_ref FROM client_orders WHERE id=?').bind(r.orderId).first();
+        if (o && cellStr(r.ref) === refOf(o)) await saveRef(DB, o);
+      }
+    }
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested') OR revision_status <> '')").run();
     await putSetting(DB, LAYOUT, LAYOUT_NOW);
@@ -475,6 +498,8 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
   if (!await ensureLayout(DB, env, fetchImpl)) throw new Error('The supplier sheet is being updated. This will be retried automatically.');
   const { wq } = await tabNames(DB), tabs = allTabs(wq);
   const found = (await idRows(env, fetchImpl, tabs)).filter(r => r.orderId === Number(order.id));
+  const split = found.find(r => rowOutOfLine(r, order));
+  if (split) throw Object.assign(new Error(`Supplier sheet row ${split.tab} ${split.row} is out of line: it has order id ${order.id} but shows "${cellStr(split.ref)}" instead of "${order.sheet_ref}". Rows were probably sorted without the hidden columns. Nothing was written; fix the sheet first.`), { outOfLine: true });
   const drop = async list => { for (const t of tabs) await deleteRows(env, list.filter(r => r.tab === t).map(r => r.row), fetchImpl, t); };
   if (order.archived || order.client_archived) { await drop(found); return { enabled: true, removed: found.length }; }
   const shop = order.store_id == null ? null : await DB.prepare('SELECT name FROM client_stores WHERE id=?').bind(order.store_id).first();
@@ -485,7 +510,7 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
     const r = here.row;
     await batchValues(env, [{ range: `${tab}!A${r}:O${r}`, values: [am] }, { range: `${tab}!V${r}:AF${r}`, values: [qz] },
       ...changes.map(([i, v]) => ({ range: `${tab}!${'PQRSTU'[i]}${r}`, values: [[v]] }))], fetchImpl);
-    await saveSheetCells(DB, order, changes);
+    await saveSheetCells(DB, order, changes); await saveRef(DB, order);
     const sheetId = await workQueueSheetId(env, fetchImpl, false, tab);
     if (sheetId != null) await batch(env, [rowHeight(sheetId, r, rowPx(am))], fetchImpl);
     // A copy left in another tab by a move that stopped halfway.
@@ -506,6 +531,7 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
     method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values: [[...am, ...supplier, ...qz, ...extra]] }),
   }, fetchImpl);
   if (from) await saveSheetCells(DB, order, changes); else await rememberSupplierCells(DB, order, supplier);
+  await saveRef(DB, order);
   const row = Number(/![A-Z]+(\d+)/.exec(res?.updates?.updatedRange || '')?.[1]);
   const sheetId = await workQueueSheetId(env, fetchImpl, false, tab);
   if (row && sheetId != null) await batch(env, [...(row > FIRST_ROW ? [moveRow(sheetId, row, FIRST_ROW)] : []), rowHeight(sheetId, FIRST_ROW, rowPx(am))], fetchImpl);
@@ -526,6 +552,7 @@ function websiteSupplierCells(o) {
   if (!shippedNow && want !== s && (cancelWords.includes(want) || cancelWords.includes(s))) out.push([3, want, 'sheet_shipped', want]);
   return out;
 }
+const saveRef = (DB, o) => DB.prepare('UPDATE client_orders SET sheet_ref=? WHERE id=?').bind(refOf(o), o.id).run();
 const saveSheetCells = async (DB, o, changes) => { for (const [, , col, v] of changes) await DB.prepare(`UPDATE client_orders SET ${col}=? WHERE id=?`).bind(v, o.id).run(); };
 // AG / AH for a row written from the website (new row, setup): what the sheet last showed, so nothing is cleared.
 const extraCells = o => { const fee = norm(o.sheet_cancel_fee); return [txt(o.domestic_tracking), /^\d+(\.\d+)?$/.test(fee) ? Number(fee) : txt(fee)]; };
@@ -699,25 +726,32 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
     if (await getSetting(DB, PAID_DIRTY)) { const seen = await getSetting(DB, PAID_DIRTY); await refreshPaidColumn(DB, env, fetchImpl); await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(PAID_DIRTY, seen).run(); }
     // All three tabs (Orders, Shipped, Cancelled): the supplier can edit in any of them.
     const tabs = allTabs(wq);
-    const ranges = tabs.flatMap(tab => [`${tab}!P${FIRST_ROW}:U`, `${tab}!AE${FIRST_ROW}:AE`, `${tab}!AG${FIRST_ROW}:AH`]).map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+    const ranges = tabs.flatMap(tab => [`${tab}!P${FIRST_ROW}:U`, `${tab}!AE${FIRST_ROW}:AE`, `${tab}!AG${FIRST_ROW}:AH`, `${tab}!B${FIRST_ROW}:B`]).map(r => 'ranges=' + encodeURIComponent(r)).join('&');
     const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
     const got = (data.valueRanges || []).map(v => v.values || []), byOrder = new Map();
     tabs.forEach((tab, k) => {
-      const [inputs, ids, domestic] = got.slice(k * 3, k * 3 + 3);
+      const [inputs, ids, domestic, refs] = got.slice(k * 4, k * 4 + 4);
       (ids || []).forEach((r, i) => {
-        const row = { orderId: Number(r?.[0]), cost: inputs?.[i]?.[0] ?? '', tracking: inputs?.[i]?.[1] ?? '', courier: inputs?.[i]?.[2] ?? '', shipped: inputs?.[i]?.[3] ?? '', delayed: inputs?.[i]?.[4] ?? '', reason: inputs?.[i]?.[5] ?? '', domestic: domestic?.[i]?.[0] ?? '', cancelFee: domestic?.[i]?.[1] ?? '' };
+        const row = { orderId: Number(r?.[0]), cost: inputs?.[i]?.[0] ?? '', tracking: inputs?.[i]?.[1] ?? '', courier: inputs?.[i]?.[2] ?? '', shipped: inputs?.[i]?.[3] ?? '', delayed: inputs?.[i]?.[4] ?? '', reason: inputs?.[i]?.[5] ?? '', domestic: domestic?.[i]?.[0] ?? '', cancelFee: domestic?.[i]?.[1] ?? '', ref: refs?.[i]?.[0] ?? '', tab, sheetRow: FIRST_ROW + i };
         // An order in two tabs (a move that stopped halfway) is read once.
         if (Number.isSafeInteger(row.orderId) && row.orderId > 0 && !byOrder.has(row.orderId)) byOrder.set(row.orderId, row);
       });
     });
-    const rows = [...byOrder.values()];
+    let rows = [...byOrder.values()];
     result.checked = rows.length;
     // One query for what the website last saw in each row; only rows that differ are loaded and applied.
     const seen = new Map();
     for (let i = 0; i < rows.length; i += 200) {
       const ids = rows.slice(i, i + 200).map(r => r.orderId);
-      const found = (await DB.prepare(`SELECT id, sheet_cost, sheet_tracking, sheet_courier, sheet_shipped, sheet_delayed, sheet_delay_reason, sheet_cancel_fee, domestic_tracking FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
+      const found = (await DB.prepare(`SELECT id, order_ref, sheet_ref, sheet_cost, sheet_tracking, sheet_courier, sheet_shipped, sheet_delayed, sheet_delay_reason, sheet_cancel_fee, domestic_tracking FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
       for (const f of found) seen.set(Number(f.id), f);
+    }
+    // Out-of-line rows: their supplier cells belong to another order, so nothing is applied from them.
+    const split = rows.filter(r => rowOutOfLine(r, seen.get(r.orderId)));
+    if (split.length) {
+      result.outOfLine = split.length; console.error('Supplier sheet rows out of line', split.map(r => `${r.tab}!${r.sheetRow} id ${r.orderId}`).join(', '));
+      for (const r of split) result.skipped.push({ orderId: r.orderId, ref: seen.get(r.orderId).order_ref, why: [`row ${r.tab} ${r.sheetRow} is out of line (shows ${cellStr(r.ref)}): not read`] });
+      rows = rows.filter(r => !split.includes(r));
     }
     const cellText = v => (typeof v === 'number' || typeof v === 'boolean' ? String(v) : norm(v));
     for (const r of rows) {
@@ -802,7 +836,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     const { am, qz } = websiteCells(env, o, photos, o.shop_name || '');
     const supplier = supplierCells(o);
     rows.push([...am, ...supplier, ...qz, ...extraCells(o)]);
-    await rememberSupplierCells(DB, o, supplier);
+    await rememberSupplierCells(DB, o, supplier); await saveRef(DB, o);
   }
   const last = FIRST_ROW + Math.max(rows.length, 1) - 1;
   await batchValues(env, [
@@ -832,7 +866,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     ...rows.map((row, i) => rowHeight(sheetId, FIRST_ROW + i, rowPx(row))),
     { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 } } },
     { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: 22, endIndex: 30 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
-    { setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: 30 } } } },
+    fullFilter(sheetId),
     ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId), hideCD(sheetId), statusRule(sheetId), showShop(sheetId), revisionFormat(sheetId), ...revisionAlerts(sheetId), ...cancelFeeFormat(sheetId),
     // Only the supplier columns (and Competitor price) are editable by others; the rest is written by the website.
     { addProtectedRange: { protectedRange: { range: cols(0, 14), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
