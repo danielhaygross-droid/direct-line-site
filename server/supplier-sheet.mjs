@@ -322,6 +322,9 @@ const cancelFeeFormat = (sheetId, c = C) => { const FEE = c.FEE; return [
 ]; };
 // Q (AI before layout 19): yellow, open to the supplier, kept as text (several numbers in one cell).
 const itemCostsFormat = (sheetId, c = C) => { const ITEMS = c.ITEMS; return [
+  // No number rule: the cell holds several costs as text. The live AI had the cancellation fee's rule ("number >= 0"),
+  // which moved to Q with it and flagged "27.9, 21.9, 31.9" as Invalid (Erwin, 30 Oct 2026).
+  { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 } } },
   { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,textFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
   { repeatCell: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.95, blue: 0.7 }, numberFormat: { type: 'TEXT' }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,numberFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
   { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 }, cell: { note: 'Supplier: only for orders with several products (Product 1, 2, 3 in Product / variation). Type the cost of each product in that order, separated by commas, e.g. 10.90, 9.00, 11.00. Together they should make the Total cost. Our client sees each product\'s price.' }, fields: 'note' } },
@@ -483,7 +486,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     if (c === C18) {
       const tabs = []; for (const tab of allTabs(wq)) { const id = await workQueueSheetId(env, fetchImpl, true, tab); if (id != null) tabs.push([tab, id]); }
       const move = []; for (const [tab, id] of tabs) if ((await header(tab))[C18.ITEMS] === ITEM_COSTS) move.push({ moveDimension: { source: { sheetId: id, dimension: 'COLUMNS', startIndex: C18.ITEMS, endIndex: C18.ITEMS + 1 }, destinationIndex: C.ITEMS } });
-      if (move.length) await batch(env, move, fetchImpl);
+      if (move.length) await batch(env, [...move, ...tabs.flatMap(([, id]) => itemCostsFormat(id))], fetchImpl);
       for (const [tab] of tabs) if ((await header(tab))[C.ITEMS] !== ITEM_COSTS) throw new Error(`Cost per product did not move to ${L(C.ITEMS)} in ${tab}`);
       await batchValues(env, [...tabs.map(([tab]) => ({ range: `${tab}!A5:${L(C.END - 1)}5`, values: [HEADERS] })), { range: `${wq}!A3`, values: [[instructions]] }, ...summaryRows(tabs.map(([tab]) => tab))], fetchImpl);
     }

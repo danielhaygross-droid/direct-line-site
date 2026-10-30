@@ -48,6 +48,7 @@ globalThis.fetch = (real => async (url, opt = {}) => {
       const [kind, a] = Object.entries(rq)[0];
       const byId = id => [...sheets].find(([, s]) => s.sheetId === id);
       if (kind === 'duplicateSheet') { const [, src] = byId(a.sourceSheetId); if (sheets.has(a.newSheetName) || (a.newSheetId != null && byId(a.newSheetId))) return Response.json({ error: { message: 'taken' } }, { status: 400 }); const t = addTab(a.newSheetName, a.newSheetId ?? nextId++); t.grid = JSON.parse(JSON.stringify(src.grid)); t.prot = [...src.prot]; t.hidden = src.hidden; t.filter = src.filter && { ...src.filter, sheetId: t.sheetId }; }
+      else if (kind === 'setDataValidation') (byId(a.range.sheetId)[1].rules ||= []).push(a);
       else if (kind === 'setBasicFilter') byId(a.filter.range.sheetId)[1].filter = { ...a.filter.range };
       else if (kind === 'addProtectedRange') byId(a.protectedRange.range.sheetId)[1].prot.push(a.protectedRange);
       // Columns (layout 19): every row's cells move, like Google does (row 1 to the last row).
@@ -367,7 +368,8 @@ assert.equal(sheets.get(multi[0]).grid[idsIn(multi[0])[multi[1]]][16], '27.9, 21
 assert.equal(JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results), costs18, 'no cost or tracking changed by the switch');
 const again19 = await cron(); assert.equal(again19.ok, true); for (const t of TABS()) assert.deepEqual(sheets.get(t).grid[4], HEADERS, 'safe to run again');
 assert.equal((await order(Number(multi[1]))).item_costs, '27.9, 21.9, 31.9', 'read from Q after the switch');
-console.log('PASS layout 19: Cost per product moved next to Total cost on all tabs, every row kept');
+for (const t of TABS()) assert.ok((sheets.get(t).rules || []).some(v => v.range.startColumnIndex === 16 && v.range.endColumnIndex === 17 && !v.rule), t + ': no number rule on Cost per product (Q)');
+console.log('PASS layout 19: Cost per product moved next to Total cost on all tabs, every row kept, no number rule on Q');
 
 // ---------- sorting in the sheet (29 Oct 2026 incident) ----------
 // The supplier sorts with the filter arrows: Google moves only the filter's columns. The filter used to stop at AD, so the
