@@ -98,7 +98,7 @@ try {
   ok(await call('/orders/' + shown.id, 'PUT', { productCost: 40, shippingFee: 0 }, admin));
   assert.equal(ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === shown.id).items.length, 4, 'a cost change keeps the lines');
   // Cost per product from the supplier (AI, 30 Oct 2026): each product line shows its price.
-  await DB.prepare('UPDATE client_orders SET item_costs=? WHERE id=?').bind('25, 14.50', shown.id).run();
+  await DB.prepare('UPDATE client_orders SET item_costs=? WHERE id=?').bind('25\u300114.50', shown.id).run();
 
   // ---- 2. Screenshots: English + Hebrew, desktop + phone ----
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
