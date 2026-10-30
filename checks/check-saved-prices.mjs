@@ -34,6 +34,8 @@ async function fakeFetch(url, opts = {}) {
   if (path.startsWith('?fields=sheets.properties')) return ok({ sheets: [...new Set(['Work Queue', ...tabs.keys()])].map((title, i) => ({ properties: { title, sheetId: title === 'Work Queue' ? WQ_ID : 100 + i } })) });
   if (path.startsWith(':batchUpdate') && body.requests.some(r => r.addSheet)) { const t = body.requests.find(r => r.addSheet).addSheet.properties.title; grid(t); calls.push('addSheet ' + t); return ok({ replies: [{ addSheet: { properties: { title: t, sheetId: 500 } } }] }); }
   if (path.startsWith(':batchUpdate')) {
+    // Columns (layout 19): every row of that tab moves its cells, like Google does.
+    for (const r of body.requests) if (r.moveDimension?.source.dimension === 'COLUMNS') { const { sheetId, startIndex: f, endIndex: e } = r.moveDimension.source, d = r.moveDimension.destinationIndex, t = sheetId === WQ_ID ? 'Work Queue' : [...new Set(['Work Queue', ...tabs.keys()])][sheetId - 100]; for (const row of grid(t)) if (row) { while (row.length < e) row.push(''); const cut = row.splice(f, e - f); row.splice(d > f ? d - cut.length : d, 0, ...cut); } }
     for (const r of body.requests) if (r.insertDimension) {
       assert.equal(r.insertDimension.range.sheetId, WQ_ID); const { startIndex, endIndex } = r.insertDimension.range;
       for (const row of grid('Work Queue')) if (row) row.splice(startIndex, 0, ...Array(endIndex - startIndex).fill(''));
@@ -60,7 +62,7 @@ const wq = grid('Work Queue'); wq[4] = ['Date'];
 const store = (await call('/client-stores', 'GET', null, client)).data.stores[0];
 const other = (await call('/client-stores', 'POST', { name: 'Second shop', platform: 'Etsy', link: 'https://example.com/s2' }, client)).data.store;
 const mk = async (ref, extra = {}) => { const r = await call('/orders', 'POST', { clientId: id, storeId: store.id, orderRef: ref, buyerName: 'B', destination: 'US', address1: '1 Main St', etsyUrl: 'https://www.etsy.com/listing/111222333/black-bag?ref=shop_home', variant: 'Black', quantity: 1, ...extra }, admin); assert.equal(r.status, 200, JSON.stringify(r.data)); await settle(); return r.data.order; };
-const row = oid => wq.findIndex(x => x && x[30] === String(oid));
+const row = oid => wq.findIndex(x => x && x[31] === String(oid));
 const db = oid => DB.prepare('SELECT price, product_cost, supplier_cost, price_source FROM client_orders WHERE id=?').bind(oid).first();
 const poll = async () => { const p = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.ok(p.ok, JSON.stringify(p)); await settle(); return p; };
 

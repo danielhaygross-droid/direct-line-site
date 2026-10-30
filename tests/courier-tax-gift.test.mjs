@@ -7,9 +7,9 @@ import { SCHEMA, CUSTOMER_BODY_KEYS } from '../server/portal.mjs';
 const read = p => readFile(new URL('../' + p, import.meta.url), 'utf8');
 
 test('sheet layout: Tax number and Gift message instead of Country, Courier between tracking and status', () => {
-  assert.equal(HEADERS.length, 35); assert.equal(WIDTHS.length, 35); assert.equal(HEADERS[34], 'Cost per product (USD)', 'AI: supplier-typed'); assert.equal(HEADERS[32], 'Domestic Express Tracking Number', 'AG: supplier-typed'); assert.equal(HEADERS[33], 'Cancellation fee (USD)', 'AH: supplier-typed'); assert.deepEqual(HEADERS.slice(19, 22), ['Delayed?', 'Delay reason', 'Client paid'], 'T/U: delay, V: Client paid');
-  assert.deepEqual(HEADERS.slice(10, 19), ['Delivery address & phone', 'Tax number', 'Gift message', 'Notes', 'Competitor price', 'Total cost (USD)', 'Tracking number', 'Courier', 'Shipping status']);
-  assert.deepEqual(HEADERS.slice(30, 32), ['Order ID', 'Client ID']);
+  assert.equal(HEADERS.length, 35); assert.equal(WIDTHS.length, 35); assert.equal(HEADERS[16], 'Cost per product (USD)', 'Q: supplier-typed, next to Total cost (layout 19)'); assert.equal(HEADERS[33], 'Domestic Express Tracking Number', 'AH: supplier-typed'); assert.equal(HEADERS[34], 'Cancellation fee (USD)', 'AI: supplier-typed'); assert.deepEqual(HEADERS.slice(20, 23), ['Delayed?', 'Delay reason', 'Client paid'], 'U/V: delay, W: Client paid');
+  assert.deepEqual(HEADERS.slice(10, 20), ['Delivery address & phone', 'Tax number', 'Gift message', 'Notes', 'Competitor price', 'Total cost (USD)', 'Cost per product (USD)', 'Tracking number', 'Courier', 'Shipping status']);
+  assert.deepEqual(HEADERS.slice(31, 33), ['Order ID', 'Client ID']);
   const o = { id: 3, client_id: 1, order_date: '2026-10-14', status: 'processing', quantity: 1, buyer_name: 'L', address_line_1: '10 Rue\n34170 Castelnau', destination: 'FR', tax_number: 'IOSS IM3720000224', gift_message: '=Hi', notes: 'n', etsy_url: '' };
   const { am } = websiteCells({ APP_SESSION_SECRET: 'x' }, o, [], 'Shop');
   assert.equal(am.length, 15); assert.equal(am[14], '', 'O Competitor price (from the client)'); assert.equal(am[11], 'IOSS IM3720000224'); assert.equal(am[12], "'=Hi", 'a gift message never runs as a formula'); assert.equal(am[13], 'n');
