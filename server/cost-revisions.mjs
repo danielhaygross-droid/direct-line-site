@@ -20,23 +20,39 @@ export const REVISION_SCHEMA = [
   // '' or 'open' / 'offered': quick to read when the sheet rows and lists are built.
   "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS revision_status TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE portal_products ADD COLUMN IF NOT EXISTS revision_status TEXT NOT NULL DEFAULT ''",
+  // An order with several products: the client gives a competitor price per product (Erwin, 30 Oct 2026), kept as
+  // the text the supplier reads, e.g. "Product 2: $20.00 · Product 3: $25.00"; competitor_price is then their sum.
+  "ALTER TABLE cost_revisions ADD COLUMN IF NOT EXISTS items TEXT NOT NULL DEFAULT ''",
 ];
 const r2 = n => Math.round(Number(n || 0) * 100) / 100;
 const now = () => Math.floor(Date.now() / 1000);
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const usd = n => '$' + Number(n).toFixed(2);
+import { productLinkList } from './item-costs.mjs';
 // What the supplier reads in the Competitor price column while a request is open.
 export const REVISION_FLAG = 'COST REVISION REQUESTED';
 export const competitorCell = (text, status) => status ? `${REVISION_FLAG}: ${text || ''}`.trim() : text || '';
 
 const out = r => r ? { id: Number(r.id), status: r.status, competitorPrice: Number(r.competitor_price), note: r.note || '', oldPrice: r.old_price == null ? null : Number(r.old_price),
   offeredCost: r.offered_cost == null ? null : Number(r.offered_cost), newPrice: r.new_price == null ? null : Number(r.new_price), result: r.result || '', reply: r.reply || '',
-  createdAt: Number(r.created_at), answeredAt: r.answered_at == null ? null : Number(r.answered_at) } : null;
+  items: r.items || '', createdAt: Number(r.created_at), answeredAt: r.answered_at == null ? null : Number(r.answered_at) } : null;
 
-function input(body) {
-  const raw = String(body?.competitorPrice ?? '').replace(/[$,\s]/g, ''), price = Number(raw);
-  if (!raw || !Number.isFinite(price) || price <= 0 || price >= 1e6) throw fail('Enter the competitor price in USD (the price your listing is based on).');
-  return { price: r2(price), note: String(body?.note || '').trim().slice(0, 1000) };
+const amount = v => { const raw = String(v ?? '').replace(/[$,\s]/g, ''), n = Number(raw); return raw && Number.isFinite(n) && n > 0 && n < 1e6 ? r2(n) : null; };
+// { price, note, items }: one competitor price, or (several products) body.items = [{ n: 2, competitorPrice: 20 }, …]
+// for the products the client asks about (at least one; products = how many product links the order has).
+function input(body, products = 1) {
+  const note = String(body?.note || '').trim().slice(0, 1000);
+  if (products > 1 && Array.isArray(body?.items)) {
+    const list = body.items.filter(x => String(x?.competitorPrice ?? '').trim() !== '').map(x => ({ n: Number(x.n), price: amount(x.competitorPrice) }));
+    if (!list.length) throw fail('Enter the competitor price of at least one product (USD).');
+    if (list.some(x => x.price == null)) throw fail('Enter the competitor price in USD (the price your listing is based on).');
+    if (list.some(x => !Number.isInteger(x.n) || x.n < 1 || x.n > products) || new Set(list.map(x => x.n)).size !== list.length) throw fail('Choose the products from this order.');
+    list.sort((a, b) => a.n - b.n);
+    return { price: r2(list.reduce((t, x) => t + x.price, 0)), note, items: list.map(x => `Product ${x.n}: ${usd(x.price)}`).join(' · ') };
+  }
+  const price = amount(body?.competitorPrice);
+  if (price == null) throw fail('Enter the competitor price in USD (the price your listing is based on).');
+  return { price, note, items: '' };
 }
 
 // Latest request of each order / product (or null): { [id]: revision }.
@@ -52,18 +68,19 @@ export async function withRevisions(DB, list, kind, clientId = null) {
 
 // The client asks. Orders: priced, not cancelled or delivered. Products: quoted (approved).
 export async function requestRevision(DB, kind, id, clientId, body, t = now()) {
-  const f = input(body);
   if (kind === 'order') {
     const o = await DB.prepare('SELECT * FROM client_orders WHERE id = ? AND client_id = ? AND NOT archived').bind(id, clientId).first();
     if (!o) throw fail('Not found', 404);
+    const f = input(body, productLinkList(o.etsy_url).length), asked = f.items || usd(f.price);
     if (!(Number(o.price) > 0)) throw fail('This order has no cost yet. You can ask once it’s priced.');
     if (['cancelled', 'cancellation_requested', 'delivered'].includes(o.status)) throw fail('A cost revision isn’t possible for this order any more.');
     if (o.revision_status) throw fail('You already asked for a revision of this order. We’ll let you know.', 409);
-    await DB.prepare('INSERT INTO cost_revisions (client_id, order_id, competitor_price, note, old_price, created_at) VALUES (?,?,?,?,?,?)').bind(clientId, id, f.price, f.note, r2(o.price), t).run();
-    await DB.prepare("UPDATE client_orders SET revision_status='open', competitor_price=?, sheet_sync_status='waiting', updated_at=? WHERE id=?").bind(usd(f.price), t, id).run();
-    await DB.prepare("INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,'revision_requested','client',?,?)").bind(id, clientId, usd(f.price) + (f.note ? ' · ' + f.note : ''), t).run();
+    await DB.prepare('INSERT INTO cost_revisions (client_id, order_id, competitor_price, note, old_price, items, created_at) VALUES (?,?,?,?,?,?,?)').bind(clientId, id, f.price, f.note, r2(o.price), f.items, t).run();
+    await DB.prepare("UPDATE client_orders SET revision_status='open', competitor_price=?, sheet_sync_status='waiting', updated_at=? WHERE id=?").bind(asked, t, id).run();
+    await DB.prepare("INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,'revision_requested','client',?,?)").bind(id, clientId, asked + (f.note ? ' · ' + f.note : ''), t).run();
     return;
   }
+  const f = input(body);
   const p = await DB.prepare('SELECT * FROM portal_products WHERE id = ? AND client_id = ?').bind(id, clientId).first();
   if (!p) throw fail('Not found', 404);
   if (p.status !== 'approved') throw fail('You can ask for a revision once this product has a price.');
@@ -98,7 +115,7 @@ export async function answerOrder(DB, id, body, t = now()) {
   } else if (body?.action === 'keep') {
     await DB.prepare("UPDATE cost_revisions SET status='done', result='kept', new_price=?, reply=?, answered_at=? WHERE id=?").bind(r2(o.price), reply, t, rev.id).run();
   } else throw fail('Choose Approve or Keep the price.');
-  await DB.prepare("UPDATE client_orders SET revision_status='', competitor_price=?, sheet_sync_status='waiting', updated_at=? WHERE id=?").bind(usd(rev.competitor_price), t, id).run();
+  await DB.prepare("UPDATE client_orders SET revision_status='', competitor_price=?, sheet_sync_status='waiting', updated_at=? WHERE id=?").bind(rev.items || usd(rev.competitor_price), t, id).run();
   const done = await DB.prepare('SELECT * FROM cost_revisions WHERE id=?').bind(rev.id).first();
   await DB.prepare("INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,'revision_answered','admin',?,?)").bind(id, o.client_id, done.result + (reply ? '|' + reply : ''), t).run();
   return changed;

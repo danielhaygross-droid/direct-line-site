@@ -17,6 +17,7 @@
     // Older cost changes were saved as a second "billed": the server sends the bill before it (prevBill).
     else if (e.kind === 'billed') it = { ...base, icon: 'wallet', tone: 'gold', title: e.prevBill ? 'Product cost updated' : 'Order billed', text: e.prevBill ? `${ref} · ⁦${money(e.prevBill)} → ${money(e.detail)}⁩` : `${ref} · ${money(e.detail)}` };
     else if (e.kind === 'revision_answered') { const [res, reply] = String(e.detail || '').split('|'); it = { ...base, icon: 'wallet', tone: res === 'lowered' ? 'mint' : 'gold', title: 'Cost revision answered', text: `${ref} · ${res === 'lowered' ? 'Cost lowered' : res === 'raised' ? 'Cost changed' : 'Cost kept'}${reply ? ' · ' + reply : ''}` }; }
+    else if (e.kind === 'item_prices') it = { ...base, icon: 'wallet', tone: 'gold', title: 'Price per product added', text: `${ref} · ⁦${e.detail}⁩` };
     else if (e.kind === 'cancel_fee') it = { ...base, icon: 'wallet', tone: 'red', title: Number(e.detail) > 0 ? 'Cancellation fee added' : 'Cancellation fee removed', text: Number(e.detail) > 0 ? `${ref} · ${money(e.detail)}` : ref };
     else if (e.kind === 'delayed') it = { ...base, icon: 'alert', tone: 'orange', title: 'Order possibly delayed', text: e.detail ? `${ref} · ${e.detail}` : ref };
     else if (e.kind === 'delay_cleared') it = { ...base, icon: 'check', tone: 'mint', title: 'Order no longer delayed', text: ref };

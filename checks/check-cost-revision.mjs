@@ -120,4 +120,37 @@ try {
   await pg2.locator('[data-rev-form] [type=submit]').click(); await pg2.waitForSelector('.rev-line.wait');
   assert.equal(ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === B).revision.competitorPrice, 21.5); await c2.close();
   console.log('PASS client form: required price, request sent from the order panel');
+  // Several products (Erwin, 30 Oct 2026): a competitor price per product that is too expensive; the supplier reads
+  // "Product 2: $… · Product 3: $…" and the admin sees the same.
+  const M = await mk('REV-4', 60);
+  await DB.prepare('UPDATE client_orders SET etsy_url=?, item_costs=? WHERE id=?').bind(['https://example.com/a', 'https://example.com/b', 'https://example.com/c'].join(String.fromCharCode(10)), '20, 15, 25', M).run();
+  assert.equal((await ask('orders', M, { items: [] })).status, 400, 'at least one product');
+  assert.equal((await ask('orders', M, { items: [{ n: 4, competitorPrice: 10 }] })).status, 400, 'only products of this order');
+  assert.equal((await ask('orders', M, { items: [{ n: 2, competitorPrice: 'x' }] })).status, 400, 'a number');
+  for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
+    const tag = `${lang}-${width}`, c3 = await session(client, width), p3 = await c3.newPage(), errors = []; p3.on('pageerror', e => errors.push(e.message));
+    await p3.goto(`${base}/portal/?lang=${lang}#/orders`); await p3.reload(); await p3.locator(`[data-open-order="${M}"]`).first().click(); await p3.waitForSelector('.drawer.open');
+    await p3.locator('.drawer.open .pm-linkrow').scrollIntoViewIfNeeded(); assert.equal(await p3.locator('.drawer.open .pm-price').count(), 3, tag + ' a price per product');
+    await p3.screenshot({ path: path.join(out, `${tag}-multi-prices.png`) });
+    await p3.locator('.rev-ask').scrollIntoViewIfNeeded(); await p3.locator('[data-ask-revision]').click();
+    assert.equal(await p3.locator('[data-rev-form] [data-rev-item]').count(), 3, tag + ' one box per product'); assert.equal(await p3.locator('[data-rev-form] [name=competitorPrice]').count(), 0);
+    await p3.locator('[data-rev-form] [type=submit]').click(); assert.equal(await p3.locator('[data-rev-msg].err').count(), 1, tag + ' at least one on screen');
+    await p3.locator('[data-rev-item="2"]').fill('18'); await p3.locator('[data-rev-item="3"]').fill('21.5');
+    await p3.screenshot({ path: path.join(out, `${tag}-multi-form.png`), fullPage: width === 390 });
+    if (tag === 'he-390') { await p3.locator('[data-rev-form] [type=submit]').click(); await p3.waitForSelector('.rev-line.wait'); await p3.locator('[data-rev-box]').scrollIntoViewIfNeeded(); await p3.screenshot({ path: path.join(out, `${tag}-multi-waiting.png`) }); }
+    assert.deepEqual(errors, [], tag); await c3.close();
+  }
+  const mo = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === M);
+  assert.equal(mo.revision.items, 'Product 2: $18.00 · Product 3: $21.50'); assert.equal(mo.revision.competitorPrice, 39.5);
+  const mr = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(M).first();
+  assert.equal(competitorCell(mr.competitor_price, mr.revision_status), 'COST REVISION REQUESTED: Product 2: $18.00 · Product 3: $21.50', 'what the supplier reads in Competitor price');
+  for (const lang of ['en', 'he']) {
+    const c4 = await session(admin, 1440), p4 = await c4.newPage(); await p4.goto(`${base}/test-admin.html?lang=${lang}`); const ui = p4.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=orders]');
+    await ui.locator('[data-tab=orders]').click(); await ui.locator(`[data-open-order="${M}"]`).first().click(); await ui.waitForSelector('[data-rev-admin]');
+    assert.match(await ui.locator('[data-rev-admin]').innerText(), /Product 2: \$18\.00 · Product 3: \$21\.50/); assert.match(decodeURIComponent(await ui.locator('[data-rev-wa]').getAttribute('href')), /several products.*Cost per product/);
+    await ui.locator('[data-rev-admin]').scrollIntoViewIfNeeded(); await p4.screenshot({ path: path.join(out, `${lang}-1440-admin-multi.png`) }); await c4.close();
+  }
+  ok(await call(`/admin/orders/${M}/cost-revision`, 'POST', { action: 'keep' }, admin));
+  assert.equal((await DB.prepare('SELECT competitor_price FROM client_orders WHERE id=?').bind(M).first()).competitor_price, 'Product 2: $18.00 · Product 3: $21.50', 'after the answer the sheet keeps the prices per product');
+  console.log('PASS several products: a competitor price per product, sent to the sheet and the admin');
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }

@@ -40,15 +40,26 @@
   document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
   document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
-  document.addEventListener('input', e => { const f = e.target.closest?.('[data-rev-form]'); if (!f) return; e.target.closest('.field')?.classList.remove('bad'); const m = $('[data-rev-msg]', f); m.textContent = ''; m.className = 'form-msg'; });
+  document.addEventListener('input', e => { const f = e.target.closest?.('[data-rev-form]'); if (!f) return; $$('.field.bad', f).forEach(x => x.classList.remove('bad')); const m = $('[data-rev-msg]', f); m.textContent = ''; m.className = 'form-msg'; });
   // Cost revision request: the competitor price is required (the server checks it too).
   document.addEventListener('submit', async e => {
     const f = e.target.closest('[data-rev-form]'); if (!f) return; e.preventDefault();
-    const [kind, id] = f.dataset.revForm.split(':'), m = $('[data-rev-msg]', f), b = $('[type=submit]', f), v = Number(f.competitorPrice.value);
-    if (!(v > 0)) { m.textContent = 'Enter the competitor price in USD (the price your listing is based on).'; m.className = 'form-msg err'; f.competitorPrice.closest('.field').classList.add('bad'); f.competitorPrice.focus(); return; }
+    const [kind, id] = f.dataset.revForm.split(':'), m = $('[data-rev-msg]', f), b = $('[type=submit]', f), bad = (el, text) => { m.textContent = text; m.className = 'form-msg err'; el.closest('.field').classList.add('bad'); el.focus(); };
+    // Several products: one competitor price per product the client asks about (at least one).
+    const boxes = $$('[data-rev-item]', f), items = boxes.filter(x => x.value.trim() !== '').map(x => ({ n: Number(x.dataset.revItem), competitorPrice: Number(x.value) }));
+    let body;
+    if (boxes.length) {
+      if (!items.length) return bad(boxes[0], 'Enter the competitor price of at least one product (USD).');
+      const wrong = boxes.find(x => x.value.trim() !== '' && !(Number(x.value) > 0)); if (wrong) return bad(wrong, 'Enter the competitor price in USD (the price your listing is based on).');
+      body = { items, note: f.note.value };
+    } else {
+      const v = Number(f.competitorPrice.value);
+      if (!(v > 0)) return bad(f.competitorPrice, 'Enter the competitor price in USD (the price your listing is based on).');
+      body = { competitorPrice: v, note: f.note.value };
+    }
     b.disabled = true; m.textContent = '';
     try {
-      await api(`/${kind === 'order' ? 'orders' : 'products'}/${id}/cost-revision`, { method: 'POST', body: { competitorPrice: v, note: f.note.value } });
+      await api(`/${kind === 'order' ? 'orders' : 'products'}/${id}/cost-revision`, { method: 'POST', body });
       const d = UI.getDrawer(); d.foot.dataset.confirm = ''; await refresh();
       if (kind === 'product') openProduct(id); else fillDrawer(S.orders.find(x => x.id === Number(id)));
       N.popup({ icon: 'check', title: 'Cost revision requested', text: 'We’ll check it with the supplier and let you know.' }, { duration: 6000 });

@@ -16,6 +16,7 @@ import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } fr
 import { BILLING_SCHEMA, getBilling, saveBilling } from './billing.mjs';
 import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund, withCreditPaid, syncKeptFees, clientCancelled, clientAdjustments } from './cancellations.mjs';
 import { cancelledTotals, moneyMonths } from './money-overview.mjs';
+import { itemCostList, itemPrices } from './item-costs.mjs';
 import { REVISION_SCHEMA, withRevisions, requestRevision, answerOrder, productRequoted, keepProduct } from './cost-revisions.mjs';
 import { PAYMENT_ORDER_SCHEMA, orderIdList, checkOrders, setPaymentOrders, paymentOrderIds, withPaid, dropTakenOrders } from './payment-orders.mjs';
 
@@ -538,21 +539,7 @@ export function itemsSummary(items) {
 function itemsOut(v) {
   try { const a = v ? JSON.parse(v) : null; return Array.isArray(a) && a.length ? a.map(i => ({ link: String(i.link || ''), quantity: Number(i.quantity) || 1, variant: String(i.variant || '') })) : null; } catch { return null; }
 }
-// Cost per product (Erwin, 30 Oct 2026): the supplier types one cost per product in the sheet (AI), e.g. "10.90, 9.00,
-// 11.00" (Ada also uses the Chinese commas 、 ，), in the order of the product links. The client sees each product's share of the order price (the costs scaled
-// to the price, so they add up to it and nothing else shows); null unless there is one cost for every product.
-export function itemCostList(text) {
-  const parts = String(text ?? '').split(/[,;\n\u3001\uff0c\uff1b]+/).map(p => p.match(/\d+(?:\.\d+)?/g)).filter(Boolean);
-  return parts.map(m => Number(m.at(-1)));
-}
-export function itemPrices(r) {
-  const links = String(r.etsy_url || '').split(/\s+/).filter(Boolean), costs = itemCostList(r.item_costs), price = Number(r.price || 0);
-  if (links.length < 2 || costs.length !== links.length || !(price > 0)) return null;
-  const sum = costs.reduce((n, c) => n + c, 0); if (!(sum > 0)) return null;
-  const cents = Math.round(price * 100), out = costs.map(c => Math.round(c / sum * cents));
-  out[out.length - 1] += cents - out.reduce((n, c) => n + c, 0);
-  return out.map(c => c / 100);
-}
+export { itemCostList, itemPrices } from './item-costs.mjs';
 // Reads body.items: turns them into etsyUrl / quantity / variant (or returns an error text).
 function applyItems(body, admin) {
   let items;
