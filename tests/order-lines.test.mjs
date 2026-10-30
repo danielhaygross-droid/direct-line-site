@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { orderItems, itemsSummary } from '../server/portal.mjs';
+import { orderItems, itemsSummary, itemCostList, itemPrices } from '../server/portal.mjs';
 import { websiteCells } from '../server/supplier-sheet.mjs';
 
 test('order lines: each product / colour has its own link, quantity and colour; the order totals them', () => {
@@ -22,4 +22,10 @@ test('supplier sheet: Qty is the total, Product / variation lists each line', ()
   assert.equal(am[7], 5);
   // A leading ' keeps text that starts with a number as text in Google Sheets (the cell shows "3 × Black Walnut…").
   assert.equal(am[8], "'3 × Black Walnut, 7 Hooks\n2 × Beech, 5 Hooks");
+});
+test('cost per product: the supplier may separate the costs with Chinese commas', () => {
+  assert.deepEqual(itemCostList('27.9\u300121.9\u300131.9'), [27.9, 21.9, 31.9], 'Ada wrote 27.9、21.9、31.9 on #4211752986');
+  assert.deepEqual(itemCostList('10.90\uff0c9\uff1b11'), [10.9, 9, 11]);
+  assert.deepEqual(itemCostList('Product 1: 10.90, Product 2: 9.00'), [10.9, 9]);
+  assert.deepEqual(itemPrices({ etsy_url: 'https://a.example/1\nhttps://b.example/2\nhttps://c.example/3', item_costs: '27.9\u300121.9\u300131.9', price: 82.4 }), [28.14, 22.09, 32.17]);
 });

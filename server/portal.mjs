@@ -539,10 +539,10 @@ function itemsOut(v) {
   try { const a = v ? JSON.parse(v) : null; return Array.isArray(a) && a.length ? a.map(i => ({ link: String(i.link || ''), quantity: Number(i.quantity) || 1, variant: String(i.variant || '') })) : null; } catch { return null; }
 }
 // Cost per product (Erwin, 30 Oct 2026): the supplier types one cost per product in the sheet (AI), e.g. "10.90, 9.00,
-// 11.00", in the order of the product links. The client sees each product's share of the order price (the costs scaled
+// 11.00" (Ada also uses the Chinese commas 、 ，), in the order of the product links. The client sees each product's share of the order price (the costs scaled
 // to the price, so they add up to it and nothing else shows); null unless there is one cost for every product.
 export function itemCostList(text) {
-  const parts = String(text ?? '').split(/[,;\n]+/).map(p => p.match(/\d+(?:\.\d+)?/g)).filter(Boolean);
+  const parts = String(text ?? '').split(/[,;\n\u3001\uff0c\uff1b]+/).map(p => p.match(/\d+(?:\.\d+)?/g)).filter(Boolean);
   return parts.map(m => Number(m.at(-1)));
 }
 export function itemPrices(r) {
