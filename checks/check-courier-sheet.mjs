@@ -157,10 +157,15 @@ assert.deepEqual(admA.itemCosts, [20, 15.5, 25], 'admin: cost per product from t
 assert.equal(mineA.itemCosts, undefined, 'the client never gets the supplier costs');
 assert.equal(mineA.itemPrices.length, 3); assert.equal(Math.round(mineA.itemPrices.reduce((n, v) => n + v, 0) * 100), Math.round(mineA.price * 100), 'the product prices add up to the order price');
 assert.ok(mineA.itemPrices[2] > mineA.itemPrices[1], 'in proportion to the costs');
+// The client gets one bell with the prices (not the supplier's costs); the same prices again (typed differently) add none.
+const priceBells = async () => ((await call('/notifications', 'GET', null, client)).data.items || []).filter(e => e.kind === 'item_prices');
+assert.deepEqual((await priceBells()).map(e => e.detail), [mineA.itemPrices.map(n => '$' + n.toFixed(2)).join(' · ')], 'client bell: price per product added');
+wq[5][34] = '20、15.5、25'; await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+assert.equal((await priceBells()).length, 1, 'same prices: no second bell');
 wq[5][34] = '20, 15.50'; await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
 assert.equal((await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === a.id).itemPrices, null, 'not one cost per product: no split shown');
 wq[5][34] = ''; await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
-console.log('PASS AI cost per product: read from the sheet, client sees prices that add up to the order price, admin sees the costs');
+console.log('PASS AI cost per product: read from the sheet, client sees prices that add up to the order price (one bell), admin sees the costs');
 console.log('PASS supplier sheet edits logged for admins (old -> new), hidden from clients');
 // a client cannot set the courier
 await call('/orders/' + b.id, 'PUT', { courier: 'Fake' }, client);

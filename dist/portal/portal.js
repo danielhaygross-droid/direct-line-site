@@ -243,6 +243,7 @@
     // Older cost changes were saved as a second "billed": the server sends the bill before it (prevBill).
     else if (e.kind === 'billed') it = { ...base, icon: 'wallet', tone: 'gold', title: e.prevBill ? 'Product cost updated' : 'Order billed', text: e.prevBill ? `${ref} · ⁦${money(e.prevBill)} → ${money(e.detail)}⁩` : `${ref} · ${money(e.detail)}` };
     else if (e.kind === 'revision_answered') { const [res, reply] = String(e.detail || '').split('|'); it = { ...base, icon: 'wallet', tone: res === 'lowered' ? 'mint' : 'gold', title: 'Cost revision answered', text: `${ref} · ${res === 'lowered' ? 'Cost lowered' : res === 'raised' ? 'Cost changed' : 'Cost kept'}${reply ? ' · ' + reply : ''}` }; }
+    else if (e.kind === 'item_prices') it = { ...base, icon: 'wallet', tone: 'gold', title: 'Price per product added', text: `${ref} · ⁦${e.detail}⁩` };
     else if (e.kind === 'cancel_fee') it = { ...base, icon: 'wallet', tone: 'red', title: Number(e.detail) > 0 ? 'Cancellation fee added' : 'Cancellation fee removed', text: Number(e.detail) > 0 ? `${ref} · ${money(e.detail)}` : ref };
     else if (e.kind === 'delayed') it = { ...base, icon: 'alert', tone: 'orange', title: 'Order possibly delayed', text: e.detail ? `${ref} · ${e.detail}` : ref };
     else if (e.kind === 'delay_cleared') it = { ...base, icon: 'check', tone: 'mint', title: 'Order no longer delayed', text: ref };
@@ -596,18 +597,23 @@
   // listing is based on) is required. Shows the open request, or the last answer, and the "Ask" button.
   function revisionBlock(kind, item, canAsk) {
     const r = item.revision, waiting = r && ['open', 'offered'].includes(r.status);
-    const asked = r ? `<span class="rev-meta"><span>Your competitor price</span>: <b data-no-i18n>${money(r.competitorPrice)}</b></span>` : '';
+    const asked = r ? `<span class="rev-meta"><span>Your competitor price</span>: <b data-no-i18n>${r.items ? `<bdi dir="ltr">${esc(r.items)}</bdi>` : money(r.competitorPrice)}</b></span>` : '';
     const answer = r && r.status === 'done' ? `<p class="rev-line ${r.result === 'lowered' ? 'pos' : ''}"><b>${r.result === 'lowered' ? 'Cost lowered' : r.result === 'raised' ? 'Cost changed' : r.result === 'closed' ? 'Cost revision closed (order cancelled)' : 'Cost kept'}</b>${r.newPrice != null ? `<span class="rev-meta" data-no-i18n><bdi dir="ltr">${money(r.oldPrice)} → ${money(r.newPrice)}</bdi></span>` : ''}${r.reply ? `<span class="rev-reply" data-no-i18n>${esc(r.reply)}</span>` : ''}</p>` : '';
     return `<div class="rev-box" data-rev-box>${waiting ? `<p class="rev-line wait"><b>Cost revision requested</b>${asked}<span class="rev-reply">We’re checking it with the supplier. We’ll let you know.</span></p>` : answer}
       ${!waiting && canAsk && !S.me.preview ? `<div class="rev-ask"><span class="rev-ask-txt"><b>Is our cost too high for your Etsy price?</b><small>Tell us your competitor price and we’ll ask the supplier for a lower cost.</small></span><button type="button" class="btn btn-primary btn-sm" data-ask-revision="${kind}:${item.id}">${ic('chart')}Ask for a cost revision</button></div>` : ''}</div>`;
   }
+  // An order with several products asks per product (Erwin, 30 Oct 2026): a competitor price for each product that is
+  // too expensive (at least one); the others stay empty.
   function revisionForm(kind, id) {
     const foot = UI.getDrawer().foot; foot.dataset.confirm = '1';
+    const o = kind === 'order' ? S.orders.find(x => x.id === Number(id)) : null, links = o ? (o.productLinks || []) : [];
+    const one = `<label class="field"><span>Competitor price (USD) <small>the price your listing is based on</small></span><span class="money"><input name="competitorPrice" type="number" min="0.01" step="0.01" inputmode="decimal" required></span></label>`;
+    const many = `<p class="rev-hint">Fill in only the products whose cost is too high: your competitor price (USD) for each.</p><div class="rev-items">${links.map((u, i) => `<label class="field rev-item"><span><b>Product ${i + 1}</b>${o.itemPrices?.length === links.length ? ` <small><span>now</span> <bdi data-no-i18n>${money(o.itemPrices[i])}</bdi></small>` : ''}</span><span class="money"><input name="item${i + 1}" data-rev-item="${i + 1}" type="number" min="0.01" step="0.01" inputmode="decimal" aria-label="Product ${i + 1}"></span></label>`).join('')}</div>`;
     foot.innerHTML = `<form class="rev-form" data-rev-form="${kind}:${id}" novalidate><b class="rev-title">Ask for a cost revision</b>
-      <label class="field"><span>Competitor price (USD) <small>the price your listing is based on</small></span><span class="money"><input name="competitorPrice" type="number" min="0.01" step="0.01" inputmode="decimal" required></span></label>
+      ${links.length > 1 ? many : one}
       <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="1000" placeholder="e.g. Sold for $24.90 on Etsy, link…"></label>
       <div class="form-actions"><button type="button" class="btn" data-keep>Cancel</button><button type="submit" class="btn btn-primary">Send request</button></div><p class="form-msg" data-rev-msg role="alert"></p></form>`;
-    $('[name=competitorPrice]', foot).focus();
+    $('[name=competitorPrice], [data-rev-item]', foot).focus();
   }
   // "Your numbers": the client's own accounting for one order. Allowed at any time (it never changes the bill).
   function bindNumbers(o) {
@@ -1187,15 +1193,26 @@
   document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
   document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
-  document.addEventListener('input', e => { const f = e.target.closest?.('[data-rev-form]'); if (!f) return; e.target.closest('.field')?.classList.remove('bad'); const m = $('[data-rev-msg]', f); m.textContent = ''; m.className = 'form-msg'; });
+  document.addEventListener('input', e => { const f = e.target.closest?.('[data-rev-form]'); if (!f) return; $$('.field.bad', f).forEach(x => x.classList.remove('bad')); const m = $('[data-rev-msg]', f); m.textContent = ''; m.className = 'form-msg'; });
   // Cost revision request: the competitor price is required (the server checks it too).
   document.addEventListener('submit', async e => {
     const f = e.target.closest('[data-rev-form]'); if (!f) return; e.preventDefault();
-    const [kind, id] = f.dataset.revForm.split(':'), m = $('[data-rev-msg]', f), b = $('[type=submit]', f), v = Number(f.competitorPrice.value);
-    if (!(v > 0)) { m.textContent = 'Enter the competitor price in USD (the price your listing is based on).'; m.className = 'form-msg err'; f.competitorPrice.closest('.field').classList.add('bad'); f.competitorPrice.focus(); return; }
+    const [kind, id] = f.dataset.revForm.split(':'), m = $('[data-rev-msg]', f), b = $('[type=submit]', f), bad = (el, text) => { m.textContent = text; m.className = 'form-msg err'; el.closest('.field').classList.add('bad'); el.focus(); };
+    // Several products: one competitor price per product the client asks about (at least one).
+    const boxes = $$('[data-rev-item]', f), items = boxes.filter(x => x.value.trim() !== '').map(x => ({ n: Number(x.dataset.revItem), competitorPrice: Number(x.value) }));
+    let body;
+    if (boxes.length) {
+      if (!items.length) return bad(boxes[0], 'Enter the competitor price of at least one product (USD).');
+      const wrong = boxes.find(x => x.value.trim() !== '' && !(Number(x.value) > 0)); if (wrong) return bad(wrong, 'Enter the competitor price in USD (the price your listing is based on).');
+      body = { items, note: f.note.value };
+    } else {
+      const v = Number(f.competitorPrice.value);
+      if (!(v > 0)) return bad(f.competitorPrice, 'Enter the competitor price in USD (the price your listing is based on).');
+      body = { competitorPrice: v, note: f.note.value };
+    }
     b.disabled = true; m.textContent = '';
     try {
-      await api(`/${kind === 'order' ? 'orders' : 'products'}/${id}/cost-revision`, { method: 'POST', body: { competitorPrice: v, note: f.note.value } });
+      await api(`/${kind === 'order' ? 'orders' : 'products'}/${id}/cost-revision`, { method: 'POST', body });
       const d = UI.getDrawer(); d.foot.dataset.confirm = ''; await refresh();
       if (kind === 'product') openProduct(id); else fillDrawer(S.orders.find(x => x.id === Number(id)));
       N.popup({ icon: 'check', title: 'Cost revision requested', text: 'We’ll check it with the supplier and let you know.' }, { duration: 6000 });

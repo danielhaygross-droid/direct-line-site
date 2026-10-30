@@ -71,18 +71,23 @@
   // listing is based on) is required. Shows the open request, or the last answer, and the "Ask" button.
   function revisionBlock(kind, item, canAsk) {
     const r = item.revision, waiting = r && ['open', 'offered'].includes(r.status);
-    const asked = r ? `<span class="rev-meta"><span>Your competitor price</span>: <b data-no-i18n>${money(r.competitorPrice)}</b></span>` : '';
+    const asked = r ? `<span class="rev-meta"><span>Your competitor price</span>: <b data-no-i18n>${r.items ? `<bdi dir="ltr">${esc(r.items)}</bdi>` : money(r.competitorPrice)}</b></span>` : '';
     const answer = r && r.status === 'done' ? `<p class="rev-line ${r.result === 'lowered' ? 'pos' : ''}"><b>${r.result === 'lowered' ? 'Cost lowered' : r.result === 'raised' ? 'Cost changed' : r.result === 'closed' ? 'Cost revision closed (order cancelled)' : 'Cost kept'}</b>${r.newPrice != null ? `<span class="rev-meta" data-no-i18n><bdi dir="ltr">${money(r.oldPrice)} → ${money(r.newPrice)}</bdi></span>` : ''}${r.reply ? `<span class="rev-reply" data-no-i18n>${esc(r.reply)}</span>` : ''}</p>` : '';
     return `<div class="rev-box" data-rev-box>${waiting ? `<p class="rev-line wait"><b>Cost revision requested</b>${asked}<span class="rev-reply">We’re checking it with the supplier. We’ll let you know.</span></p>` : answer}
       ${!waiting && canAsk && !S.me.preview ? `<div class="rev-ask"><span class="rev-ask-txt"><b>Is our cost too high for your Etsy price?</b><small>Tell us your competitor price and we’ll ask the supplier for a lower cost.</small></span><button type="button" class="btn btn-primary btn-sm" data-ask-revision="${kind}:${item.id}">${ic('chart')}Ask for a cost revision</button></div>` : ''}</div>`;
   }
+  // An order with several products asks per product (Erwin, 30 Oct 2026): a competitor price for each product that is
+  // too expensive (at least one); the others stay empty.
   function revisionForm(kind, id) {
     const foot = UI.getDrawer().foot; foot.dataset.confirm = '1';
+    const o = kind === 'order' ? S.orders.find(x => x.id === Number(id)) : null, links = o ? (o.productLinks || []) : [];
+    const one = `<label class="field"><span>Competitor price (USD) <small>the price your listing is based on</small></span><span class="money"><input name="competitorPrice" type="number" min="0.01" step="0.01" inputmode="decimal" required></span></label>`;
+    const many = `<p class="rev-hint">Fill in only the products whose cost is too high: your competitor price (USD) for each.</p><div class="rev-items">${links.map((u, i) => `<label class="field rev-item"><span><b>Product ${i + 1}</b>${o.itemPrices?.length === links.length ? ` <small><span>now</span> <bdi data-no-i18n>${money(o.itemPrices[i])}</bdi></small>` : ''}</span><span class="money"><input name="item${i + 1}" data-rev-item="${i + 1}" type="number" min="0.01" step="0.01" inputmode="decimal" aria-label="Product ${i + 1}"></span></label>`).join('')}</div>`;
     foot.innerHTML = `<form class="rev-form" data-rev-form="${kind}:${id}" novalidate><b class="rev-title">Ask for a cost revision</b>
-      <label class="field"><span>Competitor price (USD) <small>the price your listing is based on</small></span><span class="money"><input name="competitorPrice" type="number" min="0.01" step="0.01" inputmode="decimal" required></span></label>
+      ${links.length > 1 ? many : one}
       <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="1000" placeholder="e.g. Sold for $24.90 on Etsy, link…"></label>
       <div class="form-actions"><button type="button" class="btn" data-keep>Cancel</button><button type="submit" class="btn btn-primary">Send request</button></div><p class="form-msg" data-rev-msg role="alert"></p></form>`;
-    $('[name=competitorPrice]', foot).focus();
+    $('[name=competitorPrice], [data-rev-item]', foot).focus();
   }
   // "Your numbers": the client's own accounting for one order. Allowed at any time (it never changes the bill).
   function bindNumbers(o) {

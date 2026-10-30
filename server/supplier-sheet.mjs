@@ -25,6 +25,7 @@ import { pollQuoteTab, QT } from './quote-sheet.mjs';
 import { createHash } from 'node:crypto';
 import { rememberPrice, backfillSavedPrices } from './saved-prices.mjs';
 import { competitorCell, offerFromSheet, REVISION_FLAG } from './cost-revisions.mjs';
+import { itemPrices } from './item-costs.mjs';
 
 export const SUPPLIER_SHEET_SCHEMA = [
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS supplier_cost DOUBLE PRECISION',
@@ -795,7 +796,7 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
     const seen = new Map();
     for (let i = 0; i < rows.length; i += 200) {
       const ids = rows.slice(i, i + 200).map(r => r.orderId);
-      const found = (await DB.prepare(`SELECT id, order_ref, sheet_ref, sheet_cost, sheet_tracking, sheet_courier, sheet_shipped, sheet_delayed, sheet_delay_reason, sheet_cancel_fee, domestic_tracking, item_costs FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
+      const found = (await DB.prepare(`SELECT id, order_ref, sheet_ref, sheet_cost, sheet_tracking, sheet_courier, sheet_shipped, sheet_delayed, sheet_delay_reason, sheet_cancel_fee, domestic_tracking, item_costs, client_id FROM client_orders WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results || [];
       for (const f of found) seen.set(Number(f.id), f);
     }
     // Out-of-line rows: their supplier cells belong to another order, so nothing is applied from them.
@@ -828,7 +829,12 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
     // AI: the supplier's cost per product, copied as typed (the client sees each product's price, see itemPrices).
     for (const r of rows) {
       const v = (typeof r.itemCosts === 'number' ? String(r.itemCosts) : norm(r.itemCosts)).slice(0, 300);
-      if (seen.has(r.orderId) && norm(seen.get(r.orderId).item_costs) !== v) await DB.prepare('UPDATE client_orders SET item_costs=? WHERE id=?').bind(v || null, r.orderId).run();
+      if (!seen.has(r.orderId) || norm(seen.get(r.orderId).item_costs) === v) continue;
+      // The client gets a bell when the prices per product appear or change (Erwin, 30 Oct 2026).
+      const o = await DB.prepare('SELECT id, client_id, status, price, etsy_url, item_costs FROM client_orders WHERE id=?').bind(r.orderId).first();
+      await DB.prepare('UPDATE client_orders SET item_costs=? WHERE id=?').bind(v || null, r.orderId).run();
+      const before = itemPrices(o), after = itemPrices({ ...o, item_costs: v });
+      if (after && o.status !== 'cancelled' && JSON.stringify(after) !== JSON.stringify(before)) await event(DB, o, 'item_prices', after.map(n => '$' + n.toFixed(2)).join(' · '), t);
     }
     // Once: remember the prices the supplier already gave (saved prices).
     result.savedPrices = await backfillSavedPrices(DB);
