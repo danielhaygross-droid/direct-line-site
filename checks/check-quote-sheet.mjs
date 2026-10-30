@@ -33,6 +33,8 @@ async function fakeFetch(url, opts = {}) {
   if (path.startsWith('?fields=sheets.properties')) return ok({ sheets: [...new Set(['Work Queue', ...tabs.keys()])].map((title, i) => ({ properties: { title, sheetId: title === 'Work Queue' ? WQ_ID : 100 + i } })) });
   if (path.startsWith(':batchUpdate') && body.requests.some(r => r.addSheet)) { const t = body.requests.find(r => r.addSheet).addSheet.properties.title; grid(t); calls.push('addSheet ' + t); return ok({ replies: [{ addSheet: { properties: { title: t, sheetId: 500 } } }] }); }
   if (path.startsWith(':batchUpdate')) {
+    // Columns (layout 19): every row of that tab moves its cells, like Google does.
+    for (const r of body.requests) if (r.moveDimension?.source.dimension === 'COLUMNS') { const { sheetId, startIndex: f, endIndex: e } = r.moveDimension.source, d = r.moveDimension.destinationIndex, t = sheetId === WQ_ID ? 'Work Queue' : [...new Set(['Work Queue', ...tabs.keys()])][sheetId - 100]; for (const row of grid(t)) if (row) { while (row.length < e) row.push(''); const cut = row.splice(f, e - f); row.splice(d > f ? d - cut.length : d, 0, ...cut); } }
     for (const r of body.requests) if (r.insertDimension) {
       const { sheetId, startIndex, endIndex } = r.insertDimension.range, title = sheetId === WQ_ID ? 'Work Queue' : [...new Set(['Work Queue', ...tabs.keys()])][sheetId - 100];
       for (const row of grid(title)) if (row) row.splice(startIndex, 0, ...Array(endIndex - startIndex).fill(''));
