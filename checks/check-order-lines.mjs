@@ -131,6 +131,16 @@ try {
   // Cost per product from the supplier (AI, 30 Oct 2026): each product line shows its price.
   await DB.prepare('UPDATE client_orders SET item_costs=? WHERE id=?').bind('25\u300114.50', shown.id).run();
 
+  // In Progress (Erwin, 1 Nov 2026): the order is locked, but the client may still add a MISSING variation photo.
+  await DB.prepare("UPDATE client_orders SET status='processing', edit_locked=TRUE WHERE id=?").bind(shown.id).run();
+  const refused = async (body, what) => { const r = await call('/orders/' + shown.id + '/photos', 'POST', body, client); assert.equal(r.status, 409, what); };
+  await refused({ data: jpegs[0] }, 'no whole-order photos once locked');
+  await refused({ data: jpegs[0], item: 1 }, 'a line that has its photo stays as it is');
+  await refused({ data: jpegs[0], item: 5 }, 'no line 5 on a 4-line order');
+  const single = (await DB.prepare("SELECT id FROM client_orders WHERE client_id=? AND id<>? AND (items IS NULL OR items NOT LIKE '%},{%') LIMIT 1").bind(shown.client_id ?? (await DB.prepare('SELECT client_id FROM client_orders WHERE id=?').bind(shown.id).first()).client_id, shown.id).first());
+  if (single) { await DB.prepare("UPDATE client_orders SET status='processing', edit_locked=TRUE WHERE id=?").bind(single.id).run(); assert.equal((await call('/orders/' + single.id + '/photos', 'POST', { data: jpegs[0], item: 1 }, client)).status, 409, 'one-line orders stay locked'); }
+  console.log('PASS in progress: only missing variation photos can be added');
+
   // ---- 2. Screenshots: English + Hebrew, desktop + phone ----
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
     const tag = `${lang}-${width}`;
@@ -147,6 +157,8 @@ try {
     await page.locator('.drawer.open .pm-linkrow').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-order-prices.png`) });
     await page.screenshot({ path: path.join(out, `${tag}-order.png`) });
     assert.deepEqual(errors, [], tag); await ctx.close();
+    // The admin's Orders tab opens on Pending: show the order there, In Progress again for the client.
+    await DB.prepare("UPDATE client_orders SET status='pending' WHERE id=?").bind(shown.id).run();
     ctx = await session(admin, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=orders]');
     await ui.locator('[data-tab=orders]').click(); await ui.locator(`[data-open-order="${shown.id}"]`).first().click(); await ui.waitForSelector('.drawer.open'); await page.waitForTimeout(400);
@@ -160,6 +172,21 @@ try {
       const ph = ok(await call('/admin/orders', 'GET', null, admin)).orders.find(x => x.id === shown.id).photos;
       assert.ok(ph.some(x => x.itemIndex === 3), 'the admin added the photo of line 3');
     }
+    if (tag === 'en-390') {
+      // The client adds line 3's photo from the order panel of the In Progress order; then it's the admin's turn (he-390).
+      await DB.prepare("UPDATE client_orders SET status='processing' WHERE id=?").bind(shown.id).run();
+      const cctx = await session(client, width), cp = await cctx.newPage(); cp.on('pageerror', e => errors.push(e.message));
+      await cp.goto(`${base}/portal/?lang=${lang}#/orders`); await cp.reload(); await cp.waitForSelector(`[data-open-order="${shown.id}"]`); await cp.locator(`[data-open-order="${shown.id}"]:visible`).first().click(); await cp.waitForSelector('.drawer.open [data-pm-lines]');
+      assert.match(await cp.locator('.drawer.open [data-pm-lines]').innerText(), /Add a photo of each variation/);
+      await cp.locator('.drawer.open input[data-photo-item="3"]').setInputFiles(fixturePath); await cp.waitForSelector('.drawer.open .pm-line:nth-of-type(4):not(.missing)', { timeout: 15000 }).catch(() => {});
+      await cp.waitForTimeout(800);
+      const mine = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === shown.id).photos.find(x => x.itemIndex === 3);
+      assert.ok(mine, 'the client added the photo of line 3 on an In Progress order');
+      assert.equal(await cp.locator('.drawer.open .pm-line.missing').count(), 0); assert.equal(await cp.locator('.drawer.open .pm-lines-hint').count(), 0, 'the hint goes once all lines have photos');
+      await cp.locator('.drawer.open [data-pm-lines]').scrollIntoViewIfNeeded(); await cp.screenshot({ path: path.join(out, `${tag}-client-added.png`) });
+      await cctx.close(); await DB.prepare('DELETE FROM order_photos WHERE id=?').bind(mine.id).run();
+    }
+    await DB.prepare("UPDATE client_orders SET status='processing' WHERE id=?").bind(shown.id).run();
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
   }
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }

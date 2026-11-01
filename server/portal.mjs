@@ -977,15 +977,23 @@ async function routePortal(request, url, ctx, meta) {
   const photoOne = /^\/orders\/(\d+)\/photos\/(\d+)(\/delete)?$/.exec(path);
   if (photoAdd || photoOne) {
     const id = Number((photoAdd || photoOne)[1]);
-    const order = await DB.prepare('SELECT id, client_id, status, created_at, edit_locked FROM client_orders WHERE id = ?').bind(id).first();
+    const order = await DB.prepare('SELECT id, client_id, status, created_at, edit_locked, items FROM client_orders WHERE id = ?').bind(id).first();
     if (!order || (!who.admin && order.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
     const actor = actorOf(who);
-    if (method === 'POST' && !who.admin && !canEditOrder(order)) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
+    // A missing variation photo may still be added while the order is Pending or In Progress (Erwin, 1 Nov 2026: the
+    // supplier needs a photo per variation); the rest of the order stays locked after the edit window.
+    const lineFill = photoAdd && method === 'POST' && !who.admin && !canEditOrder(order) && ['pending', 'processing'].includes(order.status) && (itemsOut(order.items)?.length || 0) > 1;
+    if (method === 'POST' && !who.admin && !canEditOrder(order) && !lineFill) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
     if (photoAdd && method === 'POST') {
       if (!who.admin && order.status === 'cancelled') return json({ ok: false, error: 'This order was cancelled.' }, 409);
       const count = Number((await DB.prepare('SELECT COUNT(*) AS n FROM order_photos WHERE order_id = ?').bind(id).first()).n);
       if (count >= MAX_PHOTOS_PER_ORDER) return json({ ok: false, error: `Up to ${MAX_PHOTOS_PER_ORDER} photos per order` }, 400);
       let photo; try { photo = photoInput(await readBody(request)); } catch (e) { return json({ ok: false, error: e.message }, 400); }
+      if (lineFill) {
+        const lines = itemsOut(order.items)?.length || 0;
+        if (!photo.item || photo.item > lines) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
+        if (await DB.prepare('SELECT id FROM order_photos WHERE order_id = ? AND item_index = ?').bind(id, photo.item).first()) return json({ ok: false, error: 'This variation already has a photo. Need to change it? Send us a message.' }, 409);
+      }
       const out = await insertPhoto(DB, id, order.client_id, photo, actor);
       await logEvent(DB, id, order.client_id, 'photo', actor, 'added');
       await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=?").bind(id).run();
