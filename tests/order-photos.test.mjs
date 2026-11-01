@@ -14,7 +14,7 @@ test('client order form requires product photos and the product link', () => {
   assert.match(form, /Full address and phone/);
   assert.doesNotMatch(form, /name="itemTitle"/);
   // Everything missing is listed at once ("Please fill in: …"); photo and link are both checked.
-  assert.match(form, /check\('photos', picks\.length \|\| ed\?\.source === 'etsy-csv'/);
+  assert.match(form, /check\('photos', picks\.length \|\| linePicks\.size \|\| ed\?\.source === 'etsy-csv'/); assert.match(form, /'a photo of each variation'/, 'several lines: a photo per line');
   assert.match(form, /check\('links', links\.length && !badLink/);
   assert.match(form, /Please fill in: /);
   assert.match(portal, /document\.addEventListener\('paste'/);

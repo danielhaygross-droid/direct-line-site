@@ -58,6 +58,8 @@ const fillOrder = async (page, ref, second = true) => {
   await f.locator('[name=buyerName]').fill('Sample Buyer'); await f.locator('[name=address1]').fill('1 Sample Street, Springfield IL 62701, +1 555 0100');
   await f.locator('[name=destination]').selectOption('US');
 };
+// Photo per variation (Erwin, 1 Nov 2026): with several lines, every line needs its own photo.
+const addLinePhotos = async page => { const n = await page.locator('#order-form [data-var]').count(); for (let i = 0; i < n; i++) { const row = page.locator('#order-form [data-var]').nth(i); if (await row.locator('.var-photo img').count()) continue; await row.locator('[data-line-input]').setInputFiles(fixturePath); await row.locator('.var-photo img').waitFor(); } };
 const TEXT1 = '3 × Black Walnut, 7 Hooks\n2 × Black Walnut, 6 Hooks', TEXT2 = 'Product 1:\n' + TEXT1 + '\nProduct 2:\n1 × Oak\n2 × Walnut';
 
 try {
@@ -75,17 +77,31 @@ try {
     assert.match(await page.locator('#order-form').innerText(), /how many \(each variation\)/); assert.equal(await page.locator('[data-var] .item-qty.bad').count(), 1);
     await vrow(page, 1, 0).locator('[data-qty]').fill('1');
     await page.locator('[data-pick-input]').setInputFiles(fixturePath); await page.waitForTimeout(500);
-    await page.locator('[data-submit]').click(); await page.waitForFunction(() => location.hash.startsWith('#/orders'), null, { timeout: 15000 });
+    // Four lines and only a screenshot of the order: each line still needs its photo.
+    assert.equal(await page.locator('[data-var] .var-photo:visible').count(), 4, 'a photo box per line');
+    await page.locator('[data-submit]').click(); await page.waitForTimeout(300);
+    assert.match(await page.locator('#order-form').innerText(), /a photo of each variation/); assert.equal(await page.locator('[data-var].photo-bad').count(), 4);
+    await addLinePhotos(page); assert.equal(await page.locator('[data-var].photo-bad').count(), 0, 'marks go once each line has its photo');
+    await page.locator('[data-submit]').click(); await page.waitForFunction(() => location.hash.startsWith('#/orders'), null, { timeout: 30000 });
     const o = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.orderRef === 'PAULINE-1');
+    assert.deepEqual(o.photos.map(x => x.itemIndex).sort(), [1, 2, 3, 4, null], 'each line photo is saved with its line, plus the order screenshot');
     assert.equal(o.quantity, 8); assert.equal(o.variant, TEXT2); assert.equal(o.etsyUrl, LINK + '\n' + LINK2);
     assert.deepEqual(o.items.map(i => [i.link === LINK ? 1 : 2, i.quantity, i.variant]), [[1, 3, 'Black Walnut, 7 Hooks'], [1, 2, 'Black Walnut, 6 Hooks'], [2, 1, 'Oak'], [2, 2, 'Walnut']]);
     // Editing shows the boxes again; removing the second product leaves Pauline's order.
     await page.goto(`${base}/portal/?lang=en#/edit/${o.id}`); await page.reload(); await page.waitForSelector('#order-form [data-prod]');
     assert.equal(await page.locator('[data-prod]').count(), 2); assert.deepEqual(await page.locator('[data-var] [data-qty]').evaluateAll(i => i.map(x => x.value)), ['3', '2', '1', '2']);
-    await prod(page, 1).locator('[data-prod-remove]').click(); await page.locator('[data-submit]').click();
-    await page.waitForFunction(() => location.hash.startsWith('#/orders'), null, { timeout: 15000 });
+    assert.equal(await page.locator('[data-var] .var-photo img').count(), 4, 'editing: each line shows its saved photo');
+    // Remove line 1 and the second product: line 2's photo becomes line 1's.
+    const keep = o.photos.find(x => x.itemIndex === 2).id;
+    await vrow(page, 0, 0).locator('[data-var-remove]').click(); await prod(page, 1).locator('[data-prod-remove]').click();
+    await vrow(page, 0, 0).locator('[data-qty]').fill('2'); await prod(page, 0).locator('[data-var-add]').click(); await fillVar(page, 0, 1, 3, 'Beech, 5 Hooks');
+    await page.locator('[data-submit]').click(); await page.waitForTimeout(300);
+    assert.equal(await page.locator('[data-var].photo-bad').count(), 1, 'the new line needs its photo'); await addLinePhotos(page);
+    await page.locator('[data-submit]').click();
+    await page.waitForFunction(() => location.hash.startsWith('#/orders'), null, { timeout: 30000 });
     const o2 = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === o.id);
-    assert.equal(o2.quantity, 5); assert.equal(o2.variant, TEXT1); assert.equal(o2.items.length, 2);
+    assert.equal(o2.quantity, 5); assert.equal(o2.items.length, 2);
+    assert.equal(o2.photos.find(x => x.id === keep)?.itemIndex, 1, 'the kept photo follows its line'); assert.deepEqual(o2.photos.map(x => x.itemIndex).sort(), [1, 2, null], 'photos of removed lines are gone');
     assert.deepEqual(errors, []); await ctx.close();
   }
   // The order everyone looks at in the screenshots: two products, each in two variations.
@@ -97,6 +113,21 @@ try {
   assert.equal((await call('/orders', 'POST', { storeId: store.id, orderRef: 'BAD', buyerName: 'X', address1: '1 St', destination: 'US', photos: [photo], items: [{ link: LINK, quantity: 1 }, { link: '', quantity: 1 }] }, client)).status, 400, 'each line needs a link');
   ok(await call('/orders/' + shown.id, 'PUT', { productCost: 40, shippingFee: 0 }, admin));
   assert.equal(ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === shown.id).items.length, 4, 'a cost change keeps the lines');
+  // Photo per line on the order everyone looks at (lines 1, 2 and 4; line 3 still missing).
+  const jpegs = await (async () => { const jpeg = (await import('jpeg-js')).default; return [[200, 80, 60], [60, 120, 200], [90, 160, 90]].map(([r, g, b]) => { const d = new Uint8Array(120 * 90 * 4); for (let i = 0; i < 120 * 90; i++) d.set([r, g, b, 255], i * 4); return 'data:image/jpeg;base64,' + Buffer.from(jpeg.encode({ data: d, width: 120, height: 90 }, 80).data).toString('base64'); }); })();
+  for (const [k, item] of [[0, 1], [1, 2], [2, 4]]) ok(await call('/orders/' + shown.id + '/photos', 'POST', { data: jpegs[k], item }, admin));
+  // The supplier sheet: one numbered picture of the line photos in the preview cell, numbered variation lines, labelled links.
+  const { websiteCells } = await import('../server/supplier-sheet.mjs');
+  const sheetRow = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(shown.id).first(), sheetPhotos = (await DB.prepare('SELECT id, item_index FROM order_photos WHERE order_id=? ORDER BY id').bind(shown.id).all()).results;
+  const cells = websiteCells(env, sheetRow, sheetPhotos, 'Shop');
+  assert.match(cells.am[4], /^=IMAGE\("https:\/\/[^"]+\/api\/portal\/sheet-photos\/\d+\/lines\?p=1-\d+\.2-\d+\.3-0\.4-\d+&key=/, 'preview: all lines, line 3 without a photo');
+  assert.match(cells.am[5], /All 4 photos/); assert.match(cells.am[8], /#1 3 × Black Walnut, 7 Hooks[\s\S]*#3 1 × Oak/);
+  const collage = cells.am[4].match(/"(https:[^"]+)"/)[1].replace(/^https:\/\/[^/]+/, base);
+  const got = await fetch(collage), img = Buffer.from(await got.arrayBuffer());
+  assert.equal(got.status, 200); assert.equal(got.headers.get('content-type'), 'image/jpeg'); assert.ok((await import('jpeg-js')).default.decode(img).width > 300, 'a real picture');
+  assert.equal((await fetch(collage.replace(/key=[^&]+/, 'key=wrong'))).status, 404, 'a changed key is refused');
+  assert.equal((await fetch(collage.replace(/sheet-photos\/\d+/, 'sheet-photos/999'))).status, 404, 'another order with the same key is refused');
+  console.log('PASS sheet: numbered picture of the line photos, numbered lines, signed link');
   // Cost per product from the supplier (AI, 30 Oct 2026): each product line shows its price.
   await DB.prepare('UPDATE client_orders SET item_costs=? WHERE id=?').bind('25\u300114.50', shown.id).run();
 
@@ -111,6 +142,8 @@ try {
     await page.waitForSelector('.drawer.open'); await page.waitForTimeout(400);
     const dd = page.locator('.drawer.open dd', { hasText: 'Walnut' }); assert.ok(await dd.count() >= 1, tag); await dd.first().scrollIntoViewIfNeeded();
     const prices = await page.locator('.drawer.open .pm-price').allInnerTexts(); assert.equal(prices.length, 2, tag + ' a price per product');
+    assert.equal(await page.locator('.drawer.open .pm-line').count(), 4, tag + ' a photo row per line'); assert.equal(await page.locator('.drawer.open .pm-line.missing').count(), 1, tag + ' line 3 has no photo yet');
+    await page.locator('.drawer.open [data-pm-lines]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-line-photos.png`) });
     await page.locator('.drawer.open .pm-linkrow').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-order-prices.png`) });
     await page.screenshot({ path: path.join(out, `${tag}-order.png`) });
     assert.deepEqual(errors, [], tag); await ctx.close();
@@ -119,6 +152,14 @@ try {
     await ui.locator('[data-tab=orders]').click(); await ui.locator(`[data-open-order="${shown.id}"]`).first().click(); await ui.waitForSelector('.drawer.open'); await page.waitForTimeout(400);
     const add = ui.locator('.drawer.open dd', { hasText: 'Product 2:' }); assert.equal(await add.count(), 1, tag); await add.scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(out, `${tag}-admin-order.png`) });
+    // The admin adds the missing photo of line 3 (e.g. sent on WhatsApp) from its own row.
+    await ui.locator('.drawer.open [data-pm-lines]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-admin-line-photos.png`) });
+    if (tag === 'he-390') {
+      await ui.locator('.drawer.open input[data-photo-item="3"]').setInputFiles(fixturePath);
+      await page.waitForFunction(id => true, shown.id); await page.waitForTimeout(1500);
+      const ph = ok(await call('/admin/orders', 'GET', null, admin)).orders.find(x => x.id === shown.id).photos;
+      assert.ok(ph.some(x => x.itemIndex === 3), 'the admin added the photo of line 3');
+    }
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
   }
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }

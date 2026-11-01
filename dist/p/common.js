@@ -279,7 +279,10 @@
   const photoUrl = (orderId, photoId, thumb) => `/api/portal/orders/${orderId}/photos/${photoId}${thumb ? '?size=thumb' : ''}`;
   // Thumbnails + product link, shown in order drawers (client and admin).
   function productMedia(o, { removable = false, canAdd = false } = {}) {
-    const photos = o.photos || [];
+    // Photo per variation (Erwin, 1 Nov 2026): on an order with several lines, each line's photo shows next to it,
+    // numbered like the supplier sheet (#1, #2…); the photos above are the ones for the whole order.
+    const lines = (o.items?.length || 0) > 1 ? o.items : null, all = o.photos || [];
+    const photos = lines ? all.filter(p => p.itemIndex == null) : all;
     const links = (o.productLinks || String(o.etsyUrl || '').split(/\s+/)).filter(Boolean);
     // Each product's price on an order with several products (the supplier's cost per product, 30 Oct 2026).
     const prices = o.itemPrices?.length === links.length ? o.itemPrices : null;
@@ -289,7 +292,17 @@
     return `<div class="pm-photos">${photos.map(p => `<figure class="pm-photo"><a href="${photoUrl(o.id, p.id)}" title="Open full size"><img src="${photoUrl(o.id, p.id, true)}" alt="Product photo" loading="lazy"></a>${removable ? `<button type="button" class="pm-remove" data-photo-remove="${p.id}" data-order="${o.id}" aria-label="Remove photo">×</button>` : ''}</figure>`).join('')}
       ${canAdd ? `<label class="pm-add" title="Add a photo"><input type="file" accept="image/*" multiple hidden data-photo-add="${o.id}"><span>+</span><small>Add photo</small></label>` : ''}
       ${!photos.length && !canAdd ? '<span class="muted">No photos added.</span>' : ''}</div>
-      <div class="pm-linkrow">${link}</div>`;
+      <div class="pm-linkrow">${link}</div>${lines ? lineMedia(o, lines, all, { removable, canAdd }) : ''}`;
+  }
+  function lineMedia(o, lines, all, { removable, canAdd }) {
+    const room = all.length < 8;
+    return `<div class="pm-lines" data-pm-lines><b class="pm-lines-t">Photo per variation</b>${lines.map((it, i) => {
+      const p = all.find(x => x.itemIndex === i + 1), txt = it.variant ? `${it.quantity} × ${it.variant}` : `${it.quantity} pcs`;
+      const pic = p ? `<figure class="pm-photo sm"><a href="${photoUrl(o.id, p.id)}" title="Open full size"><img src="${photoUrl(o.id, p.id, true)}" alt="Photo of #${i + 1}" loading="lazy"></a>${removable ? `<button type="button" class="pm-remove" data-photo-remove="${p.id}" data-order="${o.id}" aria-label="Remove photo">×</button>` : ''}</figure>`
+        : canAdd && room ? `<label class="pm-add sm" title="Add a photo of this variation"><input type="file" accept="image/*" hidden data-photo-add="${o.id}" data-photo-item="${i + 1}"><span>+</span><small>Add photo</small></label>`
+        : '<span class="pm-line-none">No photo yet</span>';
+      return `<div class="pm-line${p ? '' : ' missing'}"><b class="pm-line-n" data-no-i18n>#${i + 1}</b><span class="pm-line-t" data-no-i18n><bdi dir="auto">${esc(txt)}</bdi></span>${pic}</div>`;
+    }).join('')}</div>`;
   }
 
   // ---------- photo viewer ----------

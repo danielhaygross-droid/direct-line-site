@@ -5,7 +5,7 @@
 //   role "client-<id>"    -> a client account from the users table
 
 import { timingSafeEqual, randomBytes } from 'node:crypto';
-import { serveSheetPhoto, serveSheetProductPhoto } from './sheet-photos.mjs';
+import { serveSheetPhoto, serveSheetProductPhoto, serveSheetCollage } from './sheet-photos.mjs';
 import { QUOTE_SHEET_SCHEMA, syncQuoteRow } from './quote-sheet.mjs';
 import { SAVED_PRICE_SCHEMA, findSavedPrice, markUsed, savedPricesFor, forgetSavedPrice } from './saved-prices.mjs';
 import { googleSheetsConfigured, retryPendingGoogleSheetOrders, syncClientToGoogleSheet, syncPortalOrderToGoogleSheet } from './google-sheets.mjs';
@@ -179,6 +179,9 @@ export const SCHEMA = [
      added_by TEXT NOT NULL CHECK (added_by IN ('client','admin')),
      created_at INTEGER NOT NULL)`,
   'CREATE INDEX IF NOT EXISTS order_photos_order_idx ON order_photos (order_id, id)',
+  // Photo per order line (Erwin, 1 Nov 2026): which line (1 = the first product / variation) a photo shows; null = the
+  // whole order (e.g. a screenshot of the store order).
+  'ALTER TABLE order_photos ADD COLUMN IF NOT EXISTS item_index INTEGER',
   // Daniel's own stores shown in the dashboard: stores added by an admin, and removed (hidden) ones.
   // Built-in stores (zroyal, cursed, select, nerd) only get a row here when they are hidden/renamed.
   `CREATE TABLE IF NOT EXISTS dashboard_stores (
@@ -477,23 +480,24 @@ function decodeImage(dataUrl, maxBytes) {
   if (!mime) throw new Error('That file isn’t a valid image');
   return { mime, b64: buf.toString('base64'), bytes: buf.length };
 }
-// Accepts { data, thumb?, width?, height? } (data URLs) and returns a row ready to insert.
+// Accepts { data, thumb?, width?, height?, item? } (data URLs) and returns a row ready to insert.
+const lineOf = v => (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 10 ? Number(v) : null);
 function photoInput(p) {
   const full = decodeImage(p?.data, PHOTO_MAX_BYTES);
   const thumb = p?.thumb ? decodeImage(p.thumb, THUMB_MAX_BYTES) : full;
   const dim = v => (Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) < 20000 ? Number(v) : null);
-  return { ...full, thumbMime: thumb.mime, thumbB64: thumb.b64, width: dim(p?.width), height: dim(p?.height) };
+  return { ...full, thumbMime: thumb.mime, thumbB64: thumb.b64, width: dim(p?.width), height: dim(p?.height), item: lineOf(p?.item) };
 }
 async function insertPhoto(DB, orderId, clientId, photo, by) {
-  const row = await DB.prepare('INSERT INTO order_photos (order_id, client_id, mime, data, thumb_mime, thumb, width, height, bytes, added_by, created_at, blob_path) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id, order_id, width, height, added_by, created_at')
-    .bind(orderId, clientId, photo.mime, photo.b64, photo.thumbMime, photo.thumbB64, photo.width, photo.height, photo.bytes, by, now(), photo.blobPath || null).first();
+  const row = await DB.prepare('INSERT INTO order_photos (order_id, client_id, mime, data, thumb_mime, thumb, width, height, bytes, added_by, created_at, blob_path, item_index) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id, order_id, width, height, added_by, created_at, item_index')
+    .bind(orderId, clientId, photo.mime, photo.b64, photo.thumbMime, photo.thumbB64, photo.width, photo.height, photo.bytes, by, now(), photo.blobPath || null, photo.item ?? null).first();
   return photoOut(row);
 }
-const photoOut = r => ({ id: Number(r.id), orderId: Number(r.order_id), width: r.width == null ? null : Number(r.width), height: r.height == null ? null : Number(r.height), addedBy: r.added_by, createdAt: Number(r.created_at) });
+const photoOut = r => ({ id: Number(r.id), orderId: Number(r.order_id), width: r.width == null ? null : Number(r.width), height: r.height == null ? null : Number(r.height), addedBy: r.added_by, createdAt: Number(r.created_at), itemIndex: r.item_index == null ? null : Number(r.item_index) });
 async function withPhotos(DB, orders) {
   if (!orders.length) return orders;
   const ids = orders.map(o => o.id);
-  const rows = await byIdParts(ids, async part => (await DB.prepare(`SELECT id, order_id, width, height, added_by, created_at FROM order_photos WHERE order_id IN (${part.map(() => '?').join(',')}) ORDER BY order_id, id`).bind(...part).all()).results || []);
+  const rows = await byIdParts(ids, async part => (await DB.prepare(`SELECT id, order_id, width, height, added_by, created_at, item_index FROM order_photos WHERE order_id IN (${part.map(() => '?').join(',')}) ORDER BY order_id, id`).bind(...part).all()).results || []);
   const by = new Map();
   for (const r of rows) { const k = Number(r.order_id); if (!by.has(k)) by.set(k, []); by.get(k).push(photoOut(r)); }
   return orders.map(o => ({ ...o, photos: by.get(o.id) || [] }));
@@ -641,6 +645,8 @@ async function routePortal(request, url, ctx, meta) {
   const method = request.method;
   if (!DB) return json({ ok: false, error: 'Database is not configured' }, 503);
 
+  const sheetCollage = /^\/sheet-photos\/([1-9]\d*)\/lines$/.exec(path);
+  if (sheetCollage && method === 'GET') return serveSheetCollage(DB, env, url, Number(sheetCollage[1]));
   const sheetPhoto = /^\/sheet-photos\/([1-9]\d*)\/([1-9]\d*)$/.exec(path);
   if (sheetPhoto && method === 'GET') return serveSheetPhoto(DB,env,url,Number(sheetPhoto[1]),Number(sheetPhoto[2]));
   const sheetProductPhoto = /^\/sheet-product-photos\/([1-9]\d*)\/([1-9]\d*)$/.exec(path);
@@ -951,6 +957,10 @@ async function routePortal(request, url, ctx, meta) {
     // Order lines: saved with the order; an edit of the link / quantity / variation without lines (admin form) drops them,
     // the variation text keeps what they said.
     if (lines.items || body.quantity !== undefined || body.variant !== undefined || body.etsyUrl !== undefined) { await saveItems(DB, id, lines.items); row.items = lines.items ? JSON.stringify(lines.items) : null; }
+    // Photo per line: the form says which line each photo now belongs to (lines can be added or removed in an edit).
+    if (Array.isArray(body.photoLines)) for (const pl of body.photoLines.slice(0, MAX_PHOTOS_PER_ORDER)) {
+      if (Number.isSafeInteger(Number(pl?.id))) await DB.prepare('UPDATE order_photos SET item_index=? WHERE id=? AND order_id=?').bind(lineOf(pl.item), Number(pl.id), id).run();
+    }
     const fee = await saveEtsyFee(DB, id, body); if (fee !== undefined) row.etsy_fee = fee;
     const earnedNow = await saveEtsyEarned(DB, id, body); if (earnedNow !== undefined) row.etsy_earned = earnedNow;
     const compNow = await saveCompetitorPrice(DB, id, body); if (compNow !== undefined) row.competitor_price = compNow;
