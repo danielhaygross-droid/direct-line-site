@@ -37,6 +37,14 @@
   });
   document.addEventListener('click',e=>{if(e.target.closest?.('[data-excel-export]'))exportOrdersToExcel();if(e.target.closest?.('[data-pay-excel]'))exportPaymentsToExcel();});
   // A "Sort" dropdown changed: remember it and redraw that list.
+  // Photo per variation from the order panel (also on In Progress orders): one photo for that line.
+  document.addEventListener('change', async e => {
+    const inp = e.target.closest?.('[data-photo-add][data-photo-item]'); if (!inp) return;
+    const file = inp.files?.[0], id = Number(inp.dataset.photoAdd), item = Number(inp.dataset.photoItem); inp.value = ''; if (!file) return;
+    const box = inp.closest('.pm-add'); box?.classList.add('busy');
+    try { await api(`/orders/${id}/photos`, { method: 'POST', body: { ...(await shrinkImage(file)), item } }); await refresh(); N.popup({ icon: 'check', title: 'Photo added' }); }
+    catch (ex) { box?.classList.remove('busy'); N.popup({ icon: 'alert', title: ex.message }); }
+  });
   document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
   document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});

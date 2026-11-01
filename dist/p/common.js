@@ -278,7 +278,7 @@
   }
   const photoUrl = (orderId, photoId, thumb) => `/api/portal/orders/${orderId}/photos/${photoId}${thumb ? '?size=thumb' : ''}`;
   // Thumbnails + product link, shown in order drawers (client and admin).
-  function productMedia(o, { removable = false, canAdd = false } = {}) {
+  function productMedia(o, { removable = false, canAdd = false, lineAdd = false } = {}) {
     // Photo per variation (Erwin, 1 Nov 2026): on an order with several lines, each line's photo shows next to it,
     // numbered like the supplier sheet (#1, #2…); the photos above are the ones for the whole order.
     const lines = (o.items?.length || 0) > 1 ? o.items : null, all = o.photos || [];
@@ -292,11 +292,12 @@
     return `<div class="pm-photos">${photos.map(p => `<figure class="pm-photo"><a href="${photoUrl(o.id, p.id)}" title="Open full size"><img src="${photoUrl(o.id, p.id, true)}" alt="Product photo" loading="lazy"></a>${removable ? `<button type="button" class="pm-remove" data-photo-remove="${p.id}" data-order="${o.id}" aria-label="Remove photo">×</button>` : ''}</figure>`).join('')}
       ${canAdd ? `<label class="pm-add" title="Add a photo"><input type="file" accept="image/*" multiple hidden data-photo-add="${o.id}"><span>+</span><small>Add photo</small></label>` : ''}
       ${!photos.length && !canAdd ? '<span class="muted">No photos added.</span>' : ''}</div>
-      <div class="pm-linkrow">${link}</div>${lines ? lineMedia(o, lines, all, { removable, canAdd }) : ''}`;
+      <div class="pm-linkrow">${link}</div>${lines ? lineMedia(o, lines, all, { removable, canAdd: canAdd || lineAdd, hint: lineAdd }) : ''}`;
   }
-  function lineMedia(o, lines, all, { removable, canAdd }) {
-    const room = all.length < 8;
-    return `<div class="pm-lines" data-pm-lines><b class="pm-lines-t">Photo per variation</b>${lines.map((it, i) => {
+  // hint: the client's order panel (also In Progress) asks for the variation photos still missing.
+  function lineMedia(o, lines, all, { removable, canAdd, hint }) {
+    const room = all.length < 8, missing = hint && lines.some((_, i) => !all.some(x => x.itemIndex === i + 1));
+    return `<div class="pm-lines" data-pm-lines><b class="pm-lines-t">Photo per variation</b>${missing ? '<p class="pm-lines-hint">Add a photo of each variation, so the right item is made.</p>' : ''}${lines.map((it, i) => {
       const p = all.find(x => x.itemIndex === i + 1), txt = it.variant ? `${it.quantity} × ${it.variant}` : `${it.quantity} pcs`;
       const pic = p ? `<figure class="pm-photo sm"><a href="${photoUrl(o.id, p.id)}" title="Open full size"><img src="${photoUrl(o.id, p.id, true)}" alt="Photo of #${i + 1}" loading="lazy"></a>${removable ? `<button type="button" class="pm-remove" data-photo-remove="${p.id}" data-order="${o.id}" aria-label="Remove photo">×</button>` : ''}</figure>`
         : canAdd && room ? `<label class="pm-add sm" title="Add a photo of this variation"><input type="file" accept="image/*" hidden data-photo-add="${o.id}" data-photo-item="${i + 1}"><span>+</span><small>Add photo</small></label>`
