@@ -63,7 +63,7 @@ for (const k of ['count', 'paid', 'fees', 'dueBack', 'refunded', 'credit']) asse
 assert.equal(cx.count, 2); assert.equal(cx.clients.length, 2);
 const m = k => ov.months.find(r => r.month === k) || {};
 assert.equal(m('2026-09').billed, A.price); assert.equal(m('2026-10').billed, C.price, 'October billed: cancelled B and E not counted');
-assert.equal(m('2026-10').paid, Math.round((A.price + B.price + E.price) * 100) / 100); assert.equal(m('2026-10').fees, 5); assert.equal(m('2026-10').refunds, 10);
+assert.equal(m('2026-10').paid, Math.round((A.price + B.price + E.price) * 100) / 100); assert.equal(m(new Date().toISOString().slice(0, 7)).fees, 5, 'cancellation fees count in the month the cancellation was approved (today)'); assert.equal(m('2026-10').refunds, 10);
 assert.equal(m('2026-10').cancelled, 2); assert.ok(m('2026-09').earned > 0, 'our earnings');
 console.log('PASS overview API: cancelled totals = sum of clients; months: billed, paid, fees, refunds, earned');
 try {
