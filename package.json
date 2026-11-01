@@ -16,7 +16,8 @@
   "dependencies": {
     "@neondatabase/serverless": "^1.0.0",
     "@vercel/blob": "2.8.0",
-    "@vercel/functions": "^2.0.0"
+    "@vercel/functions": "^2.0.0",
+    "jpeg-js": "0.4.4"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",

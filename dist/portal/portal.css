@@ -312,6 +312,9 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .var-row{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:8px 10px;align-items:end}
 .var-row+.var-row .field>span{display:none}
 .var-row .field,.prod-block .item-link{margin:0}.var-remove{min-width:40px;font-size:18px;margin-bottom:4px}
+.var-photo{grid-column:1/-1;display:flex;align-items:center;gap:12px;margin:2px 0 6px}.var-photo-t{font-size:13px;color:var(--muted);min-width:0}.var-photo-t b{color:var(--text)}
+.var-photo .pm-photo.sm,.var-photo .pm-add.sm{width:64px;height:64px;flex:none}.var-photo .pm-add.sm span{font-size:20px}.var-photo .pm-add.sm small{font-size:11px}
+.var-row.photo-bad .var-photo .pm-add{border-color:var(--red);color:var(--red)}
 .prod-block [data-var-add]{justify-self:start}
 @media(max-width:700px){.var-row{grid-template-columns:84px minmax(0,1fr) auto}.var-row .field small{display:none}}
 

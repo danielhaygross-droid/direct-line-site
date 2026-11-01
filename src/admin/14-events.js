@@ -63,12 +63,13 @@
   // Admins can add product photos to an order (e.g. when a client sends them on WhatsApp).
   document.addEventListener('change', async e => {
     const inp = e.target.closest?.('[data-photo-add]'); if (!inp) return;
-    const id = Number(inp.dataset.photoAdd), files = [...inp.files]; inp.value = '';
+    const id = Number(inp.dataset.photoAdd), item = Number(inp.dataset.photoItem) || null, files = [...inp.files].slice(0, item ? 1 : 8); inp.value = '';
     if (!files.length) return;
     const box = inp.closest('.pm-add'); box?.classList.add('busy');
     let added = 0, err = '';
+    // A "Photo per variation" box adds the photo of that line (#1, #2…).
     for (const f of files) {
-      try { await api(`/orders/${id}/photos`, { method: 'POST', body: await shrinkImage(f) }); added++; }
+      try { await api(`/orders/${id}/photos`, { method: 'POST', body: { ...(await shrinkImage(f)), item } }); added++; }
       catch (ex) { err = ex.message; }
     }
     await loadAll(); renderList(); refreshDrawer();

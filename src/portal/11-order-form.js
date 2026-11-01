@@ -54,7 +54,11 @@
     const setMsg = (t, k) => { const m = $('[data-form-msg]'); m.textContent = t; m.className = 'form-msg ' + (k || ''); };
     // ----- product photos: existing ones (edit) + new picks, uploaded after the order is saved -----
     const locked = ed && ['shipped', 'delivered'].includes(ed.status);
-    let picks = (ed?.photos || []).map(p => ({ key: 'p' + p.id, id: p.id }));
+    let picks = (ed?.photos || []).filter(p => p.itemIndex == null || (ed.items?.length || 0) < 2).map(p => ({ key: 'p' + p.id, id: p.id }));
+    // Photo per variation (Erwin, 1 Nov 2026): the supplier picks the product by its photo, so on an order with several
+    // lines each line needs its own photo. linePicks: row key → photo (an existing one has an id).
+    const linePicks = new Map();
+    let rowSeq = 0;
     const removed = [];
     let selectedProduct=null;
     let pickSeq = 0;
@@ -62,14 +66,14 @@
     function renderPicks() {
       zone.innerHTML = picks.map(p => `<figure class="pm-photo"><img src="${p.id ? photoUrl(ed.id, p.id, true) : p.thumb}" alt="Product photo">${p.productFrom || p.id && locked ? '' : `<button type="button" class="pm-remove" data-pick-remove="${p.key}" aria-label="Remove photo">×</button>`}</figure>`).join('')
         + (picks.length < MAX_PHOTOS ? `<label class="pm-add${picks.length ? '' : ' big'}"><input type="file" accept="image/*" multiple hidden data-pick-input><span>+</span><small>${picks.length ? 'Add more' : 'Add photo or screenshot'}</small></label>` : '');
-      $('[data-pick-count]', form).textContent = picks.length ? `${picks.length} of ${MAX_PHOTOS}` : (ed?.source === 'etsy-csv' ? 'optional' : 'required');
+      $('[data-pick-count]', form).textContent = picks.length ? `${picks.length + linePicks.size} of ${MAX_PHOTOS}` : (ed?.source === 'etsy-csv' || linesOn() ? 'optional' : 'required');
       if (picks.length) form.querySelector('[data-f="photos"]')?.classList.remove('bad');
       updateSum();
     }
     async function addFiles(files) {
       const list = [...files].filter(f => /^image\//.test(f.type || ''));
       if (!list.length) { setMsg('Please choose a photo or screenshot (JPG, PNG or WebP).', 'err'); return; }
-      const room = MAX_PHOTOS - picks.length;
+      const room = MAX_PHOTOS - picks.length - linePicks.size;
       if (room <= 0) { setMsg(`You can add up to ${MAX_PHOTOS} photos.`, 'err'); return; }
       zone.classList.add('busy');
       let failed = '';
@@ -96,10 +100,11 @@
     // ----- what the customer ordered (Pauline, 22 Oct 2026): a box per product (its link), and inside it one row per
     // colour / size with its own quantity. Sent as flat lines {link, quantity, variant}; the server adds them up.
     const prodBox = $('[data-prods]', form);
-    const varRow = (v = {}) => `<div class="var-row" data-var>
+    const varRow = (v = {}) => `<div class="var-row" data-var data-rk="r${++rowSeq}">
       <label class="field item-qty"><span>How many?</span><input data-qty type="number" min="1" max="999" step="1" inputmode="numeric" value="${v.quantity ?? 1}"></label>
       <label class="field item-var"><span>Variation <small>as on your store order: colour, size, hooks…</small></span><input data-variant dir="auto" maxlength="500" placeholder="e.g. Black Walnut, 7 Hooks" value="${esc(v.variant || '')}"></label>
-      <button type="button" class="btn btn-sm btn-ghost var-remove" data-var-remove aria-label="Remove this variation">×</button></div>`;
+      <button type="button" class="btn btn-sm btn-ghost var-remove" data-var-remove aria-label="Remove this variation">×</button>
+      <div class="var-photo" data-var-photo hidden></div></div>`;
     const prodBlock = (p = {}) => `<div class="prod-block" data-prod>
       <div class="prod-head"><b class="prod-no"><span>Product</span> <span data-no-i18n data-prod-n>1</span></b><button type="button" class="btn btn-sm btn-ghost" data-prod-remove>Remove product</button></div>
       <label class="field item-link"><span>Product link <small>copy from your store</small></span><input data-link type="url" inputmode="url" maxlength="2000" placeholder="https://..." value="${esc(p.link || '')}"></label>
@@ -114,28 +119,51 @@
     const src = ed || again, srcLinks = src?.productLinks?.length ? src.productLinks : String(src?.etsyUrl || '').split(/\s+/).filter(Boolean);
     const start = src?.items?.length ? groups(src.items) : src ? [{ link: srcLinks[0] || '', vars: [{ quantity: src.quantity || 1, variant: src.variant || '' }] }, ...srcLinks.slice(1).map(link => ({ link, vars: [{ quantity: '', variant: '' }] }))] : [{}];
     prodBox.innerHTML = start.map(prodBlock).join('');
+    // Editing: each line keeps the photo saved for it.
+    if (ed && (ed.items?.length || 0) > 1) $$('[data-var]', form).forEach((r, i) => { const ph = ed.photos?.find(x => x.itemIndex === i + 1); if (ph) linePicks.set(r.dataset.rk, { key: 'p' + ph.id, id: ph.id }); });
     // Function declarations: the photo box updates the summary before the boxes are drawn.
     function prodRows() { return $$('[data-prod]', form); }
     function itemRows() { return $$('[data-var]', form); }
     function items() { return prodRows().flatMap(b => { const link = b.querySelector('[data-link]').value.trim(); return $$('[data-var]', b).map(r => ({ link, quantity: parseInt(r.querySelector('[data-qty]').value, 10), variant: r.querySelector('[data-variant]').value.trim() })); }); }
     function totalQty() { return items().reduce((n, i) => n + (i.quantity > 0 ? i.quantity : 0), 0); }
+    function linesOn() { return !selectedProduct && itemRows().length > 1; }
+    function renderLines() {
+      const on = linesOn();
+      itemRows().forEach((r, i) => {
+        const box = r.querySelector('[data-var-photo]'), pk = linePicks.get(r.dataset.rk); box.hidden = !on; if (!on) return;
+        box.innerHTML = `<span class="var-photo-t"><b data-no-i18n>#${i + 1}</b> <span>Photo of this variation</span></span>` + (pk
+          ? `<figure class="pm-photo sm"><img src="${pk.id ? photoUrl(ed.id, pk.id, true) : pk.thumb}" alt="Photo of this variation">${pk.id && locked ? '' : `<button type="button" class="pm-remove" data-line-remove aria-label="Remove photo">×</button>`}</figure>`
+          : `<label class="pm-add sm"><input type="file" accept="image/*" hidden data-line-input><span>+</span><small>Add photo</small></label>`);
+        if (pk) r.classList.remove('photo-bad');
+      });
+    }
     const syncItems = () => {
       const blocks = prodRows(), one = !!selectedProduct?.priceOptions;
       prodBox.classList.toggle('many', blocks.length > 1);
       blocks.forEach((b, i) => { b.querySelector('[data-prod-n]').textContent = i + 1; b.querySelector('[data-prod-remove]').hidden = blocks.length < 2; const vars = $$('[data-var]', b); vars.forEach(v => { v.querySelector('[data-var-remove]').hidden = vars.length < 2; }); b.querySelector('[data-var-add]').hidden = one || vars.length >= 10; });
       $('[data-prod-add]', form).hidden = one || blocks.length >= 10;
+      renderLines(); renderPicks();
     };
     syncItems();
     form.addEventListener('click', e => {
       const va = e.target.closest('[data-var-add]');
       if (va) { const list = va.closest('[data-prod]').querySelector('[data-vars]'); list.insertAdjacentHTML('beforeend', varRow()); syncItems(); list.lastElementChild.querySelector('[data-variant]').focus(); updateSum(); return; }
       if (e.target.closest('[data-prod-add]')) { prodBox.insertAdjacentHTML('beforeend', prodBlock()); syncItems(); prodRows().at(-1).querySelector('[data-link]').focus(); updateSum(); return; }
-      const vr = e.target.closest('[data-var-remove]'); if (vr) { vr.closest('[data-var]').remove(); syncItems(); updateSum(); return; }
-      const pr = e.target.closest('[data-prod-remove]'); if (pr) { pr.closest('[data-prod]').remove(); syncItems(); updateSum(); }
+      const dropLine = r => { const pk = linePicks.get(r.dataset.rk); if (pk?.id) removed.push(pk.id); linePicks.delete(r.dataset.rk); };
+      const lr = e.target.closest('[data-line-remove]'); if (lr) { dropLine(lr.closest('[data-var]')); syncItems(); updateSum(); return; }
+      const vr = e.target.closest('[data-var-remove]'); if (vr) { const r = vr.closest('[data-var]'); dropLine(r); r.remove(); syncItems(); updateSum(); return; }
+      const pr = e.target.closest('[data-prod-remove]'); if (pr) { const b = pr.closest('[data-prod]'); $$('[data-var]', b).forEach(dropLine); b.remove(); syncItems(); updateSum(); }
+    });
+    prodBox.addEventListener('change', async e => {
+      const inp = e.target.closest('[data-line-input]'); if (!inp) return;
+      const file = inp.files?.[0], r = inp.closest('[data-var]'); inp.value = ''; if (!file) return;
+      if (picks.length + linePicks.size >= MAX_PHOTOS) { setMsg(`You can add up to ${MAX_PHOTOS} photos.`, 'err'); return; }
+      try { linePicks.set(r.dataset.rk, { key: 'n' + (++pickSeq), ...(await shrinkImage(file)) }); setMsg(''); } catch (ex) { setMsg(ex.message, 'err'); }
+      renderLines(); renderPicks();
     });
     form.productId?.addEventListener('change',()=>{
       selectedProduct=S.products.find(p=>p.id===Number(form.productId.value))||null;
-      prodBox.innerHTML=prodBlock({link:selectedProduct?.link||'',vars:[{variant:selectedProduct?.variant||''}]});syncItems();
+      linePicks.clear();prodBox.innerHTML=prodBlock({link:selectedProduct?.link||'',vars:[{variant:selectedProduct?.variant||''}]});syncItems();
       picks=selectedProduct ? selectedProduct.photoIds.map(id=>({key:'product-'+id,productFrom:true,thumb:'/api/portal/products/'+selectedProduct.id+'/photos/'+id})) : [];
       if(selectedProduct?.competitorPrice&&!form.competitorPrice.value)form.competitorPrice.value=selectedProduct.competitorPrice;
       const opts=selectedProduct?.priceOptions||null,optBox=$('[data-f="productOption"]',form);
@@ -165,7 +193,7 @@
       const where = [form.buyerName.value.trim(), dest.label()].filter(Boolean).join(' · ');
       const row = (label, value) => `<div><span>${label}</span><b>${value ? esc(value) : '<em class="miss">not filled in yet</em>'}</b></div>`;
       $('[data-sum]').innerHTML = row('Order number', form.orderRef.value.trim()) + row('Product', links ? `${links} product${links > 1 ? 's' : ''} · ${qty} item${qty > 1 ? 's' : ''}` : '')
-        + (unitPrice()!=null ? row('Order total',money(Math.round((unitPrice()*qty+(shippingNow()||0))*100)/100)) + profitRow(Math.round((unitPrice()*qty+(shippingNow()||0))*100)/100) : '') + row('Photo', picks.length ? `${picks.length} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
+        + (unitPrice()!=null ? row('Order total',money(Math.round((unitPrice()*qty+(shippingNow()||0))*100)/100)) + profitRow(Math.round((unitPrice()*qty+(shippingNow()||0))*100)/100) : '') + row('Photo', picks.length + linePicks.size ? `${picks.length + linePicks.size} added` : (ed?.source === 'etsy-csv' ? 'not needed' : '')) + row('Ship to', where && form.address1.value.trim() && dest.get() ? where : '');
     }
     form.addEventListener('input', updateSum);
     form.addEventListener('change', updateSum);
@@ -182,7 +210,12 @@
       check('orderRef', form.orderRef.value.trim(), 'order number');
       check('orderDate', form.orderDate.value, 'order date');
       check('links', links.length && !badLink, badLink ? 'a full product link (starting with https://)' : 'product link');
-      check('photos', picks.length || ed?.source === 'etsy-csv', 'photo or screenshot');
+      if (linesOn()) {
+        const noPhoto = itemRows().filter(r => !linePicks.has(r.dataset.rk));
+        itemRows().forEach(r => r.classList.toggle('photo-bad', noPhoto.includes(r)));
+        if (noPhoto.length) { mark('links', true); missing.push(['links', 'a photo of each variation']); }
+        if (picks.length + linePicks.size > MAX_PHOTOS) { mark('photos', true); missing.push(['photos', `at most ${MAX_PHOTOS} photos in one order`]); }
+      } else check('photos', picks.length || linePicks.size || ed?.source === 'etsy-csv', 'photo or screenshot');
       const badQty = itemRows().filter(r => { const q = parseInt(r.querySelector('[data-qty]').value, 10); return !(q >= 1 && q <= 999); });
       itemRows().forEach(r => r.querySelector('.item-qty').classList.toggle('bad', badQty.includes(r)));
       const noLink = prodRows().filter(b => !b.querySelector('[data-link]').value.trim());
@@ -209,7 +242,11 @@
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');
       if(selectedProduct){body.productId=selectedProduct.id;body.quotedUnitPrice=unitPrice();body.quotedShipping=selectedProduct.shipping??null;if(selectedProduct.priceOptions)body.productOption=chosenOption().label;}
-      const fresh = picks.filter(p => !p.id && !p.productFrom), photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
+      // Line photos carry their line number (1 = first variation row); with one line they count as whole-order photos.
+      const on = linesOn(), lineNo = new Map(itemRows().map((r, i) => [r.dataset.rk, i + 1]));
+      const lineFresh = [...linePicks].filter(([, p]) => !p.id).map(([rk, p]) => ({ ...p, item: on ? lineNo.get(rk) : null }));
+      if (ed) body.photoLines = [...linePicks].filter(([, p]) => p.id).map(([rk, p]) => ({ id: p.id, item: on ? lineNo.get(rk) ?? null : null }));
+      const fresh = [...lineFresh, ...picks.filter(p => !p.id && !p.productFrom)], photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height, item: p.item ?? null });
       let r;
       try {
         r = ed ? await api('/orders/' + ed.id, { method: 'PUT', body })

@@ -19,7 +19,7 @@
 import { paidLabels, PAID, NOT_PAID } from './payment-orders.mjs';
 import { sheetsRequest, googleSheetsConfig, googleSheetsConfigured, syncPortalOrderToGoogleSheet } from './google-sheets.mjs';
 import { changeStatus } from './order-status.mjs';
-import { sheetPhotoUrl } from './sheet-photos.mjs';
+import { sheetPhotoUrl, sheetCollageUrl } from './sheet-photos.mjs';
 import { splitOldNotes } from './order-notes.mjs';
 import { pollQuoteTab, QT } from './quote-sheet.mjs';
 import { createHash } from 'node:crypto';
@@ -150,17 +150,34 @@ export function savedPriceFlag(o) {
   return 'Total cost filled in from an earlier order (same product, variation, country and quantity). Change it if this one is different.\n';
 }
 // Website-owned cells: A–O and W–AG (P–V are the supplier's; W is Client paid). Column C is the shop the order came from — suppliers don't see who our clients are.
+// Photo per order line (Erwin, 1 Nov 2026): on an order with several lines and at least one line photo, the preview
+// (E) shows all line photos in one picture numbered 1, 2, 3, the variation text (I) numbers its lines the same way
+// ("#2 1 × Golden Bronze"), F opens the big picture and the photo links say which line they show.
+const orderLines = o => { try { const a = o.items ? JSON.parse(o.items) : null; return Array.isArray(a) ? a : []; } catch { return []; } };
+export function numberedLines(items) {
+  const links = [...new Set(items.map(i => i.link).filter(Boolean))];
+  const line = i => `#${items.indexOf(i) + 1} ${i.variant ? `${i.quantity} × ${i.variant}` : `${i.quantity} pcs`}`;
+  return links.length > 1 ? links.map((l, n) => [`Product ${n + 1}:`, ...items.filter(i => i.link === l).map(line)].join('\n')).join('\n') : items.map(line).join('\n');
+}
+export function linePhotos(o, photos) {
+  const items = orderLines(o);
+  if (items.length < 2 || !photos.some(p => p.item_index != null)) return null;
+  return items.map((_, i) => [i + 1, photos.find(p => Number(p.item_index) === i + 1)?.id ?? null]);
+}
 export function websiteCells(env, o, photos, shopName) {
-  const urls = photos.map(p => sheetPhotoUrl(env, o.id, p.id));
+  const urls = photos.map(p => sheetPhotoUrl(env, o.id, p.id)), lines = linePhotos(o, photos);
   const links = String(o.etsy_url || '').split(/\s+/).filter(Boolean);
-  const product = [o.item_title, o.variant].map(norm).filter(Boolean).join(' · ');
+  const product = [o.item_title, lines ? numberedLines(orderLines(o)) : o.variant].map(norm).filter(Boolean).join(' · ');
+  const preview = lines ? `=IMAGE("${q(sheetCollageUrl(env, o.id, lines))}",1)` : urls[0] ? `=IMAGE("${q(urls[0])}&size=thumb",1)` : '';
+  const first = lines ? `=HYPERLINK("${q(sheetCollageUrl(env, o.id, lines, true))}","All ${lines.length} photos")` : urls[0] ? `=HYPERLINK("${q(urls[0])}","Photo 1")` : '';
+  const label = (p, n) => (p?.item_index != null && lines ? `Photo #${p.item_index}` : `Photo ${n}`);
   const am = [
     txt(o.order_date || new Date(Number(o.created_at) * 1000).toISOString().slice(0, 10)), txt(o.order_ref || '#' + o.id), txt(shopName),
-    STATUS[o.status] || o.status, urls[0] ? `=IMAGE("${q(urls[0])}&size=thumb",1)` : '', urls[0] ? `=HYPERLINK("${q(urls[0])}","Photo 1")` : '',
+    STATUS[o.status] || o.status, preview, first,
     links[0] ? `=HYPERLINK("${q(links[0])}","${links.length > 1 ? 'Open product 1' : 'Open product'}")` : '', Number(o.quantity || 1), txt(product), txt(o.buyer_name),
     txt(addressLines(o)), txt(o.tax_number), txt(o.gift_message), txt(savedPriceFlag(o) + (o.notes || '')), txt(competitorCell(o.competitor_price, o.revision_status)),
   ];
-  const qz = [o.client_paid || '', ...Array.from({ length: 7 }, (_, i) => urls[i + 1] ? `=HYPERLINK("${q(urls[i + 1])}","Photo ${i + 2}")` : ''),
+  const qz = [o.client_paid || '', ...Array.from({ length: 7 }, (_, i) => urls[i + 1] ? `=HYPERLINK("${q(urls[i + 1])}","${label(photos[i + 1], i + 2)}")` : ''),
     txt(links.slice(1).map((l, i) => `Product ${i + 2}: ${l}`).join('\n')), String(o.id), String(o.client_id)];
   return { am, qz };
 }
@@ -203,12 +220,14 @@ const L = i => colName(i);
 // 100 px for the photo preview.
 export function rowPx(cells) {
   let lines = 1;
+  // A numbered picture of the line photos (two per row) needs a taller row to stay readable.
+  const min = String(cells[4] || '').includes('/lines?') ? 150 : 100;
   cells.slice(0, 18).forEach((v, i) => {
     if (typeof v !== 'string' || v.startsWith('=')) return;
     const perLine = Math.max(4, Math.floor((WIDTHS[i] - 12) / 7));
     lines = Math.max(lines, v.replace(/^'/, '').split('\n').reduce((n, part) => n + Math.max(1, Math.ceil(part.length / perLine)), 0));
   });
-  return Math.min(600, Math.max(100, lines * 17 + 16));
+  return Math.min(600, Math.max(min, lines * 17 + 16));
 }
 const rowHeight = (sheetId, row, px) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: row - 1, endIndex: row }, properties: { pixelSize: px }, fields: 'pixelSize' } });
 
@@ -995,7 +1014,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   const paid = await paidLabels(DB, orders.map(o => Number(o.id)));
   const rows = [];
   for (const o of orders) {
-    const photos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(o.id).all()).results || [];
+    const photos = (await DB.prepare('SELECT id, item_index FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(o.id).all()).results || [];
     o.client_paid = paid.get(Number(o.id)) || '';
     const { am, qz } = websiteCells(env, o, photos, o.shop_name || '');
     const supplier = supplierCells(o);

@@ -180,7 +180,7 @@ export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl =
   try {
     const rowNumber = await findOrderRow(env, orderId, fetchImpl, log);
     const syncedAt = Math.floor(Date.now() / 1000);
-    const photos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(orderId).all()).results || [];
+    const photos = (await DB.prepare('SELECT id, item_index FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(orderId).all()).results || [];
     const values = [orderValues(order, syncedAt).concat(photoCells(env,orderId,photos),[!!order.archived])];
     if (rowNumber) {
       await sheetsRequest(env, '/values/' + encodeURIComponent(`${log}!A${rowNumber}:BF${rowNumber}`) + '?valueInputOption=USER_ENTERED', {
@@ -195,8 +195,8 @@ export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl =
     await syncWorkQueueRow(DB, env, order, photos, fetchImpl);
     // A photo can be added/deleted while Google is being updated. Leave the order
     // queued for another sync instead of marking an outdated photo list complete.
-    const latestPhotos = (await DB.prepare('SELECT id FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(orderId).all()).results || [];
-    if (JSON.stringify(latestPhotos.map(p=>p.id)) !== JSON.stringify(photos.map(p=>p.id))) {
+    const latestPhotos = (await DB.prepare('SELECT id, item_index FROM order_photos WHERE order_id=? ORDER BY id LIMIT 8').bind(orderId).all()).results || [];
+    if (JSON.stringify(latestPhotos.map(p=>[p.id,p.item_index])) !== JSON.stringify(photos.map(p=>[p.id,p.item_index]))) {
       await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=?").bind(orderId).run();
       return {configured:true,synced:false,rowNumber};
     }
