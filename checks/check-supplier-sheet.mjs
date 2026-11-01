@@ -32,7 +32,7 @@ function read(rg) {
   return out;
 }
 const lastRow = name => { const g = sheets.get(name).grid; let n = g.length; while (n && !(g[n - 1] || []).some(v => v !== undefined && v !== '')) n--; return n; };
-const requests = [], meta = []; // meta: the spreadsheet's developer metadata (the cron's "last seen" mark)
+const requests = [], meta = [], readTabs = new Set(); let failBilling = false; // readTabs: every tab the website read from // meta: the spreadsheet's developer metadata (the cron's "last seen" mark)
 globalThis.fetch = (real => async (url, opt = {}) => {
   url = String(url);
   if (url.includes('oauth2.googleapis.com')) return Response.json({ access_token: 't', expires_in: 3600 });
@@ -60,6 +60,7 @@ globalThis.fetch = (real => async (url, opt = {}) => {
         if (a.fields.includes('title')) { if (sheets.has(a.properties.title)) return Response.json({ error: { message: 'name taken' } }, { status: 400 }); const all = [...sheets]; sheets.clear(); for (const [t, x] of all) sheets.set(t === title ? a.properties.title : t, x); }
       }
       else if (kind === 'deleteSheet') { const [title] = byId(a.sheetId); if (![...sheets].some(([t, s]) => t !== title && !s.hidden)) return Response.json({ error: { code: 400, message: "Invalid requests[0].deleteSheet: You can't remove all the visible sheets in a document." } }, { status: 400 }); sheets.delete(title); }
+      else if (kind === 'addSheet' && a.properties.title === 'Billing' && failBilling) return Response.json({ error: { message: 'Billing tab refused (test)' } }, { status: 500 });
       else if (kind === 'addSheet') { const p = a.properties; if (p.sheetId != null && byId(p.sheetId)) throw new Error('id in use'); const t = addTab(p.title, p.sheetId ?? nextId++); replies.push({ addSheet: { properties: { sheetId: t.sheetId, title: p.title } } }); continue; }
       else if (kind === 'createDeveloperMetadata') meta.push({ metadataId: meta.length + 1, ...a.developerMetadata });
       else if (kind === 'updateDeveloperMetadata') { const l = a.dataFilters[0].developerMetadataLookup; for (const m of meta) if (m.metadataId === l.metadataId || m.metadataKey === l.metadataKey) m.metadataValue = a.developerMetadata.metadataValue; }
@@ -72,10 +73,12 @@ globalThis.fetch = (real => async (url, opt = {}) => {
   if (path.startsWith('/values:batchClear')) { for (const r of body.ranges) { const rg = parseRange(r); const g = sheets.get(rg.name).grid; for (let i = rg.r1; i <= rg.r2 && i < g.length; i++) if (g[i]) for (let c = rg.c1; c <= rg.c2; c++) g[i][c] = ''; } return Response.json({}); }
   if (path.startsWith('/values:batchGet')) {
     const ranges = new URLSearchParams(path.split('?')[1]).getAll('ranges');
+    for (const r of ranges) readTabs.add(parseRange(r).name);
     return Response.json({ valueRanges: ranges.map(r => ({ range: r, values: read(parseRange(r)) })) });
   }
   const m = /^\/values\/([^?:]+)(:append)?/.exec(path); const rg = parseRange(m[1]);
   if (!sheets.has(rg.name)) return new Response('no sheet ' + rg.name, { status: 400 });
+  if (method === 'GET') readTabs.add(rg.name);
   if (m[2]) { const r = Math.max(lastRow(rg.name), rg.r1); write(rg.name, r, rg.c1, body.values); return Response.json({ updates: { updatedRange: `'${rg.name}'!A${r + 1}:Z${r + body.values.length}` } }); }
   if (method === 'PUT') { write(rg.name, rg.r1, rg.c1, body.values); return Response.json({}); }
   return Response.json({ values: read(rg) });
@@ -228,7 +231,7 @@ assert.equal(Number((await order(A.id)).price), 27, 'pending supplier change app
 assert.equal(cell(A.id, N), 25); assert.equal(cell(B.id, O), '9400111899223197428490'); assert.equal(cell(B.id, P), SHIPPED);
 assert.equal(cell(A.id, 14), '$24.90 on Etsy shop X', 'competitor price kept through a rebuild');
 assert.ok(sheets.get('Work Queue (old formulas)').grid[6][0].startsWith('=IF('), 'original backup kept, not replaced');
-assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t).sort(), [WQ, SHIPPED_TAB, CANCELLED_TAB].sort(), 'rebuild works; besides the supplier Product Quotes tab only the three supplier tabs are visible');
+assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t).sort(), [WQ, SHIPPED_TAB, CANCELLED_TAB, 'Billing'].sort(), 'rebuild works; besides the supplier Product Quotes tab only the three supplier tabs and Billing are visible');
 assert.equal(where(B.id)[0], SHIPPED_TAB, 'rebuilt: the shipped order is in Shipped again'); assert.equal(count(B.id), 1);
 assert.equal(sheets.get(WQ).sheetId, 2026101301);
 console.log('PASS running setup again keeps supplier values and the original backup');
@@ -244,7 +247,7 @@ later(); const switched = await cron(); assert.equal(switched.ok, true, JSON.str
 assert.equal((await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(TAB_NAMES).first()).value, 'done');
 assert.ok(!sheets.has(WQ) && sheets.get(WQ_NEW).sheetId === 2026101301, 'the supplier tab is now "Orders" (same tab id, links still open it)');
 assert.equal(sheets.get(LOG_NEW).sheetId, logId); assert.equal(sheets.get(WQ_NEW).grid[1][0], 'Direct Line — Orders');
-assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t).sort(), [WQ_NEW, SHIPPED_TAB, CANCELLED_TAB].sort(), 'only "Orders", Shipped and Cancelled are visible');
+assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t).sort(), [WQ_NEW, SHIPPED_TAB, CANCELLED_TAB, 'Billing'].sort(), 'only "Orders", Shipped, Cancelled and Billing are visible');
 const rowOf = id => sheets.get(WQ_NEW).grid.findIndex(r => r && Number(r[31]) === id);
 const T = await mk('T-TABS'); await settle();
 assert.ok(rowOf(T.id) > 0, 'a new order lands in "Orders"');
@@ -370,6 +373,31 @@ const again19 = await cron(); assert.equal(again19.ok, true); for (const t of TA
 assert.equal((await order(Number(multi[1]))).item_costs, '27.9, 21.9, 31.9', 'read from Q after the switch');
 for (const t of TABS()) assert.ok((sheets.get(t).rules || []).some(v => v.range.startColumnIndex === 16 && v.range.endColumnIndex === 17 && !v.rule), t + ': no number rule on Cost per product (Q)');
 console.log('PASS layout 19: Cost per product moved next to Total cost on all tabs, every row kept, no number rule on Q');
+
+// ---------- Billing tab (Ada, 1 Nov 2026): one list of all orders, paid apart from not paid, formulas only ----------
+const { BILLING_TAB, BILLING_HEADERS, billingCells } = await import('../server/supplier-sheet.mjs');
+assert.ok(sheets.has(BILLING_TAB), 'the Billing tab is added by the full check');
+const bill = () => sheets.get(BILLING_TAB).grid;
+assert.deepEqual(bill()[3], BILLING_HEADERS, 'row 4: the same columns on both sides');
+const f5 = String(bill()[4][0]), k5 = String(bill()[4][10]);
+assert.match(f5, new RegExp(`INDIRECT\\("'${main()}'!A6:W"\\);INDIRECT\\("'Shipped'!A6:W"\\)`), 'reads Orders and Shipped (not Cancelled), A to Client paid');
+assert.ok(!/Cancelled/.test(f5 + k5), 'cancelled orders are not billed from here');
+const picks = /CHOOSECOLS\(d,([\d,]+)\)/.exec(f5)[1].split(',').map(n => HEADERS[Number(n) - 1]);
+assert.deepEqual(picks, BILLING_HEADERS.slice(0, 9), 'every column taken from the right place in the order tabs');
+assert.match(f5, /INDEX\(d,,23\)="Paid"/); assert.match(k5, /INDEX\(d,,23\)<>"Paid"/); assert.equal(HEADERS[22], 'Client paid');
+assert.match(String(bill()[2][0]), /^="PAID by our clients: "/); assert.match(String(bill()[2][10]), /^="NOT PAID yet: "/);
+assert.ok(sheets.get(BILLING_TAB).prot.some(p => p.range.sheetId === sheets.get(BILLING_TAB).sheetId && p.range.startColumnIndex == null), 'the whole tab is protected');
+assert.ok(!readTabs.has(BILLING_TAB), 'the website never reads the Billing tab');
+// Not rewritten every minute; a deleted tab comes back; a Billing error never stops the order sync.
+const writesBefore = requests.length; later(); await cron(); assert.ok(!requests.slice(writesBefore).some(r => /Billing/.test(r)), 'up to date: not rewritten');
+sheets.delete(BILLING_TAB); later(); assert.equal((await cron()).ok, true); assert.ok(sheets.has(BILLING_TAB), 'deleted by hand: added again');
+sheets.delete(BILLING_TAB); failBilling = true;
+const BT = await mk('BILL-ERR'); await settle(); supplierTypes(BT.id, N, 7.5); later(); const be = await cron(); await settle();
+assert.equal(be.ok, true, 'the sync still runs when the Billing tab fails ' + JSON.stringify(be)); assert.equal(Number((await order(BT.id)).supplier_cost), 7.5, 'and still applies supplier costs');
+failBilling = false; later(); await cron(); assert.ok(sheets.has(BILLING_TAB), 'added on the next check');
+assert.deepEqual(billingCells('Work Queue')[3].values[0][0].match(/INDIRECT\("'Work Queue'!A6:W"\)/)?.[0], `INDIRECT("'Work Queue'!A6:W")`, 'tab names with spaces are quoted');
+assert.ok(!readTabs.has(BILLING_TAB));
+console.log('PASS Billing tab: all orders, paid apart from not paid, formulas only, protected, never read, safe if it fails');
 
 // ---------- sorting in the sheet (29 Oct 2026 incident) ----------
 // The supplier sorts with the filter arrows: Google moves only the filter's columns. The filter used to stop at AD, so the

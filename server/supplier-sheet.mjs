@@ -540,6 +540,68 @@ const websiteProtection = (sheetId, email, c = C) => [[{ sheetId, startColumnInd
   [{ sheetId, startColumnIndex: c.PAIDC, endColumnIndex: c.CLIENT + 1 }, 'Filled in by the Direct Line website'], [{ sheetId, startRowIndex: 0, endRowIndex: 5, startColumnIndex: 14, endColumnIndex: c.PAIDC }, 'Column headers']]
   .map(([range, description]) => ({ addProtectedRange: { protectedRange: { range, description, editors: { users: [email] } } } }));
 
+// ---------- Billing tab (Ada, 1 Nov 2026) ----------
+// Ada bills per order and needs one list of every order (not split by shipping status), with what our clients have
+// paid apart from what they haven't. "Billing" is worked out by the sheet itself (FILTER formulas over Orders and
+// Shipped, newest first; cancelled orders are not in it): left PAID by our clients, right NOT PAID yet, a count and
+// total on top. The website only writes the formulas (when the tab is missing or its version / the layout changed) and
+// never reads the tab, so nothing typed or shown there can change an order or a bill. The whole tab is protected.
+// Errors here are logged and never stop the order sync.
+export const BILLING_TAB = 'Billing';
+const BILLING_KEY = 'supplier_billing_tab', BILLING_V = '1';
+const BILL_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Qty', 'Total cost (USD)', ITEM_COSTS, 'Shipping status', 'Client paid'];
+export const BILLING_HEADERS = [...BILL_COLS, '', ...BILL_COLS];
+const BILLING_HELP = 'Every order from the Orders and Shipped tabs (not cancelled ones), newest first, so you can bill from one list. Left: orders our client has PAID. Right: NOT PAID yet. Filled in by the sheet itself: do not type here; change costs in Orders or Shipped and this tab follows.';
+export function billingCells(wq, c = C) {
+  const q = t => `'${t.replace(/'/g, "''")}'`, tabs = [wq, SHIPPED_TAB], last = L(c.PAIDC);
+  const col = n => `INDIRECT("${q('@')}!${n}${FIRST_ROW}:${n}")`, both = (f, n) => tabs.map(t => f(col(n).replace('@', t)));
+  const pick = BILL_COLS.map(h => c.h.indexOf(h) + 1).join(',');
+  const rows = `{${tabs.map(t => `INDIRECT("${q(t)}!A${FIRST_ROW}:${last}${''}")`).join(';')}}`;
+  const list = (cond, none) => `=IFERROR(SORT(LET(d,${rows},FILTER(CHOOSECOLS(d,${pick}),INDEX(d,,2)<>"",INDEX(d,,${c.PAIDC + 1})${cond})),1,FALSE),"${none}")`;
+  const P = L(c.COST), B = 'B', W = L(c.PAIDC);
+  const paidN = tabs.map(t => `COUNTIF(${col(W).replace('@', t)},"${PAID}")`).join('+'), paidSum = tabs.map(t => `SUMIF(${col(W).replace('@', t)},"${PAID}",${col(P).replace('@', t)})`).join('+');
+  const openN = tabs.map(t => `COUNTIFS(${col(B).replace('@', t)},"<>",${col(W).replace('@', t)},"<>${PAID}")`).join('+');
+  const openSum = tabs.map(t => `SUMIFS(${col(P).replace('@', t)},${col(B).replace('@', t)},"<>",${col(W).replace('@', t)},"<>${PAID}")`).join('+');
+  return [
+    { range: `${BILLING_TAB}!A1:A2`, values: [['Direct Line — Billing'], [BILLING_HELP]] },
+    { range: `${BILLING_TAB}!A3:K3`, values: [[`="PAID by our clients: "&(${paidN})&" orders · "&TEXT(${paidSum},"$#,##0.00")`, '', '', '', '', '', '', '', '', '', `="NOT PAID yet: "&(${openN})&" orders · "&TEXT(${openSum},"$#,##0.00")`]] },
+    { range: `${BILLING_TAB}!A4:S4`, values: [BILLING_HEADERS] },
+    { range: `${BILLING_TAB}!A5:K5`, values: [[list(`="${PAID}"`, 'No paid orders yet'), '', '', '', '', '', '', '', '', '', list(`<>"${PAID}"`, 'No unpaid orders')]] },
+  ];
+}
+const billingFormat = (sheetId, email) => {
+  const r = (r1, r2, c1, c2) => ({ sheetId, startRowIndex: r1, endRowIndex: r2, startColumnIndex: c1, endColumnIndex: c2 });
+  const fill = (range, rgb, bold) => ({ repeatCell: { range, cell: { userEnteredFormat: { backgroundColor: rgb, textFormat: { bold } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } });
+  const widths = [95, 125, 135, 220, 50, 110, 150, 120, 95, 30];
+  return [
+    { repeatCell: { range: r(0, 1, 0, 1), cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 16 } } }, fields: 'userEnteredFormat.textFormat' } },
+    fill(r(2, 4, 0, 9), green, true), fill(r(2, 4, 10, 19), orange, true),
+    { repeatCell: { range: r(4, 1000, 0, 19), cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment)' } },
+    ...[5, 15].map(i => ({ repeatCell: { range: r(4, 1000, i, i + 1), cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } })),
+    ...[...widths.slice(0, 9), widths[9], ...widths.slice(0, 9)].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
+    { addProtectedRange: { protectedRange: { range: { sheetId }, description: 'Billing: worked out by the sheet (Direct Line)', editors: { users: [email] } } } },
+  ];
+};
+// Adds the Billing tab if it is missing and (re)writes its formulas. Returns what it did.
+export async function ensureBillingTab(DB, env, fetchImpl = fetch, { force = false } = {}) {
+  const want = BILLING_V + '|' + LAYOUT_NOW, { wq } = await tabNames(DB);
+  const props = ((await sheetsRequest(env, '?fields=sheets.properties', {}, fetchImpl)).sheets || []).map(x => x.properties || {});
+  if (!props.some(p => p.title === wq) || !props.some(p => p.title === SHIPPED_TAB)) return 'no supplier tabs yet';
+  let tab = props.find(p => p.title === BILLING_TAB);
+  if (tab && !force && await getSetting(DB, BILLING_KEY) === want) return 'up to date';
+  if (!tab) {
+    const at = props.findIndex(p => p.title === CANCELLED_TAB) + 1 || props.length;
+    const made = await batch(env, [{ addSheet: { properties: { title: BILLING_TAB, index: at, gridProperties: { rowCount: 1000, columnCount: 19, frozenRowCount: 4 } } } }], fetchImpl);
+    tab = made?.replies?.[0]?.addSheet?.properties;
+    if (tab?.sheetId == null) throw new Error('Billing tab was not added');
+    await batch(env, billingFormat(tab.sheetId, googleSheetsConfig(env).email), fetchImpl);
+  }
+  await batchValues(env, billingCells(wq), fetchImpl);
+  await putSetting(DB, BILLING_KEY, want);
+  return tab ? 'written' : 'added';
+}
+const billingSafely = async (DB, env, fetchImpl, opts) => { try { return await ensureBillingTab(DB, env, fetchImpl, opts); } catch (e) { console.error('Billing tab not updated', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
+
 // Renames the tabs (see tabNames): 1) the hidden website log "Orders" -> "Order Log"; 2) at least 10 minutes later,
 // "Work Queue" -> "Orders" (and its title cell). Each step checks the sheet first, so it is safe to run again.
 export async function ensureTabNames(DB, env, fetchImpl = fetch) {
@@ -804,6 +866,8 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
   try {
     await ensureTabNames(DB, env, fetchImpl);
     if (!await ensureLayout(DB, env, fetchImpl)) return { ...result, waiting: 'layout' };
+    // The Billing tab (formulas only): added if missing, rewritten after a layout change. Never stops the sync.
+    result.billing = await billingSafely(DB, env, fetchImpl);
     const { wq } = await tabNames(DB);
     // Old "ADDRESS CHANGED" warnings: take them off, a few rows a minute (Google's write limit), until none are left.
     for (const r of (await DB.prepare('SELECT id FROM client_orders WHERE address_changed_at IS NOT NULL ORDER BY id LIMIT 5').all()).results || []) {
@@ -975,6 +1039,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   ], fetchImpl);
 
   await splitSupplierTabs(DB, env, wq, sheetId, fetchImpl);
+  await DB.prepare('DELETE FROM portal_settings WHERE key=?').bind(BILLING_KEY).run();
   await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(SETTING, '1').run();
   await putSetting(DB, LAYOUT, LAYOUT_NOW);
   return { ok: true, rows: rows.length, sheetId, backup: !!current };
