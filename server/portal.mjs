@@ -835,7 +835,7 @@ async function routePortal(request, url, ctx, meta) {
     if (dup) return json({ ok: false, duplicate: dup, error: dup.why === 'ref' ? 'You already sent this order number. Send it again anyway?' : 'You already sent an order for this customer with this product in the last day. Send it again anyway?' }, 409);
     const settings = await getSettings(DB);
     const { row, saved } = await insertOrder(DB, env, waitUntil, client, f, photos, actorOf(who), '', settings);
-    if (body.confirmDuplicate) { const was = await findDuplicate(DB, clientId, f, row.id); if (was) await logEvent(DB, row.id, clientId, 'duplicate', actorOf(who), `${was.why === 'ref' ? 'same order number as' : 'same customer and product as'} ${was.ref}`); }
+    if (body.confirmDuplicate && actorOf(who) === 'client') { const was = await findDuplicate(DB, clientId, f, row.id); if (was) await logEvent(DB, row.id, clientId, 'duplicate', actorOf(who), `${was.why === 'ref' ? 'same order number as' : 'same customer and product as'} ${was.ref}`); }
     if (lines.items) { await saveItems(DB, row.id, lines.items); row.items = JSON.stringify(lines.items); }
     if (f.quoted_shipping != null) { await DB.prepare('UPDATE client_orders SET quoted_shipping=? WHERE id=?').bind(f.quoted_shipping, row.id).run(); row.quoted_shipping = f.quoted_shipping; }
     const newFee = await saveEtsyFee(DB, row.id, body); if (newFee !== undefined) row.etsy_fee = newFee;
@@ -881,7 +881,7 @@ async function routePortal(request, url, ctx, meta) {
       : "UPDATE order_messages SET read_by_client = TRUE WHERE order_id = ? AND author = 'admin'").bind(id).run();
     const rows = (await DB.prepare('SELECT * FROM order_messages WHERE order_id = ? ORDER BY created_at, id').bind(id).all()).results || [];
     // The supplier-sheet audit is for the Direct Line team only (not clients, not admins viewing the client's portal).
-    const events = (await DB.prepare("SELECT * FROM order_events WHERE order_id = ? AND kind <> 'message' AND (? OR kind <> 'supplier_sheet') ORDER BY created_at, id").bind(id, !!who.admin && !who.preview && !who.acting).all()).results || [];
+    const events = (await DB.prepare("SELECT * FROM order_events WHERE order_id = ? AND kind <> 'message' AND (? OR kind NOT IN ('supplier_sheet', 'duplicate')) ORDER BY created_at, id").bind(id, !!who.admin && !who.preview && !who.acting).all()).results || [];
     return json({ ok: true, messages: rows.map(messageOut), events: events.map(eventOut) });
   }
   if(path==='/claims'&&method==='GET'&&!who.admin)return json({ok:true,claims:await claims(DB,who.clientId)});
