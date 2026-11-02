@@ -937,6 +937,16 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
   if (!googleSheetsConfigured(env)) return { ok: true, configured: false };
   if (!await supplierSheetEnabled(DB)) return { ok: true, enabled: false };
   const t = Math.floor(Date.now() / 1000), result = { ok: true, enabled: true, checked: 0, changed: [], skipped: [] };
+  // One check at a time (2 Nov 2026): a slow check (Google slow, many rows to rewrite) could still run when the next
+  // minute's started; both then applied the same supplier edit (client notified twice, events twice).
+  const until = String(t + 300);
+  const mine = await DB.prepare(`INSERT INTO portal_settings (key, value) VALUES ('supplier_poll_until', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(portal_settings.value AS BIGINT) <= ? RETURNING key`).bind(until, t).first();
+  if (!mine) return { ...result, busy: true };
+  try { return await pollNow(DB, env, { waitUntil, fetchImpl }, t, result); }
+  finally { await DB.prepare("DELETE FROM portal_settings WHERE key='supplier_poll_until' AND value=?").bind(until).run(); }
+}
+async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
   try {
     await ensureTabNames(DB, env, fetchImpl);
     if (!await ensureLayout(DB, env, fetchImpl)) return { ...result, waiting: 'layout' };

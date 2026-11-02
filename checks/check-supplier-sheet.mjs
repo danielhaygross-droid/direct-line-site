@@ -447,6 +447,10 @@ assert.equal(r2.tracking_number, 'UL652493055YP', 'and its tracking');
 assert.equal(copies(RC.id), 1, 'the empty copy was removed');
 { const [t, r] = where(RC.id); assert.equal(Number(sheets.get(t).grid[r][N]), 27.9, 'the row that stays is the filled one'); }
 console.log('PASS an order in two rows: the filled copy is read and kept, the empty copy is removed');
+// Two minute checks at once: the second one waits its turn (says busy) instead of applying the same edits again.
+{ const [c1, c2] = await Promise.all([cron(), cron()]); assert.equal([c1, c2].filter(c => c.busy).length, 1, 'one check runs, the other is busy: ' + JSON.stringify([c1.busy, c2.busy])); }
+assert.equal((await cron()).busy, undefined, 'the next check runs normally');
+console.log('PASS one minute check at a time');
 for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 35, t + ': the filter covers A-AI');
 const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 22))])));
 const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);
