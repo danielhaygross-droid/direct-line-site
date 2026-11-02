@@ -983,7 +983,12 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     });
     let rows = [...byOrder.values()];
     result.checked = rows.length;
-    if (twice.size) { result.twice = [...twice]; for (const id of twice) await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=? AND NOT archived").bind(id).run(); }
+    // Rewritten right away (a few per check), so the extra copy goes now, not at the next retry.
+    if (twice.size) {
+      result.twice = [...twice];
+      for (const id of twice) await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=? AND NOT archived").bind(id).run();
+      for (const id of [...twice].slice(0, 5)) { const sync = syncPortalOrderToGoogleSheet(DB, env, id, fetchImpl).catch(e => console.error('Sheet rewrite of a doubled order failed', e)); if (waitUntil) waitUntil(sync); else await sync; }
+    }
     // One query for what the website last saw in each row; only rows that differ are loaded and applied.
     const seen = new Map();
     for (let i = 0; i < rows.length; i += 200) {
