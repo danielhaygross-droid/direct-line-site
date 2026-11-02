@@ -66,6 +66,7 @@ try {
   // ---- 1. The flow once (English, desktop) ----
   {
     const ctx = await session(client, 1440), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
+    await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
     await page.goto(`${base}/portal/?lang=en#/new`); await page.reload(); await page.waitForSelector('#order-form [data-prod]');
     assert.equal(await page.locator('[data-prod]').count(), 1); assert.equal(await page.locator('[data-var]').count(), 1);
     assert.equal(await page.locator('[data-var-remove]:visible, [data-prod-remove]:visible').count(), 0, 'one row: nothing to remove');
@@ -83,6 +84,19 @@ try {
     assert.equal(await page.locator('[data-var] .var-photo:visible').count(), 4, 'a photo box per line');
     await page.locator('[data-submit]').click(); await page.waitForTimeout(300);
     assert.match(await page.locator('#order-form').innerText(), /a photo of each variation/); assert.equal(await page.locator('[data-var].photo-bad').count(), 4);
+    // Paste (Erwin, 2 Nov 2026): the Paste button puts a copied image into its own variation; Ctrl+V into the one clicked last.
+    const png = (await import('node:fs')).readFileSync(fixturePath).toString('base64');
+    await page.evaluate(async b64 => { const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: 'image/png' }); await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); }, png);
+    await page.locator('#order-form [data-var]').nth(1).locator('[data-paste]').click();
+    await page.locator('#order-form [data-var]').nth(1).locator('.var-photo img').waitFor();
+    assert.equal(await page.locator('#order-form [data-var]').nth(0).locator('.var-photo img').count(), 0, 'Paste fills only its own variation');
+    await page.locator('#order-form [data-var]').nth(3).locator('[data-qty]').click();
+    await page.evaluate(async b64 => { const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: 'image/png' }); const dt = new DataTransfer(); dt.items.add(new File([blob], 'shot.png', { type: 'image/png' }));
+      document.activeElement.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }, png);
+    await page.locator('#order-form [data-var]').nth(3).locator('.var-photo img').waitFor();
+    assert.equal(await page.locator('#order-form [data-var] .var-photo img').count(), 2, 'Ctrl+V fills the variation clicked last');
+    await page.screenshot({ path: path.join(out, 'en-1440-pasted.png') });
+    console.log('PASS paste: button and Ctrl+V go to the right variation');
     await addLinePhotos(page); assert.equal(await page.locator('[data-var].photo-bad').count(), 0, 'marks go once each line has its photo');
     await page.locator('[data-submit]').click(); await page.waitForFunction(() => location.hash.startsWith('#/orders'), null, { timeout: 30000 });
     const o = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.orderRef === 'PAULINE-1');

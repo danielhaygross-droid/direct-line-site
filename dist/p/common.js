@@ -290,7 +290,7 @@
     const link = links.length ? links.map((u, i) => `<div class="pm-linkline"><a class="btn btn-sm" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${ext}${links.length > 1 ? 'Open product ' + (i + 1) : 'Open product link'}</a><span class="pm-link" title="${esc(u)}">${esc(u.replace(/^https?:\/\/(www\.)?/, ''))}</span>${prices ? `<b class="pm-price" data-no-i18n>$${prices[i].toFixed(2)}</b>` : ''}</div>`).join('')
       : '<span class="muted">No product link added.</span>';
     return `<div class="pm-photos">${photos.map(p => `<figure class="pm-photo"><a href="${photoUrl(o.id, p.id)}" title="Open full size"><img src="${photoUrl(o.id, p.id, true)}" alt="Product photo" loading="lazy"></a>${removable ? `<button type="button" class="pm-remove" data-photo-remove="${p.id}" data-order="${o.id}" aria-label="Remove photo">×</button>` : ''}</figure>`).join('')}
-      ${canAdd ? `<label class="pm-add" title="Add a photo"><input type="file" accept="image/*" multiple hidden data-photo-add="${o.id}"><span>+</span><small>Add photo</small></label>` : ''}
+      ${canAdd ? `<span class="pm-addwrap"><label class="pm-add" title="Add a photo"><input type="file" accept="image/*" multiple hidden data-photo-add="${o.id}"><span>+</span><small>Add photo</small></label><button type="button" class="pm-paste" data-paste title="Paste a copied image">Paste</button></span>` : ''}
       ${!photos.length && !canAdd ? '<span class="muted">No photos added.</span>' : ''}</div>
       <div class="pm-linkrow">${link}</div>${lines ? lineMedia(o, lines, all, { removable, canAdd: canAdd || lineAdd, hint: lineAdd }) : ''}`;
   }
@@ -300,11 +300,53 @@
     return `<div class="pm-lines" data-pm-lines><b class="pm-lines-t">Photo per variation</b>${missing ? '<p class="pm-lines-hint">Add a photo of each variation, so the right item is made.</p>' : ''}${lines.map((it, i) => {
       const p = all.find(x => x.itemIndex === i + 1), txt = it.variant ? `${it.quantity} × ${it.variant}` : `${it.quantity} pcs`;
       const pic = p ? `<figure class="pm-photo sm"><a href="${photoUrl(o.id, p.id)}" title="Open full size"><img src="${photoUrl(o.id, p.id, true)}" alt="Photo of #${i + 1}" loading="lazy"></a>${removable ? `<button type="button" class="pm-remove" data-photo-remove="${p.id}" data-order="${o.id}" aria-label="Remove photo">×</button>` : ''}</figure>`
-        : canAdd && room ? `<label class="pm-add sm" title="Add a photo of this variation"><input type="file" accept="image/*" hidden data-photo-add="${o.id}" data-photo-item="${i + 1}"><span>+</span><small>Add photo</small></label>`
+        : canAdd && room ? `<span class="pm-addwrap"><label class="pm-add sm" title="Add a photo of this variation"><input type="file" accept="image/*" hidden data-photo-add="${o.id}" data-photo-item="${i + 1}"><span>+</span><small>Add photo</small></label><button type="button" class="pm-paste" data-paste title="Paste a copied image">Paste</button></span>`
         : '<span class="pm-line-none">No photo yet</span>';
       return `<div class="pm-line${p ? '' : ' missing'}"><b class="pm-line-n" data-no-i18n>#${i + 1}</b><span class="pm-line-t" data-no-i18n><bdi dir="auto">${esc(txt)}</bdi></span>${pic}</div>`;
     }).join('')}</div>`;
   }
+
+  // ---------- paste a copied image into a photo box (Erwin, 2 Nov 2026) ----------
+  // Every "Add photo" box has a Paste button beside it; Ctrl+V fills the box clicked last, else the first variation
+  // still without a photo, else the order's photo box. The image goes into that box's file input, so each screen's own
+  // upload code runs as if the file had been picked.
+  function putFiles(input, files) {
+    const dt = new DataTransfer(); files.slice(0, input.multiple ? files.length : 1).forEach(f => dt.items.add(f));
+    input.files = dt.files; input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  const boxInput = box => box?.isConnected ? box.querySelector('input[type=file]') : null;
+  let lastBox = null;
+  document.addEventListener('pointerdown', e => { const b = e.target.closest?.('[data-var], [data-f="photos"], .pm-line, .pm-addwrap'); if (b) lastBox = b; }, true);
+  function pasteTarget() {
+    const own = boxInput(lastBox); if (own) return own;
+    const form = document.querySelector('#order-form');
+    const scope = form || document.querySelector('.drawer.open');
+    if (!scope) return null;
+    return scope.querySelector('[data-var] [data-line-input], .pm-line.missing input[type=file]') || scope.querySelector('[data-pick-input], input[data-photo-add]:not([data-photo-item])');
+  }
+  async function clipboardFiles() {
+    if (!navigator.clipboard?.read) throw new Error('This browser can’t paste here. Use Add photo, or press Ctrl+V.');
+    let items; try { items = await navigator.clipboard.read(); } catch { throw new Error('Allow the browser to use the clipboard to paste, or use Add photo.'); }
+    const files = [];
+    for (const it of items) { const type = it.types.find(t => /^image\//.test(t)); if (type) { const b = await it.getType(type); files.push(new File([b], 'pasted.' + type.split('/')[1], { type })); } }
+    if (!files.length) throw new Error('No image copied. Copy the image itself (right-click → Copy image), then press Paste.');
+    return files;
+  }
+  document.addEventListener('click', async e => {
+    const b = e.target.closest?.('[data-paste]'); if (!b) return;
+    e.preventDefault(); lastBox = b.closest('[data-var], [data-f="photos"], .pm-line, .pm-addwrap');
+    const input = b.parentElement.querySelector('input[type=file]'); if (!input) return;
+    try { putFiles(input, await clipboardFiles()); } catch (ex) { toast(ex.message); }
+  });
+  document.addEventListener('paste', e => {
+    if (e.defaultPrevented) return;
+    const items = [...(e.clipboardData?.items || [])];
+    const files = items.filter(i => i.kind === 'file' && /^image\//.test(i.type)).map(i => i.getAsFile()).filter(Boolean);
+    if (!files.length) return;
+    if (e.target.matches?.('input, textarea') && items.some(i => i.type === 'text/plain')) return;
+    const input = pasteTarget(); if (!input) return;
+    e.preventDefault(); putFiles(input, files);
+  });
 
   // ---------- photo viewer ----------
   // Photos open on top of the page (same tab) instead of a new tab: order photos, product photos and image
