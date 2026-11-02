@@ -41,7 +41,7 @@ const { admin, client, id } = await seed();
 const ok = r => { assert.ok(r.status === 200, JSON.stringify(r.data)); return r.data; };
 const store = ok(await call('/client-stores', 'GET', null, client)).stores[0];
 const photo = { filename: 'p.png', data: 'data:image/png;base64,' + (await readFile(new URL('./fixtures/en-1440-light-agreement.png', import.meta.url))).toString('base64') };
-const mk = async ref => ok(await call('/orders', 'POST', { storeId: store.id, orderRef: ref, buyerName: 'Sample Buyer', address1: '1 Sample St', destination: 'US', etsyUrl: 'https://example.com/i', photos: [photo] }, client)).order;
+const mk = async ref => ok(await call('/orders', 'POST', { storeId: store.id, orderRef: ref, buyerName: 'Buyer ' + ref, address1: '1 Sample St', destination: 'US', etsyUrl: 'https://example.com/i', photos: [photo] }, client)).order;
 const A = await mk('UPD-1'), B = await mk('UPD-2'), C = await mk('UPD-3');
 // Spread the "created" events in time, then the client writes on B (B is the latest update).
 await DB.prepare("UPDATE order_events SET created_at = created_at - 300 WHERE kind = 'created'").run();

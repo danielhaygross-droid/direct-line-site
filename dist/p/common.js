@@ -76,7 +76,7 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.ok === false) {
       const err = new Error(data.error || 'Something went wrong (' + res.status + ')');
-      err.status = res.status; throw err;
+      err.status = res.status; err.data = data; throw err;
     }
     return data;
   }

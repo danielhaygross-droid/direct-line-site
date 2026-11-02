@@ -48,7 +48,7 @@
   // Each item has a category for the filter chips in the bell (2 Nov 2026).
   const KINDS = [{ key: 'orders', label: L('Orders', 'הזמנות') }, { key: 'messages', label: L('Messages', 'הודעות') }, { key: 'costs', label: L('Costs', 'עלויות') },
     { key: 'cancel', label: L('Cancellations', 'ביטולים') }, { key: 'problems', label: L('Problems', 'בעיות') }, { key: 'products', label: L('Products', 'מוצרים') }, { key: 'todo', label: L('To-dos', 'משימות') }];
-  const catOf = e => e.kind === 'message' ? 'messages' : e.kind === 'claim' ? 'problems' : e.kind === 'supplier_sheet' || e.kind === 'revision_requested' || (e.kind === 'product' && /^Cost revision requested/.test(e.detail || '')) ? 'costs'
+  const catOf = e => e.kind === 'message' ? 'messages' : e.kind === 'claim' || e.kind === 'duplicate' || /"f":"dup_/.test(e.detail || '') ? 'problems' : e.kind === 'supplier_sheet' || e.kind === 'revision_requested' || (e.kind === 'product' && /^Cost revision requested/.test(e.detail || '')) ? 'costs'
     : e.kind === 'product' ? 'products' : e.kind === 'status' && ['cancellation_requested', 'cancelled'].includes(e.detail) ? 'cancel' : 'orders';
   function eventItem(e) { return { ...eventItemBase(e), cat: catOf(e) }; }
   function eventItemBase(e) {
@@ -56,6 +56,9 @@
     const base = { id: 'ev-' + e.id, time: e.createdAt * 1000, orderId: e.orderId, action: L('Open order', 'פתח הזמנה') };
     // The supplier changed a cost in their Google Sheet (Erwin, 26 Oct 2026: know it even when nobody was online).
     if (e.kind === 'supplier_sheet') { let d = {}; try { d = JSON.parse(e.detail); } catch (x) { /* old row */ } const usd = v => (/^\d+(\.\d+)?$/.test(v || '') ? '$' + Number(v).toFixed(2) : v || '—');
+      // Duplicates in the sheet (2 Nov 2026): two orders with the same order number or tracking number.
+      if (d.f === 'dup_tracking') return { ...base, icon: 'alert', tone: 'red', title: L('Same tracking number on two orders', 'אותו מספר מעקב בשתי הזמנות'), text: `${ref} · ${d.to}${d.with?.length ? ' · ' + L('also on', 'גם ב-') + ' ' + d.with.join(', ') : ''}` };
+      if (d.f === 'dup_order') return { ...base, icon: 'alert', tone: 'red', title: L('Order number twice in the supplier sheet', 'מספר הזמנה פעמיים בגיליון הספק'), text: `${ref} · ${who}` };
       if (d.f === 'cancel_fee') return { ...base, icon: 'alert', tone: 'red', title: L('Supplier set a cancellation fee', 'הספק קבע עמלת ביטול'), text: `${ref} · ${who} · ${usd(d.to)}` };
       return { ...base, icon: 'alert', tone: 'orange', title: L('Supplier changed a cost in the sheet', 'הספק שינה עלות בגיליון'), text: `${ref} · ${who} · ${usd(d.from)} ${L('→', '←')} ${usd(d.to)}` }; }
     if(e.kind==='claim')return {...base,icon:'alert',tone:'orange',title:L(`${who} reported an order problem`,`${who} דיווח/ה על בעיה בהזמנה`),text:ref};
@@ -63,6 +66,8 @@
     if (e.kind === 'revision_requested') return { ...base, icon: 'alert', tone: 'orange', title: L(`${who} asked for a cost revision`, `${who} ביקש/ה עדכון עלות`), text: `${ref} · ${L('competitor', 'מתחרה')} ${e.detail}` };
     if(e.kind==='product'&&/^Cost revision requested/.test(e.detail||''))return {...base,view:'client-products',action:L('View products','צפייה במוצרים'),icon:'alert',tone:'orange',title:L(`${who} asked for a cost revision`,`${who} ביקש/ה עדכון עלות`),text:`${e.productName} · ${String(e.detail).replace(/^Cost revision requested · /,'')}`};
     if(e.kind==='product')return {...base,view:'client-products',action:L('View products','צפייה במוצרים'),icon:'order',tone:'gold',title:L(`${who} submitted a product for quote`,`${who} שלח/ה מוצר להצעת מחיר`),text:e.productName};
+    // Sent anyway after the duplicate warning (2 Nov 2026).
+    if (e.kind === 'duplicate') return { ...base, icon: 'alert', tone: 'red', title: L(`${who} sent a possible duplicate order`, `${who} שלח/ה הזמנה שאולי כפולה`), text: `${ref} · ${e.detail}` };
     if (e.kind === 'created') return { ...base, icon: 'order', tone: 'gold', title: L(`${who} added a new order`, `${who} הוסיף/ה הזמנה חדשה`), text: L(`${ref} · waiting to be processed`, `${ref} · ממתינה לטיפול`) };
     if (e.kind === 'message') return { ...base, icon: 'message', tone: 'blue', focus: 'chat', action: L('Reply', 'השב'), title: L(`${who} sent a follow-up`, `${who} שלח/ה פנייה`), text: `${ref}: ${e.detail}` };
     if (e.kind === 'status' && e.detail === 'cancellation_requested') return { ...base, icon: 'alert', tone: 'orange', title: L(`${who} requested cancellation`, `${who} ביקש/ה ביטול`), text: ref };
