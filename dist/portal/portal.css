@@ -255,7 +255,7 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 /* "Your money" at the top of Home (29 Oct 2026) */
 .money-now{display:grid;gap:12px}.mn-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.mn-head .sec-title{margin:0}
 .mn-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
-.mn-tile{display:grid;gap:4px;align-content:start;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);color:var(--text);text-decoration:none;transition:border-color .15s}
+.mn-tile{display:grid;grid-template-rows:subgrid;grid-row:span 3;gap:4px;align-content:start;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);color:var(--text);text-decoration:none;transition:border-color .15s}
 .mn-tile:hover{border-color:var(--line-2)}
 .mn-tile small{color:var(--muted);font-size:12.5px;font-weight:600}
 .mn-tile strong{font-size:22px;font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
