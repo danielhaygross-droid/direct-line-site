@@ -46,7 +46,7 @@
         <td data-label="Earned" class="num">${earnedCell(o)}</td>
         <td data-label="Cost" class="num">${o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : `<b>${money(o.price)}</b>`}${window.DLPayOrders.tag(o, S.adjustments, true)}</td>
         <td data-label="Profit" class="num ${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}">${profitCell(o)}</td>
-        <td data-label="Status">${UI.pill(o.status)}${UI.delayTag(o)}</td>
+        <td data-label="Status">${UI.pill(o.status)}${UI.delayTag(o)}${UI.revTag(o)}</td>
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
   }
@@ -55,12 +55,14 @@
   const viewOrders = () => `${payStrip()}<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
       <section class="card" data-orders-list></section>`;
   const isUnpaid = o => window.DLPayOrders.state(o, S.adjustments) === 'unpaid';
-  const byFilter = (o, f) => f === 'all' || (f === 'unpaid' ? isUnpaid(o) : o.status === f);
+  // "Cost revisions": every order the client asked a cost revision on (waiting or answered).
+  const hasRevision = o => !!UI.revTag(o);
+  const byFilter = (o, f) => f === 'all' || (f === 'unpaid' ? isUnpaid(o) : f === 'revision' ? hasRevision(o) : o.status === f);
   function renderChips() {
     const c = st => storeOrders().filter(o => byFilter(o, st)).length;
     // Shipped is always there, like in admin (29 Oct 2026), even before anything ships.
-    $('[data-chips]').innerHTML = ['all', 'unpaid', ...STATUSES].filter(st => st === 'all' || st === 'shipped' || c(st) || st === S.filter)
-      .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}" aria-pressed="${S.filter === st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : st === 'unpaid' ? 'Not paid' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
+    $('[data-chips]').innerHTML = ['all', 'unpaid', ...STATUSES, 'revision'].filter(st => st === 'all' || st === 'shipped' || c(st) || st === S.filter)
+      .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}" aria-pressed="${S.filter === st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : st === 'unpaid' ? 'Not paid' : st === 'revision' ? 'Cost revisions' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
   }
   // The orders on screen: store, status chip, search and sort (also what "Export to Excel" exports).
   function shownOrders() {

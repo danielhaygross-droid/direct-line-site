@@ -10,12 +10,14 @@
     newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
     total_desc: ['Total: high to low', bySort.num(o => o.price, true)], total_asc: ['Total: low to high', bySort.num(o => o.price)],
     status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
+    revision: ['Cost revision first', bySort.revision],
   };
   const PRODUCT_SORTS = {
     updated: ['Recently updated', (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || (b.id || 0) - (a.id || 0)],
     newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
     name: ['Name A–Z', (a, b) => bySort.text(p => p.name)(a, b) || bySort.newest(a, b)],
     price_asc: ['Price: low to high', bySort.num(p => p.unitPrice)], price_desc: ['Price: high to low', bySort.num(p => p.unitPrice, true)],
+    revision: ['Cost revision first', bySort.revision],
   };
   const S = { me: null, orders: [], payments: [], transfers: [], adjustments: [], invoices: [], products: [], claims: [], stores: [], storeId:0, period:'month', from:'', to:'', notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
   const store = {

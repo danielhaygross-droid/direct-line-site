@@ -10,12 +10,14 @@
     newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
     total_desc: ['Total: high to low', bySort.num(o => o.price, true)], total_asc: ['Total: low to high', bySort.num(o => o.price)],
     status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
+    revision: ['Cost revision first', bySort.revision],
   };
   const PRODUCT_SORTS = {
     updated: ['Recently updated', (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || (b.id || 0) - (a.id || 0)],
     newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
     name: ['Name A–Z', (a, b) => bySort.text(p => p.name)(a, b) || bySort.newest(a, b)],
     price_asc: ['Price: low to high', bySort.num(p => p.unitPrice)], price_desc: ['Price: high to low', bySort.num(p => p.unitPrice, true)],
+    revision: ['Cost revision first', bySort.revision],
   };
   const S = { me: null, orders: [], payments: [], transfers: [], adjustments: [], invoices: [], products: [], claims: [], stores: [], storeId:0, period:'month', from:'', to:'', notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
   const store = {
@@ -478,7 +480,7 @@
         <td data-label="Earned" class="num">${earnedCell(o)}</td>
         <td data-label="Cost" class="num">${o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : `<b>${money(o.price)}</b>`}${window.DLPayOrders.tag(o, S.adjustments, true)}</td>
         <td data-label="Profit" class="num ${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}">${profitCell(o)}</td>
-        <td data-label="Status">${UI.pill(o.status)}${UI.delayTag(o)}</td>
+        <td data-label="Status">${UI.pill(o.status)}${UI.delayTag(o)}${UI.revTag(o)}</td>
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
   }
@@ -487,12 +489,14 @@
   const viewOrders = () => `${payStrip()}<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
       <section class="card" data-orders-list></section>`;
   const isUnpaid = o => window.DLPayOrders.state(o, S.adjustments) === 'unpaid';
-  const byFilter = (o, f) => f === 'all' || (f === 'unpaid' ? isUnpaid(o) : o.status === f);
+  // "Cost revisions": every order the client asked a cost revision on (waiting or answered).
+  const hasRevision = o => !!UI.revTag(o);
+  const byFilter = (o, f) => f === 'all' || (f === 'unpaid' ? isUnpaid(o) : f === 'revision' ? hasRevision(o) : o.status === f);
   function renderChips() {
     const c = st => storeOrders().filter(o => byFilter(o, st)).length;
     // Shipped is always there, like in admin (29 Oct 2026), even before anything ships.
-    $('[data-chips]').innerHTML = ['all', 'unpaid', ...STATUSES].filter(st => st === 'all' || st === 'shipped' || c(st) || st === S.filter)
-      .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}" aria-pressed="${S.filter === st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : st === 'unpaid' ? 'Not paid' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
+    $('[data-chips]').innerHTML = ['all', 'unpaid', ...STATUSES, 'revision'].filter(st => st === 'all' || st === 'shipped' || c(st) || st === S.filter)
+      .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}" aria-pressed="${S.filter === st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : st === 'unpaid' ? 'Not paid' : st === 'revision' ? 'Cost revisions' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
   }
   // The orders on screen: store, status chip, search and sort (also what "Export to Excel" exports).
   function shownOrders() {
@@ -1121,7 +1125,7 @@
   function productRow(p){
     const fresh=S.productsSeenBefore&&p.status!=='awaiting_quote'&&p.updatedAt>S.productsSeenBefore;
     const price=p.status==='not_available'?'':p.priceOptions?`<ul class="price-options">${p.priceOptions.map(o=>`<li><span data-no-i18n>${esc(o.label)}</span> <b>${money(o.unitPrice)}</b></li>`).join('')}</ul>${shipLine(p)}`:p.unitPrice!=null?`<b class="mp-price">${money(p.unitPrice)}</b><small class="dim">per item</small>${shipLine(p)}`:'<small class="dim">Our supplier is checking the price.</small>';
-    return `<article class="mp-row${fresh?' is-new':''}" data-open-product="${p.id}">${p.photoIds[0]?`<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="112" height="112" alt="Product photo" loading="lazy">`:'<span class="mp-ph"></span>'}<div class="mp-main"><button type="button" class="mp-name" data-open-product="${p.id}" data-no-i18n>${esc(p.name)}</button>${p.variant?`<small data-no-i18n>${esc(p.variant)}</small>`:''}${p.competitorPrice?`<small class="mp-comp"><span>Competitor price</span>: <b data-no-i18n><bdi>${esc(p.competitorPrice)}</bdi></b></small>`:''}<small><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a> · <span>Updated</span> <time data-no-i18n datetime="${new Date(p.updatedAt*1000).toISOString()}" title="${esc(fullDate(p.updatedAt))}">${esc(new Date(p.updatedAt*1000).toLocaleDateString('en-GB',{timeZone:window.DL.displayTimeZone()}))}</time></small>${p.note?`<p class="mp-note" data-no-i18n>${esc(p.note)}</p>`:''}</div><div class="mp-side"><span class="chip mp-status ${P_TONE[p.status]||''}"><i class="dot"></i>${productStatus(p.status)}</span>${fresh?`<span class="tag tag-gold">${p.status==='approved'?'New price':'Updated'}</span>`:''}${price}</div></article>`;
+    return `<article class="mp-row${fresh?' is-new':''}" data-open-product="${p.id}">${p.photoIds[0]?`<img src="/api/portal/products/${p.id}/photos/${p.photoIds[0]}" width="112" height="112" alt="Product photo" loading="lazy">`:'<span class="mp-ph"></span>'}<div class="mp-main"><button type="button" class="mp-name" data-open-product="${p.id}" data-no-i18n>${esc(p.name)}</button>${p.variant?`<small data-no-i18n>${esc(p.variant)}</small>`:''}${p.competitorPrice?`<small class="mp-comp"><span>Competitor price</span>: <b data-no-i18n><bdi>${esc(p.competitorPrice)}</bdi></b></small>`:''}<small><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a> · <span>Updated</span> <time data-no-i18n datetime="${new Date(p.updatedAt*1000).toISOString()}" title="${esc(fullDate(p.updatedAt))}">${esc(new Date(p.updatedAt*1000).toLocaleDateString('en-GB',{timeZone:window.DL.displayTimeZone()}))}</time></small>${p.note?`<p class="mp-note" data-no-i18n>${esc(p.note)}</p>`:''}</div><div class="mp-side"><span class="chip mp-status ${P_TONE[p.status]||''}"><i class="dot"></i>${productStatus(p.status)}</span>${window.DLOrderUI.revTag(p)}${fresh?`<span class="tag tag-gold">${p.status==='approved'?'New price':'Updated'}</span>`:''}${price}</div></article>`;
   }
   // Product details in the side panel: all photos, price (or each option), supplier note, dates, and "Order this product".
   // From a notification: the products page, then that product's panel (opened after the page renders).
