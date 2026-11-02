@@ -18,7 +18,8 @@
             <button type="button" class="btn btn-sm link-add" data-prod-add>+ Add another product</button><em class="help">Same product in different variations (e.g. 3 × Black Walnut, 7 Hooks and 2 × Black Walnut, 6 Hooks)? Add a row per variation inside its box. A different product (another link)? “+ Add another product”.</em></div>
           <div class="field full photo-field" data-f="photos"><span>Photo or screenshot of the product <small data-pick-count></small></span>
             <div class="pm-photos pick-zone" data-picks></div>
-            <p class="pick-hint">A screenshot of your store order is perfect. You can add up to ${MAX_PHOTOS}.</p></div>
+            <p class="pick-hint">A screenshot of your store order is perfect. You can add up to ${MAX_PHOTOS}.</p>
+            <p class="pick-hint" data-pick-lines hidden>This order has several variations: add each photo next to its variation above.</p></div>
           <label class="field full"><span>Competitor price <small>optional · what other shops charge</small></span><input name="competitorPrice" dir="auto" maxlength="200" autocomplete="off" placeholder="e.g. $24.90 on Etsy shop X" value="${esc(ed?.competitorPrice)}"></label>
         </div></section>
         <section class="card card-pad"><h3 class="form-sec"><i>3</i>Customer &amp; delivery address</h3><div class="form-grid">
@@ -64,13 +65,18 @@
     let pickSeq = 0;
     const zone = $('[data-picks]', form);
     function renderPicks() {
+      // Several variations (Erwin, 2 Nov 2026): photos go next to each variation only, so this box takes no new ones;
+      // it's hidden, or only shows the photos already added (they can still be removed).
+      const lineMode = linesOn(), field = form.querySelector('[data-f="photos"]');
+      field.hidden = lineMode && !picks.length; $('[data-pick-lines]', form).hidden = !lineMode; field.querySelector('.pick-hint:not([data-pick-lines])').hidden = lineMode;
       zone.innerHTML = picks.map(p => `<figure class="pm-photo"><img src="${p.id ? photoUrl(ed.id, p.id, true) : p.thumb}" alt="Product photo">${p.productFrom || p.id && locked ? '' : `<button type="button" class="pm-remove" data-pick-remove="${p.key}" aria-label="Remove photo">×</button>`}</figure>`).join('')
-        + (picks.length < MAX_PHOTOS ? `<label class="pm-add${picks.length ? '' : ' big'}"><input type="file" accept="image/*" multiple hidden data-pick-input><span>+</span><small>${picks.length ? 'Add more' : 'Add photo or screenshot'}</small></label>` : '');
+        + (picks.length < MAX_PHOTOS && !lineMode ? `<label class="pm-add${picks.length ? '' : ' big'}"><input type="file" accept="image/*" multiple hidden data-pick-input><span>+</span><small>${picks.length ? 'Add more' : 'Add photo or screenshot'}</small></label>` : '');
       $('[data-pick-count]', form).textContent = picks.length ? `${picks.length + linePicks.size} of ${MAX_PHOTOS}` : (ed?.source === 'etsy-csv' || linesOn() ? 'optional' : 'required');
       if (picks.length) form.querySelector('[data-f="photos"]')?.classList.remove('bad');
       updateSum();
     }
     async function addFiles(files) {
+      if (linesOn()) { setMsg('This order has several variations: add each photo next to its variation.', 'err'); return; }
       const list = [...files].filter(f => /^image\//.test(f.type || ''));
       if (!list.length) { setMsg('Please choose a photo or screenshot (JPG, PNG or WebP).', 'err'); return; }
       const room = MAX_PHOTOS - picks.length - linePicks.size;
