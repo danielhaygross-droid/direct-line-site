@@ -17,7 +17,7 @@ test('client order form requires product photos and the product link', () => {
   assert.match(form, /check\('photos', picks\.length \|\| linePicks\.size \|\| ed\?\.source === 'etsy-csv'/); assert.match(form, /'a photo of each variation'/, 'several lines: a photo per line');
   assert.match(form, /check\('links', links\.length && !badLink/);
   assert.match(form, /Please fill in: /);
-  assert.match(portal, /document\.addEventListener\('paste'/);
+  assert.match(read('dist/p/common.js'), /document\.addEventListener\('paste'/, 'Ctrl+V into a photo box (common.js, every screen)');
 });
 
 test('server stores photos per order and enforces photo + link for client orders', () => {
