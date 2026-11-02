@@ -136,7 +136,7 @@ try {
   const { websiteCells } = await import('../server/supplier-sheet.mjs');
   const sheetRow = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(shown.id).first(), sheetPhotos = (await DB.prepare('SELECT id, item_index FROM order_photos WHERE order_id=? ORDER BY id').bind(shown.id).all()).results;
   const cells = websiteCells(env, sheetRow, sheetPhotos, 'Shop');
-  assert.match(cells.am[4], /^=IMAGE\("https:\/\/[^"]+\/api\/portal\/sheet-photos\/\d+\/lines\?p=1-\d+\.2-\d+\.3-0\.4-\d+&key=/, 'preview: all lines, line 3 without a photo');
+  assert.match(cells.am[4], /^=IMAGE\("https:\/\/[^"]+\/api\/portal\/sheet-photos\/\d+\/lines\?p=1-\d+\.2-\d+\.3-0\.4-\d+&v=2&key=/, 'preview: all lines, line 3 without a photo');
   assert.match(cells.am[5], /All 4 photos/); assert.match(cells.am[8], /#1 3 × Black Walnut, 7 Hooks[\s\S]*#3 1 × Oak/);
   const collage = cells.am[4].match(/"(https:[^"]+)"/)[1].replace(/^https:\/\/[^/]+/, base);
   const got = await fetch(collage), img = Buffer.from(await got.arrayBuffer());

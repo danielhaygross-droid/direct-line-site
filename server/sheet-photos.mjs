@@ -44,7 +44,8 @@ const collageSignature = (env, orderId, param) => {
 export function sheetCollageUrl(env, orderId, lines, big = false) {
   const origin = new URL(env.PORTAL_PUBLIC_URL || DEFAULT_ORIGIN), param = linesParam(lines);
   if (origin.protocol !== 'https:') throw new Error('Photo URL must use HTTPS');
-  return `${origin.origin}/api/portal/sheet-photos/${orderId}/lines?p=${param}${big ? '&size=big' : ''}&key=${collageSignature(env, orderId, param)}`;
+  // v=2: labels with the variant names (2 Nov 2026). A new URL makes Google Sheets fetch the picture again.
+  return `${origin.origin}/api/portal/sheet-photos/${orderId}/lines?p=${param}${big ? '&size=big' : ''}&v=2&key=${collageSignature(env, orderId, param)}`;
 }
 export async function serveSheetCollage(DB, env, url, orderId) {
   const missing = () => new Response('Not found', {status:404, headers:{'cache-control':'no-store'}});
@@ -52,14 +53,16 @@ export async function serveSheetCollage(DB, env, url, orderId) {
   if (!env.APP_SESSION_SECRET || !/^\d{1,2}-\d{1,10}(\.\d{1,2}-\d{1,10}){0,9}$/.test(param)) return missing();
   const supplied = Buffer.from(url.searchParams.get('key') || ''), expected = Buffer.from(collageSignature(env, orderId, param));
   if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return missing();
-  const live = await DB.prepare(`SELECT o.id FROM client_orders o JOIN users u ON u.id=o.client_id WHERE o.id=? AND u.active AND NOT u.archived AND NOT o.archived`).bind(orderId).first();
+  const live = await DB.prepare(`SELECT o.id, o.items FROM client_orders o JOIN users u ON u.id=o.client_id WHERE o.id=? AND u.active AND NOT u.archived AND NOT o.archived`).bind(orderId).first();
   if (!live) return missing();
   const big = url.searchParams.get('size') === 'big', tiles = [];
+  let items = []; try { items = JSON.parse(live.items || '[]'); } catch {}
+  if (!Array.isArray(items)) items = [];
   for (const part of param.split('.')) {
     const [n, id] = part.split('-').map(Number);
     const row = id ? await DB.prepare('SELECT mime,data,blob_path,thumb_mime,thumb,thumb_blob_path FROM order_photos WHERE order_id=? AND id=?').bind(orderId, id).first() : null;
     const image = row ? await photoBytes(env, row, !big) : null;
-    tiles.push({ n, bytes: image?.mime === 'image/jpeg' ? image.bytes : null });
+    tiles.push({ n, name: items[n - 1]?.variant || '', bytes: image?.mime === 'image/jpeg' ? image.bytes : null });
   }
   return new Response(collageJpeg(tiles, { tile: big ? 480 : 200 }), {headers:{
     'content-type':'image/jpeg','cache-control':'private, max-age=86400','x-content-type-options':'nosniff',
