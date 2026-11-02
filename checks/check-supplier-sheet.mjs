@@ -440,7 +440,7 @@ console.log('PASS updates of one order at the same moment write one row');
 // An order already in two rows, the supplier filled in the second (bottom) copy: that copy is read, kept, and the empty one goes.
 { const [t, r] = where(RC.id), g = sheets.get(t).grid, copy = [...g[r]]; copy[N] = 27.9; copy[O] = 'UL652493055YP'; g.push(copy); }
 assert.equal(copies(RC.id), 2);
-for (let i = 0; i < 3 && copies(RC.id) > 1; i++) { assert.equal((await cron()).ok, true); await settle(); }
+assert.equal((await cron()).ok, true); await settle();
 const r2 = await order(RC.id);
 assert.equal(Number(r2.supplier_cost), 27.9, 'the cost typed in the second copy reached the website');
 assert.equal(r2.tracking_number, 'UL652493055YP', 'and its tracking');
