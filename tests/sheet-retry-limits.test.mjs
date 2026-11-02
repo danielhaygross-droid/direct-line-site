@@ -25,6 +25,7 @@ function fakeDB(count) {
         bind(...a) { args = a; return st; },
         async first() {
           if (sql.includes('FROM client_orders o JOIN users')) return orders.get(Number(args[0])) || null;
+          if (String(args[0]).startsWith('sheet_lock:')) return { key: args[0] }; // one sheet write per order
           if (sql.includes('RETURNING key')) { // claim a retry run
             const [until, now] = [Number(args[0]), Number(args[1])];
             if (db.retryUntil !== null && db.retryUntil > now) return null;

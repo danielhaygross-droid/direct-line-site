@@ -15,6 +15,7 @@
 import { sheetsRequest, googleSheetsConfig, googleSheetsConfigured } from './google-sheets.mjs';
 import { sheetProductPhotoUrl } from './sheet-photos.mjs';
 import { competitorCell, productRequoted } from './cost-revisions.mjs';
+import { withOrderLock } from './supplier-sheet.mjs';
 
 export const QT = 'Product Quotes';
 export const QUOTE_FIRST_ROW = 5;
@@ -255,8 +256,12 @@ export async function ensureQuoteRevisionAlerts(DB, env, fetchImpl = fetch) {
 }
 
 // Adds or refreshes one product's row (website columns only; the supplier's columns are never overwritten).
+// One write per product at a time, like orders (2 Nov 2026): two at once could both add a row.
 export async function syncQuoteRow(DB, env, productId, fetchImpl = fetch) {
   if (!googleSheetsConfigured(env) || await setting(DB, 'supplier_sheet') !== '1') return { enabled: false };
+  return withOrderLock(DB, 'product-' + productId, () => writeQuoteRow(DB, env, productId, fetchImpl));
+}
+async function writeQuoteRow(DB, env, productId, fetchImpl) {
   if (!await ensureQuoteTab(DB, env, fetchImpl)) throw new Error('The Product Quotes tab is being set up. Try again in a minute.');
   await ensureQuoteLayout(DB, env, fetchImpl);
   const p = await DB.prepare('SELECT p.*, u.archived AS client_archived FROM portal_products p JOIN users u ON u.id=p.client_id WHERE p.id=?').bind(productId).first();

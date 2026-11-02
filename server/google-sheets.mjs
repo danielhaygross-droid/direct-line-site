@@ -1,6 +1,6 @@
 import { createSign } from 'node:crypto';
 import { sheetPhotoUrl } from './sheet-photos.mjs';
-import { syncWorkQueueRow, removeClientFromWorkQueue, tabNames } from './supplier-sheet.mjs';
+import { syncWorkQueueRow, removeClientFromWorkQueue, tabNames, withOrderLock } from './supplier-sheet.mjs';
 
 const DEFAULT_SPREADSHEET_ID = '1L_C87W4jrZGIIrT2Fg_cGowNi3R5fTehdDw8d-vpZag';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
@@ -162,6 +162,16 @@ async function appendSyncLog(env, order, result, attempt, error, fetchImpl) {
 
 export async function syncPortalOrderToGoogleSheet(DB, env, orderId, fetchImpl = fetch) {
   if (!googleSheetsConfigured(env)) return { configured: false, synced: false };
+  // One write per order at a time, and the order is read once the lock is ours (so it is never stale).
+  try { return await withOrderLock(DB, orderId, () => syncOrderNow(DB, env, orderId, fetchImpl)); }
+  catch (e) {
+    // Still busy after waiting: the order stays queued and the retry writes it.
+    if (!e.busy) throw e;
+    await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=?").bind(orderId).run();
+    return { configured: true, synced: false, busy: true };
+  }
+}
+async function syncOrderNow(DB, env, orderId, fetchImpl) {
   const order = await DB.prepare(`SELECT o.*, u.display_name AS client_name, u.archived AS client_archived
     FROM client_orders o JOIN users u ON u.id = o.client_id WHERE o.id = ?`).bind(orderId).first();
   if (!order) throw new Error('Order not found for Google Sheets sync');

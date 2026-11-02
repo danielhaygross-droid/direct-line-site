@@ -684,11 +684,36 @@ export async function ensureTabNames(DB, env, fetchImpl = fetch) {
 }
 
 // Called from the normal order sync. Adds/updates/removes the order's Work Queue row.
+// One sheet write per order at a time (2 Nov 2026): two updates of the same order at the same moment (the order and its
+// photos, a cancel and the minute check) both found no row and both added one, so the order showed twice (in the
+// supplier tabs and in the Order Log). syncPortalOrderToGoogleSheet runs inside this lock; a second update waits for it.
+const LOCK_FOR = 120;
+export async function withOrderLock(DB, orderId, run) {
+  const key = 'sheet_lock:' + orderId;
+  for (let i = 0; ; i++) {
+    const t = Math.floor(Date.now() / 1000), until = String(t + LOCK_FOR);
+    const got = await DB.prepare(`INSERT INTO portal_settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(portal_settings.value AS BIGINT) <= ? RETURNING key`).bind(key, until, t).first();
+    if (got) { try { return await run(); } finally { await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(key, until).run(); } }
+    if (i >= 40) throw Object.assign(new Error('Another update of this order is still writing to the supplier sheet. This will be retried automatically.'), { busy: true });
+    await new Promise(r => setTimeout(r, 500));
+  }
+}
+// How much the supplier filled in on a row (cost, cost per product, tracking, courier, delay, domestic tracking, fee):
+// when an order has two rows, the fuller one is the one that counts.
+const filled = cells => cells.filter(v => v !== '' && v != null && !/^(not shipped)$/i.test(String(v).trim())).length;
+// Called under withOrderLock (syncPortalOrderToGoogleSheet).
 export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch) {
   if (!await supplierSheetEnabled(DB)) return { enabled: false };
   if (!await ensureLayout(DB, env, fetchImpl)) throw new Error('The supplier sheet is being updated. This will be retried automatically.');
   const { wq } = await tabNames(DB), tabs = allTabs(wq);
-  const found = (await idRows(env, fetchImpl, tabs)).filter(r => r.orderId === Number(order.id));
+  let found = (await idRows(env, fetchImpl, tabs)).filter(r => r.orderId === Number(order.id));
+  // Two rows for one order (see withOrderLock): keep the one the supplier filled in, the other copy is removed below.
+  if (found.length > 1) {
+    const ranges = found.map(r => 'ranges=' + encodeURIComponent(`${r.tab}!${L(C.COST)}${r.row}:${L(C.END - 1)}${r.row}`)).join('&');
+    const v = ((await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS', {}, fetchImpl)).valueRanges || []).map(x => x.values?.[0] || []);
+    found = found.map((r, i) => ({ ...r, fill: filled(v[i] || []), i })).sort((a, b) => b.fill - a.fill || a.i - b.i);
+  }
   const split = found.find(r => rowOutOfLine(r, order));
   if (split) throw Object.assign(new Error(`Supplier sheet row ${split.tab} ${split.row} is out of line: it has order id ${order.id} but shows "${cellStr(split.ref)}" instead of "${order.sheet_ref}". Rows were probably sorted without the hidden columns. Nothing was written; fix the sheet first.`), { outOfLine: true });
   const drop = async list => { for (const t of tabs) await deleteRows(env, list.filter(r => r.tab === t).map(r => r.row), fetchImpl, t); };
@@ -696,7 +721,10 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
   const shop = order.store_id == null ? null : await DB.prepare('SELECT name FROM client_stores WHERE id=?').bind(order.store_id).first();
   order.client_paid = (await paidLabels(DB, [Number(order.id)])).get(Number(order.id)) || '';
   const { am, qz } = websiteCells(env, order, photos, shop?.name || '');
-  const tab = tabFor(order, wq), here = found.find(r => r.tab === tab), changes = websiteSupplierCells(order);
+  // A copy already in the right tab is rewritten in place, unless the supplier filled in a copy elsewhere more: then that
+  // one moves here (with its cells) and the emptier copies go.
+  const tab = tabFor(order, wq), changes = websiteSupplierCells(order);
+  const inTab = found.find(r => r.tab === tab), here = inTab && !(found[0] !== inTab && (found[0].fill || 0) > (inTab.fill || 0)) ? inTab : null;
   if (here) {
     const r = here.row;
     await batchValues(env, [{ range: `${tab}!A${r}:O${r}`, values: [am] }, { range: `${tab}!${L(C.PAIDC)}${r}:${L(C.CLIENT)}${r}`, values: [qz] },
@@ -726,7 +754,9 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
   const row = Number(/![A-Z]+(\d+)/.exec(res?.updates?.updatedRange || '')?.[1]);
   const sheetId = await workQueueSheetId(env, fetchImpl, false, tab);
   if (row && sheetId != null) await batch(env, [...(row > FIRST_ROW ? [moveRow(sheetId, row, FIRST_ROW)] : []), rowHeight(sheetId, FIRST_ROW, rowPx(am))], fetchImpl);
-  await drop(found);
+  // Moving the new row to the top pushed the old copies in this tab one row down.
+  const pushed = row > FIRST_ROW && sheetId != null;
+  await drop(found.map(r => (pushed && r.tab === tab && r.row >= FIRST_ROW ? { ...r, row: r.row + 1 } : r)));
   return { enabled: true, row: FIRST_ROW, tab, ...(from ? { moved: from.tab } : { added: true }) };
 }
 
@@ -926,18 +956,24 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
     const tabs = allTabs(wq);
     const ranges = tabs.flatMap(supplierRanges).map(r => 'ranges=' + encodeURIComponent(r)).join('&');
     const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
-    const got = (data.valueRanges || []).map(v => v.values || []), byOrder = new Map();
+    const got = (data.valueRanges || []).map(v => v.values || []), byOrder = new Map(), twice = new Set();
+    const rowFill = r => filled([r.cost, r.itemCosts, r.tracking, r.courier, r.shipped, r.delayed, r.reason, r.domestic, r.cancelFee]);
     tabs.forEach((tab, k) => {
       const [inputs, ids, domestic, refs] = got.slice(k * 4, k * 4 + 4);
       (ids || []).forEach((r, i) => {
         const cell = k => inputs?.[i]?.[k - C.COST] ?? '';
         const row = { orderId: Number(r?.[0]), cost: cell(C.COST), itemCosts: cell(C.ITEMS), tracking: cell(C.TRACK), courier: cell(C.COURIER), shipped: cell(C.SHIP), delayed: cell(C.DELAY), reason: cell(C.REASON), domestic: domestic?.[i]?.[0] ?? '', cancelFee: domestic?.[i]?.[1] ?? '', ref: refs?.[i]?.[0] ?? '', tab, sheetRow: FIRST_ROW + i };
-        // An order in two tabs (a move that stopped halfway) is read once.
-        if (Number.isSafeInteger(row.orderId) && row.orderId > 0 && !byOrder.has(row.orderId)) byOrder.set(row.orderId, row);
+        // An order in two rows (a move that stopped halfway, or two updates at once): the row the supplier filled in
+        // more is read, and the order is queued so its next sheet write removes the other copy.
+        if (!(Number.isSafeInteger(row.orderId) && row.orderId > 0)) return;
+        const had = byOrder.get(row.orderId);
+        if (had) twice.add(row.orderId);
+        if (!had || rowFill(row) > rowFill(had)) byOrder.set(row.orderId, row);
       });
     });
     let rows = [...byOrder.values()];
     result.checked = rows.length;
+    if (twice.size) { result.twice = [...twice]; for (const id of twice) await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=? AND NOT archived").bind(id).run(); }
     // One query for what the website last saw in each row; only rows that differ are loaded and applied.
     const seen = new Map();
     for (let i = 0; i < rows.length; i += 200) {
