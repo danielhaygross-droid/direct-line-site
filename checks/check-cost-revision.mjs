@@ -75,7 +75,12 @@ try {
     const wa = await ui.locator('[data-rev-wa]').getAttribute('href'); assert.ok(wa.startsWith('https://wa.me/?text=') && decodeURIComponent(wa).includes('REV-1') && decodeURIComponent(wa).includes('$24.90'), tag + ' WhatsApp message to the supplier');
     assert.deepEqual(errors, [], tag); await ctx.close();
     ctx = await session(client, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.reload(); await page.waitForSelector(`[data-open-order="${A}"]`); await page.locator(`[data-open-order="${A}"]`).first().click(); await page.waitForSelector('[data-rev-box]');
+    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.reload(); await page.waitForSelector(`[data-open-order="${A}"]`);
+    // At a glance in the list (Pauline, 2 Nov 2026): the order says a revision was requested; a chip shows only those.
+    assert.equal(await page.locator(`tr[data-open-order="${A}"] .rev-tag.wait`).count(), 1, tag + ' list tag');
+    assert.equal(await page.locator('[data-filter="revision"]').count(), 1, tag + ' Cost revisions chip');
+    await page.locator(`tr[data-open-order="${A}"]`).scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-list-requested.png`) });
+    await page.locator(`[data-open-order="${A}"]`).first().click(); await page.waitForSelector('[data-rev-box]');
     assert.equal(await page.locator('.rev-line.wait').count(), 1, tag + ' client sees it is waiting'); await page.locator('[data-rev-box]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-client-waiting.png`) });
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag, 'screens');
   }
@@ -89,6 +94,15 @@ try {
   ok(await call(`/admin/orders/${A}/cost-revision`, 'POST', { action: 'keep', reply: 'This is the lowest price' }, admin));
   o = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === A);
   assert.equal(o.revision.result, 'kept'); assert.equal(o.price, 20 + Number(row.commission), 'kept');
+  {
+    const c = await session(client, 1440), p = await c.newPage(); await p.goto(`${base}/portal/?lang=en#/orders`); await p.reload(); await p.waitForSelector(`tr[data-open-order="${A}"]`);
+    assert.match(await p.locator(`tr[data-open-order="${A}"] .rev-tag`).innerText(), /Cost kept/, 'the answer shows in the list');
+    await p.locator('[data-filter="revision"]').click(); await p.waitForTimeout(200);
+    const shown = await p.locator('tr[data-open-order]').evaluateAll(r => r.map(x => [Number(x.dataset.openOrder), !!x.querySelector('.rev-tag')]));
+    assert.ok(shown.some(([id]) => id === A) && shown.every(([, t]) => t), 'the chip shows only orders with a cost revision');
+    assert.ok(await p.locator('select[data-sort="portal-orders"] option[value="revision"]').count(), 'sort: cost revision first');
+    await p.screenshot({ path: path.join(out, 'en-1440-list-kept.png') }); await c.close();
+  }
   assert.equal((await call(`/admin/orders/${A}/cost-revision`, 'POST', { action: 'keep' }, admin)).status, 409, 'nothing open');
   assert.ok([401, 403].includes((await call(`/admin/orders/${A}/cost-revision`, 'POST', { action: 'keep' }, client)).status), 'clients cannot answer');
   console.log('PASS answer: approve bills cost + fee and tells the client; ask again; keep with reply');

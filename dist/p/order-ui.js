@@ -16,6 +16,12 @@
   const pill = s => `<span class="st st-${esc(s)}">${esc(LABEL[s] || s)}</span>`;
   // Possibly delayed: set by the supplier in the sheet (Delayed? + Delay reason). Only shown until the parcel ships.
   const isLate = o => !!o?.delayedAt && ['pending', 'processing', 'cancellation_requested'].includes(o.status);
+  // Cost revision at a glance (Pauline, 2 Nov 2026: "did we already ask, and was it approved?"): a small tag on the
+  // order / product in the lists. Waiting → "Revision requested"; answered → "Cost lowered" / "Cost kept" / "Cost changed".
+  const REV = { lowered: ['Cost lowered', 'ok'], kept: ['Cost kept', 'kept'], raised: ['Cost changed', 'kept'] };
+  const revTag = x => { const r = x?.revision; if (!r) return '';
+    const [t, c] = ['open', 'offered'].includes(r.status) ? ['Revision requested', 'wait'] : r.status === 'done' ? REV[r.result] || [] : [];
+    return t ? `<span class="rev-tag ${c}">${t}</span>` : ''; };
   const delayTag = o => isLate(o) ? `<span class="delay-tag" title="${esc(o.delayReason || 'Possibly delayed')}">Possibly delayed</span>` : '';
   const delayNote = o => isLate(o) ? `<div class="delay-note" role="status"><b>Possibly delayed</b>${o.delayReason ? `<span data-no-i18n>${esc(o.delayReason)}</span>` : ''}<small><span>Marked</span> <time data-no-i18n>${esc(when(o.delayedAt))}</time></small></div>` : '';
   // A tracking number is given before the parcel leaves: it must not go on Etsy until the order is Shipped.
@@ -189,5 +195,5 @@
     if(order && value===addressText(order))return Object.fromEntries(addressKeys.map(k=>[k,order[k]||'']));
     return {address1:value,address2:'',city:'',region:'',postalCode:'',buyerPhone:''};
   }
-  window.DLOrderUI = { CLAIM_LABEL, claimFiles, addressText, addressFields, STEPS, LABEL, pill, isLate, delayTag, delayNote, notShippedYet, tracker, getDrawer, chat, svg, when, day, activity, syncConversation };
+  window.DLOrderUI = { CLAIM_LABEL, claimFiles, addressText, addressFields, STEPS, LABEL, pill, isLate, revTag, delayTag, delayNote, notShippedYet, tracker, getDrawer, chat, svg, when, day, activity, syncConversation };
 })();

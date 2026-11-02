@@ -412,7 +412,10 @@
   }
   const sortList = (items, list, sorts) => [...items].sort(sorts[sortKey(list, sorts)][1]);
   // Building blocks for the compare functions: newest / oldest first, by number (missing values last), by text.
+  // Cost revision first (2 Nov 2026): waiting for an answer, then answered, then the rest; newest first inside each.
+  const revRank = x => { const r = x?.revision; return !r ? 2 : ['open', 'offered'].includes(r.status) ? 0 : r.status === 'done' && r.result !== 'closed' ? 1 : 2; };
   const bySort = {
+    revision: (a, b) => revRank(a) - revRank(b) || bySort.newest(a, b),
     newest: (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0) || (b.id || 0) - (a.id || 0),
     oldest: (a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0) || (a.id || 0) - (b.id || 0),
     num: (get, desc) => (a, b) => { const x = get(a), y = get(b), nx = x == null || x === '' || Number.isNaN(Number(x)), ny = y == null || y === '' || Number.isNaN(Number(y)); return nx !== ny ? (nx ? 1 : -1) : nx ? 0 : desc ? Number(y) - Number(x) : Number(x) - Number(y); },
