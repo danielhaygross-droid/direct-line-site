@@ -12,6 +12,16 @@
     status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
     revision: ['Cost revision first', bySort.revision],
   };
+  const MSG_SORTS = {
+    unread: ['Unread first', (a, b) => (b.unreadMessages > 0) - (a.unreadMessages > 0) || (b.lastMessageAt || 0) - (a.lastMessageAt || 0)],
+    latest: ['Latest message first', (a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0)],
+    oldest: ['Oldest message first', (a, b) => (a.lastMessageAt || 0) - (b.lastMessageAt || 0)],
+    order: ['Order number', (a, b) => bySort.text(o => orderName(o))(a, b)],
+  };
+  const UNPAID_SORTS = {
+    oldest: ['Oldest first', bySort.oldest], newest: ['Newest first', bySort.newest],
+    total_desc: ['Total: high to low', bySort.num(o => o.price, true)], total_asc: ['Total: low to high', bySort.num(o => o.price)],
+  };
   const PRODUCT_SORTS = {
     updated: ['Recently updated', (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || (b.id || 0) - (a.id || 0)],
     newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
@@ -926,9 +936,9 @@
 
   // ---------- messages ----------
   function viewMessages() {
-    const list = S.orders.filter(o => o.messages > 0).sort((a, b) => (b.unreadMessages > 0) - (a.unreadMessages > 0) || (b.lastMessageAt || 0) - (a.lastMessageAt || 0));
+    const list = sortList(S.orders.filter(o => o.messages > 0), 'portal-messages', MSG_SORTS);
     const open = S.orders.filter(o => o.status !== 'cancelled');
-    return `<section class="card">
+    return `<section class="card">${list.length > 1 ? `<div class="card-head list-sort">${sortPick('portal-messages', MSG_SORTS)}</div>` : ''}
       ${list.length ? `<div class="convos">${list.map(o => `<button type="button" class="convo${o.unreadMessages ? ' unread' : ''}" data-open-order="${o.id}" data-focus="chat">
         <span class="ord-ic t-${o.status}">${ic('chat')}</span>
         <span style="min-width:0"><b>${esc(orderName(o))} ${UI.pill(o.status)}</b><p>${o.lastMessage ? (o.lastMessage.author === 'client' ? 'You: ' : 'Direct Line: ') + esc(o.lastMessage.body) : ''}</p></span>
@@ -964,10 +974,10 @@
   // "Not paid yet": the orders still to pay, so the client can see what the balance is made of (preview mode only;
   // clients get the same list as step 1 of "Pay for your orders").
   function unpaidCard() {
-    const list = unpaidOrders(); if (!list.length) return '';
+    const list = sortList(unpaidOrders(), 'portal-unpaid', UNPAID_SORTS); if (!list.length) return '';
     const due = list.reduce((n, o) => n + window.DLPayOrders.dueCents(o, S.adjustments), 0) / 100;
     return `<details class="card card-pad unpaid-card" data-unpaid${S.unpaidOpen ? ' open' : ''}><summary><h3 class="sec-title">Not paid yet</h3><span class="muted"><b>${list.length}</b> <span>${list.length === 1 ? 'order' : 'orders'}</span> · <b>${money(due)}</b></span></summary>
-      <div class="po-list read">${list.map(o => `<a class="po-row" href="#/orders" data-open-order="${o.id}"><span class="po-main"><b data-no-i18n>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(window.DLPayOrders.day(window.DLClientStoreMath.dateKey(o)))}</span>${o.buyerName ? ` · <span data-no-i18n>${esc(o.buyerName)}</span>` : ''}</small></span><b class="po-amt">${money(window.DLPayOrders.dueCents(o, S.adjustments) / 100)}</b></a>`).join('')}</div>
+      ${list.length > 1 ? `<div class="list-sort">${sortPick('portal-unpaid', UNPAID_SORTS)}</div>` : ''}<div class="po-list read">${list.map(o => `<a class="po-row" href="#/orders" data-open-order="${o.id}"><span class="po-main"><b data-no-i18n>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(window.DLPayOrders.day(window.DLClientStoreMath.dateKey(o)))}</span>${o.buyerName ? ` · <span data-no-i18n>${esc(o.buyerName)}</span>` : ''}</small></span><b class="po-amt">${money(window.DLPayOrders.dueCents(o, S.adjustments) / 100)}</b></a>`).join('')}</div>
       <p class="note" style="margin:10px 0 0">An order shows as paid once Direct Line records your payment for it.</p></details>`;
   }
   // Billing details for the receipts of paid bills (Ada needs them for the invoice header).
@@ -1049,8 +1059,8 @@
   function storeSwitcher(){return `<div data-store-switcher>${S.stores.length>1?`<div class="chips store-switcher"><button class="chip${!S.storeId?' on':''}" type="button" data-select-store="0">All stores</button>${S.stores.map(s=>`<button class="chip${s.id===S.storeId?' on':''}" type="button" data-select-store="${s.id}">${window.DLClientStoreUI.label(s)}</button>`).join('')}<a class="chip" href="#/stores">+ Add store</a></div>`:''}</div>`;}
   function selectStore(id){S.storeId=Number(id)||0;store.set('dl-client-store-'+S.me.id,S.storeId);location.hash='#/'+S.route+(S.id?'/'+S.id:'')+'?store='+S.storeId;}
   // Shop status filter (Erwin, 27 Oct 2026): All / Active / Suspended, remembered on this device.
-  function viewStores(){const f=store.get('dl-store-status','all'),n=k=>S.stores.filter(s=>k==='all'||s.status===k).length,shown=S.stores.filter(s=>f==='all'||s.status===f);
-    return `<div class="chips store-filter" role="group" aria-label="Shop status">${[['all','All'],['active','Active'],['suspended','Suspended']].map(([k,t])=>`<button type="button" class="chip${f===k?' on':''}" aria-pressed="${f===k}" data-store-status="${k}"><span>${t}</span> <b data-no-i18n>${n(k)}</b></button>`).join('')}</div>${S.me.preview?'':`<section class="card card-pad">${window.DLClientStoreUI.form(null,S.me.id)}</section>`}${shown.length?shown.map(s=>`<section class="card card-pad store-card${s.status==='suspended'?' is-suspended':''}">${window.DLClientStoreUI.label(s)}${S.me.preview?'':window.DLClientStoreUI.form(s,S.me.id)}</section>`).join(''):'<p class="muted card card-pad">No shops with this status.</p>'}`;}
+  function viewStores(){const f=store.get('dl-store-status','all'),n=k=>S.stores.filter(s=>k==='all'||s.status===k).length,shown=sortList(S.stores.filter(s=>f==='all'||s.status===f),'portal-stores',window.DL.LIST_SORTS.stores);
+    return `<div class="chips store-filter" role="group" aria-label="Shop status">${[['all','All'],['active','Active'],['suspended','Suspended']].map(([k,t])=>`<button type="button" class="chip${f===k?' on':''}" aria-pressed="${f===k}" data-store-status="${k}"><span>${t}</span> <b data-no-i18n>${n(k)}</b></button>`).join('')}${S.stores.length>1?sortPick('portal-stores',window.DL.LIST_SORTS.stores):''}</div>${S.me.preview?'':`<section class="card card-pad">${window.DLClientStoreUI.form(null,S.me.id)}</section>`}${shown.length?shown.map(s=>`<section class="card card-pad store-card${s.status==='suspended'?' is-suspended':''}">${window.DLClientStoreUI.label(s)}${S.me.preview?'':window.DLClientStoreUI.form(s,S.me.id)}</section>`).join(''):'<p class="muted card card-pad">No shops with this status.</p>'}`;}
   function bindStores(){
     for(const b of $$('[data-store-status]'))b.addEventListener('click',()=>{store.set('dl-store-status',b.dataset.storeStatus);renderView();});
     for(const f of $$('[data-client-store-form]')){
@@ -1191,8 +1201,8 @@
       ${adjustments.length ? `<section class="card card-pad"><h3 class="sec-title">Balance adjustments</h3>${adjustments.map(a=>`<div class="confirmation-row"><a href="#/orders" data-open-order="${a.orderId}">${esc(a.orderRef || '#'+a.orderId)}</a><span>${esc(a.note)}</span><b>${money(a.amount)}</b></div>`).join('')}</section>` : ''}
       ${payFlow()}
       ${S.billing ? '' : billingCard()}
-      <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3>${S.payments.length ? `<button type="button" class="btn btn-sm" data-pay-excel title="An Excel file with all your payments">${ic('doc')}<span>Download Excel</span></button>` : ''}<form id="invoice-month-form" class="month-receipts"><label class="field"><span>Receipts for a month</span><input type="month" name="month" value="${localDay().slice(0,7)}" required></label><button class="btn btn-sm" type="submit">Download all</button><p data-month-msg class="form-msg"></p></form></div>
-        ${S.payments.length ? `<div class="cpay-list">${S.payments.map(paymentRow).join('')}</div>` : empty('wallet', 'No payments yet', 'When we receive a payment from you, we record it here.')}
+      <section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3>${S.payments.length > 1 ? sortPick('portal-payments', window.DL.LIST_SORTS.payments) : ''}${S.payments.length ? `<button type="button" class="btn btn-sm" data-pay-excel title="An Excel file with all your payments">${ic('doc')}<span>Download Excel</span></button>` : ''}<form id="invoice-month-form" class="month-receipts"><label class="field"><span>Receipts for a month</span><input type="month" name="month" value="${localDay().slice(0,7)}" required></label><button class="btn btn-sm" type="submit">Download all</button><p data-month-msg class="form-msg"></p></form></div>
+        ${S.payments.length ? `<div class="cpay-list">${sortList(S.payments, 'portal-payments', window.DL.LIST_SORTS.payments).map(paymentRow).join('')}</div>` : empty('wallet', 'No payments yet', 'When we receive a payment from you, we record it here.')}
       </section>
       ${S.billing ? billingCard() : ''}
       <p class="note">Your bill is the total of each order. The Direct Line team records payments when they arrive.</p>`;
@@ -1247,7 +1257,7 @@
     try { await api(`/orders/${id}/photos`, { method: 'POST', body: { ...(await shrinkImage(file)), item } }); await refresh(); N.popup({ icon: 'check', title: 'Photo added' }); }
     catch (ex) { box?.classList.remove('busy'); N.popup({ icon: 'alert', title: ex.message }); }
   });
-  document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}});
+  document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}else renderView(true);});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
   document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
   document.addEventListener('input', e => { const f = e.target.closest?.('[data-rev-form]'); if (!f) return; $$('.field.bad', f).forEach(x => x.classList.remove('bad')); const m = $('[data-rev-msg]', f); m.textContent = ''; m.className = 'form-msg'; });

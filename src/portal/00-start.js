@@ -12,6 +12,16 @@
     status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
     revision: ['Cost revision first', bySort.revision],
   };
+  const MSG_SORTS = {
+    unread: ['Unread first', (a, b) => (b.unreadMessages > 0) - (a.unreadMessages > 0) || (b.lastMessageAt || 0) - (a.lastMessageAt || 0)],
+    latest: ['Latest message first', (a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0)],
+    oldest: ['Oldest message first', (a, b) => (a.lastMessageAt || 0) - (b.lastMessageAt || 0)],
+    order: ['Order number', (a, b) => bySort.text(o => orderName(o))(a, b)],
+  };
+  const UNPAID_SORTS = {
+    oldest: ['Oldest first', bySort.oldest], newest: ['Newest first', bySort.newest],
+    total_desc: ['Total: high to low', bySort.num(o => o.price, true)], total_asc: ['Total: low to high', bySort.num(o => o.price)],
+  };
   const PRODUCT_SORTS = {
     updated: ['Recently updated', (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || (b.id || 0) - (a.id || 0)],
     newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],

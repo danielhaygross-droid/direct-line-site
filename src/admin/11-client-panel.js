@@ -20,8 +20,8 @@
     const intro = '<p class="note" style="margin:0 0 12px">When the supplier fills in the total cost of an order, it is saved here. The next order with the same store, product, variation, country and quantity gets that price straight away. The supplier can still change it in the sheet, and the newest cost is kept.</p>';
     if (savedPrices === null) return `<section class="card card-pad"><h3 class="sec-title">Saved prices</h3>${intro}<p class="muted">Loading…</p></section>`;
     if (!savedPrices.length) return `<section class="card card-pad"><h3 class="sec-title">Saved prices</h3>${intro}${empty('No saved prices yet', 'They appear after the supplier prices this client’s orders.')}</section>`;
-    return `<section class="card card-pad" style="padding-bottom:6px"><h3 class="sec-title">Saved prices</h3>${intro}</section><section class="card"><div class="table-wrap"><table class="tbl stack"><thead><tr><th>Product</th><th>Country</th><th class="num">Qty</th><th class="num">Supplier cost</th><th class="num">Client pays</th><th>Used</th><th></th></tr></thead><tbody>
-      ${savedPrices.map(p => `<tr><td data-label="Product"><b data-no-i18n>${esc(p.label) || '—'}</b>${p.variant ? `<br><small class="dim" data-no-i18n>${esc(p.variant)}</small>` : ''}${p.storeName ? `<br><small class="dim" data-no-i18n>${esc(p.storeName)}</small>` : ''}${p.link ? `<br><a href="${esc(p.link)}" target="_blank" rel="noopener"><small>Product link</small></a>` : ''}</td>
+    return `<section class="card card-pad" style="padding-bottom:6px"><div class="sec-head"><h3 class="sec-title">Saved prices</h3>${savedPrices.length > 1 ? sortPick('client-saved-prices', SAVED_PRICE_SORTS) : ''}</div>${intro}</section><section class="card"><div class="table-wrap"><table class="tbl stack"><thead><tr><th>Product</th><th>Country</th><th class="num">Qty</th><th class="num">Supplier cost</th><th class="num">Client pays</th><th>Used</th><th></th></tr></thead><tbody>
+      ${sortList(savedPrices, 'client-saved-prices', SAVED_PRICE_SORTS).map(p => `<tr><td data-label="Product"><b data-no-i18n>${esc(p.label) || '—'}</b>${p.variant ? `<br><small class="dim" data-no-i18n>${esc(p.variant)}</small>` : ''}${p.storeName ? `<br><small class="dim" data-no-i18n>${esc(p.storeName)}</small>` : ''}${p.link ? `<br><a href="${esc(p.link)}" target="_blank" rel="noopener"><small>Product link</small></a>` : ''}</td>
         <td data-label="Country">${esc(place(p.destination))}</td><td data-label="Qty" class="num">${p.quantity}</td>
         <td data-label="Supplier cost" class="num">${money(p.supplierCost)}</td><td data-label="Client pays" class="num"><b>${money(p.supplierCost + fee)}</b></td>
         <td data-label="Used"><small class="dim">${p.uses ? `${p.uses}×` : 'Not yet'}${p.lastUsedAt ? ` · ${esc(fmtDay(new Date(p.lastUsedAt * 1000).toISOString().slice(0, 10)))}` : ''}</small></td>
@@ -64,7 +64,7 @@
   document.addEventListener('change', e => {
     const s = e.target.closest?.('[data-sort]'); if (!s) return;
     setSort(s.dataset.sort, s.value);
-    if (s.closest('.drawer') && S.drawer?.kind === 'client') fillClient(clientOf(S.drawer.id)); else if (S.tab === 'products') renderProducts(); else renderList();
+    if (s.closest('.drawer') && S.drawer?.kind === 'client') fillClient(clientOf(S.drawer.id)); else if (S.tab === 'products') renderProducts(); else if (S.tab === 'claims') renderClaims(); else renderList();
   });
   document.addEventListener('change', e => { const sel = e.target.closest?.('[data-client-store]'); if (sel && S.drawer?.kind === 'client') { S.drawer.storeId = Number(sel.value); fillClient(clientOf(S.drawer.id)); } });
   // Long lists: the newest 8, the rest behind "Show all".
@@ -204,8 +204,8 @@
     const adding = S.drawer.payNew || pendingTransfer(), other = invoiceFiles.filter(f => !f.paymentId || !payments.some(p => p.id === f.paymentId));
     return `${paySummary(c)}${PO.cancelledBox(cancelledMoney, { admin: true })}${transferProofHTML()}
       ${adding ? `<section class="card card-pad" data-pay-card><h3 class="sec-title">Record a payment</h3>${recordForm(c, iso)}</section>` : ''}
-      <section class="pay-cards"><div class="pay-cards-head"><h3 class="sec-title">Payments <small>${payments.length}</small></h3>${adding ? '' : `<button type="button" class="btn btn-primary btn-sm" data-pay-new>${ic('plus')}Record a payment</button>`}</div>
-        ${payments.length ? payments.map(p => paymentCard(c, p)).join('') : `<div class="card">${empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</div>`}</section>
+      <section class="pay-cards"><div class="pay-cards-head"><h3 class="sec-title">Payments <small>${payments.length}</small></h3>${payments.length > 1 ? sortPick('client-payments', window.DL.LIST_SORTS.payments) : ''}${adding ? '' : `<button type="button" class="btn btn-primary btn-sm" data-pay-new>${ic('plus')}Record a payment</button>`}</div>
+        ${payments.length ? sortList(payments, 'client-payments', window.DL.LIST_SORTS.payments).map(p => paymentCard(c, p)).join('') : `<div class="card">${empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</div>`}</section>
       ${other.length ? `<section class="card card-pad"><h3 class="sec-title">Other receipts</h3>${adminInvoiceLinks(other)}</section>` : ''}
       ${billingHTML(c)}`;
   }
@@ -232,7 +232,7 @@
         // One compact row per order (order number, customer and store; total and status on the right).
         + (orders.length ? `<section class="card ord-list">${sortList(orders, 'client-orders', ORDER_SORTS).map(o=>`<button type="button" class="ord-row" data-open-order="${o.id}" data-back="${c.id}"><span class="ord-main"><span class="ord-title"><b>${esc(orderName(o))}</b><span class="ord-date" data-no-i18n title="Order date">${esc(dayOf(o))}</span></span><small><span data-no-i18n>${esc(o.buyerName) || '—'}</span> · ${window.DLClientStoreUI.label(stores.find(s=>s.id===o.storeId))}</small></span><span class="ord-side"><b class="ord-amt">${money(o.price)}</b><span class="ord-pay">${PO.tag(o, balanceAdjustments)}</span><span class="ord-st">${UI.pill(o.status)}</span></span></button>`).join('')}</section>` : empty('No orders yet', 'Orders this client adds show up here.'))
       : tab === 'stores'
-        ? `<section class="card card-pad"><h3 class="sec-title">My Stores</h3>${stores.length ? stores.map(s=>`<details class="fold-row" data-keep="s${s.id}"><summary>${window.DLClientStoreUI.label(s)}</summary>${window.DLClientStoreUI.form(s,c.id)}</details>`).join('') : '<p class="muted">No stores yet.</p>'}<details class="fold-row" data-keep="s-new"><summary><b>+ Add store</b></summary>${window.DLClientStoreUI.form(null,c.id)}</details></section>`
+        ? `<section class="card card-pad"><div class="sec-head"><h3 class="sec-title">My Stores</h3>${stores.length > 1 ? sortPick('client-stores', window.DL.LIST_SORTS.stores) : ''}</div>${stores.length ? sortList(stores, 'client-stores', window.DL.LIST_SORTS.stores).map(s=>`<details class="fold-row" data-keep="s${s.id}"><summary>${window.DLClientStoreUI.label(s)}</summary>${window.DLClientStoreUI.form(s,c.id)}</details>`).join('') : '<p class="muted">No stores yet.</p>'}<details class="fold-row" data-keep="s-new"><summary><b>+ Add store</b></summary>${window.DLClientStoreUI.form(null,c.id)}</details></section>`
       : tab === 'products' ? productsPane(products)
       : tab === 'payments' ? paymentsPane(c, iso)
         : tab === 'prices' ? savedPricesHTML(c)
