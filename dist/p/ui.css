@@ -456,3 +456,5 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-we
 @media(max-width:560px){.rev-form{grid-template-columns:1fr}}
 .rev-ask{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 14px;padding:12px 14px;border-radius:var(--radius-sm);border:1px solid color-mix(in srgb,var(--gold) 45%,var(--line));background:color-mix(in srgb,var(--gold) 10%,var(--surface))}
 .rev-ask-txt{display:grid;gap:2px;flex:1 1 220px;min-width:0}.rev-ask-txt b{font-size:14px}.rev-ask-txt small{color:var(--muted);font-size:12.5px}.rev-ask .btn{flex:none}
+/* Click a column header to sort (2 Nov 2026) */
+.th-sort{cursor:pointer;user-select:none}.th-sort:hover,.th-sort:focus-visible{color:var(--text)}.th-sort::after{content:'';display:inline-block;width:0;height:0;margin-inline-start:6px;vertical-align:middle;border:4px solid transparent;opacity:0}.th-sort:hover::after{opacity:.35;border-top-color:currentColor;margin-top:4px}.th-sort.sort-desc::after{opacity:1;border-top-color:currentColor;margin-top:4px}.th-sort.sort-asc::after{opacity:1;border-bottom-color:currentColor;margin-bottom:4px;border-top-color:transparent;margin-top:0}
