@@ -69,6 +69,7 @@ try {
     await page.goto(`${base}/portal/?lang=en#/new`); await page.reload(); await page.waitForSelector('#order-form [data-prod]');
     assert.equal(await page.locator('[data-prod]').count(), 1); assert.equal(await page.locator('[data-var]').count(), 1);
     assert.equal(await page.locator('[data-var-remove]:visible, [data-prod-remove]:visible').count(), 0, 'one row: nothing to remove');
+    assert.ok(await page.locator('[data-f="photos"] [data-pick-input]').count(), 'one variation: the photo box at the bottom');
     await fillOrder(page, 'PAULINE-1');
     assert.match(await page.locator('[data-sum]').innerText(), /2 products · 8 items/, 'the total is the sum of every variation');
     // A variation without "how many" is refused, and marked.
@@ -76,15 +77,16 @@ try {
     await page.locator('[data-submit]').click(); await page.waitForTimeout(300);
     assert.match(await page.locator('#order-form').innerText(), /how many \(each variation\)/); assert.equal(await page.locator('[data-var] .item-qty.bad').count(), 1);
     await vrow(page, 1, 0).locator('[data-qty]').fill('1');
-    await page.locator('[data-pick-input]').setInputFiles(fixturePath); await page.waitForTimeout(500);
-    // Four lines and only a screenshot of the order: each line still needs its photo.
+    // Several variations (Erwin, 2 Nov 2026): no photo box at the bottom, photos only next to each variation.
+    assert.equal(await page.locator('[data-f="photos"]').isVisible(), false, 'no general photo box'); assert.equal(await page.locator('[data-pick-input]').count(), 0);
+    assert.ok(await page.locator('[data-pick-lines]').count(), 'the hint says where photos go');
     assert.equal(await page.locator('[data-var] .var-photo:visible').count(), 4, 'a photo box per line');
     await page.locator('[data-submit]').click(); await page.waitForTimeout(300);
     assert.match(await page.locator('#order-form').innerText(), /a photo of each variation/); assert.equal(await page.locator('[data-var].photo-bad').count(), 4);
     await addLinePhotos(page); assert.equal(await page.locator('[data-var].photo-bad').count(), 0, 'marks go once each line has its photo');
     await page.locator('[data-submit]').click(); await page.waitForFunction(() => location.hash.startsWith('#/orders'), null, { timeout: 30000 });
     const o = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.orderRef === 'PAULINE-1');
-    assert.deepEqual(o.photos.map(x => x.itemIndex).sort(), [1, 2, 3, 4, null], 'each line photo is saved with its line, plus the order screenshot');
+    assert.deepEqual(o.photos.map(x => x.itemIndex).sort(), [1, 2, 3, 4], 'each line photo is saved with its line');
     assert.equal(o.quantity, 8); assert.equal(o.variant, TEXT2); assert.equal(o.etsyUrl, LINK + '\n' + LINK2);
     assert.deepEqual(o.items.map(i => [i.link === LINK ? 1 : 2, i.quantity, i.variant]), [[1, 3, 'Black Walnut, 7 Hooks'], [1, 2, 'Black Walnut, 6 Hooks'], [2, 1, 'Oak'], [2, 2, 'Walnut']]);
     // Editing shows the boxes again; removing the second product leaves Pauline's order.
@@ -101,7 +103,7 @@ try {
     await page.waitForFunction(() => location.hash.startsWith('#/orders'), null, { timeout: 30000 });
     const o2 = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === o.id);
     assert.equal(o2.quantity, 5); assert.equal(o2.items.length, 2);
-    assert.equal(o2.photos.find(x => x.id === keep)?.itemIndex, 1, 'the kept photo follows its line'); assert.deepEqual(o2.photos.map(x => x.itemIndex).sort(), [1, 2, null], 'photos of removed lines are gone');
+    assert.equal(o2.photos.find(x => x.id === keep)?.itemIndex, 1, 'the kept photo follows its line'); assert.deepEqual(o2.photos.map(x => x.itemIndex).sort(), [1, 2], 'photos of removed lines are gone');
     assert.deepEqual(errors, []); await ctx.close();
   }
   // The order everyone looks at in the screenshots: two products, each in two variations.
