@@ -24,6 +24,7 @@ function fakeDatabase() {
         bind(...values) { args = values; return this; },
         async first() {
           if (sql.includes('FROM client_orders o JOIN users')) return order;
+          if (sql.includes('RETURNING key')) return { key: args[0] }; // the per-order sheet lock
           return null;
         },
         async all() { return {results: sql.includes("FROM order_photos") ? [{id:91},{id:92}] : []}; },

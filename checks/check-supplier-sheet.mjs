@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { DB, env, call, seed, pg } from './lib.mjs';
 import { route } from '../api/index.mjs';
+import { syncPortalOrderToGoogleSheet } from '../server/google-sheets.mjs';
 import { WQ, WQ_NEW, LOG_NEW, TAB_NAMES, FIRST_ROW, HEADERS, SHIPPED, NOT_SHIPPED, SHIPPED_TAB, CANCELLED_TAB } from '../server/supplier-sheet.mjs';
 
 // ---------- fake Google Sheets ----------
@@ -428,6 +429,28 @@ const sortWithFilter = (tab, col, dir = 1) => {
   const rows = g.slice(FIRST_ROW - 1, end).map(r => r || []), sorted = [...rows].sort((a, b) => dir * String(a[col] ?? '').localeCompare(String(b[col] ?? '')));
   sorted.forEach((src, i) => { const r = g[FIRST_ROW - 1 + i] = [...(rows[i] || [])]; for (let c = f.startColumnIndex; c < (f.endColumnIndex ?? 200); c++) r[c] = src[c]; });
 };
+// Two updates of one order at the same moment (2 Nov 2026: #4215375566 and #4216451841 showed twice): one row, never two.
+const copies = id => TABS().reduce((n, t) => n + sheets.get(t).grid.filter(r => r && Number(r[31]) === id).length, 0);
+const RC = await mk('R-RACE'); await settle();
+for (const t of TABS()) { const g = sheets.get(t).grid; for (let i = g.length - 1; i >= FIRST_ROW - 1; i--) if (g[i] && Number(g[i][31]) === RC.id) g.splice(i, 1); }
+assert.equal(copies(RC.id), 0);
+await Promise.all([syncPortalOrderToGoogleSheet(DB, env, RC.id), syncPortalOrderToGoogleSheet(DB, env, RC.id), syncPortalOrderToGoogleSheet(DB, env, RC.id)]);
+assert.equal(copies(RC.id), 1, 'three updates at once write one row');
+console.log('PASS updates of one order at the same moment write one row');
+// An order already in two rows, the supplier filled in the second (bottom) copy: that copy is read, kept, and the empty one goes.
+{ const [t, r] = where(RC.id), g = sheets.get(t).grid, copy = [...g[r]]; copy[N] = 27.9; copy[O] = 'UL652493055YP'; g.push(copy); }
+assert.equal(copies(RC.id), 2);
+for (let i = 0; i < 3 && copies(RC.id) > 1; i++) { assert.equal((await cron()).ok, true); await settle(); }
+const r2 = await order(RC.id);
+assert.equal(Number(r2.supplier_cost), 27.9, 'the cost typed in the second copy reached the website');
+assert.equal(r2.tracking_number, 'UL652493055YP', 'and its tracking');
+assert.equal(copies(RC.id), 1, 'the empty copy was removed');
+{ const [t, r] = where(RC.id); assert.equal(Number(sheets.get(t).grid[r][N]), 27.9, 'the row that stays is the filled one'); }
+console.log('PASS an order in two rows: the filled copy is read and kept, the empty copy is removed');
+// Two minute checks at once: the second one waits its turn (says busy) instead of applying the same edits again.
+{ const [c1, c2] = await Promise.all([cron(), cron()]); assert.equal([c1, c2].filter(c => c.busy).length, 1, 'one check runs, the other is busy: ' + JSON.stringify([c1.busy, c2.busy])); }
+assert.equal((await cron()).busy, undefined, 'the next check runs normally');
+console.log('PASS one minute check at a time');
 for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 35, t + ': the filter covers A-AI');
 const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 22))])));
 const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);
