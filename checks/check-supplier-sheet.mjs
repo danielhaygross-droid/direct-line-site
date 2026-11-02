@@ -41,19 +41,24 @@ globalThis.fetch = (real => async (url, opt = {}) => {
   requests.push(method + ' ' + decodeURIComponent(path).slice(0, 80));
   if (path.startsWith('?fields=developerMetadata')) return Response.json({ developerMetadata: meta, sheets: [...sheets.keys()].map(title => ({ properties: { title } })) });
   if (path.startsWith('?fields=sheets(properties(sheetId),protectedRanges')) return Response.json({ sheets: [...sheets.values()].map(s => ({ properties: { sheetId: s.sheetId }, protectedRanges: s.prot.map((p, i) => ({ protectedRangeId: i + 1 })) })) });
+  if (path.startsWith('?fields=sheets(properties(sheetId,title),conditionalFormats)')) return Response.json({ sheets: [...sheets].map(([title, s]) => ({ properties: { title, sheetId: s.sheetId }, conditionalFormats: s.cf || [] })) });
   if (path.startsWith('?fields=sheets.properties')) return Response.json({ sheets: [...sheets].map(([title, s]) => ({ properties: { title, sheetId: s.sheetId, hidden: s.hidden } })) });
   if (path === ':batchUpdate') {
     const replies = [];
     for (const rq of body.requests) {
       const [kind, a] = Object.entries(rq)[0];
       const byId = id => [...sheets].find(([, s]) => s.sheetId === id);
-      if (kind === 'duplicateSheet') { const [, src] = byId(a.sourceSheetId); if (sheets.has(a.newSheetName) || (a.newSheetId != null && byId(a.newSheetId))) return Response.json({ error: { message: 'taken' } }, { status: 400 }); const t = addTab(a.newSheetName, a.newSheetId ?? nextId++); t.grid = JSON.parse(JSON.stringify(src.grid)); t.prot = [...src.prot]; t.hidden = src.hidden; t.filter = src.filter && { ...src.filter, sheetId: t.sheetId }; }
+      if (kind === 'duplicateSheet') { const [, src] = byId(a.sourceSheetId); if (sheets.has(a.newSheetName) || (a.newSheetId != null && byId(a.newSheetId))) return Response.json({ error: { message: 'taken' } }, { status: 400 }); const t = addTab(a.newSheetName, a.newSheetId ?? nextId++); t.grid = JSON.parse(JSON.stringify(src.grid)); t.prot = [...src.prot]; t.cf = (src.cf || []).map(r => ({ ...JSON.parse(JSON.stringify(r)), ranges: r.ranges.map(x => ({ ...x, sheetId: t.sheetId })) })); t.hidden = src.hidden; t.filter = src.filter && { ...src.filter, sheetId: t.sheetId }; }
+      else if (kind === 'addConditionalFormatRule') { const t = byId(a.rule.ranges[0].sheetId)[1]; (t.cf ||= []).splice(a.index ?? t.cf.length, 0, JSON.parse(JSON.stringify(a.rule))); }
+      else if (kind === 'updateConditionalFormatRule') byId(a.sheetId)[1].cf[a.index] = JSON.parse(JSON.stringify(a.rule));
       else if (kind === 'setDataValidation') (byId(a.range.sheetId)[1].rules ||= []).push(a);
       else if (kind === 'setBasicFilter') byId(a.filter.range.sheetId)[1].filter = { ...a.filter.range };
       else if (kind === 'addProtectedRange') byId(a.protectedRange.range.sheetId)[1].prot.push(a.protectedRange);
       // Columns (layout 19): every row's cells move, like Google does (row 1 to the last row).
       else if (kind === 'moveDimension' && a.source.dimension === 'COLUMNS') { const [, s] = byId(a.source.sheetId), { startIndex: f, endIndex: e } = a.source, d = a.destinationIndex; s.grid.forEach((r, i) => { if (!r) return; while (r.length < e) r.push(''); const cut = r.splice(f, e - f); r.splice(d > f ? d - cut.length : d, 0, ...cut); s.grid[i] = r; }); }
-      else if (kind === 'moveDimension') { const [, s] = byId(a.source.sheetId), n = a.source.endIndex - a.source.startIndex; while (s.grid.length < a.source.endIndex) s.grid.push([]); const items = s.grid.splice(a.source.startIndex, n); s.grid.splice(a.destinationIndex > a.source.startIndex ? a.destinationIndex - n : a.destinationIndex, 0, ...items); }
+      // Like Google: a row moved above where a colour rule starts pushes that rule down a row (2 Nov 2026).
+      else if (kind === 'moveDimension') { const [, s] = byId(a.source.sheetId); for (const rule of s.cf || []) for (const r of rule.ranges) if (a.destinationIndex <= (r.startRowIndex ?? 0) && a.source.startIndex > (r.startRowIndex ?? 0)) { r.startRowIndex++; const c = rule.booleanRule.condition; if (c.type === 'CUSTOM_FORMULA') c.values = c.values.map(v => ({ userEnteredValue: v.userEnteredValue.replace(/(\$?[A-Z]{1,3})(\d+)/g, (m, col, row) => col + (Number(row) + 1)) })); }
+        const n = a.source.endIndex - a.source.startIndex; while (s.grid.length < a.source.endIndex) s.grid.push([]); const items = s.grid.splice(a.source.startIndex, n); s.grid.splice(a.destinationIndex > a.source.startIndex ? a.destinationIndex - n : a.destinationIndex, 0, ...items); }
       else if (kind === 'updateSheetProperties') {
         const [title, tab] = byId(a.properties.sheetId);
         if (a.fields.includes('hidden')) tab.hidden = a.properties.hidden;
@@ -398,6 +403,22 @@ failBilling = false; later(); await cron(); assert.ok(sheets.has(BILLING_TAB), '
 assert.deepEqual(billingCells('Work Queue')[3].values[0][0].match(/INDIRECT\("'Work Queue'!A6:W"\)/)?.[0], `INDIRECT("'Work Queue'!A6:W")`, 'tab names with spaces are quoted');
 assert.ok(!readTabs.has(BILLING_TAB));
 console.log('PASS Billing tab: all orders, paid apart from not paid, formulas only, protected, never read, safe if it fails');
+
+// Colour rules that slid down (Erwin, 2 Nov 2026): orders moved to the top of Shipped pushed its rules to row 44, so
+// rows 6-43 lost the orange cost revision rows. Every sheet check puts them back to row 6.
+{
+  const cf = () => sheets.get(SHIPPED_TAB).cf || [], starts = () => cf().flatMap(r => r.ranges.map(x => x.startRowIndex));
+  const revRule = () => cf().find(r => r.booleanRule.condition.type === 'CUSTOM_FORMULA' && /COST REVISION/.test(r.booleanRule.condition.values[0].userEnteredValue));
+  assert.ok(revRule(), 'Shipped has the orange cost revision row rule');
+  for (const r of cf()) { for (const x of r.ranges) x.startRowIndex += 38; const c = r.booleanRule.condition; if (c.type === 'CUSTOM_FORMULA') c.values = c.values.map(v => ({ userEnteredValue: v.userEnteredValue.replace(/(\$?[A-Z]{1,3})(\d+)/g, (m, col, row) => col + (Number(row) + 38)) })); }
+  assert.match(revRule().booleanRule.condition.values[0].userEnteredValue, /\$O44/, 'slid like the live sheet');
+  later(); const res = await cron(); assert.equal(res.ok, true);
+  assert.ok(starts().every(s => s === FIRST_ROW - 1), 'every Shipped rule starts at row 6 again: ' + starts());
+  assert.match(revRule().booleanRule.condition.values[0].userEnteredValue, /^=LEFT\(\$O6,23\)=/, 'and looks at its own row');
+  const before = requests.length; later(); await cron(); assert.ok(!requests.slice(before).some(r => /batchUpdate/.test(r) && false), 'nothing to fix: no write');
+  assert.ok([main(), SHIPPED_TAB].every(t => (sheets.get(t).cf || []).every(r => r.ranges.every(x => x.startRowIndex === FIRST_ROW - 1))), 'Orders and Shipped at row 6 (Cancelled left alone: no cost revisions there)');
+}
+console.log('PASS colour rules that slid down (rows moved to the top) go back to row 6 on the next check');
 
 // ---------- sorting in the sheet (29 Oct 2026 incident) ----------
 // The supplier sorts with the filter arrows: Google moves only the filter's columns. The filter used to stop at AD, so the

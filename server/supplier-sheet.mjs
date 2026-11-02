@@ -619,6 +619,31 @@ export async function ensureBillingTab(DB, env, fetchImpl = fetch, { force = fal
   await putSetting(DB, BILLING_KEY, want);
   return tab ? 'written' : 'added';
 }
+// Colour rules that slid down (Erwin, 2 Nov 2026): an order moved to the top of a tab (newest on top) pushes the colour
+// rules that start at that row one row down. On the Shipped tab they had slid to row 44, so the orange cost revision
+// rows, Paid / Not paid and delay colours were missing on rows 6-43. Every sheet check puts any slid rule of Orders and
+// Shipped back to start at the first order row (one read; a write only when a rule slid).
+export async function fixRuleRanges(DB, env, fetchImpl = fetch) {
+  // Not Cancelled (Erwin): cancelled orders get no cost revisions.
+  const { wq } = await tabNames(DB), tabs = [wq, SHIPPED_TAB], top = FIRST_ROW - 1;
+  const data = await sheetsRequest(env, '?fields=sheets(properties(sheetId,title),conditionalFormats)', {}, fetchImpl);
+  const requests = [];
+  for (const s of data?.sheets || []) {
+    if (!tabs.includes(s.properties?.title)) continue;
+    (s.conditionalFormats || []).forEach((rule, index) => {
+      const start = Math.min(...(rule.ranges || []).map(r => r.startRowIndex ?? 0)), by = start - top;
+      if (!(by > 0) || !rule.booleanRule) return;
+      const ranges = rule.ranges.map(r => ({ ...r, startRowIndex: r.startRowIndex - by }));
+      // Custom formulas point at their first row ($O44): point them back at row 6. Other conditions have no cells.
+      const c = rule.booleanRule.condition, values = c.type === 'CUSTOM_FORMULA'
+        ? c.values.map(v => ({ ...v, userEnteredValue: String(v.userEnteredValue).replace(/(\$?[A-Z]{1,3})(\d+)/g, (m, col, row) => col + (Number(row) - by)) })) : c.values;
+      requests.push({ updateConditionalFormatRule: { index, sheetId: s.properties.sheetId, rule: { ranges, booleanRule: { ...rule.booleanRule, condition: { ...c, ...(values ? { values } : {}) } } } } });
+    });
+  }
+  if (requests.length) await batch(env, requests, fetchImpl);
+  return requests.length;
+}
+const rulesSafely = async (DB, env, fetchImpl) => { try { return await fixRuleRanges(DB, env, fetchImpl); } catch (e) { console.error('Sheet colour rules not checked', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 const billingSafely = async (DB, env, fetchImpl, opts) => { try { return await ensureBillingTab(DB, env, fetchImpl, opts); } catch (e) { console.error('Billing tab not updated', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 
 // Renames the tabs (see tabNames): 1) the hidden website log "Orders" -> "Order Log"; 2) at least 10 minutes later,
@@ -887,6 +912,7 @@ export async function pollSupplierSheet(DB, env, { waitUntil, fetchImpl = fetch 
     if (!await ensureLayout(DB, env, fetchImpl)) return { ...result, waiting: 'layout' };
     // The Billing tab (formulas only): added if missing, rewritten after a layout change. Never stops the sync.
     result.billing = await billingSafely(DB, env, fetchImpl);
+    result.rulesFixed = await rulesSafely(DB, env, fetchImpl);
     const { wq } = await tabNames(DB);
     // Old "ADDRESS CHANGED" warnings: take them off, a few rows a minute (Google's write limit), until none are left.
     for (const r of (await DB.prepare('SELECT id FROM client_orders WHERE address_changed_at IS NOT NULL ORDER BY id LIMIT 5').all()).results || []) {
