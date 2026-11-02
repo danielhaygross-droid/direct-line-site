@@ -80,9 +80,9 @@
   const freshRead = () => { readCache = readState(); return readCache; };
   const newUpdates = o => { const r = readCache || freshRead(); return (o.updates || []).filter(u => u.at * 1000 > r.at && !r.ids.has('ev-' + u.id)); };
   const lastNew = o => newUpdates(o)[0]?.at || 0;
-  const updateLabel = u => u.kind === 'created' ? ['New order', 'gold'] : u.kind === 'message' ? ['New message', 'blue'] : u.kind === 'revision_requested' ? ['Cost revision requested', 'orange']
+  const updateLabel = u => u.kind === 'created' ? ['New order', 'gold'] : u.kind === 'duplicate' ? ['Possible duplicate', 'red'] : u.kind === 'message' ? ['New message', 'blue'] : u.kind === 'revision_requested' ? ['Cost revision requested', 'orange']
     : u.kind === 'claim' ? ['Problem reported', 'red'] : u.kind === 'tracking' ? ['Tracking added', 'mint'] : u.kind === 'photo' ? [u.detail === 'removed' ? 'Photo removed' : 'Photo added', 'orange']
-    : u.kind === 'supplier_sheet' ? (/"f":"cancel_fee"/.test(u.detail || '') ? ['Supplier cancellation fee', 'red'] : ['Supplier changed cost', 'orange'])
+    : u.kind === 'supplier_sheet' ? (/"f":"dup_tracking"/.test(u.detail || '') ? ['Same tracking as another order', 'red'] : /"f":"dup_order"/.test(u.detail || '') ? ['Twice in the sheet', 'red'] : /"f":"cancel_fee"/.test(u.detail || '') ? ['Supplier cancellation fee', 'red'] : ['Supplier changed cost', 'orange'])
     : u.kind === 'status' ? ({ cancellation_requested: ['Cancellation requested', 'red'], delivered: ['Marked delivered', 'mint'], cancelled: ['Cancelled by client', 'red'] }[u.detail] || ['Status changed', 'mint'])
     : u.kind === 'edited' ? (u.detail === 'customer' ? ['Customer details changed', 'orange'] : ['Order edited', 'orange']) : ['Order updated', 'gold'];
   // One tag per kind of change, newest first, with ×2 when it happened more than once.
@@ -1081,8 +1081,13 @@
       const photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
       let r;
       try {
-        r = order ? await api('/orders/' + order.id, { method: 'PUT', body }) : await api('/orders', { method: 'POST', body: { ...body, photos: picks.slice(0, 1).map(photoBody) } });
-      } catch (ex) { btn.disabled = false; return err(ex.message); }
+        r = order ? await api('/orders/' + order.id, { method: 'PUT', body }) : await api('/orders', { method: 'POST', body: { ...body, photos: picks.slice(0, 1).map(photoBody), ...(f.dataset.dupOk ? { confirmDuplicate: true } : {}) } });
+      } catch (ex) {
+        btn.disabled = false;
+        // A possible duplicate (2 Nov 2026): say which order, and the next Save sends it anyway.
+        if (!order && ex.data?.duplicate) { f.dataset.dupOk = '1'; return err(`${ex.message} (${ex.data.duplicate.ref}) Save again to send it anyway.`); }
+        return err(ex.message);
+      }
       // Saved. Upload the other photos one by one (keeps each request small).
       let failed = 0;
       for (const [i, p] of picks.slice(1).entries()) {

@@ -127,8 +127,13 @@
       const photoBody = p => ({ data: p.data, thumb: p.thumb, width: p.width, height: p.height });
       let r;
       try {
-        r = order ? await api('/orders/' + order.id, { method: 'PUT', body }) : await api('/orders', { method: 'POST', body: { ...body, photos: picks.slice(0, 1).map(photoBody) } });
-      } catch (ex) { btn.disabled = false; return err(ex.message); }
+        r = order ? await api('/orders/' + order.id, { method: 'PUT', body }) : await api('/orders', { method: 'POST', body: { ...body, photos: picks.slice(0, 1).map(photoBody), ...(f.dataset.dupOk ? { confirmDuplicate: true } : {}) } });
+      } catch (ex) {
+        btn.disabled = false;
+        // A possible duplicate (2 Nov 2026): say which order, and the next Save sends it anyway.
+        if (!order && ex.data?.duplicate) { f.dataset.dupOk = '1'; return err(`${ex.message} (${ex.data.duplicate.ref}) Save again to send it anyway.`); }
+        return err(ex.message);
+      }
       // Saved. Upload the other photos one by one (keeps each request small).
       let failed = 0;
       for (const [i, p] of picks.slice(1).entries()) {

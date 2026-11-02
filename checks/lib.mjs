@@ -7,6 +7,9 @@ export const pg = new PGlite();
 export const DB = createD1(null, async (q,p) => (await pg.query(q,p)).rows, SCHEMA);
 export const env = { ADMIN_USERNAME: 'localboss', ADMIN_PASSWORD: 'local-boss-password', APP_SESSION_SECRET: 'local-tests-only' };
 export async function call(path, method='GET', body, cookie='', extraHeaders={}) {
+  // New orders made by the checks often share a customer and product: they skip the duplicate question unless a check
+  // sends confirmDuplicate itself (check-duplicates does).
+  if (path === '/orders' && method === 'POST' && body && !('confirmDuplicate' in body)) body = { ...body, confirmDuplicate: true };
   const url = new URL('http://localhost/api/portal'+path);
   const request = new Request(url, { method, headers: { cookie, 'content-type': 'application/json', ...extraHeaders }, ...(body ? { body: JSON.stringify(body) } : {}) });
   const r = await handlePortal(request, url, { DB, env, waitUntil: p => p.catch(() => {}) });

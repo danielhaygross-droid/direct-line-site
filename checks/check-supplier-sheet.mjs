@@ -451,6 +451,25 @@ console.log('PASS an order in two rows: the filled copy is read and kept, the em
 { const [c1, c2] = await Promise.all([cron(), cron()]); assert.equal([c1, c2].filter(c => c.busy).length, 1, 'one check runs, the other is busy: ' + JSON.stringify([c1.busy, c2.busy])); }
 assert.equal((await cron()).busy, undefined, 'the next check runs normally');
 console.log('PASS one minute check at a time');
+// Duplicates in the sheet (Erwin, 2 Nov 2026): red rows, a warning on the tracking cell, row 4 counts them, admin told once.
+{ const cr = await cron(); assert.equal(cr.ok, true, JSON.stringify(cr)); }
+for (const t of [WQ_NEW, SHIPPED_TAB]) {
+  const s1 = sheets.get(t), red = (s1.cf || []).find(r => /COUNTIF\(INDIRECT\("'Orders'!B:B"\)/.test(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || ''));
+  assert.ok(red && red.ranges[0].startRowIndex === FIRST_ROW - 1, t + ': red rule for duplicates from row 6');
+  assert.ok((s1.rules || []).some(v => v.range.startColumnIndex === 17 && /<=1$/.test(v.rule?.condition?.values?.[0]?.userEnteredValue || '') && v.rule.strict === false), t + ': tracking warning (not blocking)');
+  assert.match(String(s1.grid[3][0]), /DUPLICATE ORDER OR TRACKING NUMBER/, t + ': row 4 counts duplicates');
+}
+assert.doesNotMatch(String(sheets.get(CANCELLED_TAB).grid[3][0]), /DUPLICATE/, 'cancelled orders are not counted');
+const before2 = (sheets.get(WQ_NEW).cf || []).length; await cron(); assert.equal((sheets.get(WQ_NEW).cf || []).length, before2, 'the rules are added once');
+// Ada types the same tracking number on two orders: both are reported to the admin, once.
+const DU1 = await mk('DUP-1'), DU2 = await mk('DUP-2'); await settle();
+supplierTypes(DU1.id, O, 'UL900000001YP'); supplierTypes(DU2.id, O, 'UL900000001YP');
+await cron(); await settle(); await cron(); await settle();
+const dupEv = async oid => (await DB.prepare("SELECT detail FROM order_events WHERE order_id=? AND kind='supplier_sheet' AND detail LIKE '{\"f\":\"dup_tracking\"%'").bind(oid).all()).results;
+assert.equal((await dupEv(DU1.id)).length, 1, 'DU1 reported once'); assert.equal((await dupEv(DU2.id)).length, 1, 'DU2 reported once');
+assert.match((await dupEv(DU1.id))[0].detail, /DUP-2/, 'says which other order');
+assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(x => x.orderId === DU1.id && /dup_tracking/.test(x.detail)), 'in the admin bell');
+console.log('PASS duplicates in the sheet: red rows and tracking warning on Orders + Shipped, row 4 counts them, the admin is told once');
 for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 35, t + ': the filter covers A-AI');
 const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 22))])));
 const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);

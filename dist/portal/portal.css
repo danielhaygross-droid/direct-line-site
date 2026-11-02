@@ -345,3 +345,7 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 /* Mark several as delivered */
 .bulk-deliver{margin-bottom:12px}.bulk-deliver>summary{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;cursor:pointer;min-height:32px}
 .bulk-deliver .po-list{margin:12px 0}.bulk-deliver label.po-row{cursor:pointer}
+/* Possible duplicate order (2 Nov 2026): asked before sending */
+.dup-box{margin:0 0 12px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--orange) 45%,var(--line));border-inline-start:4px solid var(--orange);border-radius:12px;background:color-mix(in srgb,var(--orange) 8%,var(--surface))}
+.dup-box b{display:block;margin-bottom:2px}.dup-box p{margin:0 0 6px;font-size:14px}.dup-box .dup-ref{color:var(--muted);font-size:13px}
+.dup-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}

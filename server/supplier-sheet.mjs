@@ -309,7 +309,39 @@ const delayFormat = (sheetId, email, c = C) => { const DELAY = c.DELAY; return [
 const revisionFormat = sheetId => ({ addConditionalFormatRule: { index: 0, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: COMP, endColumnIndex: COMP + 1 }], booleanRule: { condition: { type: 'TEXT_STARTS_WITH', values: [{ userEnteredValue: REVISION_FLAG }] }, format: { backgroundColor: { red: 1, green: 0.62, blue: 0.25 }, textFormat: { bold: true } } } } } });
 // Cost revision alerts for the supplier (Erwin, 28 Oct 2026): A4 counts the open requests (big orange text, empty
 // when none) and every row with an open request is light orange, so they can't be missed or filtered out of sight.
-const revisionCounter = wq => ({ range: `${wq}!A4`, values: [[`=IF(COUNTIF(${all('O')},"${REVISION_FLAG}*")=0,"","⚠ "&COUNTIF(${all('O')},"${REVISION_FLAG}*")&" COST REVISION REQUEST(S) WAITING: see the orange rows, check the cost, type the new Total cost")`]] });
+// Duplicates (Erwin, 2 Nov 2026): the same order number or tracking number on two rows of Orders + Shipped (cancelled
+// orders don't count). Whole columns of the other tabs (no row numbers: fixRuleRanges re-points row numbers).
+const DUP_TABS = [WQ_NEW, SHIPPED_TAB];
+const seenIn = (col, v) => DUP_TABS.map(t => `COUNTIF(INDIRECT("'${t}'!${col}:${col}"),${v})`).join('+');
+const dupCount = () => { const b = all('B'), r = all(L(C.TRACK));
+  return `SUMPRODUCT(((${b}<>"")*((${seenIn('B', b)})>1)+(${r}<>"")*((${seenIn(L(C.TRACK), r)})>1)>0)*1)`; };
+const revisionCounter = wq => { const rev = `COUNTIF(${all('O')},"${REVISION_FLAG}*")`, revText = `IF(${rev}=0,"","⚠ "&${rev}&" COST REVISION REQUEST(S) WAITING: see the orange rows, check the cost, type the new Total cost")`;
+  if (wq === CANCELLED_TAB) return { range: `${wq}!A4`, values: [[`=${revText}`]] };
+  return { range: `${wq}!A4`, values: [[`=TRIM(${revText}&IF(${dupCount()}=0,"","   ⚠ "&${dupCount()}&" ROW(S) WITH A DUPLICATE ORDER OR TRACKING NUMBER: see the red rows"))`]] }; };
+// The whole row turns red; typing a tracking number already used shows a warning on the cell (it is still accepted:
+// one parcel can be meant for two orders).
+const dupRule = sheetId => ({ addConditionalFormatRule: { index: 0, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: C.END }], booleanRule: {
+  condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=OR(AND($B${FIRST_ROW}<>"",${seenIn('B', '$B' + FIRST_ROW)}>1),AND($${L(C.TRACK)}${FIRST_ROW}<>"",${seenIn(L(C.TRACK), '$' + L(C.TRACK) + FIRST_ROW)}>1))` }] },
+  format: { backgroundColor: { red: 0.96, green: 0.55, blue: 0.55 }, textFormat: { bold: true } } } } } });
+const dupCheck = sheetId => ({ setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: C.TRACK, endColumnIndex: C.TRACK + 1 }, rule: {
+  condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=${seenIn(L(C.TRACK), L(C.TRACK) + FIRST_ROW)}<=1` }] },
+  inputMessage: 'This tracking number is already used on another order. Check it is the right parcel.', strict: false } } });
+const DUP_ALERTS = 'supplier_dup_alerts', DUP_ALERTS_NOW = '1';
+// Added once (and again after the sheet is rebuilt): the red rule and the warning on Orders and Shipped, and row 4.
+export async function ensureDuplicateAlerts(DB, env, fetchImpl = fetch) {
+  if (await getSetting(DB, DUP_ALERTS) === DUP_ALERTS_NOW) return false;
+  const { wq } = await tabNames(DB); if (wq !== WQ_NEW) return false;
+  // Each tab is checked first, so a rule is never added twice.
+  const data = await sheetsRequest(env, '?fields=sheets(properties(sheetId,title),conditionalFormats)', {}, fetchImpl), mark = `COUNTIF(INDIRECT("'${WQ_NEW}'!B:B")`;
+  const tabs = (data?.sheets || []).filter(x => [wq, SHIPPED_TAB].includes(x.properties?.title));
+  if (tabs.length < 2) return false;
+  const has = x => (x.conditionalFormats || []).some(r => String(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || '').includes(mark));
+  await batch(env, tabs.flatMap(x => [...(has(x) ? [] : [dupRule(x.properties.sheetId)]), dupCheck(x.properties.sheetId)]), fetchImpl);
+  await batchValues(env, allTabs(wq).map(t => revisionCounter(t)), fetchImpl);
+  await putSetting(DB, DUP_ALERTS, DUP_ALERTS_NOW);
+  return true;
+}
+const dupSafely = async (DB, env, fetchImpl) => { try { return await ensureDuplicateAlerts(DB, env, fetchImpl); } catch (e) { console.error('Duplicate alerts not added', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 const summaryRows = (tabs, c = C) => tabs.flatMap(t => [totalsRow(t, c), revisionCounter(t)]);
 const revisionAlerts = (sheetId, c = C) => [
   { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 12, foregroundColor: { red: 0.8, green: 0.35, blue: 0 } }, wrapStrategy: 'OVERFLOW_CELL' } }, fields: 'userEnteredFormat(textFormat,wrapStrategy)' } },
@@ -512,6 +544,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested') OR revision_status <> '')").run();
     await putSetting(DB, LAYOUT, LAYOUT_NOW);
+    await DB.prepare('DELETE FROM portal_settings WHERE key=?').bind(DUP_ALERTS).run(); // re-checked next time (tabs may be new)
     return true;
   } catch (e) {
     await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(LAYOUT, 'migrating:' + t).run();
@@ -806,6 +839,26 @@ export async function chargeCancelFee(DB, order, fee, t = Math.floor(Date.now() 
 // changes the product cost when we are not online"). One event per changed cell, old -> new as the sheet showed them.
 // kind 'supplier_sheet' is never sent to clients (see /orders/:id/messages and /notifications in portal.mjs).
 export const SUPPLIER_SHEET_EVENT = 'supplier_sheet';
+// Duplicates in the sheet (2 Nov 2026): two different orders with the same order number or tracking number. Each
+// order involved gets one admin event per value (not repeated every minute); the admin bell shows it.
+async function tellDuplicates(DB, rows, t) {
+  const groups = new Map(), key = (f, v) => f + '|' + v;
+  for (const r of rows) for (const [f, v] of [['dup_order', cellStr(r.ref)], ['dup_tracking', cellStr(r.tracking)]]) {
+    if (!v) continue; const k = key(f, v); if (!groups.has(k)) groups.set(k, new Map()); groups.get(k).set(r.orderId, r);
+  }
+  let told = 0;
+  for (const [k, byId] of groups) {
+    if (byId.size < 2) continue;
+    const [f, v] = [k.slice(0, k.indexOf('|')), k.slice(k.indexOf('|') + 1)];
+    for (const id of byId.keys()) {
+      const o = await DB.prepare('SELECT id, client_id FROM client_orders WHERE id=?').bind(id).first(); if (!o) continue;
+      const detail = JSON.stringify({ f, to: v, with: [...byId.values()].filter(r => r.orderId !== id).map(r => cellStr(r.ref)).slice(0, 5) });
+      if (await DB.prepare("SELECT 1 AS x FROM order_events WHERE order_id=? AND kind=? AND detail LIKE ?").bind(id, SUPPLIER_SHEET_EVENT, JSON.stringify({ f, to: v }).slice(0, -1) + '%').first()) continue;
+      await event(DB, o, SUPPLIER_SHEET_EVENT, detail, t); told++;
+    }
+  }
+  return told;
+}
 async function logSupplierEdits(DB, order, cells, now, t) {
   const was = { cost: order.sheet_cost, tracking: order.sheet_tracking, courier: order.sheet_courier, shipped: order.sheet_shipped, delayed: order.sheet_delayed, reason: order.sheet_delay_reason, cancel_fee: order.sheet_cancel_fee };
   for (const f of Object.keys(was)) {
@@ -953,6 +1006,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     // The Billing tab (formulas only): added if missing, rewritten after a layout change. Never stops the sync.
     result.billing = await billingSafely(DB, env, fetchImpl);
     result.rulesFixed = await rulesSafely(DB, env, fetchImpl);
+    result.dupAlerts = await dupSafely(DB, env, fetchImpl);
     const { wq } = await tabNames(DB);
     // Old "ADDRESS CHANGED" warnings: take them off, a few rows a minute (Google's write limit), until none are left.
     for (const r of (await DB.prepare('SELECT id FROM client_orders WHERE address_changed_at IS NOT NULL ORDER BY id LIMIT 5').all()).results || []) {
@@ -966,7 +1020,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     const tabs = allTabs(wq);
     const ranges = tabs.flatMap(supplierRanges).map(r => 'ranges=' + encodeURIComponent(r)).join('&');
     const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
-    const got = (data.valueRanges || []).map(v => v.values || []), byOrder = new Map(), twice = new Set();
+    const got = (data.valueRanges || []).map(v => v.values || []), byOrder = new Map(), twice = new Set(), everyRow = [];
     const rowFill = r => filled([r.cost, r.itemCosts, r.tracking, r.courier, r.shipped, r.delayed, r.reason, r.domestic, r.cancelFee]);
     tabs.forEach((tab, k) => {
       const [inputs, ids, domestic, refs] = got.slice(k * 4, k * 4 + 4);
@@ -976,6 +1030,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
         // An order in two rows (a move that stopped halfway, or two updates at once): the row the supplier filled in
         // more is read, and the order is queued so its next sheet write removes the other copy.
         if (!(Number.isSafeInteger(row.orderId) && row.orderId > 0)) return;
+        everyRow.push(row);
         const had = byOrder.get(row.orderId);
         if (had) twice.add(row.orderId);
         if (!had || rowFill(row) > rowFill(had)) byOrder.set(row.orderId, row);
@@ -983,6 +1038,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     });
     let rows = [...byOrder.values()];
     result.checked = rows.length;
+    result.duplicates = await tellDuplicates(DB, everyRow.filter(r => r.tab !== CANCELLED_TAB), t);
     // Rewritten right away (a few per check), so the extra copy goes now, not at the next retry.
     if (twice.size) {
       result.twice = [...twice];
@@ -1136,6 +1192,8 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
 
   await splitSupplierTabs(DB, env, wq, sheetId, fetchImpl);
   await DB.prepare('DELETE FROM portal_settings WHERE key=?').bind(BILLING_KEY).run();
+  // The rebuilt tabs get the duplicate colours and warnings again (next check).
+  await DB.prepare('DELETE FROM portal_settings WHERE key=?').bind(DUP_ALERTS).run();
   await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(SETTING, '1').run();
   await putSetting(DB, LAYOUT, LAYOUT_NOW);
   return { ok: true, rows: rows.length, sheetId, backup: !!current };

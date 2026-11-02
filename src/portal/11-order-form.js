@@ -44,6 +44,7 @@
         <section class="card card-pad order-submit-card"><h3>Check and send</h3>
           <div class="client-order-summary" data-sum></div>
           <div class="next-steps"><b>Then Direct Line will</b><ul><li>Buy and pack the product</li><li>Ship it to your customer</li><li>Add the tracking number here</li></ul></div>
+          <div class="dup-box" data-dup hidden></div>
           <button class="btn btn-primary btn-block btn-big" type="submit" data-submit>${ed ? 'Save changes' : 'Send order'}</button>
           <a class="btn btn-ghost btn-block" href="${ed ? '#/orders' : '#/home'}">Cancel</a>
           <p class="form-msg" data-form-msg></p>
@@ -205,6 +206,17 @@
     }
     form.addEventListener('input', updateSum);
     form.addEventListener('change', updateSum);
+    // A possible duplicate (2 Nov 2026): the server says which earlier order looks the same; the client decides.
+    let dupOk = false;
+    function askDuplicate(d) {
+      const box = $('[data-dup]');
+      box.innerHTML = `<b>Looks like a duplicate</b><p>${d.why === 'ref' ? 'You already sent this order number.' : 'You already sent an order for this customer with this product in the last day.'}</p>
+        <p class="dup-ref"><span data-no-i18n>${esc(d.ref)} · ${esc(fullDate(d.createdAt))}</span></p>
+        <div class="dup-actions"><button type="button" class="btn btn-primary btn-sm" data-dup-send>Send it anyway</button><button type="button" class="btn btn-ghost btn-sm" data-dup-cancel>Don’t send</button></div>`;
+      box.hidden = false; box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      $('[data-dup-send]', box).onclick = () => { dupOk = true; box.hidden = true; form.requestSubmit(); };
+      $('[data-dup-cancel]', box).onclick = () => { box.hidden = true; };
+    }
     form.addEventListener('submit', async e => {
       e.preventDefault();
       // A link pasted without https:// (e.g. "www.etsy.com/listing/…") is completed rather than refused.
@@ -245,7 +257,7 @@
       }
       const body = {
         storeId:Number(form.storeId.value),orderRef: form.orderRef.value, orderDate: form.orderDate.value, sellingPrice: form.sellingPrice.value, currency: form.currency.value, etsyFee: form.etsyFee.value, etsyEarned: form.etsyEarned.value,
-        sku: form.sku.value, items: items(), competitorPrice: form.competitorPrice.value,
+        sku: form.sku.value, items: items(), competitorPrice: form.competitorPrice.value, ...(dupOk ? { confirmDuplicate: true } : {}),
         buyerName: form.buyerName.value, ...UI.addressFields(form.address1.value,ed), destination: dest.get(), notes: form.notes.value, taxNumber: form.taxNumber.value, giftMessage: form.giftMessage.value,
       };
       const btn = $('[data-submit]'); btn.disabled = true; setMsg('');
@@ -259,7 +271,7 @@
       try {
         r = ed ? await api('/orders/' + ed.id, { method: 'PUT', body })
           : await api('/orders', { method: 'POST', body: { ...body, photos: fresh.slice(0, 1).map(photoBody) } });
-      } catch (ex) { setMsg(ex.message, 'err'); btn.disabled = false; return; }
+      } catch (ex) { btn.disabled = false; if (!ed && ex.data?.duplicate) { askDuplicate(ex.data.duplicate); return; } setMsg(ex.message, 'err'); return; }
       // The order is saved. Upload the remaining photos one by one (keeps each request small), then remove the ones taken out.
       const orderId = r.order.id, queue = ed || selectedProduct ? fresh : fresh.slice(1);
       let failed = 0;
