@@ -66,9 +66,9 @@ try {
     let ctx = await session(admin, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=${lang}`); let ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=orders]');
     // Orders tab: total high → low.
-    await ui.locator('[data-tab=orders]').click(); await ui.waitForSelector('[data-sort=admin-orders]');
+    await ui.locator('[data-tab=orders]').click(); await ui.waitForSelector('[data-sort=admin-orders-2]');
     await ui.locator('[data-filter=all]').click(); await page.waitForTimeout(200);
-    await ui.locator('[data-sort=admin-orders]').selectOption('total_desc'); await page.waitForTimeout(300);
+    await ui.locator('[data-sort=admin-orders-2]').selectOption('total_desc'); await page.waitForTimeout(300);
     const totals = (await ui.locator('[data-list] tr[data-open-order] td:nth-child(5)').allInnerTexts()).map(money);
     assert.equal(totals.length, 8); assert.ok(desc(totals), 'orders by total, high to low: ' + totals);
     await page.screenshot({ path: path.join(out, `${tag}-admin-orders.png`) });
@@ -99,17 +99,17 @@ try {
     await page.screenshot({ path: path.join(out, `${tag}-panel-orders.png`) });
     // Remembered after a reload.
     await page.reload(); ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=orders]');
-    await ui.locator('[data-tab=orders]').click(); await ui.waitForSelector('[data-sort=admin-orders]');
-    assert.equal(await ui.locator('[data-sort=admin-orders]').inputValue(), 'total_desc', 'sort remembered');
+    await ui.locator('[data-tab=orders]').click(); await ui.waitForSelector('[data-sort=admin-orders-2]');
+    assert.equal(await ui.locator('[data-sort=admin-orders-2]').inputValue(), 'total_desc', 'sort remembered');
     assert.deepEqual(errors, [], tag + ' admin'); await ctx.close();
 
     // ---------- client portal ----------
     ctx = await session(client, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.reload(); await page.waitForSelector('[data-sort=portal-orders]'); await page.waitForTimeout(500);
-    await page.locator('[data-sort=portal-orders]').selectOption('total_asc'); await page.waitForTimeout(300);
+    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.reload(); await page.waitForSelector('[data-sort=portal-orders-2]'); await page.waitForTimeout(500);
+    await page.locator('[data-sort=portal-orders-2]').selectOption('total_asc'); await page.waitForTimeout(300);
     const ptotals = await page.locator('[data-orders-list] tr[data-open-order]').evaluateAll(rows => rows.map(r => r.querySelector('td[data-label="Total"], td.num')?.innerText || ''));
     assert.ok(asc(ptotals.map(money)), 'portal orders by total, low to high: ' + ptotals);
-    await page.locator('[data-sort=portal-orders]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-portal-orders.png`) });
+    await page.locator('[data-sort=portal-orders-2]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-portal-orders.png`) });
     await page.goto(`${base}/portal/?lang=${lang}#/products`); await page.waitForSelector('[data-sort=portal-products]'); await page.waitForTimeout(400);
     await page.locator('[data-sort=portal-products]').selectOption('name'); await page.waitForTimeout(300);
     const pnames = await page.locator('[data-plist]').innerText();

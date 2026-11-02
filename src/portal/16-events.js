@@ -45,7 +45,7 @@
     try { await api(`/orders/${id}/photos`, { method: 'POST', body: { ...(await shrinkImage(file)), item } }); await refresh(); N.popup({ icon: 'check', title: 'Photo added' }); }
     catch (ex) { box?.classList.remove('busy'); N.popup({ icon: 'alert', title: ex.message }); }
   });
-  document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}else renderView(true);});
+  document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders-2')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}else renderView(true);});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
   document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
   document.addEventListener('input', e => { const f = e.target.closest?.('[data-rev-form]'); if (!f) return; $$('.field.bad', f).forEach(x => x.classList.remove('bad')); const m = $('[data-rev-msg]', f); m.textContent = ''; m.className = 'form-msg'; });

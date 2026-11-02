@@ -17,7 +17,7 @@
     d.onClose = () => { closeChat(); S.drawer = null; };
     d.open('o' + o.id);
     d.body.innerHTML = '<div data-d-info style="display:grid;gap:16px"></div><section><h3 class="sec-title">Messages with the client</h3><div data-d-chat></div></section>';
-    invoiceFiles=[];fillOrder(o);
+    markSeen(o); invoiceFiles=[];fillOrder(o);
     api('/admin/invoices?clientId='+o.clientId).then(r=>{if(S.drawer?.kind==='order'&&S.drawer.id===o.id){invoiceFiles=r.invoices;fillOrder(o,true);}}).catch(ex=>toast(ex.message));
     chatCtl = UI.chat($('[data-d-chat]', d.body), { orderId: o.id, role: 'admin', readOnly: !!o.archived, onLoad: data => {
       events = data.events || [];

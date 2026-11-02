@@ -6,7 +6,9 @@
   const STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancellation_requested', 'cancelled'];
   // "Sort" dropdowns for Orders and My Products (remembered in this browser). The first one is the default.
   const rank = (list, k) => { const i = list.indexOf(k); return i < 0 ? list.length : i; };
+  // Updates first (2 Nov 2026): orders with something new since the client last looked, latest change on top.
   const ORDER_SORTS = {
+    updates: ['Updates first', (a, b) => lastNewNote(b) - lastNewNote(a) || bySort.newest(a, b)],
     newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
     total_desc: ['Total: high to low', bySort.num(o => o.price, true)], total_asc: ['Total: low to high', bySort.num(o => o.price)],
     status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],

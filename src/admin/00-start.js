@@ -14,7 +14,8 @@
     status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
     revision: ['Cost revision first', bySort.revision],
   };
-  const ADMIN_ORDER_SORTS = { ...ORDER_SORTS, client: ['Client A–Z', (a, b) => bySort.text(o => clientName(o.clientId))(a, b) || bySort.newest(a, b)] };
+  // New updates first (Erwin, 2 Nov 2026): orders with something the admin hasn't seen yet, latest update on top.
+  const ADMIN_ORDER_SORTS = { updates: ['New updates first', (a, b) => lastNew(b) - lastNew(a) || bySort.newest(a, b)], ...ORDER_SORTS, client: ['Client A–Z', (a, b) => bySort.text(o => clientName(o.clientId))(a, b) || bySort.newest(a, b)] };
   const P_STATUS = ['awaiting_quote', 'approved', 'not_available'];
   const PRODUCT_SORTS = {
     waiting: ['Waiting for price first', (a, b) => rank(P_STATUS, a.status) - rank(P_STATUS, b.status) || bySort.newest(a, b)],
@@ -71,4 +72,30 @@
   const empty = (title, text, extra = '') => `<div class="empty"><span class="empty-ic">${ic('orders')}</span><h3>${esc(title)}</h3><p>${esc(text)}</p>${extra}</div>`;
   const divisor = () => Number(S.ov?.settings?.volumetric_divisor) || 6000;
   const unreadTotal = () => S.orders.reduce((t, x) => t + (x.unreadMessages || 0), 0);
+  // ----- new updates on an order (Erwin, 2 Nov 2026) -----
+  // The server sends each order's client / supplier updates of the last 30 days. Seen or not is the dashboard bell's
+  // read state (same browser, same keys): opening an order here clears it in the bell, "Mark all as read" there clears it here.
+  const readState = () => { try { let at = JSON.parse(localStorage.getItem('dl_notif_read_at')); if (at === null) { at = Date.now(); localStorage.setItem('dl_notif_read_at', JSON.stringify(at)); } return { at, ids: new Set(JSON.parse(localStorage.getItem('dl_notif_read_ids')) || []) }; } catch (e) { return { at: Date.now(), ids: new Set() }; } };
+  let readCache = null;
+  const freshRead = () => { readCache = readState(); return readCache; };
+  const newUpdates = o => { const r = readCache || freshRead(); return (o.updates || []).filter(u => u.at * 1000 > r.at && !r.ids.has('ev-' + u.id)); };
+  const lastNew = o => newUpdates(o)[0]?.at || 0;
+  const updateLabel = u => u.kind === 'created' ? ['New order', 'gold'] : u.kind === 'message' ? ['New message', 'blue'] : u.kind === 'revision_requested' ? ['Cost revision requested', 'orange']
+    : u.kind === 'claim' ? ['Problem reported', 'red'] : u.kind === 'tracking' ? ['Tracking added', 'mint'] : u.kind === 'photo' ? [u.detail === 'removed' ? 'Photo removed' : 'Photo added', 'orange']
+    : u.kind === 'supplier_sheet' ? (/"f":"cancel_fee"/.test(u.detail || '') ? ['Supplier cancellation fee', 'red'] : ['Supplier changed cost', 'orange'])
+    : u.kind === 'status' ? ({ cancellation_requested: ['Cancellation requested', 'red'], delivered: ['Marked delivered', 'mint'], cancelled: ['Cancelled by client', 'red'] }[u.detail] || ['Status changed', 'mint'])
+    : u.kind === 'edited' ? (u.detail === 'customer' ? ['Customer details changed', 'orange'] : ['Order edited', 'orange']) : ['Order updated', 'gold'];
+  // One tag per kind of change, newest first, with ×2 when it happened more than once.
+  function updateTags(o) {
+    const seen = new Map();
+    for (const u of newUpdates(o)) { const [label, tone] = updateLabel(u); const x = seen.get(label); if (x) x.n++; else seen.set(label, { tone, n: 1 }); }
+    return seen.size ? `<span class="upd-tags">${[...seen].map(([label, x]) => `<span class="upd-tag t-${x.tone}">${esc(label)}${x.n > 1 ? `<span data-no-i18n> ×${x.n}</span>` : ''}</span>`).join('')}</span>` : '';
+  }
+  // Opening an order marks its updates as seen (here and in the bell).
+  function markSeen(o) {
+    const ids = (o?.updates || []).map(u => 'ev-' + u.id); if (!ids.length) return;
+    const r = readState(), add = ids.filter(id => !r.ids.has(id)); if (!add.length) return;
+    try { localStorage.setItem('dl_notif_read_ids', JSON.stringify([...r.ids, ...add].slice(-2000))); } catch (e) { /* private mode */ }
+    readCache = null; tell({ type: 'dl-followups', unread: unreadTotal() }); if (S.tab === 'orders') renderList();
+  }
 

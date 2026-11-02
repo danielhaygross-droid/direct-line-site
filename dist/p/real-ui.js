@@ -20,7 +20,8 @@
   if (firstRun) { store.set('dl_notif_read_at', readAt); store.set('dl_notif_badge_at', badgeAt); }
   const todoTimes = store.get('dl_todo_times', {});
 
-  let events = [], portal = null, lastLoad = 0, loaded = false;
+  // events: the newest page (refreshed every 30s); older: pages loaded with "Load older"; found: search results.
+  let events = [], older = [], hasMore = false, found = null, portal = null, lastLoad = 0, loaded = false;
   const known = new Set();
   async function load(force) {
     if (!document.body.classList.contains('authenticated')) return;
@@ -31,7 +32,7 @@
         fetch('/api/portal/admin/notifications', { credentials: 'same-origin' }).then(r => (r.ok ? r.json() : null)),
         fetch('/api/portal/admin/overview', { credentials: 'same-origin' }).then(r => (r.ok ? r.json() : null)),
       ]);
-      if (n?.ok) events = n.items;
+      if (n?.ok) { events = n.items; if (!older.length) hasMore = !!n.hasMore; }
       if (o?.ok) portal = o;
     } catch (e) { return; }
     const fresh = events.filter(e => !known.has(e.id));
@@ -44,7 +45,13 @@
   }
 
   // ----- items -----
-  function eventItem(e) {
+  // Each item has a category for the filter chips in the bell (2 Nov 2026).
+  const KINDS = [{ key: 'orders', label: L('Orders', 'הזמנות') }, { key: 'messages', label: L('Messages', 'הודעות') }, { key: 'costs', label: L('Costs', 'עלויות') },
+    { key: 'cancel', label: L('Cancellations', 'ביטולים') }, { key: 'problems', label: L('Problems', 'בעיות') }, { key: 'products', label: L('Products', 'מוצרים') }, { key: 'todo', label: L('To-dos', 'משימות') }];
+  const catOf = e => e.kind === 'message' ? 'messages' : e.kind === 'claim' ? 'problems' : e.kind === 'supplier_sheet' || e.kind === 'revision_requested' || (e.kind === 'product' && /^Cost revision requested/.test(e.detail || '')) ? 'costs'
+    : e.kind === 'product' ? 'products' : e.kind === 'status' && ['cancellation_requested', 'cancelled'].includes(e.detail) ? 'cancel' : 'orders';
+  function eventItem(e) { return { ...eventItemBase(e), cat: catOf(e) }; }
+  function eventItemBase(e) {
     const who = e.clientName || L('A client', 'לקוח'), ref = e.orderRef || '#' + e.orderId;
     const base = { id: 'ev-' + e.id, time: e.createdAt * 1000, orderId: e.orderId, action: L('Open order', 'פתח הזמנה') };
     // The supplier changed a cost in their Google Sheet (Erwin, 26 Oct 2026: know it even when nobody was online).
@@ -104,11 +111,28 @@
       t.time = todoTimes[t.id].at;
     }
     if (dirty) store.set('dl_todo_times', todoTimes);
-    return list;
+    return list.map(t => ({ ...t, cat: 'todo' }));
   }
   const isUnread = n => n.time > readAt && !readIds.has(n.id);
-  const items = () => [...events.map(eventItem), ...todos()].map(n => ({ ...n, unread: isUnread(n) }));
-  function markRead(n) { readIds.add(n.id); store.set('dl_notif_read_ids', [...readIds].slice(-300)); update(); }
+  const uniq = list => { const seen = new Set(); return list.filter(e => !seen.has(e.id) && seen.add(e.id)); };
+  const todoMatch = (t, q) => !q || (t.title + ' ' + (t.text || '')).toLowerCase().includes(q.toLowerCase());
+  const items = () => (found ? [...found.items.map(eventItem), ...todos().filter(t => todoMatch(t, found.q))] : [...uniq([...events, ...older]).map(eventItem), ...todos()]).map(n => ({ ...n, unread: isUnread(n) }));
+  const api = async qs => { const r = await fetch('/api/portal/admin/notifications?' + qs, { credentials: 'same-origin' }); return r.ok ? r.json() : null; };
+  // "Load older": the page before the oldest one we have (or the oldest search result).
+  async function loadOlder() {
+    const list = (found ? found.items : uniq([...events, ...older])).filter(e => typeof e.id === 'number'); if (!list.length) return;
+    const before = Math.min(...list.map(e => e.createdAt)), beforeId = Math.min(...list.filter(e => e.createdAt === before).map(e => e.id));
+    const n = await api(new URLSearchParams({ before, beforeId, limit: 60, ...(found ? { q: found.q } : {}) })); if (!n?.ok) return;
+    if (found) { found.items = uniq([...found.items, ...n.items]); found.more = n.hasMore; } else { older = uniq([...older, ...n.items]); hasMore = n.hasMore; }
+    update();
+  }
+  // Search goes to the server, so it finds old notifications too (order number, client name or text).
+  async function search(q) {
+    if (!q) { found = null; update(); return; }
+    const n = await api(new URLSearchParams({ q, limit: 100 })); if (!n?.ok) return;
+    found = { q, items: n.items, more: n.hasMore }; update();
+  }
+  function markRead(n) { readIds.add(n.id); store.set('dl_notif_read_ids', [...readIds].slice(-2000)); update(); }
 
   // ----- bell -----
   const old = $('.notifications');
@@ -124,7 +148,10 @@
     onMarkAll: () => { readAt = Date.now(); readIds.clear(); store.set('dl_notif_read_at', readAt); store.set('dl_notif_read_ids', []); update(); },
     onOpen: () => { badgeAt = Date.now(); store.set('dl_notif_badge_at', badgeAt); update(); load(true); },
     footer: () => L('Client activity updates by itself every 30 seconds.', 'פעילות לקוחות מתעדכנת אוטומטית כל 30 שניות.'),
+    kinds: KINDS, onSearch: search, onLoadMore: loadOlder, hasMore: () => (found ? found.more : hasMore),
   });
+  // Seen / not seen is shared with Clients & orders (same browser): opening an order there clears it here too.
+  addEventListener('storage', e => { if (!/^dl_notif_read/.test(e.key || '')) return; readAt = store.get('dl_notif_read_at', readAt); readIds.clear(); store.get('dl_notif_read_ids', []).forEach(id => readIds.add(id)); update(); });
   bell.addEventListener('click', () => panel.toggle());
   function update() {
     const list = items();

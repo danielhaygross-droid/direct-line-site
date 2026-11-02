@@ -452,6 +452,19 @@ async function withMessages(DB, orders, forAdmin) {
   });
 }
 const messageOut = m => ({ id: m.id, orderId: m.order_id, author: m.author, body: m.body, createdAt: Number(m.created_at) });
+// What the admin is told about: anything a client did, and the supplier changing a cost or a cancellation fee in the sheet.
+const ADMIN_FEED = "(e.actor = 'client' OR e.kind = 'supplier_sheet' AND (e.detail LIKE ? OR e.detail LIKE ?))";
+const ADMIN_FEED_ARGS = ['{"f":"cost","from":"_%', '{"f":"cancel_fee",%"to":"_%'];
+// Each admin order carries its updates from the last 30 days (same feed as the bell), so the Client orders list can put
+// orders with unseen updates first and say what changed (Erwin, 2 Nov 2026). Seen / not seen is the bell's read state.
+async function withUpdates(DB, orders) {
+  if (!orders.length) return orders;
+  const rows = await byIdParts(orders.map(o => o.id), async part => (await DB.prepare(`SELECT e.id, e.order_id, e.kind, e.detail, e.created_at FROM order_events e
+    WHERE e.order_id IN (${part.map(() => '?').join(',')}) AND e.created_at > ? AND ${ADMIN_FEED} ORDER BY e.created_at DESC, e.id DESC`).bind(...part, now() - 30 * 86400, ...ADMIN_FEED_ARGS).all()).results || []);
+  const by = new Map();
+  for (const r of rows) { const k = Number(r.order_id); if (!by.has(k)) by.set(k, []); by.get(k).push({ id: Number(r.id), kind: r.kind, detail: r.kind === 'message' ? '' : r.detail, at: Number(r.created_at) }); }
+  return orders.map(o => ({ ...o, updates: by.get(o.id) || [] }));
+}
 const eventOut = e => ({ id: e.id, orderId: e.order_id, clientId: e.client_id, kind: e.kind, actor: e.actor, detail: e.detail, createdAt: Number(e.created_at), ...(e.prev_bill ? { prevBill: e.prev_bill } : {}),
   ...(e.order_ref !== undefined ? { orderRef: e.order_ref, status: e.status } : {}), ...(e.client_name !== undefined ? { clientName: e.client_name } : {}) });
 async function logEvent(DB, orderId, clientId, kind, actor, detail = '') {
@@ -1122,9 +1135,16 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/admin/google-sheets/retry' && method === 'POST') {
     return json({ ok: true, ...(await retryPendingGoogleSheetOrders(DB, env)) });
   }
+  // Admin bell (2 Nov 2026: "very difficult to re-track old notifications"): ?before=&beforeId= (the oldest one shown) loads
+  // older pages, ?q= searches
+  // every notification ever (order number, client, text), ?limit= up to 200.
   if (path === '/admin/notifications' && method === 'GET') {
-    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE (e.actor = 'client' OR e.kind = 'supplier_sheet' AND (e.detail LIKE ? OR e.detail LIKE ?)) AND NOT u.archived AND NOT o.archived ORDER BY e.created_at DESC, e.id DESC LIMIT 60").bind('{"f":"cost","from":"_%', '{"f":"cancel_fee",%"to":"_%').all()).results || [];
-    return json({ ok: true, items: [...rows.map(eventOut),...await productEvents(DB,null,'client')].sort((a,b)=>b.createdAt-a.createdAt).slice(0,60), now: now() });
+    const before = Number(url.searchParams.get('before') || 0) || null, beforeId = Number(url.searchParams.get('beforeId') || 0) || null, q = String(url.searchParams.get('q') || '').trim().slice(0, 80);
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 60) || 60)), like = '%' + q + '%';
+    const rows = (await DB.prepare(`SELECT e.*, o.order_ref, o.status, u.display_name AS client_name FROM order_events e JOIN client_orders o ON o.id = e.order_id JOIN users u ON u.id = e.client_id WHERE ${ADMIN_FEED} AND NOT u.archived AND NOT o.archived ${before ? (beforeId ? 'AND (e.created_at < ? OR e.created_at = ? AND e.id < ?)' : 'AND e.created_at < ?') : ''} ${q ? "AND (o.order_ref ILIKE ? OR u.display_name ILIKE ? OR e.detail ILIKE ? OR CAST(o.id AS TEXT) = ?)" : ''} ORDER BY e.created_at DESC, e.id DESC LIMIT ?`)
+      .bind(...ADMIN_FEED_ARGS, ...(before ? (beforeId ? [before, before, beforeId] : [before]) : []), ...(q ? [like, like, like, q.replace(/^#/, '')] : []), limit + 1).all()).results || [];
+    const all = [...rows.map(eventOut), ...await productEvents(DB, null, 'client', { before: before && beforeId ? before + 1 : before, q, limit: limit + 1 })].sort((a, b) => b.createdAt - a.createdAt);
+    return json({ ok: true, items: all.slice(0, limit), hasMore: all.length > limit, now: now() });
   }
   const archiveOrder = /^\/admin\/orders\/(\d+)\/archive$/.exec(path);
   if (archiveOrder && method === 'POST') {
@@ -1143,7 +1163,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/admin/orders' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0), archived = url.searchParams.get('archived') === '1';
     const rows = (await DB.prepare(`SELECT * FROM client_orders WHERE archived=? ${clientId ? 'AND client_id=?' : 'AND client_id NOT IN (SELECT id FROM users WHERE archived)'} ORDER BY created_at DESC, id DESC`).bind(archived,...(clientId ? [clientId] : [])).all()).results;
-    return json({ ok: true, orders: await withRevisions(DB, await withCreditPaid(DB, await withPaid(DB, await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)), clientId || null)), 'order') });
+    return json({ ok: true, orders: await withUpdates(DB, await withRevisions(DB, await withCreditPaid(DB, await withPaid(DB, await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)), clientId || null)), 'order')) });
   }
   if(path==='/admin/client-stores'&&method==='GET'){const clientId=url.searchParams.has('clientId')?Number(url.searchParams.get('clientId')):null;return json({ok:true,stores:await clientStores(DB,clientId)});}
   const adminStore=/^\/admin\/client-stores(?:\/(\d+))?$/.exec(path);if(adminStore&&method==='POST'){const body=await readBody(request);try{const store=await saveStore(DB,Number(body.clientId),adminStore[1]?Number(adminStore[1]):null,body);return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
