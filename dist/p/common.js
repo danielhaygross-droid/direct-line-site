@@ -414,6 +414,18 @@
   // Building blocks for the compare functions: newest / oldest first, by number (missing values last), by text.
   // Cost revision first (2 Nov 2026): waiting for an answer, then answered, then the rest; newest first inside each.
   const revRank = x => { const r = x?.revision; return !r ? 2 : ['open', 'offered'].includes(r.status) ? 0 : r.status === 'done' && r.result !== 'closed' ? 1 : 2; };
+  // Sorts shared by client and admin lists (Erwin, 2 Nov 2026: every list on the site can be sorted).
+  const LIST_SORTS = {
+    payments: {
+      newest: ['Newest first', (a, b) => (b.paidAt || 0) - (a.paidAt || 0) || (b.id || 0) - (a.id || 0)],
+      oldest: ['Oldest first', (a, b) => (a.paidAt || 0) - (b.paidAt || 0) || (a.id || 0) - (b.id || 0)],
+      amount_desc: ['Amount: high to low', (a, b) => (b.amount || 0) - (a.amount || 0)], amount_asc: ['Amount: low to high', (a, b) => (a.amount || 0) - (b.amount || 0)],
+    },
+    stores: {
+      name: ['Name A–Z', (a, b) => String(a.name || '').localeCompare(String(b.name || ''))],
+      newest: ['Newest first', (a, b) => (b.id || 0) - (a.id || 0)], oldest: ['Oldest first', (a, b) => (a.id || 0) - (b.id || 0)],
+    },
+  };
   const bySort = {
     revision: (a, b) => revRank(a) - revRank(b) || bySort.newest(a, b),
     newest: (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0) || (b.id || 0) - (a.id || 0),
@@ -430,5 +442,5 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden) lastActive = Date.now(); });
   }
   const idle = () => Date.now() - lastActive > 10 * 60 * 1000;
-  window.DL = { idle, sortPick, sortList, setSort, sortKey, bySort, openPhoto, closePhoto, addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  window.DL = { idle, sortPick, sortList, setSort, sortKey, bySort, LIST_SORTS, openPhoto, closePhoto, addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();

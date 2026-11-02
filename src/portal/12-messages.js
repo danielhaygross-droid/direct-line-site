@@ -1,8 +1,8 @@
   // ---------- messages ----------
   function viewMessages() {
-    const list = S.orders.filter(o => o.messages > 0).sort((a, b) => (b.unreadMessages > 0) - (a.unreadMessages > 0) || (b.lastMessageAt || 0) - (a.lastMessageAt || 0));
+    const list = sortList(S.orders.filter(o => o.messages > 0), 'portal-messages', MSG_SORTS);
     const open = S.orders.filter(o => o.status !== 'cancelled');
-    return `<section class="card">
+    return `<section class="card">${list.length > 1 ? `<div class="card-head list-sort">${sortPick('portal-messages', MSG_SORTS)}</div>` : ''}
       ${list.length ? `<div class="convos">${list.map(o => `<button type="button" class="convo${o.unreadMessages ? ' unread' : ''}" data-open-order="${o.id}" data-focus="chat">
         <span class="ord-ic t-${o.status}">${ic('chat')}</span>
         <span style="min-width:0"><b>${esc(orderName(o))} ${UI.pill(o.status)}</b><p>${o.lastMessage ? (o.lastMessage.author === 'client' ? 'You: ' : 'Direct Line: ') + esc(o.lastMessage.body) : ''}</p></span>

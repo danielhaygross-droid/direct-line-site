@@ -24,6 +24,17 @@
     revision: ['Cost revision first', bySort.revision],
   };
   const ADMIN_PRODUCT_SORTS = { ...PRODUCT_SORTS, client: ['Client A–Z', (a, b) => bySort.text(p => p.clientName)(a, b) || bySort.newest(a, b)] };
+  const C_STATUS = ['open', 'approved', 'rejected', 'resolved'];
+  const CLAIM_SORTS = {
+    newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
+    status: ['Open first', (a, b) => rank(C_STATUS, a.status) - rank(C_STATUS, b.status) || bySort.newest(a, b)],
+    client: ['Client A–Z', (a, b) => bySort.text(c => c.clientName)(a, b) || bySort.newest(a, b)],
+  };
+  const SAVED_PRICE_SORTS = {
+    name: ['Product A–Z', (a, b) => bySort.text(p => p.label)(a, b)],
+    updated: ['Recently updated', (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)],
+    cost_desc: ['Cost: high to low', bySort.num(p => p.supplierCost, true)], cost_asc: ['Cost: low to high', bySort.num(p => p.supplierCost)],
+  };
   const CLIENT_SORTS = {
     name: ['Name A–Z', bySort.text(c => c.name)],
     outstanding: ['Outstanding: high to low', bySort.num(c => c.outstanding, true)],

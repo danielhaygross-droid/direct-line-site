@@ -24,10 +24,10 @@
   // "Not paid yet": the orders still to pay, so the client can see what the balance is made of (preview mode only;
   // clients get the same list as step 1 of "Pay for your orders").
   function unpaidCard() {
-    const list = unpaidOrders(); if (!list.length) return '';
+    const list = sortList(unpaidOrders(), 'portal-unpaid', UNPAID_SORTS); if (!list.length) return '';
     const due = list.reduce((n, o) => n + window.DLPayOrders.dueCents(o, S.adjustments), 0) / 100;
     return `<details class="card card-pad unpaid-card" data-unpaid${S.unpaidOpen ? ' open' : ''}><summary><h3 class="sec-title">Not paid yet</h3><span class="muted"><b>${list.length}</b> <span>${list.length === 1 ? 'order' : 'orders'}</span> · <b>${money(due)}</b></span></summary>
-      <div class="po-list read">${list.map(o => `<a class="po-row" href="#/orders" data-open-order="${o.id}"><span class="po-main"><b data-no-i18n>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(window.DLPayOrders.day(window.DLClientStoreMath.dateKey(o)))}</span>${o.buyerName ? ` · <span data-no-i18n>${esc(o.buyerName)}</span>` : ''}</small></span><b class="po-amt">${money(window.DLPayOrders.dueCents(o, S.adjustments) / 100)}</b></a>`).join('')}</div>
+      ${list.length > 1 ? `<div class="list-sort">${sortPick('portal-unpaid', UNPAID_SORTS)}</div>` : ''}<div class="po-list read">${list.map(o => `<a class="po-row" href="#/orders" data-open-order="${o.id}"><span class="po-main"><b data-no-i18n>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(window.DLPayOrders.day(window.DLClientStoreMath.dateKey(o)))}</span>${o.buyerName ? ` · <span data-no-i18n>${esc(o.buyerName)}</span>` : ''}</small></span><b class="po-amt">${money(window.DLPayOrders.dueCents(o, S.adjustments) / 100)}</b></a>`).join('')}</div>
       <p class="note" style="margin:10px 0 0">An order shows as paid once Direct Line records your payment for it.</p></details>`;
   }
   // Billing details for the receipts of paid bills (Ada needs them for the invoice header).
