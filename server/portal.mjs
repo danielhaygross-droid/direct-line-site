@@ -980,9 +980,9 @@ async function routePortal(request, url, ctx, meta) {
     const order = await DB.prepare('SELECT id, client_id, status, created_at, edit_locked, items FROM client_orders WHERE id = ?').bind(id).first();
     if (!order || (!who.admin && order.client_id !== who.clientId)) return json({ ok: false, error: 'Not found' }, 404);
     const actor = actorOf(who);
-    // A missing variation photo may still be added while the order is Pending or In Progress (Erwin, 1 Nov 2026: the
+    // A missing variation photo may still be added on any order except a cancelled one (Erwin, 1-2 Nov 2026: the
     // supplier needs a photo per variation); the rest of the order stays locked after the edit window.
-    const lineFill = photoAdd && method === 'POST' && !who.admin && !canEditOrder(order) && ['pending', 'processing'].includes(order.status) && (itemsOut(order.items)?.length || 0) > 1;
+    const lineFill = photoAdd && method === 'POST' && !who.admin && !canEditOrder(order) && order.status !== 'cancelled' && (itemsOut(order.items)?.length || 0) > 1;
     if (method === 'POST' && !who.admin && !canEditOrder(order) && !lineFill) return json({ ok: false, error: 'This order is already being processed. Need a change? Send us a message.' }, 409);
     if (photoAdd && method === 'POST') {
       if (!who.admin && order.status === 'cancelled') return json({ ok: false, error: 'This order was cancelled.' }, 409);
