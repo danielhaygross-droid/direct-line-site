@@ -75,16 +75,7 @@
   });
   function onInput(e) { if (e.target.matches('[data-q]')) { S.q = e.target.value; renderOrdersList(); } }
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches?.('tr[data-open-order]')) openOrder(e.target.dataset.openOrder); });
-  // Paste a screenshot (Ctrl+V) anywhere on the order form to attach it. Normal text pasting into fields is left alone.
-  document.addEventListener('paste', e => {
-    const form = $('#order-form'); if (!form?._addFiles) return;
-    const items = [...(e.clipboardData?.items || [])];
-    const files = items.filter(i => i.kind === 'file' && /^image\//.test(i.type)).map(i => i.getAsFile()).filter(Boolean);
-    if (!files.length) return;
-    const typing = e.target.matches?.('input, textarea') && items.some(i => i.type === 'text/plain');
-    if (typing) return;
-    e.preventDefault(); form._addFiles(files);
-  });
+  // Pasting a copied image (Paste button or Ctrl+V) is handled for every photo box in common.js.
   // Drawer actions (the drawer lives outside #app).
   document.addEventListener('click', async e => {
     const t = e.target;

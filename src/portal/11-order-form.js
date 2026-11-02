@@ -15,10 +15,12 @@
         <section class="card card-pad"><h3 class="form-sec"><i>2</i>What did the customer buy?</h3><div class="form-grid">
           ${!ed ? `<label class="field full"><span>Choose from My Products</span><select name="productId"><option value="">Free-form order</option>${S.products.filter(p=>p.status==='approved').map(p=>`<option value="${p.id}">${esc(p.name)} · ${p.priceOptions?'from '+money(p.unitPrice):money(p.unitPrice)} / unit</option>`).join('')}</select><small data-product-price></small></label><label class="field full" data-f="productOption" hidden><span>Which option did the customer buy?</span><select name="productOption"></select></label>` : ed.quotedUnitPrice!=null ? `<p class="note full"><span>Fixed unit quote</span> <b>${money(ed.quotedUnitPrice)}</b></p>` : ''}
           <div class="field full" data-f="links"><span>What the customer ordered <small>each product, with its variations</small></span><div class="prod-list" data-prods></div>
+            <p class="pick-hint" data-line-tip hidden>Tip: copy an image and press Paste next to its variation (or click the variation, then Ctrl+V).</p>
             <button type="button" class="btn btn-sm link-add" data-prod-add>+ Add another product</button><em class="help">Same product in different variations (e.g. 3 × Black Walnut, 7 Hooks and 2 × Black Walnut, 6 Hooks)? Add a row per variation inside its box. A different product (another link)? “+ Add another product”.</em></div>
           <div class="field full photo-field" data-f="photos"><span>Photo or screenshot of the product <small data-pick-count></small></span>
             <div class="pm-photos pick-zone" data-picks></div>
             <p class="pick-hint">A screenshot of your store order is perfect. You can add up to ${MAX_PHOTOS}.</p>
+            <p class="pick-hint" data-paste-tip>Tip: copy an image and press Paste (or Ctrl+V).</p>
             <p class="pick-hint" data-pick-lines hidden>This order has several variations: add each photo next to its variation above.</p></div>
           <label class="field full"><span>Competitor price <small>optional · what other shops charge</small></span><input name="competitorPrice" dir="auto" maxlength="200" autocomplete="off" placeholder="e.g. $24.90 on Etsy shop X" value="${esc(ed?.competitorPrice)}"></label>
         </div></section>
@@ -70,7 +72,7 @@
       const lineMode = linesOn(), field = form.querySelector('[data-f="photos"]');
       field.hidden = lineMode && !picks.length; $('[data-pick-lines]', form).hidden = !lineMode; field.querySelector('.pick-hint:not([data-pick-lines])').hidden = lineMode;
       zone.innerHTML = picks.map(p => `<figure class="pm-photo"><img src="${p.id ? photoUrl(ed.id, p.id, true) : p.thumb}" alt="Product photo">${p.productFrom || p.id && locked ? '' : `<button type="button" class="pm-remove" data-pick-remove="${p.key}" aria-label="Remove photo">×</button>`}</figure>`).join('')
-        + (picks.length < MAX_PHOTOS && !lineMode ? `<label class="pm-add${picks.length ? '' : ' big'}"><input type="file" accept="image/*" multiple hidden data-pick-input><span>+</span><small>${picks.length ? 'Add more' : 'Add photo or screenshot'}</small></label>` : '');
+        + (picks.length < MAX_PHOTOS && !lineMode ? `<span class="pm-addwrap${picks.length ? '' : ' big'}"><label class="pm-add${picks.length ? '' : ' big'}"><input type="file" accept="image/*" multiple hidden data-pick-input><span>+</span><small>${picks.length ? 'Add more' : 'Add photo or screenshot'}</small></label><button type="button" class="pm-paste" data-paste title="Paste a copied image">Paste</button></span>` : '');
       $('[data-pick-count]', form).textContent = picks.length ? `${picks.length + linePicks.size} of ${MAX_PHOTOS}` : (ed?.source === 'etsy-csv' || linesOn() ? 'optional' : 'required');
       if (picks.length) form.querySelector('[data-f="photos"]')?.classList.remove('bad');
       updateSum();
@@ -134,12 +136,12 @@
     function totalQty() { return items().reduce((n, i) => n + (i.quantity > 0 ? i.quantity : 0), 0); }
     function linesOn() { return !selectedProduct && itemRows().length > 1; }
     function renderLines() {
-      const on = linesOn();
+      const on = linesOn(); $('[data-line-tip]', form).hidden = !on;
       itemRows().forEach((r, i) => {
         const box = r.querySelector('[data-var-photo]'), pk = linePicks.get(r.dataset.rk); box.hidden = !on; if (!on) return;
         box.innerHTML = `<span class="var-photo-t"><b data-no-i18n>#${i + 1}</b> <span>Photo of this variation</span></span>` + (pk
           ? `<figure class="pm-photo sm"><img src="${pk.id ? photoUrl(ed.id, pk.id, true) : pk.thumb}" alt="Photo of this variation">${pk.id && locked ? '' : `<button type="button" class="pm-remove" data-line-remove aria-label="Remove photo">×</button>`}</figure>`
-          : `<label class="pm-add sm"><input type="file" accept="image/*" hidden data-line-input><span>+</span><small>Add photo</small></label>`);
+          : `<span class="pm-addwrap"><label class="pm-add sm"><input type="file" accept="image/*" hidden data-line-input><span>+</span><small>Add photo</small></label><button type="button" class="pm-paste" data-paste title="Paste a copied image">Paste</button></span>`);
         if (pk) r.classList.remove('photo-bad');
       });
     }
