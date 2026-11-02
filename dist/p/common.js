@@ -441,6 +441,72 @@
     for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'focus']) addEventListener(ev, () => { lastActive = Date.now(); }, { passive: true, capture: true });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) lastActive = Date.now(); });
   }
+
+  // ---------- click a column header to sort any table (Erwin, 2 Nov 2026: "all table header must have this function") ----------
+  // Works on every .tbl / .ls-table in the portal and admin. Click once: A–Z / high to low; again: the other way.
+  // A cell can give its own value with data-sort-value; otherwise money, numbers and dates are read from the text.
+  // Empty cells ("—", "Not yet", "Pending" in a number column) always go last. Total and "nothing here" rows stay put.
+  // The choice is kept while the page is open, so the table stays sorted when it refreshes; a "Sort" dropdown resets it.
+  const headSorts = new Map();
+  const SORT_TABLES = 'table.tbl, table.ls-table';
+  const headKey = t => [...t.tHead.rows[0].cells].map(c => c.textContent.trim()).join('|');
+  const sortableTh = th => th && th.closest('thead') && th.textContent.trim() && !th.matches('.no-sort') && th.closest(SORT_TABLES);
+  const DMY = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:,\s*(\d{1,2}):(\d{2})(?::(\d{2}))?)?/;
+  function cellValue(td) {
+    if (!td) return null;
+    if (td.dataset.sortValue != null && td.dataset.sortValue !== '') { const n = Number(td.dataset.sortValue); return Number.isNaN(n) ? { t: td.dataset.sortValue } : { n }; }
+    const text = td.textContent.replace(/\s+/g, ' ').trim();
+    if (!text || /^[—–-]$/.test(text)) return null;
+    const d = DMY.exec(text);
+    if (d) return { n: Date.UTC(d[3], d[2] - 1, d[1], d[4] || 0, d[5] || 0, d[6] || 0) };
+    const m = /^(?:[-−]\s?)?[$₪€£]?\s?[-−]?\d[\d,]*(?:\.\d+)?\s?%?/.exec(text);
+    if (m) return { n: Number(m[0].replace(/−/g, '-').replace(/[^\d.-]/g, '')), text };
+    if (/^[A-Z][a-z]{2} \d{1,2}, \d{4}/.test(text)) { const t = Date.parse(text.slice(0, 12)); if (!Number.isNaN(t)) return { n: t }; }
+    return { t: text };
+  }
+  function sortTable(table, col, dir) {
+    const body = table.tBodies[0]; if (!body) return;
+    const width = table.tHead.rows[0].cells.length;
+    const groups = [], pinned = [];
+    for (const tr of [...body.rows]) {
+      const wide = tr.cells.length === 1 && tr.cells[0].colSpan > 1;
+      if (/(^|\s)(store-total|total|ls-empty)(\s|$)/.test(tr.className) || (wide && !groups.length)) pinned.push(tr);
+      else if ((wide || tr.cells.length < width - 1) && groups.length) groups[groups.length - 1].push(tr);
+      else groups.push([tr]);
+    }
+    if (groups.length < 2) return;
+    const vals = groups.map((g, i) => ({ g, i, v: cellValue(g[0].cells[col]) }));
+    const numeric = vals.filter(x => x.v).every(x => x.v.n != null) || vals.filter(x => x.v && x.v.n != null).length > vals.filter(x => x.v).length / 2;
+    const val = x => !x.v ? null : numeric ? (x.v.n != null ? x.v.n : null) : (x.v.t ?? x.v.text ?? String(x.v.n));
+    vals.sort((a, b) => {
+      const x = val(a), y = val(b);
+      if (x == null || y == null) return x == null && y == null ? a.i - b.i : x == null ? 1 : -1;
+      const c = numeric ? x - y : String(x).localeCompare(String(y), undefined, { sensitivity: 'base', numeric: true });
+      return (dir === 'desc' ? -c : c) || a.i - b.i;
+    });
+    body.append(...vals.flatMap(x => x.g), ...pinned);
+    [...table.tHead.rows[0].cells].forEach((th, i) => { th.classList.remove('sort-asc', 'sort-desc'); th.removeAttribute('aria-sort'); if (i === col) { th.classList.add('sort-' + dir); th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : 'descending'); } });
+    table.dataset.headSorted = col + dir;
+  }
+  function markSortable(root) {
+    for (const t of (root.querySelectorAll ? root.querySelectorAll(SORT_TABLES) : [])) {
+      if (!t.tHead?.rows[0]) continue;
+      for (const th of t.tHead.rows[0].cells) if (sortableTh(th) && !th.hasAttribute('tabindex')) { th.classList.add('th-sort'); th.tabIndex = 0; }
+      const s = headSorts.get(headKey(t));
+      if (s && t.dataset.headSorted !== s.col + s.dir) sortTable(t, s.col, s.dir);
+    }
+  }
+  function headClick(th) {
+    const table = th.closest(SORT_TABLES), col = th.cellIndex, key = headKey(table), now = headSorts.get(key);
+    const first = (() => { const v = [...table.tBodies[0]?.rows || []].map(r => cellValue(r.cells[col])).filter(Boolean); return v.length && v.filter(x => x.n != null).length > v.length / 2 ? 'desc' : 'asc'; })();
+    const dir = now && now.col === col ? (now.dir === 'asc' ? 'desc' : 'asc') : first;
+    headSorts.set(key, { col, dir }); delete table.dataset.headSorted; sortTable(table, col, dir);
+  }
+  document.addEventListener('click', e => { const th = e.target.closest?.('th'); if (sortableTh(th) && !e.target.closest('button, a, input, select, label')) headClick(th); });
+  document.addEventListener('keydown', e => { if (e.key !== 'Enter' && e.key !== ' ') return; const th = e.target.closest?.('th'); if (sortableTh(th) && e.target === th) { e.preventDefault(); headClick(th); } });
+  document.addEventListener('change', e => { if (e.target.closest?.('[data-sort]')) headSorts.clear(); }, true);
+  let markQueued = false;
+  if (typeof MutationObserver === 'function') new MutationObserver(() => { if (markQueued) return; markQueued = true; requestAnimationFrame(() => { markQueued = false; markSortable(document); }); }).observe(document.documentElement, { childList: true, subtree: true });
   const idle = () => Date.now() - lastActive > 10 * 60 * 1000;
   window.DL = { idle, sortPick, sortList, setSort, sortKey, bySort, LIST_SORTS, openPhoto, closePhoto, addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();
