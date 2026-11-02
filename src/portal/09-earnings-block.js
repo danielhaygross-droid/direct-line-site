@@ -34,12 +34,22 @@
       ...(S.storeId ? [] : [{ key: 'paid', label: 'You paid us', tone: 'var(--mc-orange)', note: 'Payments we received from you' }])] });
   }
 
-  const unreadOrderIds=()=>new Set(noteItems().filter(x=>x.unread).map(x=>x.orderId));
+  // Unread notifications per order: the "new" dot, the update tags and the "Updates first" sort (2 Nov 2026).
+  let newByOrder = new Map();
+  function refreshNew() { newByOrder = new Map(); for (const x of noteItems()) if (x.unread && x.orderId) { if (!newByOrder.has(x.orderId)) newByOrder.set(x.orderId, []); newByOrder.get(x.orderId).push(x); } return newByOrder; }
+  const unreadOrderIds = () => new Set(refreshNew().keys());
+  const lastNewNote = o => Math.max(0, ...(newByOrder.get(o.id) || []).map(x => x.time));
+  // One tag per kind of change, newest first (×2 when it happened more than once).
+  function updateTags(o) {
+    const seen = new Map();
+    for (const x of (newByOrder.get(o.id) || []).slice().sort((a, b) => b.time - a.time)) { const [label, tone] = x.tag; const y = seen.get(label); if (y) y.n++; else seen.set(label, { tone, n: 1 }); }
+    return seen.size ? `<span class="upd-tags">${[...seen].map(([label, y]) => `<span class="upd-tag t-${y.tone}">${esc(label)}${y.n > 1 ? `<span data-no-i18n> ×${y.n}</span>` : ''}</span>`).join('')}</span>` : '';
+  }
   function ordersTable(list, compact) {
     const fresh = unreadOrderIds();
     return `<table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Store</th>${compact ? '' : '<th>Destination</th><th>Tracking</th>'}<th class="num" title="What you earned on Etsy after Etsy’s fees">Earned</th><th class="num" title="What you pay Direct Line">Cost</th><th class="num" title="Earned minus cost">Profit</th><th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
       ${list.map(o => `<tr class="click${fresh.has(o.id) ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
-        <td class="wide" data-sort-value="${Number(o.createdAt) || 0}"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small></span></div></td>
+        <td class="wide" data-sort-value="${Number(o.createdAt) || 0}"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small>${updateTags(o)}</span></div></td>
         <td data-label="Customer"><span data-no-i18n>${esc(o.buyerName) || '—'}</span></td>
         <td data-label="Store">${window.DLClientStoreUI.label(S.stores.find(s=>s.id===o.storeId))}</td>${compact ? '' : `<td data-label="Destination">${esc(place(o.destination))}</td>
         <td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>${o.courier ? `<br><small class="dim" data-no-i18n>${esc(o.courier)}</small>` : ''}${UI.notShippedYet(o) ? '<small class="ship-warn">Not shipped yet</small>' : ''}` : '<span class="dim">Not yet</span>'}</td>`}
@@ -52,23 +62,25 @@
   }
   // Orders page (Erwin, 28 Oct 2026: "he cant even properly sort out the orders"): the list and its filters come first;
   // the earnings (store table, cards, profit chart) are folded below it and closed until the client opens them.
-  const viewOrders = () => `${payStrip()}<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
+  const viewOrders = () => `${payStrip()}<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders-2', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
       <section class="card" data-orders-list></section>`;
   const isUnpaid = o => window.DLPayOrders.state(o, S.adjustments) === 'unpaid';
   // "Cost revisions": every order the client asked a cost revision on (waiting or answered).
   const hasRevision = o => !!UI.revTag(o);
-  const byFilter = (o, f) => f === 'all' || (f === 'unpaid' ? isUnpaid(o) : f === 'revision' ? hasRevision(o) : o.status === f);
+  const byFilter = (o, f) => f === 'all' || (f === 'updates' ? newByOrder.has(o.id) : f === 'unpaid' ? isUnpaid(o) : f === 'revision' ? hasRevision(o) : o.status === f);
   function renderChips() {
+    refreshNew();
     const c = st => storeOrders().filter(o => byFilter(o, st)).length;
     // Shipped is always there, like in admin (29 Oct 2026), even before anything ships.
-    $('[data-chips]').innerHTML = ['all', 'unpaid', ...STATUSES, 'revision'].filter(st => st === 'all' || st === 'shipped' || c(st) || st === S.filter)
-      .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}" aria-pressed="${S.filter === st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : st === 'unpaid' ? 'Not paid' : st === 'revision' ? 'Cost revisions' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
+    $('[data-chips]').innerHTML = ['all', 'updates', 'unpaid', ...STATUSES, 'revision'].filter(st => st === 'all' || st === 'shipped' || c(st) || st === S.filter)
+      .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}" aria-pressed="${S.filter === st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : st === 'updates' ? 'New updates' : st === 'unpaid' ? 'Not paid' : st === 'revision' ? 'Cost revisions' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
   }
   // The orders on screen: store, status chip, search and sort (also what "Export to Excel" exports).
   function shownOrders() {
+    refreshNew();
     const q = S.q.toLowerCase();
     return sortList(storeOrders().filter(o => byFilter(o, S.filter)
-      && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination),S.stores.find(s=>s.id===o.storeId)?.name].join(' ').toLowerCase().includes(q))), 'portal-orders', ORDER_SORTS);
+      && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination),S.stores.find(s=>s.id===o.storeId)?.name].join(' ').toLowerCase().includes(q))), 'portal-orders-2', ORDER_SORTS);
   }
   // "Export to Excel": the orders on screen as an .xlsx with prices, a Yes / No "Paid" column and paid / not paid totals.
   function exportOrdersToExcel() {

@@ -14,7 +14,8 @@
     status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
     revision: ['Cost revision first', bySort.revision],
   };
-  const ADMIN_ORDER_SORTS = { ...ORDER_SORTS, client: ['Client A–Z', (a, b) => bySort.text(o => clientName(o.clientId))(a, b) || bySort.newest(a, b)] };
+  // New updates first (Erwin, 2 Nov 2026): orders with something the admin hasn't seen yet, latest update on top.
+  const ADMIN_ORDER_SORTS = { updates: ['New updates first', (a, b) => lastNew(b) - lastNew(a) || bySort.newest(a, b)], ...ORDER_SORTS, client: ['Client A–Z', (a, b) => bySort.text(o => clientName(o.clientId))(a, b) || bySort.newest(a, b)] };
   const P_STATUS = ['awaiting_quote', 'approved', 'not_available'];
   const PRODUCT_SORTS = {
     waiting: ['Waiting for price first', (a, b) => rank(P_STATUS, a.status) - rank(P_STATUS, b.status) || bySort.newest(a, b)],
@@ -71,6 +72,32 @@
   const empty = (title, text, extra = '') => `<div class="empty"><span class="empty-ic">${ic('orders')}</span><h3>${esc(title)}</h3><p>${esc(text)}</p>${extra}</div>`;
   const divisor = () => Number(S.ov?.settings?.volumetric_divisor) || 6000;
   const unreadTotal = () => S.orders.reduce((t, x) => t + (x.unreadMessages || 0), 0);
+  // ----- new updates on an order (Erwin, 2 Nov 2026) -----
+  // The server sends each order's client / supplier updates of the last 30 days. Seen or not is the dashboard bell's
+  // read state (same browser, same keys): opening an order here clears it in the bell, "Mark all as read" there clears it here.
+  const readState = () => { try { let at = JSON.parse(localStorage.getItem('dl_notif_read_at')); if (at === null) { at = Date.now(); localStorage.setItem('dl_notif_read_at', JSON.stringify(at)); } return { at, ids: new Set(JSON.parse(localStorage.getItem('dl_notif_read_ids')) || []) }; } catch (e) { return { at: Date.now(), ids: new Set() }; } };
+  let readCache = null;
+  const freshRead = () => { readCache = readState(); return readCache; };
+  const newUpdates = o => { const r = readCache || freshRead(); return (o.updates || []).filter(u => u.at * 1000 > r.at && !r.ids.has('ev-' + u.id)); };
+  const lastNew = o => newUpdates(o)[0]?.at || 0;
+  const updateLabel = u => u.kind === 'created' ? ['New order', 'gold'] : u.kind === 'message' ? ['New message', 'blue'] : u.kind === 'revision_requested' ? ['Cost revision requested', 'orange']
+    : u.kind === 'claim' ? ['Problem reported', 'red'] : u.kind === 'tracking' ? ['Tracking added', 'mint'] : u.kind === 'photo' ? [u.detail === 'removed' ? 'Photo removed' : 'Photo added', 'orange']
+    : u.kind === 'supplier_sheet' ? (/"f":"cancel_fee"/.test(u.detail || '') ? ['Supplier cancellation fee', 'red'] : ['Supplier changed cost', 'orange'])
+    : u.kind === 'status' ? ({ cancellation_requested: ['Cancellation requested', 'red'], delivered: ['Marked delivered', 'mint'], cancelled: ['Cancelled by client', 'red'] }[u.detail] || ['Status changed', 'mint'])
+    : u.kind === 'edited' ? (u.detail === 'customer' ? ['Customer details changed', 'orange'] : ['Order edited', 'orange']) : ['Order updated', 'gold'];
+  // One tag per kind of change, newest first, with ×2 when it happened more than once.
+  function updateTags(o) {
+    const seen = new Map();
+    for (const u of newUpdates(o)) { const [label, tone] = updateLabel(u); const x = seen.get(label); if (x) x.n++; else seen.set(label, { tone, n: 1 }); }
+    return seen.size ? `<span class="upd-tags">${[...seen].map(([label, x]) => `<span class="upd-tag t-${x.tone}">${esc(label)}${x.n > 1 ? `<span data-no-i18n> ×${x.n}</span>` : ''}</span>`).join('')}</span>` : '';
+  }
+  // Opening an order marks its updates as seen (here and in the bell).
+  function markSeen(o) {
+    const ids = (o?.updates || []).map(u => 'ev-' + u.id); if (!ids.length) return;
+    const r = readState(), add = ids.filter(id => !r.ids.has(id)); if (!add.length) return;
+    try { localStorage.setItem('dl_notif_read_ids', JSON.stringify([...r.ids, ...add].slice(-2000))); } catch (e) { /* private mode */ }
+    readCache = null; tell({ type: 'dl-followups', unread: unreadTotal() }); if (S.tab === 'orders') renderList();
+  }
 
   // ---------- boot ----------
   async function boot() {
@@ -95,7 +122,7 @@
   async function loadAll() {
     const [ov, o, p, c, stores, archived] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores'),api('/admin/orders?archived=1')]);
     S.ov = ov; S.orders = o.orders; S.archivedOrders = archived.orders; S.products=p.products; S.claims=c.claims;S.stores=stores.stores; window.DL.setRates(ov.rates);
-    if (S.filter === null) S.filter = S.orders.some(x => x.status === 'cancellation_requested') ? 'cancellation_requested' : S.orders.some(x => x.unreadMessages) ? 'followups' : S.orders.some(x => x.status === 'pending') ? 'pending' : 'all';
+    if (S.filter === null) S.filter = S.orders.some(x => newUpdates(x).length) ? 'all' : S.orders.some(x => x.status === 'cancellation_requested') ? 'cancellation_requested' : S.orders.some(x => x.unreadMessages) ? 'followups' : S.orders.some(x => x.status === 'pending') ? 'pending' : 'all';
     renderKpis();
     tell({ type: 'dl-followups', unread: unreadTotal() });
   }
@@ -160,7 +187,7 @@
     if(S.tab==='products'){renderProducts();return;}
     const body = $('[data-tab-body]');
     if (S.tab === 'orders') {
-      body.innerHTML = `<div class="bar"><div class="chips" data-chips></div><div class="bar-r">${sortPick('admin-orders', ADMIN_ORDER_SORTS)}<select data-client-filter aria-label="Client"></select><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, tracking, client…" value="${esc(S.q)}" data-q></label></div></div>
+      body.innerHTML = `<div class="bar"><div class="chips" data-chips></div><div class="bar-r">${sortPick('admin-orders-2', ADMIN_ORDER_SORTS)}<select data-client-filter aria-label="Client"></select><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, tracking, client…" value="${esc(S.q)}" data-q></label></div></div>
         <section class="card" data-list></section>`;
     } else if (S.tab === 'clients') {
       body.innerHTML = `<div class="bar"><label class="search"><span class="sr">Search clients</span>${ic('search')}<input type="search" placeholder="Search clients…" value="${esc(S.cq)}" data-cq></label>${sortPick('admin-clients', CLIENT_SORTS)}<button type="button" class="btn btn-primary" data-add-account="client">${ic('plus')}Add client</button></div>
@@ -276,35 +303,36 @@
   const customerPaid = o => o.sellingPrice == null ? '<span class="dim">Not entered</span>' : `${esc(o.currency || 'USD')} ${Number(o.sellingPrice).toFixed(2)}`;
   // Not billed yet: no product cost or shipping fee, and no fixed unit quote (quoted orders are billed from the quote).
   const needsCost = o => o.status !== 'cancelled' && o.productCost == null && o.shippingFee == null && o.quotedUnitPrice == null;
-  const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'followups' ? o.unreadMessages > 0 : f === 'needscost' ? needsCost(o) : f === 'revision' ? ['open', 'offered'].includes(o.revision?.status) : f === 'unpaid' ? window.DLPayOrders.state(o) === 'unpaid' : o.status === f));
+  const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'updates' ? newUpdates(o).length > 0 : f === 'followups' ? o.unreadMessages > 0 : f === 'needscost' ? needsCost(o) : f === 'revision' ? ['open', 'offered'].includes(o.revision?.status) : f === 'unpaid' ? window.DLPayOrders.state(o) === 'unpaid' : o.status === f));
   function renderOrders() {
+    freshRead();
     const all = [...S.orders,...S.archivedOrders];
     const inClient = all.filter(o => !S.client || String(o.clientId) === S.client);
     const count = f => inClient.filter(o => matches(o, f)).length;
-    const label = f => (f === 'archived' ? 'Archived orders' : f === 'all' ? 'All' : f === 'followups' ? 'New follow-ups' : f === 'needscost' ? 'Needs cost' : f === 'revision' ? 'Cost revision' : f === 'unpaid' ? 'Not paid' : UI.LABEL[f]);
+    const label = f => (f === 'archived' ? 'Archived orders' : f === 'all' ? 'All' : f === 'updates' ? 'New updates' : f === 'followups' ? 'New follow-ups' : f === 'needscost' ? 'Needs cost' : f === 'revision' ? 'Cost revision' : f === 'unpaid' ? 'Not paid' : UI.LABEL[f]);
     // Shipped is always there (Erwin, 29 Oct 2026: "we need a sort view for Shipped order"), even before anything ships.
-    $('[data-chips]').innerHTML = ['all', 'followups', 'revision', 'needscost', 'unpaid', ...STATUSES, 'archived'].filter(f => ['archived', 'all', 'shipped'].includes(f) || count(f) || f === S.filter)
-      .map(f => `<button type="button" class="chip t-${f}${f === 'followups' ? ' alert' : ''}${S.filter === f ? ' on' : ''}" data-filter="${f}">${f !== 'all' && f !== 'followups' ? '<i class="dot"></i>' : ''}${label(f)} <span>${count(f)}</span></button>`).join('');
+    $('[data-chips]').innerHTML = ['all', 'updates', 'followups', 'revision', 'needscost', 'unpaid', ...STATUSES, 'archived'].filter(f => ['archived', 'all', 'shipped'].includes(f) || count(f) || f === S.filter)
+      .map(f => `<button type="button" class="chip t-${f}${f === 'followups' || f === 'updates' ? ' alert' : ''}${S.filter === f ? ' on' : ''}" data-filter="${f}">${!['all', 'followups', 'updates'].includes(f) ? '<i class="dot"></i>' : ''}${label(f)} <span>${count(f)}</span></button>`).join('');
     const sel = $('[data-client-filter]');
     sel.innerHTML = '<option value="">All clients</option>' + S.ov.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
     sel.value = S.client;
     const q = S.q.toLowerCase();
-    const rows = sortList(inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId), o.itemTitle, o.sku, o.buyerName].join(' ').toLowerCase().includes(q))), 'admin-orders', ADMIN_ORDER_SORTS);
+    const rows = sortList(inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId), o.itemTitle, o.sku, o.buyerName].join(' ').toLowerCase().includes(q))), 'admin-orders-2', ADMIN_ORDER_SORTS);
     // Bulk edit: only rows that are on screen can stay selected.
     const shown = new Set(rows.map(o => o.id)); for (const id of [...S.picked]) if (!shown.has(id)) S.picked.delete(id);
     const archivedView = S.filter === 'archived', allOn = rows.length > 0 && rows.every(o => S.picked.has(o.id));
     $('[data-list]').innerHTML = rows.length ? `${bulkBar(archivedView, allOn)}<div class="table-wrap"><table class="tbl stack"><thead><tr><th class="pick"></th><th>Client</th><th>Order</th><th>Destination</th><th class="num">Total</th><th>Status</th><th>Messages</th><th class="hide-sm"></th></tr></thead><tbody>
-      ${rows.map(o => `<tr class="click${o.unreadMessages ? ' is-new' : ''}${S.picked.has(o.id) ? ' picked' : ''}" data-open-order="${o.id}" tabindex="0">
+      ${rows.map(o => `<tr class="click${o.unreadMessages || newUpdates(o).length ? ' is-new' : ''}${S.picked.has(o.id) ? ' picked' : ''}" data-open-order="${o.id}" tabindex="0">
         <td class="pick"><input type="checkbox" data-pick="${o.id}" aria-label="Select ${esc(orderName(o))}"${S.picked.has(o.id) ? ' checked' : ''}></td>
         <td class="wide"><div class="who"><span class="ava">${esc(initials(clientName(o.clientId)))}</span><div><b>${esc(clientName(o.clientId))}</b><small>${esc(fullDate(o.createdAt))}</small></div></div></td>
-        <td data-label="Order"><div class="ord-cell">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : '<span class="ord-thumb none" title="No photo">—</span>'}<span class="t-main"><b>${esc(orderName(o))}</b>${o.itemTitle ? `<small>${esc(o.itemTitle)}</small>` : ''}<small class="mono">${esc(o.trackingNumber) || 'No tracking yet'}</small></span></div></td>
+        <td data-label="Order"><div class="ord-cell">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : '<span class="ord-thumb none" title="No photo">—</span>'}<span class="t-main"><b>${esc(orderName(o))}</b>${o.itemTitle ? `<small>${esc(o.itemTitle)}</small>` : ''}<small class="mono">${esc(o.trackingNumber) || 'No tracking yet'}</small>${updateTags(o)}</span></div></td>
         <td data-label="Destination">${esc(place(o.destination))}</td>
         <td data-label="Total" class="num"><b>${money(o.price)}</b>${window.DLPayOrders.tag(o, [], true)}</td>
         <td data-label="Status"><select data-status="${o.id}" aria-label="Status of ${esc(orderName(o))}">${[o.status,...ADMIN_STATUSES.filter(s=>s!==o.status)].map(s => `<option value="${s}"${s === o.status ? ' selected' : ''}>${UI.LABEL[s]}</option>`).join('')}</select>${UI.delayTag(o)}</td>
         <td data-label="Messages">${o.unreadMessages ? `<span class="unread-pill">${ic('chat')}${o.unreadMessages} new</span>` : o.messages ? `<span class="msgs">${ic('chat')}${o.messages}</span>` : '<span class="dim">—</span>'}</td>
         <td class="num hide-sm">${UI.svg(P.chev).replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:var(--dim);stroke-width:2"')}</td></tr>`).join('')}
       </tbody></table></div>`
-      : S.orders.length ? empty('No orders here', S.filter === 'followups' ? 'No unread follow-ups. You’re all caught up.' : S.filter === 'archived' ? 'No archived orders match this search.' : 'Try another filter or search.')
+      : S.orders.length ? empty('No orders here', S.filter === 'followups' ? 'No unread follow-ups. You’re all caught up.' : S.filter === 'updates' ? 'No new updates. You’re all caught up.' : S.filter === 'archived' ? 'No archived orders match this search.' : 'Try another filter or search.')
         : empty('No client orders yet', 'They show up here as soon as a client adds one in their portal. You can also add one for a client.', '<button type="button" class="btn btn-primary" data-new-order>New order</button>');
   }
 
@@ -524,7 +552,7 @@
     d.onClose = () => { closeChat(); S.drawer = null; };
     d.open('o' + o.id);
     d.body.innerHTML = '<div data-d-info style="display:grid;gap:16px"></div><section><h3 class="sec-title">Messages with the client</h3><div data-d-chat></div></section>';
-    invoiceFiles=[];fillOrder(o);
+    markSeen(o); invoiceFiles=[];fillOrder(o);
     api('/admin/invoices?clientId='+o.clientId).then(r=>{if(S.drawer?.kind==='order'&&S.drawer.id===o.id){invoiceFiles=r.invoices;fillOrder(o,true);}}).catch(ex=>toast(ex.message));
     chatCtl = UI.chat($('[data-d-chat]', d.body), { orderId: o.id, role: 'admin', readOnly: !!o.archived, onLoad: data => {
       events = data.events || [];
@@ -1450,6 +1478,9 @@
       if (S.orders.some(o => o.id === m.id)) go(); else loadAll().then(() => { renderList(); go(); });
     }
   }
+
+  // The bell ("Mark all as read", opening a notification) changed what's seen: refresh the update tags.
+  addEventListener('storage', e => { if (/^dl_notif_read/.test(e.key || '')) { readCache = null; if (S.ov) { renderKpis(); renderList(); } } });
 
   boot();
 })();

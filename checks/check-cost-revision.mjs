@@ -100,7 +100,7 @@ try {
     await p.locator('[data-filter="revision"]').click(); await p.waitForTimeout(200);
     const shown = await p.locator('tr[data-open-order]').evaluateAll(r => r.map(x => [Number(x.dataset.openOrder), !!x.querySelector('.rev-tag')]));
     assert.ok(shown.some(([id]) => id === A) && shown.every(([, t]) => t), 'the chip shows only orders with a cost revision');
-    assert.ok(await p.locator('select[data-sort="portal-orders"] option[value="revision"]').count(), 'sort: cost revision first');
+    assert.ok(await p.locator('select[data-sort="portal-orders-2"] option[value="revision"]').count(), 'sort: cost revision first');
     await p.screenshot({ path: path.join(out, 'en-1440-list-kept.png') }); await c.close();
   }
   assert.equal((await call(`/admin/orders/${A}/cost-revision`, 'POST', { action: 'keep' }, admin)).status, 409, 'nothing open');

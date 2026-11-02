@@ -2,6 +2,14 @@
   const readKey = () => 'dl_portal_read_' + S.me.id, badgeKey = () => 'dl_portal_badge_' + S.me.id;
   let readIds = null;
   const reads = () => (readIds ||= new Set(store.get(readKey(), [])));
+  // Short tag for the Orders list: what changed since the client last looked (2 Nov 2026).
+  function noteTag(e) {
+    if (e.kind === 'status') return [{ pending: 'Now Pending', processing: 'Now In Progress', shipped: 'Now Shipped', delivered: 'Now Delivered', cancelled: 'Now Cancelled' }[e.detail] || 'Status changed', { processing: 'blue', shipped: 'gold', delivered: 'mint', cancelled: 'red' }[e.detail] || 'orange'];
+    if (e.kind === 'revision_answered') { const r = String(e.detail || '').split('|')[0]; return [r === 'lowered' ? 'Cost lowered' : r === 'raised' ? 'Cost changed' : 'Cost kept', r === 'lowered' ? 'mint' : 'gold']; }
+    if (e.kind === 'cancel_fee') return [Number(e.detail) > 0 ? 'Cancellation fee added' : 'Cancellation fee removed', 'red'];
+    return ({ price_changed: ['Cost updated', 'gold'], billed: [e.prevBill ? 'Cost updated' : 'Billed', 'gold'], item_prices: ['Price per product added', 'gold'], delayed: ['Possibly delayed', 'orange'],
+      delay_cleared: ['No longer delayed', 'mint'], tracking: ['Tracking added', 'mint'], message: ['New reply', 'blue'], created: ['Added by Direct Line', 'gold'], photo: [e.detail === 'removed' ? 'Photo removed' : 'Photo added', 'orange'], claim: ['Claim updated', 'gold'] })[e.kind] || ['Order updated', 'orange'];
+  }
   function noteItem(e) {
     const o = S.orders.find(x => x.id === e.orderId), ref = e.orderRef || (o ? orderName(o) : '#' + e.orderId);
     const base = { id: 'n' + e.id, orderId: e.orderId, time: e.createdAt * 1000, action: 'View order' };
@@ -27,6 +35,7 @@
     else if (e.kind === 'photo') it = { ...base, icon: 'edit', tone: 'orange', title: e.detail === 'removed' ? 'We removed a product photo' : 'We added a product photo', text: ref };
     else it = { ...base, icon: 'edit', tone: 'orange', title: 'We updated your order', text: ref };
     it.unread = it.time > S.seenAt * 1000 && !reads().has(it.id);
+    it.tag = noteTag(e);
     return it;
   }
   const noteItems = () => S.notes.map(noteItem);

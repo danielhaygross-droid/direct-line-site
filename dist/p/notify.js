@@ -72,6 +72,14 @@
   .dln-item:not(.unread) .dln-dot{visibility:hidden}
   .dln-empty{display:grid;justify-items:center;gap:8px;padding:34px 20px;color:var(--n-muted);font-size:14px;text-align:center}
   .dln-empty .dln-ic{width:46px;height:46px}
+  .dln-panel.dln-wide{width:440px;max-height:min(760px,calc(100vh - 90px))}
+  .dln-search{display:flex;align-items:center;gap:8px;margin:0 18px 10px;padding:0 12px;border:1px solid var(--n-line);border-radius:10px;background:var(--n-bg2)}
+  .dln-search svg{width:16px;height:16px;flex:none;fill:none;stroke:var(--n-dim);stroke-width:2;stroke-linecap:round}
+  .dln-search input{flex:1;min-width:0;height:36px;border:0;background:transparent;color:var(--n-text);font:inherit;font-size:14px;outline:none}
+  .dln-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .dln-tabs{flex-wrap:wrap}
+  .dln-more{display:block;width:100%;margin-bottom:6px;padding:9px;border:1px solid var(--n-line);border-radius:10px;background:transparent;color:var(--n-text);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+  .dln-more:hover{background:color-mix(in srgb,var(--n-text) 5%,transparent)}.dln-more:disabled{color:var(--n-dim);cursor:default}
   .dln-foot{padding:10px 18px;border-top:1px solid var(--n-line);font-size:12px;color:var(--n-dim)}
   .dln-ic.t-mint,.dln-pop.t-mint{--tone:var(--mint,var(--ok,#2f8f6d))}.dln-ic.t-red,.dln-pop.t-red{--tone:var(--red,var(--bad,#b4433a))}.dln-ic.t-blue,.dln-pop.t-blue{--tone:var(--blue,var(--info,#2f6f9f))}.dln-ic.t-orange,.dln-pop.t-orange{--tone:var(--orange,var(--warn,#b7791f))}.dln-ic.t-gold,.dln-pop.t-gold{--tone:var(--gold,#b98a3e)}
   .dln-ic{display:grid;place-items:center;flex:none;border-radius:50%;background:color-mix(in srgb,var(--tone,var(--gold,#b98a3e)) 15%,transparent);color:var(--tone,var(--gold,#b98a3e))}.dln-ic svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -95,24 +103,43 @@
 
   // ---------- dropdown ----------
   // opts: anchor (the bell button), onItem(item), onMarkAll(), onOpen(), onClose(), footer (text)
+  // Optional, for a long history (admin, 2 Nov 2026): kinds [{ key, label }] (items carry .cat), onSearch(q) (the caller
+  // fetches and calls set()), onLoadMore() + hasMore() for a "Load older" button. Older items are grouped by day.
+  const dayLabel = ms => { const d = new Date(ms), t = new Date(); const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); const diff = Math.round((day(t) - day(d)) / 864e5);
+    return diff === 0 ? L('Today', 'היום') : diff === 1 ? L('Yesterday', 'אתמול') : d.toLocaleDateString(he() ? 'he-IL' : undefined, { weekday: 'long', day: 'numeric', month: 'short', ...(d.getFullYear() !== t.getFullYear() ? { year: 'numeric' } : {}) }); };
   function panel(opts) {
     const el = document.createElement('div');
-    el.className = 'dln-panel'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', L('Notifications', 'התראות'));
+    el.className = 'dln-panel' + (opts.kinds || opts.onSearch ? ' dln-wide' : ''); el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', L('Notifications', 'התראות'));
     el.dir = document.documentElement.dir || 'ltr';
     document.body.appendChild(el);
-    let items = [], filter = 'all', isOpen = false;
+    let items = [], filter = 'all', kind = '', q = '', isOpen = false, built = false, busy = false, timer = 0;
+    const build = () => {
+      el.innerHTML = `<div class="dln-head"><h3>${L('Notifications', 'התראות')}</h3><button type="button" class="dln-link" data-dln-all>${L('Mark all as read', 'סמן הכל כנקרא')}</button></div>
+        ${opts.onSearch ? `<label class="dln-search"><span class="dln-sr">${L('Search notifications', 'חיפוש בהתראות')}</span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" data-dln-q placeholder="${L('Search order, client or text…', 'חיפוש לפי הזמנה, לקוח או טקסט…')}"></label>` : ''}
+        <div class="dln-tabs" data-dln-tabs></div><div class="dln-body" data-dln-body></div>
+        ${opts.footer || opts.onLoadMore ? `<div class="dln-foot" data-dln-foot></div>` : ''}`;
+      built = true;
+    };
     const render = () => {
+      if (!built) build();
       const unread = items.filter(n => n.unread);
-      const shown = filter === 'unread' ? unread : items;
+      let shown = filter === 'unread' ? unread : items;
+      if (kind) shown = shown.filter(n => n.cat === kind);
+      if (q && !opts.onSearch) { const w = q.toLowerCase(); shown = shown.filter(n => (n.title + ' ' + (n.text || '')).toLowerCase().includes(w)); }
       const fresh = shown.filter(n => n.unread), old = shown.filter(n => !n.unread);
-      el.innerHTML = `<div class="dln-head"><h3>${L('Notifications', 'התראות')}</h3><button type="button" class="dln-link" data-dln-all${unread.length ? '' : ' disabled'}>${L('Mark all as read', 'סמן הכל כנקרא')}</button></div>
-        <div class="dln-tabs"><button type="button" data-dln-f="all" class="${filter === 'all' ? 'on' : ''}">${L('All', 'הכל')}</button><button type="button" data-dln-f="unread" class="${filter === 'unread' ? 'on' : ''}">${L('Unread', 'לא נקראו')}${unread.length ? ` (${unread.length})` : ''}</button></div>
-        <div class="dln-body">${shown.length ? `${fresh.length ? `<div class="dln-sec">${L('New', 'חדשות')}</div>${fresh.map(n => itemHTML(n)).join('')}` : ''}${old.length ? `<div class="dln-sec">${L('Earlier', 'קודמות')}</div>${old.map(n => itemHTML(n)).join('')}` : ''}`
-          : `<div class="dln-empty"><span class="dln-ic t-mint">${icon('check')}</span>${filter === 'unread' ? L('You’re all caught up.', 'אין התראות חדשות.') : L('No notifications yet.', 'אין עדיין התראות.')}</div>`}</div>
-        ${opts.footer ? `<div class="dln-foot">${esc(typeof opts.footer === 'function' ? opts.footer() : opts.footer)}</div>` : ''}`;
+      el.querySelector('[data-dln-all]').disabled = !unread.length;
+      const count = k => items.filter(n => n.cat === k).length;
+      el.querySelector('[data-dln-tabs]').innerHTML = `<button type="button" data-dln-f="all" class="${filter === 'all' ? 'on' : ''}">${L('All', 'הכל')}</button><button type="button" data-dln-f="unread" class="${filter === 'unread' ? 'on' : ''}">${L('Unread', 'לא נקראו')}${unread.length ? ` (${unread.length})` : ''}</button>`
+        + (opts.kinds || []).filter(k => count(k.key) || kind === k.key).map(k => `<button type="button" data-dln-k="${k.key}" class="kind${kind === k.key ? ' on' : ''}">${esc(k.label)}</button>`).join('');
+      let last = '';
+      const days = old.map(n => { const d = n.time ? dayLabel(n.time) : L('Earlier', 'קודמות'), head = d !== last ? `<div class="dln-sec">${esc(d)}</div>` : ''; last = d; return head + itemHTML(n); }).join('');
+      el.querySelector('[data-dln-body]').innerHTML = shown.length ? `${fresh.length ? `<div class="dln-sec">${L('New', 'חדשות')}</div>${fresh.map(n => itemHTML(n)).join('')}` : ''}${days}`
+        : `<div class="dln-empty"><span class="dln-ic t-mint">${icon('check')}</span>${q ? L('Nothing matches this search.', 'אין תוצאות לחיפוש הזה.') : filter === 'unread' ? L('You’re all caught up.', 'אין התראות חדשות.') : L('No notifications yet.', 'אין עדיין התראות.')}</div>`;
+      const foot = el.querySelector('[data-dln-foot]');
+      if (foot) foot.innerHTML = `${opts.onLoadMore && opts.hasMore?.() ? `<button type="button" class="dln-more" data-dln-more${busy ? ' disabled' : ''}>${busy ? L('Loading…', 'טוען…') : L('Load older notifications', 'טען התראות קודמות')}</button>` : ''}${opts.footer ? `<span>${esc(typeof opts.footer === 'function' ? opts.footer() : opts.footer)}</span>` : ''}`;
     };
     const place = () => {
-      const r = opts.anchor.getBoundingClientRect(), w = Math.min(400, innerWidth - 16);
+      const r = opts.anchor.getBoundingClientRect(), w = Math.min(el.classList.contains('dln-wide') ? 440 : 400, innerWidth - 16);
       el.style.top = Math.round(r.bottom + 10) + 'px';
       const rtl = (document.documentElement.dir || 'ltr') === 'rtl';
       let left = rtl ? r.left : r.right - w;
@@ -121,9 +148,16 @@
     };
     const outside = e => { if (isOpen && !el.contains(e.target) && !opts.anchor.contains(e.target)) api.close(); };
     const key = e => { if (e.key === 'Escape' && isOpen) { api.close(); opts.anchor.focus(); } };
-    el.addEventListener('click', e => {
+    el.addEventListener('input', e => {
+      if (!e.target.matches('[data-dln-q]')) return;
+      q = e.target.value.trim(); clearTimeout(timer);
+      timer = setTimeout(async () => { if (opts.onSearch) { busy = true; render(); try { await opts.onSearch(q); } finally { busy = false; render(); } } else render(); }, 300);
+    });
+    el.addEventListener('click', async e => {
       const f = e.target.closest('[data-dln-f]'); if (f) { filter = f.dataset.dlnF; render(); return; }
+      const k = e.target.closest('[data-dln-k]'); if (k) { kind = kind === k.dataset.dlnK ? '' : k.dataset.dlnK; render(); return; }
       if (e.target.closest('[data-dln-all]')) { opts.onMarkAll?.(); return; }
+      if (e.target.closest('[data-dln-more]')) { if (busy) return; busy = true; render(); try { await opts.onLoadMore(); } finally { busy = false; render(); } return; }
       const it = e.target.closest('[data-dln-id]'); if (!it) return;
       const n = items.find(x => String(x.id) === it.dataset.dlnId);
       api.close(); n && opts.onItem?.(n);
@@ -135,10 +169,11 @@
       close() { if (!isOpen) return; isOpen = false; el.classList.remove('open'); opts.anchor.setAttribute('aria-expanded', 'false'); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', key); removeEventListener('resize', place); opts.onClose?.(); },
       toggle() { isOpen ? api.close() : api.open(); },
       get isOpen() { return isOpen; },
+      get query() { return q; },
       refresh() { if (isOpen) render(); },
     };
     opts.anchor.setAttribute('aria-haspopup', 'dialog'); opts.anchor.setAttribute('aria-expanded', 'false');
-    setInterval(() => { if (isOpen) el.querySelectorAll('time[datetime]').forEach(t => { t.textContent = timeAgo(new Date(t.getAttribute('datetime')).getTime()); }); }, 30000);
+    setInterval(() => { if (isOpen) el.querySelectorAll('time[datetime]').forEach(t => { t.textContent = exactTime(new Date(t.getAttribute('datetime')).getTime()); }); }, 30000);
     return api;
   }
 

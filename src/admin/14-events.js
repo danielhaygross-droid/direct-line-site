@@ -324,5 +324,8 @@
     }
   }
 
+  // The bell ("Mark all as read", opening a notification) changed what's seen: refresh the update tags.
+  addEventListener('storage', e => { if (/^dl_notif_read/.test(e.key || '')) { readCache = null; if (S.ov) { renderKpis(); renderList(); } } });
+
   boot();
 })();
