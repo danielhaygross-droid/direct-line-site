@@ -554,11 +554,13 @@ function validLink(value) {
 // Order lines (Pauline, 22 Oct 2026): each product / colour of an order has its own link, quantity and colour / size.
 // Saved as JSON in client_orders.items; the order's links, quantity (the sum) and variation text are worked out from
 // them, so the supplier sheet, saved prices and exports keep working ("3 × Black Walnut, 7 Hooks" one line each).
+// Pieces in one order: up to 10,000 (Erwin, 3 Nov 2026: a client's bulk order of 3,000 bracelets did not fit in 999).
+export const MAX_QTY = 10000;
 export function orderItems(value) {
   if (!Array.isArray(value)) return null;
   if (!value.length || value.length > 10) throw new Error('Add one to ten products.');
   const items = value.map(it => ({ link: productLinks(it?.link).split('\n')[0] || '', quantity: Number(it?.quantity), variant: text(it?.variant, 500) }));
-  items.forEach((it, i) => { if (!Number.isInteger(it.quantity) || it.quantity < 1 || it.quantity > 999) throw new Error(items.length > 1 ? `How many: use a whole number from 1 to 999 (product ${i + 1}).` : 'How many: use a whole number from 1 to 999.'); });
+  items.forEach((it, i) => { if (!Number.isInteger(it.quantity) || it.quantity < 1 || it.quantity > MAX_QTY) throw new Error(items.length > 1 ? `How many: use a whole number from 1 to 10,000 (product ${i + 1}).` : 'How many: use a whole number from 1 to 10,000.'); });
   return items;
 }
 export function itemsSummary(items) {
@@ -610,7 +612,7 @@ function orderFields(body) {
   if (![f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee].every(isMoney)) throw new Error('Numbers must be zero or more');
   if (f.order_date && !/^\d{4}-\d{2}-\d{2}$/.test(f.order_date)) throw new Error('Order date must be a valid date');
   if (!/^[A-Z]{3}$/.test(f.currency)) throw new Error('Currency must use a three-letter code');
-  if (!Number.isInteger(f.quantity) || f.quantity < 1 || f.quantity > 999) throw new Error('Quantity must be between 1 and 999');
+  if (!Number.isInteger(f.quantity) || f.quantity < 1 || f.quantity > MAX_QTY) throw new Error('Quantity must be between 1 and 10,000');
   // When the parts are given, the price is their sum.
   if (f.product_cost !== null || f.shipping_fee !== null) f.price = round2((f.product_cost || 0) + (f.shipping_fee || 0));
   if (f.price === null) f.price = 0;

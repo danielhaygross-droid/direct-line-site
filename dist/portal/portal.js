@@ -784,7 +784,7 @@
     // colour / size with its own quantity. Sent as flat lines {link, quantity, variant}; the server adds them up.
     const prodBox = $('[data-prods]', form);
     const varRow = (v = {}) => `<div class="var-row" data-var data-rk="r${++rowSeq}">
-      <label class="field item-qty"><span>How many?</span><input data-qty type="number" min="1" max="999" step="1" inputmode="numeric" value="${v.quantity ?? 1}"></label>
+      <label class="field item-qty"><span>How many?</span><input data-qty type="number" min="1" max="10000" step="1" inputmode="numeric" value="${v.quantity ?? 1}"></label>
       <label class="field item-var"><span>Variation <small>as on your store order: colour, size, hooks…</small></span><input data-variant dir="auto" maxlength="500" placeholder="e.g. Black Walnut, 7 Hooks" value="${esc(v.variant || '')}"></label>
       <button type="button" class="btn btn-sm btn-ghost var-remove" data-var-remove aria-label="Remove this variation">×</button>
       <div class="var-photo" data-var-photo hidden></div></div>`;
@@ -910,13 +910,13 @@
         if (noPhoto.length) { mark('links', true); missing.push(['links', 'a photo of each variation']); }
         if (picks.length + linePicks.size > MAX_PHOTOS) { mark('photos', true); missing.push(['photos', `at most ${MAX_PHOTOS} photos in one order`]); }
       } else check('photos', picks.length || linePicks.size || ed?.source === 'etsy-csv', 'photo or screenshot');
-      const badQty = itemRows().filter(r => { const q = parseInt(r.querySelector('[data-qty]').value, 10); return !(q >= 1 && q <= 999); });
+      const badQty = itemRows().filter(r => { const q = parseInt(r.querySelector('[data-qty]').value, 10); return !(q >= 1 && q <= 10000); });
       itemRows().forEach(r => r.querySelector('.item-qty').classList.toggle('bad', badQty.includes(r)));
       const noLink = prodRows().filter(b => !b.querySelector('[data-link]').value.trim());
       prodRows().forEach(b => { const v = b.querySelector('[data-link]').value.trim(); b.querySelector('.item-link').classList.toggle('bad', !v || !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(v)); });
       if (badQty.length) { missing.push(['links', 'how many (each variation)']); }
       if (noLink.length && links.length) { mark('links', true); missing.push(['links', 'a product link for each product']); }
-      if (totalQty() > 999) { mark('links', true); missing.push(['links', 'at most 999 items in one order']); }
+      if (totalQty() > 10000) { mark('links', true); missing.push(['links', 'at most 10,000 items in one order']); }
       check('buyerName', form.buyerName.value.trim(), 'customer name');
       check('address1', form.address1.value.trim(), 'full address');
       check('destination', dest.get(), 'country');

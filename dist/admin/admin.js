@@ -981,7 +981,7 @@
         <p class="pick-hint">Optional. Add the screenshot the client sent, or a photo of the product (up to ${MAX_PICKS}). You can also drag pictures here or paste with Ctrl+V.</p></div>`}
       <div class="field full"><span>Product links <small>one per product</small></span><div class="link-list" data-links></div>
         <button type="button" class="btn btn-sm link-add" data-link-add>+ Add another product link</button></div>
-      <label class="field"><span>Quantity</span><input name="quantity" type="number" min="1" max="999" step="1" inputmode="numeric" value="${order?.quantity || 1}"></label>
+      <label class="field"><span>Quantity</span><input name="quantity" type="number" min="1" max="10000" step="1" inputmode="numeric" value="${order?.quantity || 1}"></label>
       <label class="field"><span>SKU or listing ID <small>optional</small></span><input name="sku" maxlength="120" placeholder="e.g. LIGHTER-01" value="${esc(order?.sku)}"></label>
       <label class="field full"><span>Variation / personalization <small>optional</small></span><textarea name="variant" rows="2" maxlength="2000" placeholder="Color, size, engraving or personalization">${esc(order?.variant)}</textarea></label>
       </div></section>
@@ -1070,7 +1070,7 @@
       const badLink = linkInputs.find(i => i.value.trim() && !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(i.value.trim()));
       if (badLink) { badLink.focus(); return err('Please paste each product link in full, starting with https://'); }
       const qty = parseInt(f.quantity.value, 10);
-      if (!(qty >= 1 && qty <= 999)) return err('Quantity must be between 1 and 999.');
+      if (!(qty >= 1 && qty <= 10000)) return err('Quantity must be between 1 and 10,000.');
       const body = { storeId:Number(f.storeId.value),clientId: order ? order.clientId : Number(f.clientId.value), orderRef: f.orderRef.value, orderDate: f.orderDate.value, currency: f.currency.value,
         sellingPrice: f.sellingPrice.value === '' ? null : f.sellingPrice.value,
         etsyUrl: links.join('\n'), quantity: qty, sku: f.sku.value, variant: f.variant.value,

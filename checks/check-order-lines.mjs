@@ -127,6 +127,14 @@ try {
     items: [{ link: LINK, quantity: 3, variant: 'Black Walnut, 7 Hooks' }, { link: LINK, quantity: 2, variant: 'Black Walnut, 6 Hooks' }, { link: LINK2, quantity: 1, variant: 'Oak' }, { link: LINK2, quantity: 2, variant: 'Walnut' }] }, client)).order;
   assert.equal(shown.quantity, 8); assert.equal(shown.variant, TEXT2);
   assert.equal((await call('/orders', 'POST', { storeId: store.id, orderRef: 'BAD', buyerName: 'X', address1: '1 St', destination: 'US', photos: [photo], items: [{ link: LINK, quantity: 1 }, { link: '', quantity: 1 }] }, client)).status, 400, 'each line needs a link');
+  // Bulk orders (Erwin, 3 Nov 2026: 3,000 bracelets for a client): up to 10,000 pieces, from the portal and from the admin.
+  const bulk = ok(await call('/orders', 'POST', { storeId: store.id, orderRef: 'BULK-3000', buyerName: 'Sample Buyer', address1: '1 Sample Street', destination: 'IL', photos: [photo], items: [{ link: LINK, quantity: 3000, variant: 'Bracelet' }] }, client)).order;
+  assert.equal(bulk.quantity, 3000, '3,000 pieces in one order');
+  const tooMany = await call('/orders', 'POST', { storeId: store.id, orderRef: 'BULK-BIG', buyerName: 'X', address1: '1 St', destination: 'US', photos: [photo], items: [{ link: LINK, quantity: 10001 }] }, client);
+  assert.equal(tooMany.status, 400); assert.match(JSON.stringify(tooMany.data), /1 to 10,000/, 'more than 10,000 is refused, and it says the limit');
+  const byAdmin = ok(await call('/orders', 'POST', { storeId: store.id, clientId: id, orderRef: 'BULK-ADMIN', buyerName: 'Sample Client', address1: '1 Sample Street', destination: 'IL', category: 'small', weightKg: 1, price: 0, etsyUrl: LINK, quantity: 3000, variant: 'Bracelet', photos: [photo] }, admin)).order;
+  assert.equal(byAdmin.quantity, 3000, 'the admin adds a 3,000-piece order on the client’s behalf');
+  console.log('PASS bulk orders: up to 10,000 pieces (portal and admin), more is refused');
   ok(await call('/orders/' + shown.id, 'PUT', { productCost: 40, shippingFee: 0 }, admin));
   assert.equal(ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === shown.id).items.length, 4, 'a cost change keeps the lines');
   // Photo per line on the order everyone looks at (lines 1, 2 and 4; line 3 still missing).
