@@ -39,8 +39,10 @@ import { productLinkList } from './item-costs.mjs';
 export const REVISION_FLAG = 'COST REVISION REQUESTED', REVISION_SENT = 'NEW COST SENT', REVISION_DONE = '✓ REVISION DONE';
 export const competitorCell = (text, status, offered = null, done = '') => status === 'offered' && offered != null ? `${REVISION_SENT}: ${usd(offered)}, waiting for Direct Line (client's price: ${text || '—'})`
   : status ? `${REVISION_FLAG}: ${text || ''}`.trim() : done ? `${REVISION_DONE}: ${done}${text ? ` (client's price: ${text})` : ''}` : text || '';
-// "The cost can't be lower": the supplier types one of these in Total cost on an orange row.
-export const NO_WORD = /^\s*(no|keep|same)\s*\.?\s*$/i;
+// "The cost can't be lower": the supplier types NO and the reason in Total cost on an orange row (Erwin, 3 Nov 2026:
+// "they need to give a reason why it's not accepted"), e.g. "NO: factory price went up". KEEP / SAME work like NO.
+export const NO_WORD = /^\s*(no|keep|same)\b[\s:.,\-–]*([\s\S]*)$/i;
+export const noReason = v => (NO_WORD.exec(String(v ?? '')) || [])[2]?.replace(/\s+/g, ' ').trim().slice(0, 300) || '';
 
 const out = r => r ? { id: Number(r.id), status: r.status, competitorPrice: Number(r.competitor_price), note: r.note || '', oldPrice: r.old_price == null ? null : Number(r.old_price),
   offeredCost: r.offered_cost == null ? null : Number(r.offered_cost), newPrice: r.new_price == null ? null : Number(r.new_price), result: r.result || '', reply: r.reply || '',
@@ -115,12 +117,14 @@ export async function offerFromSheet(DB, order, cost, t = now()) {
   await DB.prepare("UPDATE client_orders SET revision_status='offered', supplier_cost=?, sheet_sync_status='waiting' WHERE id=?").bind(r2(cost), order.id).run();
   return check;
 }
-// The supplier typed NO (the cost can't be lower): the price is kept and the client is told, like an admin's Keep the
-// price. The cost before the request goes back into the sheet (see websiteSupplierCells in supplier-sheet.mjs).
-export async function supplierKeeps(DB, order, t = now()) {
+// The supplier typed NO and the reason (the cost can't be lower): the price is kept and the client gets the reason as
+// the answer, like an admin's Keep the price with a reply. The cost before the request goes back into the sheet (see
+// websiteSupplierCells in supplier-sheet.mjs) and the reason shows in the green Competitor price cell.
+export async function supplierKeeps(DB, order, reason = '', t = now()) {
   const was = order.revision_status === 'offered' && order.quoted_unit_price == null ? r2(Number(order.price) - Number(order.commission || 0)) : order.supplier_cost == null ? null : r2(order.supplier_cost);
   if (was != null) await DB.prepare('UPDATE client_orders SET supplier_cost=? WHERE id=?').bind(was, order.id).run();
-  await answerOrder(DB, order.id, { action: 'keep' }, t);
+  await answerOrder(DB, order.id, { action: 'keep', reply: reason }, t);
+  if (reason) await DB.prepare('UPDATE client_orders SET revision_done=? WHERE id=?').bind('cost kept: ' + reason, order.id).run();
   return was;
 }
 

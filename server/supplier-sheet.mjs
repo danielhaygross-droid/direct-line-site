@@ -24,7 +24,7 @@ import { splitOldNotes } from './order-notes.mjs';
 import { pollQuoteTab, QT } from './quote-sheet.mjs';
 import { createHash } from 'node:crypto';
 import { rememberPrice, backfillSavedPrices } from './saved-prices.mjs';
-import { competitorCell, offerFromSheet, supplierKeeps, doneText, NO_WORD, REVISION_FLAG, REVISION_SENT, REVISION_DONE } from './cost-revisions.mjs';
+import { competitorCell, offerFromSheet, supplierKeeps, doneText, NO_WORD, noReason, REVISION_FLAG, REVISION_SENT, REVISION_DONE } from './cost-revisions.mjs';
 import { itemPrices } from './item-costs.mjs';
 
 export const SUPPLIER_SHEET_SCHEMA = [
@@ -258,7 +258,7 @@ export async function removeClientFromWorkQueue(DB, env, clientId, fetchImpl = f
 // ---------- layout ----------
 const getSetting = async (DB, key) => (await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(key).first())?.value;
 const putSetting = (DB, key, value) => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key, value).run();
-const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. ORANGE Competitor price = COST REVISION REQUESTED: our client sells at that price; please check if you can lower the cost and type the new Total cost (a lower cost is billed to our client right away), or type NO in Total cost if it can’t be lower. PURPLE = you sent a new cost, Direct Line is checking it. GREEN = the cost revision is done. Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Cost per product (USD, next to Total cost): for an order with several products, type the cost of each product in order, e.g. 10.90, 9.00, 11.00. Domestic Express Tracking Number (yellow, far right after Client paid): the tracking of the domestic express in China. RED rows are cancelled orders: do not buy or ship them. Orange rows: the client asked to cancel, wait for Direct Line. Other columns are filled in by Direct Line. Newest orders are at the top. An order moves to the Shipped tab by itself once it is Shipped and has a tracking number, and to the Cancelled tab when it is cancelled.';
+const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. ORANGE Competitor price = COST REVISION REQUESTED: our client sells at that price; please check if you can lower the cost and type the new Total cost (a lower cost is billed to our client right away), or type NO and the reason in Total cost if it can’t be lower (e.g. NO: factory price went up). PURPLE = you sent a new cost, Direct Line is checking it. GREEN = the cost revision is done. Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Cost per product (USD, next to Total cost): for an order with several products, type the cost of each product in order, e.g. 10.90, 9.00, 11.00. Domestic Express Tracking Number (yellow, far right after Client paid): the tracking of the domestic express in China. RED rows are cancelled orders: do not buy or ship them. Orange rows: the client asked to cancel, wait for Direct Line. Other columns are filled in by Direct Line. Newest orders are at the top. An order moves to the Shipped tab by itself once it is Shipped and has a tracking number, and to the Cancelled tab when it is cancelled.';
 const tabText = {
   [SHIPPED_TAB]: ['Direct Line — Shipped orders', 'Shipped orders with a tracking number, newest on top. They move here from the Orders tab by themselves. You can still correct the Total cost, Tracking number or Courier here: the website reads this tab too.'],
   [CANCELLED_TAB]: ['Direct Line — Cancelled orders', 'Cancelled orders: do not buy or ship them. They move here from the Orders tab by themselves, newest on top. If you charge a cancellation fee, type it in Cancellation fee (USD), the last yellow column: the website reads this tab too and bills it. Shipping status says Refunded when our client had already paid for the order.'],
@@ -315,7 +315,7 @@ const DUP_TABS = [WQ_NEW, SHIPPED_TAB];
 const seenIn = (col, v) => DUP_TABS.map(t => `COUNTIF(INDIRECT("'${t}'!${col}:${col}"),${v})`).join('+');
 const dupCount = () => { const b = all('B'), r = all(L(C.TRACK));
   return `SUMPRODUCT(((${b}<>"")*((${seenIn('B', b)})>1)+(${r}<>"")*((${seenIn(L(C.TRACK), r)})>1)>0)*1)`; };
-const revisionCounter = wq => { const rev = `COUNTIF(${all('O')},"${REVISION_FLAG}*")`, revText = `IF(${rev}=0,"","⚠ "&${rev}&" COST REVISION REQUEST(S) WAITING: see the orange rows, type the new Total cost (or NO if it can't be lower)")`;
+const revisionCounter = wq => { const rev = `COUNTIF(${all('O')},"${REVISION_FLAG}*")`, revText = `IF(${rev}=0,"","⚠ "&${rev}&" COST REVISION REQUEST(S) WAITING: see the orange rows, type the new Total cost (or NO and the reason if it can't be lower)")`;
   if (wq === CANCELLED_TAB) return { range: `${wq}!A4`, values: [[`=${revText}`]] };
   return { range: `${wq}!A4`, values: [[`=TRIM(${revText}&IF(${dupCount()}=0,"","   ⚠ "&${dupCount()}&" ROW(S) WITH A DUPLICATE ORDER OR TRACKING NUMBER: see the red rows"))`]] }; };
 // The whole row turns red; typing a tracking number already used shows a warning on the cell (it is still accepted:
@@ -335,10 +335,10 @@ const revisionStates = (sheetId, c = C) => [
   startsWith(sheetId, REVISION_DONE, { backgroundColor: { red: 0.74, green: 0.9, blue: 0.74 }, textFormat: { bold: true, foregroundColor: { red: 0.08, green: 0.4, blue: 0.16 } } }),
   { addConditionalFormatRule: { rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: c.END }], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=LEFT($O${FIRST_ROW},${REVISION_SENT.length})="${REVISION_SENT}"` }] }, format: { backgroundColor: { red: 0.93, green: 0.89, blue: 1 } } } } } },
 ];
-// Total cost (P): a number, or NO / KEEP / SAME on a cost revision ("the cost can't be lower").
+// Total cost (P): a number, or NO and the reason on a cost revision ("the cost can't be lower": a reason is required).
 const costCheck = sheetId => { const p = L(C.COST) + FIRST_ROW; return { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: C.COST, endColumnIndex: C.COST + 1 }, rule: {
-  condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=OR(AND(ISNUMBER(${p}),${p}>=0),REGEXMATCH(LOWER(TRIM(${p}&"")),"^(no|keep|same)\.?$"))` }] },
-  inputMessage: "Total cost for the whole order in USD, product + shipping. Orange row (cost revision): type the new cost, or NO if it can't be lower.", strict: true } } }; };
+  condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=OR(AND(ISNUMBER(${p}),${p}>=0),REGEXMATCH(LOWER(TRIM(${p}&"")),"^(no|keep|same)\\b[\\s:.,-]*[^\\s:.,-]"))` }] },
+  inputMessage: "Total cost for the whole order in USD, product + shipping. Orange row (cost revision): type the new cost, or NO and the reason if it can't be lower, e.g. NO: factory price went up.", strict: true } } }; };
 const REV_RULES = 'supplier_revision_colours', REV_RULES_NOW = '1', REV_DATA = 'revision_states_backfill';
 // Added once (and again after the sheet is rebuilt): the colours and the Total cost check on Orders and Shipped, row 4
 // and the instructions. Once ever: the sheet shows the requests already answered, and the new costs already waiting are
@@ -937,11 +937,12 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
   if (cost !== norm(order.sheet_cost)) {
     const n = parseCost(cells.cost);
     if (n === null && order.revision_status && NO_WORD.test(cost)) {
-      // NO on a cost revision: the supplier can't lower the cost. The price is kept, the client is told, and the cost
-      // goes back into the cell (websiteSupplierCells).
-      await DB.prepare('UPDATE client_orders SET sheet_cost=?, updated_at=? WHERE id=?').bind(cost, t, order.id).run();
-      const was = await supplierKeeps(DB, order, t);
-      await event(DB, order, SUPPLIER_SHEET_EVENT, JSON.stringify({ f: 'rev_no', to: was == null ? '' : was.toFixed(2) }), t); done.push('cost revision: supplier kept the cost');
+      // NO + reason on a cost revision: the supplier can't lower the cost. The price is kept, the client gets the
+      // reason, and the cost goes back into the cell (websiteSupplierCells).
+      const reason = noReason(cost);
+      await DB.prepare('UPDATE client_orders SET sheet_cost=?, updated_at=? WHERE id=?').bind(cost.slice(0, 400), t, order.id).run();
+      const was = await supplierKeeps(DB, order, reason, t);
+      await event(DB, order, SUPPLIER_SHEET_EVENT, JSON.stringify({ f: 'rev_no', to: was == null ? '' : was.toFixed(2), why: reason }), t); done.push('cost revision: supplier kept the cost' + (reason ? ' (' + reason + ')' : ''));
     } else if (n === null) { if (cost) skipped.push('cost not a number: ' + cost); await DB.prepare('UPDATE client_orders SET sheet_cost=? WHERE id=?').bind(cost, order.id).run(); }
     else if (order.revision_status) {
       // The client asked for a cost revision: a lower cost is approved at once, anything else waits for an admin.

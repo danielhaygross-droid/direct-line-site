@@ -477,7 +477,8 @@ for (const t of [WQ_NEW, SHIPPED_TAB]) {
   const s1 = sheets.get(t), has = w => (s1.cf || []).some(r => (r.booleanRule?.condition?.values || []).some(v => String(v.userEnteredValue || '').includes(w)));
   assert.ok(has('NEW COST SENT') && has('✓ REVISION DONE'), t + ': purple and green rules');
   assert.ok((s1.rules || []).some(v => v.range.startColumnIndex === N && /no\|keep\|same/.test(v.rule?.condition?.values?.[0]?.userEnteredValue || '') && v.rule.strict), t + ': Total cost takes a number or NO');
-  assert.match(String(s1.grid[3][0]), /NO if it can't be lower|^$|DUPLICATE/, t + ': row 4');
+  assert.match(String(s1.grid[3][0]), /NO and the reason if it can't be lower/, t + ': row 4 says how to refuse');
+  assert.ok((s1.rules || []).some(v => v.range.startColumnIndex === N && /\\b\[/.test(v.rule?.condition?.values?.[0]?.userEnteredValue || '')), t + ': NO needs a reason');
 }
 { const n0 = (sheets.get(WQ_NEW).cf || []).length; await cron(); assert.equal((sheets.get(WQ_NEW).cf || []).length, n0, 'revision colours added once'); }
 const COMPC = 14, compCell = id => { const [t, r] = where(id); return String(sheets.get(t).grid[r][COMPC]); }, costCell = id => { const [t, r] = where(id); return sheets.get(t).grid[r][N]; };
@@ -494,12 +495,14 @@ assert.match(compCell(RV.id), /^✓ REVISION DONE: new cost \$26\.00 \(client's 
 assert.ok((await call('/notifications', 'GET', null, client)).data.items.some(e => e.kind === 'revision_answered' && e.orderId === RV.id && /^lowered/.test(e.detail)), 'client told: cost lowered');
 assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(e => e.orderId === RV.id && /"f":"rev_auto"/.test(e.detail)), 'admin bell: approved automatically');
 assert.ok((await call('/admin/orders', 'GET', null, admin)).data.orders.find(o => o.id === RV.id).updates.some(u => /"f":"rev_auto"/.test(u.detail)), 'Client orders: update tag');
-// NO: the price is kept, the cost goes back into the cell, the client is told.
-await askRev(22); supplierTypes(RV.id, N, 'NO'); await cron(); await settle();
+// NO + reason: the price is kept, the cost goes back into the cell, the client gets the reason.
+await askRev(22); supplierTypes(RV.id, N, 'NO: factory price went up'); await cron(); await settle();
 rv = await order(RV.id);
-assert.equal(Number(rv.price), 26 + fee, 'price kept'); assert.equal(rv.revision_status, ''); assert.equal(rv.revision_done, 'cost kept');
+assert.equal(Number(rv.price), 26 + fee, 'price kept'); assert.equal(rv.revision_status, ''); assert.equal(rv.revision_done, 'cost kept: factory price went up');
 assert.equal(Number(costCell(RV.id)), 26, 'the cost is back in Total cost');
-assert.match(compCell(RV.id), /^✓ REVISION DONE: cost kept/, 'green: cost kept');
+assert.match(compCell(RV.id), /^✓ REVISION DONE: cost kept: factory price went up \(client's price: \$22\.00\)$/, 'green, with the reason');
+assert.equal((await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === RV.id).revision.reply, 'factory price went up', 'the client gets the reason');
+assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(e => e.orderId === RV.id && /"f":"rev_no".*"why":"factory price went up"/.test(e.detail)), 'admin bell: the reason');
 { const c = await cron(); assert.equal(c.changed.filter(x => x.orderId === RV.id).length, 0, 'the restored cost is not read as a new change'); }
 assert.ok((await call('/notifications', 'GET', null, client)).data.items.some(e => e.kind === 'revision_answered' && e.orderId === RV.id && /^kept/.test(e.detail)), 'client told: cost kept');
 // Higher: waits for an admin (purple, red tag), the bill does not change.
