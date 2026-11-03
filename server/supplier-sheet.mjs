@@ -638,10 +638,16 @@ const websiteProtection = (sheetId, email, c = C) => [[{ sheetId, startColumnInd
 // never reads the tab, so nothing typed or shown there can change an order or a bill. The whole tab is protected.
 // Errors here are logged and never stop the order sync.
 export const BILLING_TAB = 'Billing';
-const BILLING_KEY = 'supplier_billing_tab', BILLING_V = '1';
+const BILLING_KEY = 'supplier_billing_tab', BILLING_V = '2';
 const BILL_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Qty', 'Total cost (USD)', ITEM_COSTS, 'Shipping status', 'Client paid'];
-export const BILLING_HEADERS = [...BILL_COLS, '', ...BILL_COLS];
-const BILLING_HELP = 'Every order from the Orders and Shipped tabs (not cancelled ones), newest first, so you can bill from one list. Left: orders our client has PAID. Right: NOT PAID yet. Filled in by the sheet itself: do not type here; change costs in Orders or Shipped and this tab follows.';
+// Cancelled orders and the supplier's refund (Erwin, 3 Nov 2026: "properly show the whole refund calculation"), far
+// right from U: every cancelled order, the ones our client PAID first, with what was paid for it (Total cost: the
+// supplier's cost, our fee not included) and the supplier's cancellation fee. Refund = paid - fee on each order (an
+// unpaid order only owes its fee); the TOTAL row adds them up and row 3 shows the whole sum.
+const REFUND_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Client paid', 'Total cost (USD)', 'Paid for it (USD)', 'Cancellation fee (USD)', 'Refund (USD)'];
+const REFUND_AT = 2 * BILL_COLS.length + 2, BILLING_WIDTH = REFUND_AT + REFUND_COLS.length;
+export const BILLING_HEADERS = [...BILL_COLS, '', ...BILL_COLS, '', ...REFUND_COLS];
+const BILLING_HELP = 'Every order from the Orders and Shipped tabs (not cancelled ones), newest first, so you can bill from one list. Left: orders our client has PAID. Middle: NOT PAID yet. Far right (from column U): CANCELLED orders and the refund: what our clients paid for them (Total cost, our fee not included) minus the cancellation fees; the TOTAL row adds it up. Filled in by the sheet itself: do not type here; change costs in Orders, Shipped or Cancelled and this tab follows.';
 export function billingCells(wq, c = C) {
   const q = t => `'${t.replace(/'/g, "''")}'`, tabs = [wq, SHIPPED_TAB], last = L(c.PAIDC);
   const col = n => `INDIRECT("${q('@')}!${n}${FIRST_ROW}:${n}")`, both = (f, n) => tabs.map(t => f(col(n).replace('@', t)));
@@ -652,11 +658,21 @@ export function billingCells(wq, c = C) {
   const paidN = tabs.map(t => `COUNTIF(${col(W).replace('@', t)},"${PAID}")`).join('+'), paidSum = tabs.map(t => `SUMIF(${col(W).replace('@', t)},"${PAID}",${col(P).replace('@', t)})`).join('+');
   const openN = tabs.map(t => `COUNTIFS(${col(B).replace('@', t)},"<>",${col(W).replace('@', t)},"<>${PAID}")`).join('+');
   const openSum = tabs.map(t => `SUMIFS(${col(P).replace('@', t)},${col(B).replace('@', t)},"<>",${col(W).replace('@', t)},"<>${PAID}")`).join('+');
+  // Refunds: the Cancelled tab, A to Cancellation fee.
+  const cx = n => `INDIRECT("${q(CANCELLED_TAB)}!${n}${FIRST_ROW}:${n}")`, W1 = c.PAIDC + 1, P1 = c.COST + 1, F1 = c.FEE + 1, U = L(REFUND_AT);
+  const got = `SUMIF(${cx(W)},"${PAID}",${cx(P)})`, fees = `SUM(${cx(L(c.FEE))})`;
+  const refundTop = `="CANCELLED: REFUND DUE "&TEXT(${got}-${fees},"$#,##0.00")&"  =  paid by our clients "&TEXT(${got},"$#,##0.00")&" ("&COUNTIF(${cx(W)},"${PAID}")&" orders)  −  cancellation fees "&TEXT(${fees},"$#,##0.00")&" ("&COUNTIF(${cx(L(c.FEE))},">0")&" orders)"`;
+  const refundList = `=ARRAYFORMULA(IFERROR(LET(d,INDIRECT("${q(CANCELLED_TAB)}!A${FIRST_ROW}:${L(c.FEE)}"),f,FILTER(d,INDEX(d,,2)<>""),paid,INDEX(f,,${W1})="${PAID}",`
+    + `cost,IF(ISNUMBER(INDEX(f,,${P1})),INDEX(f,,${P1}),0),fee,IF(ISNUMBER(INDEX(f,,${F1})),INDEX(f,,${F1}),0),got,IF(paid,cost,0),`
+    + `VSTACK(SORT(HSTACK(CHOOSECOLS(f,1,2,3,${c.h.indexOf('Product / variation') + 1}),INDEX(f,,${W1}),cost,got,fee,got-fee),paid,FALSE,INDEX(f,,1),FALSE),`
+    + `HSTACK("","","","TOTAL","",SUM(cost),SUM(got),SUM(fee),SUM(got)-SUM(fee)))),"No cancelled orders"))`;
   return [
     { range: `${BILLING_TAB}!A1:A2`, values: [['Direct Line — Billing'], [BILLING_HELP]] },
     { range: `${BILLING_TAB}!A3:K3`, values: [[`="PAID by our clients: "&(${paidN})&" orders · "&TEXT(${paidSum},"$#,##0.00")`, '', '', '', '', '', '', '', '', '', `="NOT PAID yet: "&(${openN})&" orders · "&TEXT(${openSum},"$#,##0.00")`]] },
-    { range: `${BILLING_TAB}!A4:S4`, values: [BILLING_HEADERS] },
+    { range: `${BILLING_TAB}!A4:${L(BILLING_WIDTH - 1)}4`, values: [BILLING_HEADERS] },
     { range: `${BILLING_TAB}!A5:K5`, values: [[list(`="${PAID}"`, 'No paid orders yet'), '', '', '', '', '', '', '', '', '', list(`<>"${PAID}"`, 'No unpaid orders')]] },
+    { range: `${BILLING_TAB}!${U}3`, values: [[refundTop]] },
+    { range: `${BILLING_TAB}!${U}5`, values: [[refundList]] },
   ];
 }
 const billingFormat = (sheetId, email) => {
@@ -670,6 +686,19 @@ const billingFormat = (sheetId, email) => {
     ...[5, 15].map(i => ({ repeatCell: { range: r(4, 1000, i, i + 1), cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } })),
     ...[...widths.slice(0, 9), widths[9], ...widths.slice(0, 9)].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
     { addProtectedRange: { protectedRange: { range: { sheetId }, description: 'Billing: worked out by the sheet (Direct Line)', editors: { users: [email] } } } },
+    ...refundFormat(sheetId),
+  ];
+};
+// The refund part (U-AC): rose header, dollars, widths, and the TOTAL row in bold.
+const rose = { red: 0.98, green: 0.84, blue: 0.84 };
+const refundFormat = sheetId => {
+  const r = (r1, r2, c1, c2) => ({ sheetId, startRowIndex: r1, endRowIndex: r2, startColumnIndex: c1, endColumnIndex: c2 }), A = REFUND_AT, Z = BILLING_WIDTH;
+  return [
+    { repeatCell: { range: r(2, 4, A, Z), cell: { userEnteredFormat: { backgroundColor: rose, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
+    { repeatCell: { range: r(4, 1000, A, Z), cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment)' } },
+    { repeatCell: { range: r(4, 1000, A + 5, Z), cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
+    ...[30, 95, 125, 135, 220, 85, 110, 110, 120, 110].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: A - 1 + i, endIndex: A + i }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
+    { addConditionalFormatRule: { rule: { ranges: [r(4, 1000, A, Z)], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=$${L(A + 3)}5="TOTAL"` }] }, format: { backgroundColor: rose, textFormat: { bold: true } } } } } },
   ];
 };
 // Adds the Billing tab if it is missing and (re)writes its formulas. Returns what it did.
@@ -681,10 +710,13 @@ export async function ensureBillingTab(DB, env, fetchImpl = fetch, { force = fal
   if (tab && !force && await getSetting(DB, BILLING_KEY) === want) return 'up to date';
   if (!tab) {
     const at = props.findIndex(p => p.title === CANCELLED_TAB) + 1 || props.length;
-    const made = await batch(env, [{ addSheet: { properties: { title: BILLING_TAB, index: at, gridProperties: { rowCount: 1000, columnCount: 19, frozenRowCount: 4 } } } }], fetchImpl);
+    const made = await batch(env, [{ addSheet: { properties: { title: BILLING_TAB, index: at, gridProperties: { rowCount: 1000, columnCount: BILLING_WIDTH, frozenRowCount: 4 } } } }], fetchImpl);
     tab = made?.replies?.[0]?.addSheet?.properties;
     if (tab?.sheetId == null) throw new Error('Billing tab was not added');
     await batch(env, billingFormat(tab.sheetId, googleSheetsConfig(env).email), fetchImpl);
+  } else if ((tab.gridProperties?.columnCount || 0) < BILLING_WIDTH) {
+    // A Billing tab from before the refund part (3 Nov 2026): its columns and their look are added once.
+    await batch(env, [{ appendDimension: { sheetId: tab.sheetId, dimension: 'COLUMNS', length: BILLING_WIDTH - (tab.gridProperties?.columnCount || 0) } }, ...refundFormat(tab.sheetId)], fetchImpl);
   }
   await batchValues(env, billingCells(wq), fetchImpl);
   await putSetting(DB, BILLING_KEY, want);
