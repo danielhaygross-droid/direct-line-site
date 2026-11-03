@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { pg, DB, call, seed, env as baseEnv } from './lib.mjs';
 import { pollSupplierSheet } from '../server/supplier-sheet.mjs';
+import { en } from '../server/sheet-zh.mjs';
 import { readFile } from 'node:fs/promises';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -64,7 +65,7 @@ const photo = { filename: 'p.png', data: 'data:image/png;base64,' + png.toString
 const old = (await call('/products', 'POST', { name: 'Old mug', link: 'https://www.etsy.com/listing/1', variant: 'White', photos: [photo] }, client)).data.product; await settle();
 assert.ok(calls.includes('addSheet Product Quotes'), 'the tab is created on the first product');
 const qt = grid('Product Quotes');
-assert.deepEqual(qt[3].slice(0, 16), ['Requested', 'Request', 'Photo preview', 'Photo 2', 'Photo 3', 'Product link', 'Product name', 'Variation / notes', 'Expected per month', 'Price per item (USD)', 'Shipping per order (USD)', 'Available?', 'Supplier note', 'Competitor price', 'Status', 'Product ID']);
+assert.deepEqual(qt[3].slice(0, 16).map(en), ['Requested', 'Request', 'Photo preview', 'Photo 2', 'Photo 3', 'Product link', 'Product name', 'Variation / notes', 'Expected per month', 'Price per item (USD)', 'Shipping per order (USD)', 'Available?', 'Supplier note', 'Competitor price', 'Status', 'Product ID']);
 // a new price check from the client
 const r = await call('/products', 'POST', { name: 'Blue Mountain Tray', link: 'https://www.etsy.com/listing/2', variant: 'Blue, 6 cups', expectedQuantity: 20, photos: [photo, photo] }, client); await settle();
 assert.equal(r.status, 200, JSON.stringify(r.data)); const p = r.data.product;
