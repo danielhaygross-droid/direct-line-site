@@ -37,12 +37,15 @@ import { productLinkList } from './item-costs.mjs';
 // stands): orange while it waits for the supplier, purple once the supplier gave a new cost that waits for us, green
 // when it is done. The sheet's colour rules read the start of the text.
 export const REVISION_FLAG = 'COST REVISION REQUESTED', REVISION_SENT = 'NEW COST SENT', REVISION_DONE = '✓ REVISION DONE';
-export const competitorCell = (text, status, offered = null, done = '') => status === 'offered' && offered != null ? `${REVISION_SENT}: ${usd(offered)}, waiting for Direct Line (client's price: ${text || '—'})`
-  : status ? `${REVISION_FLAG}: ${text || ''}`.trim() : done ? `${REVISION_DONE}: ${done}${text ? ` (client's price: ${text})` : ''}` : text || '';
+// The second line says it in Chinese (3 Nov 2026); the rules and counters only read the English start.
+const doneZh = done => done.replace(/^new cost /, '新成本 ').replace(/^cost kept(: )?/, (m, why) => '成本不变' + (why ? '：' : ''));
+export const competitorCell = (text, status, offered = null, done = '') => status === 'offered' && offered != null ? `${REVISION_SENT}: ${usd(offered)}, waiting for Direct Line (client's price: ${text || '—'})\n已报新价，等待 Direct Line 确认`
+  : status ? `${`${REVISION_FLAG}: ${text || ''}`.trim()}\n客户请求降价` : done ? `${REVISION_DONE}: ${done}${text ? ` (client's price: ${text})` : ''}\n降价请求已完成：${doneZh(done)}` : text || '';
 // "The cost can't be lower": the supplier types NO and the reason in Total cost on an orange row (Erwin, 3 Nov 2026:
-// "they need to give a reason why it's not accepted"), e.g. "NO: factory price went up". KEEP / SAME work like NO.
-export const NO_WORD = /^\s*(no|keep|same)\b[\s:.,\-–]*([\s\S]*)$/i;
-export const noReason = v => (NO_WORD.exec(String(v ?? '')) || [])[2]?.replace(/\s+/g, ' ').trim().slice(0, 300) || '';
+// "they need to give a reason why it's not accepted"), e.g. "NO: factory price went up". KEEP / SAME work like NO, and
+// so do 不能降价 / 不能 / 无法 ("不能降价：工厂涨价"), with Chinese punctuation too.
+export const NO_WORD = /^\s*(?:(?:no|keep|same)\b|不能降价|不能|无法降价|无法)[\s:：.,，、\-–]*([\s\S]*)$/i;
+export const noReason = v => (NO_WORD.exec(String(v ?? '')) || [])[1]?.replace(/\s+/g, ' ').trim().slice(0, 300) || '';
 
 const out = r => r ? { id: Number(r.id), status: r.status, competitorPrice: Number(r.competitor_price), note: r.note || '', oldPrice: r.old_price == null ? null : Number(r.old_price),
   offeredCost: r.offered_cost == null ? null : Number(r.offered_cost), newPrice: r.new_price == null ? null : Number(r.new_price), result: r.result || '', reply: r.reply || '',

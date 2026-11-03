@@ -13,6 +13,8 @@ const sheets = new Map(); // title -> { sheetId, hidden, grid: array of rows (ar
 let nextId = 100;
 const addTab = (title, sheetId = nextId++) => { sheets.set(title, { sheetId, hidden: false, grid: [], prot: [] }); return sheets.get(title); };
 const col = s => [...s].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
+// Headers say it in English and Chinese (3 Nov 2026): the English line of each cell.
+const enRow = r => (r || []).map(v => String(v ?? '').split('\n')[0]);
 function parseRange(a1) {
   const [name, ref = ''] = decodeURIComponent(a1).replace(/^'|'(?=!)/g, '').split('!');
   const m = /^([A-Z]+)?(\d+)?(?::([A-Z]+)?(\d+)?)?$/.exec(ref);
@@ -129,11 +131,11 @@ assert.equal(sheets.get(WQ).sheetId, 2026101301, 'same tab id, so existing links
 assert.equal([...sheets.keys()].indexOf(WQ) >= 0, true);
 const backup = sheets.get('Work Queue (old formulas)');
 assert.ok(backup && backup.hidden && backup.grid[6][0].startsWith('=IF('), 'old formula tab kept as hidden backup');
-assert.deepEqual(sheets.get(WQ).grid[4], HEADERS);
+assert.deepEqual(enRow(sheets.get(WQ).grid[4]), HEADERS);
 assert.deepEqual(Object.keys(wq()).map(Number).sort((a, b) => a - b), [A.id, B.id, C.id, X.id], 'archived order not listed');
 assert.deepEqual(Object.entries(wq()).sort((a, b) => a[1] - b[1]).map(([id]) => Number(id)), [X.id, C.id, B.id, A.id], 'newest order on top');
 assert.ok(sheets.has(SHIPPED_TAB) && sheets.has(CANCELLED_TAB), 'Shipped and Cancelled tabs made');
-assert.deepEqual(sheets.get(SHIPPED_TAB).grid[4], HEADERS, 'same columns'); assert.equal(Object.keys(idsIn(SHIPPED_TAB)).length, 0, 'nothing shipped yet');
+assert.deepEqual(enRow(sheets.get(SHIPPED_TAB).grid[4]), HEADERS, 'same columns'); assert.equal(Object.keys(idsIn(SHIPPED_TAB)).length, 0, 'nothing shipped yet');
 assert.ok(sheets.get(SHIPPED_TAB).prot.length >= 3 && sheets.get(CANCELLED_TAB).prot.length >= 3, 'website columns protected in the new tabs');
 assert.equal(cell(A.id, P), NOT_SHIPPED); assert.equal(cell(A.id, N) ?? '', '');
 assert.equal(cell(A.id, 13), '=HYPERLINK("http://evil","x")', 'client text is stored as text, never run as a formula');
@@ -238,7 +240,7 @@ assert.equal(Number((await order(A.id)).price), 27, 'pending supplier change app
 assert.equal(cell(A.id, N), 25); assert.equal(cell(B.id, O), '9400111899223197428490'); assert.equal(cell(B.id, P), SHIPPED);
 assert.equal(cell(A.id, 14), '$24.90 on Etsy shop X', 'competitor price kept through a rebuild');
 assert.ok(sheets.get('Work Queue (old formulas)').grid[6][0].startsWith('=IF('), 'original backup kept, not replaced');
-assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t).sort(), [WQ, SHIPPED_TAB, CANCELLED_TAB, 'Billing'].sort(), 'rebuild works; besides the supplier Product Quotes tab only the three supplier tabs and Billing are visible');
+assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes' && !t.startsWith('Guide')).map(([t]) => t).sort(), [WQ, SHIPPED_TAB, CANCELLED_TAB, 'Billing'].sort(), 'rebuild works; besides the supplier Product Quotes tab only the three supplier tabs and Billing are visible');
 assert.equal(where(B.id)[0], SHIPPED_TAB, 'rebuilt: the shipped order is in Shipped again'); assert.equal(count(B.id), 1);
 assert.equal(sheets.get(WQ).sheetId, 2026101301);
 console.log('PASS running setup again keeps supplier values and the original backup');
@@ -253,8 +255,8 @@ await DB.prepare('UPDATE portal_settings SET value=? WHERE key=?').bind('log:' +
 later(); const switched = await cron(); assert.equal(switched.ok, true, JSON.stringify(switched));
 assert.equal((await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(TAB_NAMES).first()).value, 'done');
 assert.ok(!sheets.has(WQ) && sheets.get(WQ_NEW).sheetId === 2026101301, 'the supplier tab is now "Orders" (same tab id, links still open it)');
-assert.equal(sheets.get(LOG_NEW).sheetId, logId); assert.equal(sheets.get(WQ_NEW).grid[1][0], 'Direct Line — Orders');
-assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes').map(([t]) => t).sort(), [WQ_NEW, SHIPPED_TAB, CANCELLED_TAB, 'Billing'].sort(), 'only "Orders", Shipped, Cancelled and Billing are visible');
+assert.equal(sheets.get(LOG_NEW).sheetId, logId); assert.equal(sheets.get(WQ_NEW).grid[1][0], 'Direct Line — Orders 订单');
+assert.deepEqual([...sheets].filter(([t, s]) => !s.hidden && t !== 'Product Quotes' && !t.startsWith('Guide')).map(([t]) => t).sort(), [WQ_NEW, SHIPPED_TAB, CANCELLED_TAB, 'Billing'].sort(), 'only "Orders", Shipped, Cancelled and Billing are visible');
 const rowOf = id => sheets.get(WQ_NEW).grid.findIndex(r => r && Number(r[31]) === id);
 const T = await mk('T-TABS'); await settle();
 assert.ok(rowOf(T.id) > 0, 'a new order lands in "Orders"');
@@ -269,7 +271,7 @@ console.log('PASS tab names: "Orders" for the supplier tab, "Order Log" for the 
 // ---------- Client paid (T) and the totals in row 4: the supplier sees which orders our client has paid ----------
 const paidCell = id => sheets.get(WQ_NEW).grid[rowOf(id)][22];
 const tabNow = sheets.get(WQ_NEW).grid;
-assert.equal(tabNow[4][22], 'Client paid'); assert.deepEqual(tabNow[3].slice(14, 16), ['Totals (USD):', '=SUM(INDIRECT("P6:P"))'], 'row 4: totals worked out by the sheet');
+assert.equal(enRow(tabNow[4])[22], 'Client paid'); assert.deepEqual(tabNow[3].slice(14, 16), ['Totals (USD):\n合计（美元）：', '=SUM(INDIRECT("P6:P"))'], 'row 4: totals worked out by the sheet');
 for (const t of TABS()) { const r4 = sheets.get(t).grid[3]; assert.equal(r4[15], '=SUM(INDIRECT("P6:P"))', t + ': totals from row 6 (INDIRECT, rows cannot move it)'); assert.match(String(r4[0]), /COUNTIF\(INDIRECT\("O6:O"\)/, t + ': revision counter from row 6'); assert.match(String(r4[18]), /COUNTIF\(INDIRECT\("D6:D"\)/, t + ': cancelled count'); }
 assert.match(tabNow[3][16], /SUMIF\(INDIRECT\("W6:W"\),"Paid",INDIRECT\("P6:P"\)\)/); assert.match(tabNow[3][17], /SUMIF\(INDIRECT\("W6:W"\),"Not paid",INDIRECT\("P6:P"\)\)/);
 assert.equal(paidCell(T.id), 'Not paid', 'billed, no payment yet');
@@ -353,7 +355,7 @@ for (const id of ids0) { const o = st.get(id), want = o.status === 'cancelled' ?
 for (const t of TABS()) { const order0 = Object.entries(idsIn(t)).sort((a, b) => a[1] - b[1]).map(([id]) => st.get(Number(id))); assert.deepEqual(order0.map(o => o.id), [...order0].sort((a, b) => b.created_at - a.created_at || b.id - a.id).map(o => o.id), t + ': newest on top'); }
 assert.ok(sheets.get(main()).grid.some(r => r?.[0] === '2026-10-11'), 'a row without an order id stays in the supplier tab');
 assert.ok(!sheets.get(SHIPPED_TAB).grid.some(r => r?.[0] === '2026-10-11'), 'and is not copied');
-assert.equal(cell(B.id, O), '9400111899223197428490'); assert.equal(sheets.get(SHIPPED_TAB).grid[2][0], 'Shipped orders with a tracking number, newest on top. They move here from the Orders tab by themselves. You can still correct the Total cost, Tracking number or Courier here: the website reads this tab too.');
+assert.equal(cell(B.id, O), '9400111899223197428490'); assert.match(sheets.get(SHIPPED_TAB).grid[2][0], /^Shipped orders with a tracking number, newest on top\. You can still cor/); 
 console.log('PASS one-time switch: three tabs, every order in exactly one, newest on top, supplier values kept');
 
 // ---------- layout 19 (Erwin, 30 Oct 2026): Cost per product moves from AI to Q, next to Total cost ----------
@@ -363,20 +365,20 @@ const to18 = r => { if (!r) return r; const x = [...r]; while (x.length < 35) x.
 const multi = TABS().map(t => [t, Object.keys(idsIn(t))[0]]).find(([, id]) => id);
 sheets.get(multi[0]).grid[idsIn(multi[0])[multi[1]]][16] = '27.9, 21.9, 31.9';
 const byOrder0 = Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r])])));
-for (const t of TABS()) { const s = sheets.get(t); s.grid = s.grid.map((r, i) => i === 3 ? r : to18(r)); assert.deepEqual(s.grid[4], HEADERS_18); }
+for (const t of TABS()) { const s = sheets.get(t); s.grid = s.grid.map((r, i) => i === 3 ? r : to18(r)); assert.deepEqual(enRow(s.grid[4]), HEADERS_18); }
 await DB.prepare("UPDATE portal_settings SET value='18' WHERE key='supplier_sheet_layout'").run();
 const costs18 = JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results); later(); const sw19 = await cron(); assert.equal(sw19.ok, true, JSON.stringify(sw19));
 assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '19');
 for (const t of TABS()) {
-  const g = sheets.get(t).grid; assert.deepEqual(g[4], HEADERS, t + ': Cost per product in Q, next to Total cost');
-  assert.equal(g[4][16], 'Cost per product (USD)'); assert.equal(g[4][22], 'Client paid', t + ': Client paid moved to W');
+  const g = sheets.get(t).grid; assert.deepEqual(enRow(g[4]), HEADERS, t + ': Cost per product in Q, next to Total cost');
+  assert.equal(enRow(g[4])[16], 'Cost per product (USD)'); assert.equal(enRow(g[4])[22], 'Client paid', t + ': Client paid moved to W');
   assert.match(String(g[3][22]), /COUNTIF\(INDIRECT\("W6:W"\),"Not paid"\)/, t + ': row 4 counts Client paid in W'); assert.match(String(g[3][20]), /INDIRECT\("U6:U"\)/, t + ': delayed count above Delayed? (U)');
 }
 const byOrder1 = Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r])])));
 assert.deepEqual(byOrder1, byOrder0, 'every row is exactly as before the switch (each cell moved with its column)');
 assert.equal(sheets.get(multi[0]).grid[idsIn(multi[0])[multi[1]]][16], '27.9, 21.9, 31.9', 'the supplier’s cost per product moved with it');
 assert.equal(JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results), costs18, 'no cost or tracking changed by the switch');
-const again19 = await cron(); assert.equal(again19.ok, true); for (const t of TABS()) assert.deepEqual(sheets.get(t).grid[4], HEADERS, 'safe to run again');
+const again19 = await cron(); assert.equal(again19.ok, true); for (const t of TABS()) assert.deepEqual(enRow(sheets.get(t).grid[4]), HEADERS, 'safe to run again');
 assert.equal((await order(Number(multi[1]))).item_costs, '27.9, 21.9, 31.9', 'read from Q after the switch');
 for (const t of TABS()) assert.ok((sheets.get(t).rules || []).some(v => v.range.startColumnIndex === 16 && v.range.endColumnIndex === 17 && !v.rule), t + ': no number rule on Cost per product (Q)');
 console.log('PASS layout 19: Cost per product moved next to Total cost on all tabs, every row kept, no number rule on Q');
@@ -385,7 +387,7 @@ console.log('PASS layout 19: Cost per product moved next to Total cost on all ta
 const { BILLING_TAB, BILLING_HEADERS, billingCells } = await import('../server/supplier-sheet.mjs');
 assert.ok(sheets.has(BILLING_TAB), 'the Billing tab is added by the full check');
 const bill = () => sheets.get(BILLING_TAB).grid;
-assert.deepEqual(bill()[3], BILLING_HEADERS, 'row 4: the same columns on both sides');
+assert.deepEqual(enRow(bill()[3]), BILLING_HEADERS, 'row 4: the same columns on both sides');
 const f5 = String(bill()[4][0]), k5 = String(bill()[4][10]);
 assert.match(f5, new RegExp(`INDIRECT\\("'${main()}'!A6:W"\\);INDIRECT\\("'Shipped'!A6:W"\\)`), 'reads Orders and Shipped (not Cancelled), A to Client paid');
 assert.ok(!/Cancelled/.test(f5 + k5), 'cancelled orders are not billed from here');
@@ -418,14 +420,14 @@ console.log('PASS Billing tab: all orders, paid apart from not paid, formulas on
   assert.equal(HEADERS[15], 'Total cost (USD)'); assert.equal(HEADERS[34], 'Cancellation fee (USD)');
   assert.match(u5, /paid,INDEX\(f,,23\)="Paid",cost,IF\(ISNUMBER\(INDEX\(f,,16\)\),INDEX\(f,,16\),0\),fee,IF\(ISNUMBER\(INDEX\(f,,35\)\),INDEX\(f,,35\),0\),got,IF\(paid,cost,0\)/, 'paid = Total cost of the orders our client paid');
   assert.match(u5, /got-fee\),paid,FALSE/, 'refund = paid - fee, paid orders first');
-  assert.match(u5, /HSTACK\("","","","TOTAL","",SUM\(cost\),SUM\(got\),SUM\(fee\),SUM\(got\)-SUM\(fee\)\)/, 'a TOTAL row');
-  assert.ok((sheets.get(BILLING_TAB).cf || []).some(r => /="TOTAL"/.test(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || '')), 'TOTAL row in bold');
+  assert.match(u5, /HSTACK\("","","","TOTAL 合计","",SUM\(cost\),SUM\(got\),SUM\(fee\),SUM\(got\)-SUM\(fee\)\)/, 'a TOTAL row');
+  assert.ok((sheets.get(BILLING_TAB).cf || []).some(r => /"TOTAL"/.test(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || '')), 'TOTAL row in bold');
   // A Billing tab from before (A to S, version 1): widened once and rewritten.
   const tb = sheets.get(BILLING_TAB); tb.cols = 19; tb.cf = []; tb.grid = [];
   await DB.prepare("UPDATE portal_settings SET value = '1|' || split_part(value, '|', 2) WHERE key = 'supplier_billing_tab'").run();
   later(); await cron();
   assert.equal(tb.cols, 29, 'old tab widened to AC'); assert.match(String(tb.grid[4]?.[20]), /'Cancelled'!A6:AI/, 'refund list written');
-  assert.equal(tb.cf.filter(r => /="TOTAL"/.test(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || '')).length, 1);
+  assert.equal(tb.cf.filter(r => /"TOTAL"/.test(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || '')).length, 1);
   later(); await cron(); assert.equal(tb.cf.length, 1, 'not added again');
 }
 console.log('PASS Billing refunds: cancelled orders, paid minus cancellation fees, TOTAL row, old tab widened once');
@@ -502,21 +504,21 @@ for (const t of [WQ_NEW, SHIPPED_TAB]) {
   const s1 = sheets.get(t), has = w => (s1.cf || []).some(r => (r.booleanRule?.condition?.values || []).some(v => String(v.userEnteredValue || '').includes(w)));
   assert.ok(has('NEW COST SENT') && has('✓ REVISION DONE'), t + ': purple and green rules');
   assert.ok((s1.rules || []).some(v => v.range.startColumnIndex === N && /no\|keep\|same/.test(v.rule?.condition?.values?.[0]?.userEnteredValue || '') && v.rule.strict), t + ': Total cost takes a number or NO');
-  assert.match(String(s1.grid[3][0]), /NO and the reason if it can't be lower/, t + ': row 4 says how to refuse');
-  assert.ok((s1.rules || []).some(v => v.range.startColumnIndex === N && /\\b\[/.test(v.rule?.condition?.values?.[0]?.userEnteredValue || '')), t + ': NO needs a reason');
+  assert.match(String(s1.grid[3][0]), /type the new Total cost or NO \+ reason .*个降价请求等待回复/, t + ': row 4 says how to refuse, in English and Chinese');
+  assert.ok((s1.rules || []).some(v => v.range.startColumnIndex === N && /\\b\|不能\|无法\)\[[^\]]*\]\*\[\^/.test(v.rule?.condition?.values?.[0]?.userEnteredValue || '')), t + ': NO (or 不能) needs a reason');
 }
 { const n0 = (sheets.get(WQ_NEW).cf || []).length; await cron(); assert.equal((sheets.get(WQ_NEW).cf || []).length, n0, 'revision colours added once'); }
 const COMPC = 14, compCell = id => { const [t, r] = where(id); return String(sheets.get(t).grid[r][COMPC]); }, costCell = id => { const [t, r] = where(id); return sheets.get(t).grid[r][N]; };
 const RV = await mk('REV-S1'); await settle(); supplierTypes(RV.id, N, 30); await cron(); await settle();
 const askRev = async price => { const r = await call(`/orders/${RV.id}/cost-revision`, 'POST', { competitorPrice: price }, client); assert.equal(r.status, 200, JSON.stringify(r.data)); await settle(); };
 await askRev(25);
-assert.match(compCell(RV.id), /^COST REVISION REQUESTED: \$25\.00$/, 'orange while it waits for the supplier');
+assert.match(compCell(RV.id), /^COST REVISION REQUESTED: \$25\.00\n客户请求降价$/, 'orange while it waits for the supplier');
 const fee = Number((await order(RV.id)).commission || 0);
 // Lower: approved at once, the client is told, the cell turns green.
 supplierTypes(RV.id, N, 26); await cron(); await settle();
 let rv = await order(RV.id);
 assert.equal(Number(rv.price), 26 + fee, 'billed the new cost + fee without a click'); assert.equal(rv.revision_status, ''); assert.equal(rv.revision_done, 'new cost $26.00');
-assert.match(compCell(RV.id), /^✓ REVISION DONE: new cost \$26\.00 \(client's price: \$25\.00\)$/, 'green in the sheet');
+assert.match(compCell(RV.id), /^✓ REVISION DONE: new cost \$26\.00 \(client's price: \$25\.00\)\n降价请求已完成：新成本 \$26\.00$/, 'green in the sheet');
 assert.ok((await call('/notifications', 'GET', null, client)).data.items.some(e => e.kind === 'revision_answered' && e.orderId === RV.id && /^lowered/.test(e.detail)), 'client told: cost lowered');
 assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(e => e.orderId === RV.id && /"f":"rev_auto"/.test(e.detail)), 'admin bell: approved automatically');
 assert.ok((await call('/admin/orders', 'GET', null, admin)).data.orders.find(o => o.id === RV.id).updates.some(u => /"f":"rev_auto"/.test(u.detail)), 'Client orders: update tag');
@@ -525,7 +527,7 @@ await askRev(22); supplierTypes(RV.id, N, 'NO: factory price went up'); await cr
 rv = await order(RV.id);
 assert.equal(Number(rv.price), 26 + fee, 'price kept'); assert.equal(rv.revision_status, ''); assert.equal(rv.revision_done, 'cost kept: factory price went up');
 assert.equal(Number(costCell(RV.id)), 26, 'the cost is back in Total cost');
-assert.match(compCell(RV.id), /^✓ REVISION DONE: cost kept: factory price went up \(client's price: \$22\.00\)$/, 'green, with the reason');
+assert.match(compCell(RV.id), /^✓ REVISION DONE: cost kept: factory price went up \(client's price: \$22\.00\)\n降价请求已完成：成本不变：factory price went up$/, 'green, with the reason');
 assert.equal((await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === RV.id).revision.reply, 'factory price went up', 'the client gets the reason');
 assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(e => e.orderId === RV.id && /"f":"rev_no".*"why":"factory price went up"/.test(e.detail)), 'admin bell: the reason');
 { const c = await cron(); assert.equal(c.changed.filter(x => x.orderId === RV.id).length, 0, 'the restored cost is not read as a new change'); }
@@ -534,7 +536,7 @@ assert.ok((await call('/notifications', 'GET', null, client)).data.items.some(e 
 await askRev(20); supplierTypes(RV.id, N, 31); await cron(); await settle();
 rv = await order(RV.id);
 assert.equal(rv.revision_status, 'offered'); assert.equal(Number(rv.price), 26 + fee, 'not billed');
-assert.match(compCell(RV.id), /^NEW COST SENT: \$31\.00, waiting for Direct Line \(client's price: \$20\.00\)$/, 'purple in the sheet');
+assert.match(compCell(RV.id), /^NEW COST SENT: \$31\.00, waiting for Direct Line \(client's price: \$20\.00\)\n已报新价，等待 Direct Line 确认$/, 'purple in the sheet');
 assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(e => e.orderId === RV.id && /"f":"rev_check".*"why":"higher"/.test(e.detail)), 'admin bell: needs your OK');
 assert.match(String(sheets.get(WQ_NEW).grid[3][0]), /COUNTIF\(INDIRECT\("O6:O"\),"COST REVISION REQUESTED\*"\)/, 'row 4 counts only the orange ones (purple text starts differently)');
 // The admin approves: green; a later cost change (no request) ends the green note.
@@ -547,7 +549,31 @@ await askRev(18); supplierTypes(RV.id, N, 2.9); await cron(); await settle();
 rv = await order(RV.id); assert.equal(rv.revision_status, 'offered'); assert.equal(Number(rv.price), 29 + fee, 'a drop of more than half is not billed by itself');
 assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(e => e.orderId === RV.id && /"why":"half"/.test(e.detail)), 'admin told it may be a typo');
 assert.equal((await call(`/admin/orders/${RV.id}/cost-revision`, 'POST', { action: 'keep' }, admin)).status, 200); supplierTypes(RV.id, N, 29); await cron(); await settle();
-console.log('PASS cost revisions in the sheet: orange / purple / green, lower approved by itself, NO keeps the price, higher or a big drop waits');
+// In Chinese: 不能降价 + reason works like NO.
+await askRev(21); supplierTypes(RV.id, N, '不能降价：工厂涨价'); await cron(); await settle();
+rv = await order(RV.id); assert.equal(rv.revision_status, ''); assert.equal(rv.revision_done, 'cost kept: 工厂涨价'); assert.equal(Number(costCell(RV.id)), 29, 'cost back in the cell');
+assert.equal((await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === RV.id).revision.reply, '工厂涨价');
+console.log('PASS cost revisions in the sheet: orange / purple / green, lower approved by itself, NO (or 不能降价) keeps the price, higher or a big drop waits');
+// English + Chinese (Erwin, 3 Nov 2026): headers, help, alerts and totals, Billing, Product Quotes, and a Guide tab.
+{
+  const { GUIDE, GUIDE_TAB } = await import('../server/sheet-zh.mjs');
+  for (const t of TABS()) {
+    const g = sheets.get(t).grid;
+    assert.equal(g[4][15], 'Total cost (USD)\n总成本（美元）', t + ': headers in English and Chinese');
+    assert.match(String(g[2][0]), /\n.*[\u4e00-\u9fff]/, t + ': help in Chinese too');
+    assert.match(String(g[3][16]), /CHAR\(10\)&"客户已付款"/, t + ': totals in Chinese too');
+  }
+  assert.match(String(sheets.get(WQ_NEW).grid[2][0]), /Guide 使用说明/, 'row 3 points to the Guide');
+  assert.ok(sheets.has(GUIDE_TAB), 'Guide tab added'); assert.deepEqual(sheets.get(GUIDE_TAB).grid.slice(3, 3 + GUIDE.length), GUIDE, 'one topic per row: topic | English | 中文');
+  assert.ok(GUIDE.every(([a, b, c]) => /[\u4e00-\u9fff]/.test(a) && b && /[\u4e00-\u9fff]/.test(c)), 'every topic in both languages');
+  assert.match(String(bill()[3][5]), /^Total cost \(USD\)\n总成本/, 'Billing headers');
+  assert.match(String(bill()[2][0]), /CHAR\(10\)&"客户已付款：/, 'Billing totals');
+  assert.match(String(sheets.get('Product Quotes').grid[3][9]), /^Price per item \(USD\)\n单价/, 'Product Quotes headers');
+  assert.match(String(sheets.get('Product Quotes').grid[1][0]), /\n客户的询价/, 'Product Quotes help');
+  assert.ok((sheets.get(WQ_NEW).rules || []).some(v => v.range.startColumnIndex === N && /不能/.test(v.rule?.condition?.values?.[0]?.userEnteredValue || '') && /整单总成本/.test(v.rule.inputMessage)), 'Total cost: Chinese help, 不能 accepted');
+  const n0 = (sheets.get(GUIDE_TAB).prot || []).length; later(); await cron(); assert.equal((sheets.get(GUIDE_TAB).prot || []).length, n0, 'done once');
+}
+console.log('PASS English + Chinese: headers, help, row 4, Billing, Product Quotes, Guide tab, 不能降价');
 for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 35, t + ': the filter covers A-AI');
 const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 22))])));
 const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);

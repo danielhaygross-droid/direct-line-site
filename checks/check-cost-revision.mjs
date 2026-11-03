@@ -56,7 +56,7 @@ let o = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id ===
 assert.equal(o.revision.status, 'open'); assert.equal(o.revision.competitorPrice, 24.9); assert.equal(o.revision.offeredCost, undefined, 'client never sees the supplier cost');
 assert.equal(o.competitorPrice, '$24.90');
 const row = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(A).first();
-assert.match(competitorCell(row.competitor_price, row.revision_status), /^COST REVISION REQUESTED: \$24\.90$/, 'what the supplier reads in O');
+assert.match(competitorCell(row.competitor_price, row.revision_status), /^COST REVISION REQUESTED: \$24\.90\n客户请求降价$/, 'what the supplier reads in O (English, then Chinese)');
 assert.ok(ok(await call('/admin/notifications', 'GET', null, admin)).items.some(e => e.kind === 'revision_requested' && e.orderId === A), 'admin bell');
 // The supplier types a higher Total cost in the sheet: held for the admin, the bill does not change (a lower one is
 // approved by itself, see check-supplier-sheet).
@@ -160,7 +160,7 @@ try {
   const mo = ok(await call('/orders', 'GET', null, client)).orders.find(x => x.id === M);
   assert.equal(mo.revision.items, 'Product 2: $18.00 · Product 3: $21.50'); assert.equal(mo.revision.competitorPrice, 39.5);
   const mr = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(M).first();
-  assert.equal(competitorCell(mr.competitor_price, mr.revision_status), 'COST REVISION REQUESTED: Product 2: $18.00 · Product 3: $21.50', 'what the supplier reads in Competitor price');
+  assert.equal(competitorCell(mr.competitor_price, mr.revision_status), 'COST REVISION REQUESTED: Product 2: $18.00 · Product 3: $21.50\n客户请求降价', 'what the supplier reads in Competitor price');
   for (const lang of ['en', 'he']) {
     const c4 = await session(admin, 1440), p4 = await c4.newPage(); await p4.goto(`${base}/test-admin.html?lang=${lang}`); const ui = p4.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=orders]');
     await ui.locator('[data-tab=orders]').click(); await ui.locator(`[data-open-order="${M}"]`).first().click(); await ui.waitForSelector('[data-rev-admin]');

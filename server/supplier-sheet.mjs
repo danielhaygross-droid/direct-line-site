@@ -24,6 +24,8 @@ import { splitOldNotes } from './order-notes.mjs';
 import { pollQuoteTab, QT } from './quote-sheet.mjs';
 import { createHash } from 'node:crypto';
 import { rememberPrice, backfillSavedPrices } from './saved-prices.mjs';
+import { bi, en, GUIDE, GUIDE_TAB } from './sheet-zh.mjs';
+import { quoteZh } from './quote-sheet.mjs';
 import { competitorCell, offerFromSheet, supplierKeeps, doneText, NO_WORD, noReason, REVISION_FLAG, REVISION_SENT, REVISION_DONE } from './cost-revisions.mjs';
 import { itemPrices } from './item-costs.mjs';
 
@@ -147,7 +149,7 @@ export function addressLines(o) {
 // The total cost was filled in from an earlier identical order: say so until the supplier changes it or it ships.
 export function savedPriceFlag(o) {
   if (o.price_source !== 'saved' || !['pending', 'processing'].includes(o.status)) return '';
-  return 'Total cost filled in from an earlier order (same product, variation, country and quantity). Change it if this one is different.\n';
+  return 'Total cost filled in from an earlier order (same product, variation, country and quantity). Change it if this one is different.\n总成本取自之前的相同订单（同样的商品、款式、国家和数量）。如果这单不同，请修改。\n';
 }
 // Website-owned cells: A–O and W–AG (P–V are the supplier's; W is Client paid). Column C is the shop the order came from — suppliers don't see who our clients are.
 // Photo per order line (Erwin, 1 Nov 2026): on an order with several lines and at least one line photo, the preview
@@ -225,10 +227,12 @@ export function rowPx(cells) {
   cells.slice(0, 18).forEach((v, i) => {
     if (typeof v !== 'string' || v.startsWith('=')) return;
     const perLine = Math.max(4, Math.floor((WIDTHS[i] - 12) / 7));
-    lines = Math.max(lines, v.replace(/^'/, '').split('\n').reduce((n, part) => n + Math.max(1, Math.ceil(part.length / perLine)), 0));
+    lines = Math.max(lines, v.replace(/^'/, '').split('\n').reduce((n, part) => n + Math.max(1, Math.ceil(wide(part) / perLine)), 0));
   });
   return Math.min(600, Math.max(min, lines * 17 + 16));
 }
+// Chinese characters (and full-width punctuation) take about two Latin characters of width.
+const wide = s => s.length + (s.match(/[\u2e80-\u9fff\uff00-\uffef]/g) || []).length;
 const rowHeight = (sheetId, row, px) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: row - 1, endIndex: row }, properties: { pixelSize: px }, fields: 'pixelSize' } });
 
 async function deleteRows(env, rows, fetchImpl, wq) {
@@ -258,24 +262,25 @@ export async function removeClientFromWorkQueue(DB, env, clientId, fetchImpl = f
 // ---------- layout ----------
 const getSetting = async (DB, key) => (await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(key).first())?.value;
 const putSetting = (DB, key, value) => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key, value).run();
-const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. ORANGE Competitor price = COST REVISION REQUESTED: our client sells at that price; please check if you can lower the cost and type the new Total cost (a lower cost is billed to our client right away), or type NO and the reason in Total cost if it can’t be lower (e.g. NO: factory price went up). PURPLE = you sent a new cost, Direct Line is checking it. GREEN = the cost revision is done. Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Cost per product (USD, next to Total cost): for an order with several products, type the cost of each product in order, e.g. 10.90, 9.00, 11.00. Domestic Express Tracking Number (yellow, far right after Client paid): the tracking of the domestic express in China. RED rows are cancelled orders: do not buy or ship them. Orange rows: the client asked to cancel, wait for Direct Line. Other columns are filled in by Direct Line. Newest orders are at the top. An order moves to the Shipped tab by itself once it is Shipped and has a tracking number, and to the Cancelled tab when it is cancelled.';
+// Row 3 (3 Nov 2026): two short lines, English and Chinese; how everything works is in the Guide tab.
+const instructions = 'Fill in the YELLOW columns. The website reads them within a minute. How everything works: see the "Guide 使用说明" tab.\n请填写黄色的列，网站一分钟内会读取。完整说明请看「Guide 使用说明」标签页。';
 const tabText = {
-  [SHIPPED_TAB]: ['Direct Line — Shipped orders', 'Shipped orders with a tracking number, newest on top. They move here from the Orders tab by themselves. You can still correct the Total cost, Tracking number or Courier here: the website reads this tab too.'],
-  [CANCELLED_TAB]: ['Direct Line — Cancelled orders', 'Cancelled orders: do not buy or ship them. They move here from the Orders tab by themselves, newest on top. If you charge a cancellation fee, type it in Cancellation fee (USD), the last yellow column: the website reads this tab too and bills it. Shipping status says Refunded when our client had already paid for the order.'],
+  [SHIPPED_TAB]: ['Direct Line — Shipped orders 已发货订单', 'Shipped orders with a tracking number, newest on top. You can still correct the Total cost, Tracking number or Courier here. Guide: see the "Guide 使用说明" tab.\n已发货并有运单号的订单，最新的在最上面。这里仍然可以修改总成本、运单号或快递公司。说明请看「Guide 使用说明」标签页。'],
+  [CANCELLED_TAB]: ['Direct Line — Cancelled orders 已取消订单', 'Cancelled orders: do not buy or ship them. If you charge a cancellation fee, type it in Cancellation fee (USD), the last yellow column. Shipping status says Refunded when our client had already paid.\n已取消的订单：不要购买或发货。如果收取取消费，请填在最后一个黄色列“取消费（美元）”。如果客户已经付款，发货状态会显示 Refunded（已退款）。'],
 };
 // Competitor price (O): light blue, open for anyone with the sheet to type in.
 const COMP = C.COMP, blue = { red: 0.85, green: 0.92, blue: 1 }, blueHead = { red: 0.62, green: 0.79, blue: 0.97 };
 const competitorFormat = sheetId => [
   { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { userEnteredFormat: { backgroundColor: blueHead, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
   { repeatCell: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { userEnteredFormat: { backgroundColor: blue, numberFormat: { type: 'TEXT' }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,numberFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
-  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { note: 'What other shops charge for this product (e.g. "$24.90 on Etsy shop X"). Our client enters it in their portal; the website fills it in.' }, fields: 'note' } },
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { note: 'What other shops charge for this product (e.g. "$24.90 on Etsy shop X"). Our client enters it in their portal; the website fills it in.\n我们的客户销售这个商品的价格（例如 "$24.90 on Etsy shop X"）。客户在网站上填写，网站自动填到这里。' }, fields: 'note' } },
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: COMP, endIndex: COMP + 1 }, properties: { pixelSize: WIDTHS[COMP] }, fields: 'pixelSize' } },
 ];
 // Client paid (W): green Paid / orange Not paid, and totals of the supplier's Total cost in row 4, worked out by the sheet.
 const green = { red: 0.85, green: 0.94, blue: 0.87 }, orange = { red: 1, green: 0.9, blue: 0.8 };
 const paidFormat = (sheetId, c = C) => { const PAIDCOL = c.PAIDC; return [
   ...[[PAID, green], [NOT_PAID, orange]].map(([v, bg], i) => ({ addConditionalFormatRule: { index: i, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: v }] }, format: { backgroundColor: bg, textFormat: { bold: true } } } } } })),
-  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }, cell: { note: 'Paid = our client has paid Direct Line for this order. Not paid = billed, not paid yet. Empty = no bill yet. Filled in by the website.' }, fields: 'note' } },
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: PAIDCOL, endColumnIndex: PAIDCOL + 1 }, cell: { note: 'Paid = our client has paid Direct Line for this order. Not paid = billed, not paid yet. Empty = no bill yet. Filled in by the website.\nPaid = 客户已经付款给 Direct Line。Not paid = 已出账单但还没付款。空白 = 还没有账单。由网站自动填写。' }, fields: 'note' } },
   { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 14, endColumnIndex: PAIDCOL + 1 }, cell: { userEnteredFormat: { textFormat: { bold: true }, verticalAlignment: 'MIDDLE', wrapStrategy: 'OVERFLOW_CELL' } }, fields: 'userEnteredFormat(textFormat,verticalAlignment,wrapStrategy)' } },
   { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 14, endColumnIndex: 15 }, cell: { userEnteredFormat: { horizontalAlignment: 'RIGHT' } }, fields: 'userEnteredFormat.horizontalAlignment' } },
   { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 15, endColumnIndex: 16 }, cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
@@ -287,18 +292,20 @@ const all = c => `INDIRECT("${c}${FIRST_ROW}:${c}")`;
 // O4 label, P4 total, the next cells paid / not paid / cancelled, the delayed count above Delayed?, the not paid count above Client paid.
 const totalsRow = (wq, c = C) => {
   const P = L(c.COST), V = L(c.PAIDC), cells = Array(c.PAIDC - c.COMP + 1).fill('');
-  [cells[0], cells[1], cells[2], cells[3], cells[4]] = ['Totals (USD):', `=SUM(${all(P)})`, `="Paid by clients: "&TEXT(SUMIF(${all(V)},"${PAID}",${all(P)}),"$#,##0.00")`,
-    `="Not paid yet: "&TEXT(SUMIF(${all(V)},"${NOT_PAID}",${all(P)}),"$#,##0.00")`, `=COUNTIF(${all('D')},"${STATUS.cancelled}")&" cancelled"`];
-  cells[c.DELAY - c.COMP] = `=COUNTIF(${all(L(c.DELAY))},"${DELAYED}")&" delayed"`; cells[c.PAIDC - c.COMP] = `=COUNTIF(${all(V)},"${NOT_PAID}")&" not paid"`;
+  // English on the first line, Chinese on the second (3 Nov 2026).
+  const zh = t => `&CHAR(10)&"${t}"`;
+  [cells[0], cells[1], cells[2], cells[3], cells[4]] = ['Totals (USD):\n合计（美元）：', `=SUM(${all(P)})`, `="Paid by clients: "&TEXT(SUMIF(${all(V)},"${PAID}",${all(P)}),"$#,##0.00")${zh('客户已付款')}`,
+    `="Not paid yet: "&TEXT(SUMIF(${all(V)},"${NOT_PAID}",${all(P)}),"$#,##0.00")${zh('未付款')}`, `=COUNTIF(${all('D')},"${STATUS.cancelled}")&" cancelled"${zh('已取消')}`];
+  cells[c.DELAY - c.COMP] = `=COUNTIF(${all(L(c.DELAY))},"${DELAYED}")&" delayed"${zh('延迟')}`; cells[c.PAIDC - c.COMP] = `=COUNTIF(${all(V)},"${NOT_PAID}")&" not paid"${zh('未付款')}`;
   return { range: `${wq}!${L(c.COMP)}4:${V}4`, values: [cells] };
 };
 // Delayed? (U) dropdown + Delay reason (V): yellow supplier columns; a delayed row's U turns orange.
 const delayFormat = (sheetId, email, c = C) => { const DELAY = c.DELAY; return [
-  { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: DELAY, endColumnIndex: DELAY + 1 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: ON_TIME }, { userEnteredValue: DELAYED }] }, inputMessage: 'Will this order be late? Pick Possibly delayed and write the reason in the next column. Our client sees both.', strict: false, showCustomUi: true } } },
+  { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: DELAY, endColumnIndex: DELAY + 1 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: ON_TIME }, { userEnteredValue: DELAYED }] }, inputMessage: 'Will this order be late? Pick Possibly delayed and write the reason in the next column. Our client sees both.\n订单会晚发吗？选择 Possibly delayed（可能延迟），并在下一列写原因。客户能看到。', strict: false, showCustomUi: true } } },
   { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: DELAY + 1, endColumnIndex: DELAY + 2 } } },
   { repeatCell: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: DELAY + 1, endColumnIndex: DELAY + 2 }, cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' }, wrapStrategy: 'WRAP', horizontalAlignment: 'LEFT' } }, fields: 'userEnteredFormat(numberFormat,wrapStrategy,horizontalAlignment)' } },
   { addConditionalFormatRule: { index: 0, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: DELAY, endColumnIndex: DELAY + 1 }], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: DELAYED }] }, format: { backgroundColor: { red: 0.98, green: 0.72, blue: 0.5 }, textFormat: { bold: true } } } } } },
-  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: DELAY, endColumnIndex: DELAY + 1 }, cell: { note: 'Possibly delayed = this order will be late. Write a short reason in Delay reason; our client sees both in their portal. Set it back to On time (or empty) when it is moving again.' }, fields: 'note' } },
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: DELAY, endColumnIndex: DELAY + 1 }, cell: { note: 'Possibly delayed = this order will be late. Write a short reason in Delay reason; our client sees both in their portal. Set it back to On time (or empty) when it is moving again.\nPossibly delayed（可能延迟）= 这个订单会晚发。请在“延迟原因”写简短原因，客户能看到。恢复正常后改回 On time（准时）或留空。' }, fields: 'note' } },
   ...(email ? [{ addProtectedRange: { protectedRange: { range: { sheetId, startRowIndex: 0, endRowIndex: 5, startColumnIndex: DELAY, endColumnIndex: DELAY + 2 }, description: 'Column headers', editors: { users: [email] } } } }] : []),
   ...[DELAY, DELAY + 1].map(i => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: c.widths[i] }, fields: 'pixelSize' } })),
 ]; };
@@ -315,9 +322,11 @@ const DUP_TABS = [WQ_NEW, SHIPPED_TAB];
 const seenIn = (col, v) => DUP_TABS.map(t => `COUNTIF(INDIRECT("'${t}'!${col}:${col}"),${v})`).join('+');
 const dupCount = () => { const b = all('B'), r = all(L(C.TRACK));
   return `SUMPRODUCT(((${b}<>"")*((${seenIn('B', b)})>1)+(${r}<>"")*((${seenIn(L(C.TRACK), r)})>1)>0)*1)`; };
-const revisionCounter = wq => { const rev = `COUNTIF(${all('O')},"${REVISION_FLAG}*")`, revText = `IF(${rev}=0,"","⚠ "&${rev}&" COST REVISION REQUEST(S) WAITING: see the orange rows, type the new Total cost (or NO and the reason if it can't be lower)")`;
+const revisionCounter = wq => { const rev = `COUNTIF(${all('O')},"${REVISION_FLAG}*")`, revText = `IF(${rev}=0,"","⚠ "&${rev}&" COST REVISION REQUEST(S) WAITING: see the orange rows, type the new Total cost or NO + reason  ·  "&${rev}&" 个降价请求等待回复：请看橙色行，填写新的总成本，或写 NO 和原因")`;
   if (wq === CANCELLED_TAB) return { range: `${wq}!A4`, values: [[`=${revText}`]] };
-  return { range: `${wq}!A4`, values: [[`=TRIM(${revText}&IF(${dupCount()}=0,"","   ⚠ "&${dupCount()}&" ROW(S) WITH A DUPLICATE ORDER OR TRACKING NUMBER: see the red rows"))`]] }; };
+  const dupText = `IF(${dupCount()}=0,"","⚠ "&${dupCount()}&" ROW(S) WITH A DUPLICATE ORDER OR TRACKING NUMBER: see the red rows  ·  "&${dupCount()}&" 行订单号或运单号重复：请看红色行")`;
+  // One line each (3 Nov 2026): row 4 is two lines high.
+  return { range: `${wq}!A4`, values: [[`=TEXTJOIN(CHAR(10),TRUE,${revText},${dupText})`]] }; };
 // The whole row turns red; typing a tracking number already used shows a warning on the cell (it is still accepted:
 // one parcel can be meant for two orders).
 const dupRule = sheetId => ({ addConditionalFormatRule: { index: 0, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: C.END }], booleanRule: {
@@ -325,7 +334,7 @@ const dupRule = sheetId => ({ addConditionalFormatRule: { index: 0, rule: { rang
   format: { backgroundColor: { red: 0.96, green: 0.55, blue: 0.55 }, textFormat: { bold: true } } } } } });
 const dupCheck = sheetId => ({ setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: C.TRACK, endColumnIndex: C.TRACK + 1 }, rule: {
   condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=${seenIn(L(C.TRACK), L(C.TRACK) + FIRST_ROW)}<=1` }] },
-  inputMessage: 'This tracking number is already used on another order. Check it is the right parcel.', strict: false } } });
+  inputMessage: 'This tracking number is already used on another order. Check it is the right parcel.\n这个运单号已经用在另一个订单上，请确认是否正确。', strict: false } } });
 // Where each cost revision stands (Erwin, 3 Nov 2026: "in the spreadsheet I can't know which ones they finished"): the
 // Competitor price cell turns purple once the supplier sent a new cost that waits for us (and the row light purple), and
 // green when it is done. The open ones stay orange (revisionFormat / revisionAlerts).
@@ -337,8 +346,8 @@ const revisionStates = (sheetId, c = C) => [
 ];
 // Total cost (P): a number, or NO and the reason on a cost revision ("the cost can't be lower": a reason is required).
 const costCheck = sheetId => { const p = L(C.COST) + FIRST_ROW; return { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: C.COST, endColumnIndex: C.COST + 1 }, rule: {
-  condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=OR(AND(ISNUMBER(${p}),${p}>=0),REGEXMATCH(LOWER(TRIM(${p}&"")),"^(no|keep|same)\\b[\\s:.,-]*[^\\s:.,-]"))` }] },
-  inputMessage: "Total cost for the whole order in USD, product + shipping. Orange row (cost revision): type the new cost, or NO and the reason if it can't be lower, e.g. NO: factory price went up.", strict: true } } }; };
+  condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=OR(AND(ISNUMBER(${p}),${p}>=0),REGEXMATCH(LOWER(TRIM(${p}&"")),"^((no|keep|same)\\b|不能|无法)[\\s:：.,，、-]*[^\\s:：.,，、-]"))` }] },
+  inputMessage: "Total cost for the whole order in USD, product + shipping. Orange row (cost revision): type the new cost, or NO and the reason if it can't be lower, e.g. NO: factory price went up.\n整单总成本（美元），包括商品和运费。橙色行（降价请求）：填写新成本；不能降价请写 NO 和原因，例如 NO: 工厂涨价了。", strict: true } } }; };
 const REV_RULES = 'supplier_revision_colours', REV_RULES_NOW = '1', REV_DATA = 'revision_states_backfill';
 // Added once (and again after the sheet is rebuilt): the colours and the Total cost check on Orders and Shipped, row 4
 // and the instructions. Once ever: the sheet shows the requests already answered, and the new costs already waiting are
@@ -364,6 +373,63 @@ export async function ensureRevisionStates(DB, env, fetchImpl = fetch, t = Math.
   return true;
 }
 const revSafely = async (DB, env, fetchImpl) => { try { return await ensureRevisionStates(DB, env, fetchImpl); } catch (e) { console.error('Cost revision colours not added', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
+// ---------- English + Chinese (Erwin, 3 Nov 2026) ----------
+// Every text the supplier reads is in English and, on the next line, Chinese (sheet-zh.mjs), and the rows holding them
+// are tall enough to read without resizing anything: row 3 help (2 lines), row 4 alerts and totals (2 lines), row 5
+// headers (up to 3 lines). A Guide tab explains everything, one topic per row. Added once to the live sheet (and again
+// after a rebuild); the website never reads any of it.
+export const ORDERS_TITLE = 'Direct Line — Orders 订单';
+const headRows = sheetId => [rowHeight(sheetId, 3, 42), rowHeight(sheetId, 4, 50), rowHeight(sheetId, 5, 64)];
+const billingHeadRows = sheetId => [rowHeight(sheetId, 2, 42), rowHeight(sheetId, 3, 42), rowHeight(sheetId, 4, 64),
+  { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: BILLING_WIDTH }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment)' } }];
+// Height of a Guide row: the longest of its three cells, wrapped at the column width (like rowPx).
+const GUIDE_WIDTHS = [210, 470, 420];
+const guidePx = row => Math.max(36, ...row.map((v, i) => { const per = Math.floor((GUIDE_WIDTHS[i] - 14) / 7); return String(v).split('\n').reduce((n, part) => n + Math.max(1, Math.ceil(wide(part) / per)), 0) * 17 + 14; }));
+async function guideTab(env, props, fetchImpl) {
+  let tab = props.find(p => p.title === GUIDE_TAB);
+  const reqs = [], last = GUIDE.length + 3;
+  if (!tab) {
+    const at = props.findIndex(p => p.title === BILLING_TAB) + 1 || props.length;
+    const made = await batch(env, [{ addSheet: { properties: { title: GUIDE_TAB, index: at, gridProperties: { rowCount: last + 2, columnCount: 3, frozenRowCount: 3 } } } }], fetchImpl);
+    tab = made?.replies?.[0]?.addSheet?.properties;
+    if (tab?.sheetId == null) throw new Error('Guide tab was not added');
+    const id = tab.sheetId, r = (r1, r2, c1, c2) => ({ sheetId: id, startRowIndex: r1, endRowIndex: r2, startColumnIndex: c1, endColumnIndex: c2 });
+    reqs.push(
+      { repeatCell: { range: r(0, 1, 0, 1), cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 16 } } }, fields: 'userEnteredFormat.textFormat' } },
+      { repeatCell: { range: r(2, 3, 0, 3), cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true }, verticalAlignment: 'MIDDLE' } }, fields: 'userEnteredFormat(backgroundColor,textFormat,verticalAlignment)' } },
+      { repeatCell: { range: r(3, last, 0, 3), cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'TOP' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment)' } },
+      { repeatCell: { range: r(3, last, 0, 1), cell: { userEnteredFormat: { textFormat: { bold: true }, backgroundColor: { red: 1, green: 0.97, blue: 0.85 } } }, fields: 'userEnteredFormat(textFormat,backgroundColor)' } },
+      ...GUIDE_WIDTHS.map((px, i) => ({ updateDimensionProperties: { range: { sheetId: id, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
+      { addProtectedRange: { protectedRange: { range: { sheetId: id }, description: 'Guide: written by the Direct Line website', editors: { users: [googleSheetsConfig(env).email] } } } });
+  }
+  await batchValues(env, [{ range: `'${GUIDE_TAB}'!A1:C${last}`, values: [['Direct Line — How this sheet works · 表格使用说明', '', ''], ['', '', ''], ['Topic · 主题', 'English', '中文'], ...GUIDE] }], fetchImpl);
+  reqs.push(rowHeight(tab.sheetId, 3, 30), ...GUIDE.map((row, i) => rowHeight(tab.sheetId, i + 4, guidePx(row))));
+  await batch(env, reqs, fetchImpl);
+  return tab.sheetId;
+}
+const ZH_KEY = 'supplier_sheet_zh', ZH_NOW = '1';
+export async function ensureBilingual(DB, env, fetchImpl = fetch) {
+  if (await getSetting(DB, ZH_KEY) === ZH_NOW) return false;
+  const { wq } = await tabNames(DB); if (wq !== WQ_NEW) return false;
+  const props = ((await sheetsRequest(env, '?fields=sheets.properties', {}, fetchImpl)).sheets || []).map(x => x.properties || {});
+  const tabs = allTabs(wq).map(t => [t, props.find(p => p.title === t)?.sheetId]).filter(([, id]) => id != null);
+  if (tabs.length < 3) return false;
+  const couriers = courierList(await getSetting(DB, 'couriers')), only = list => list.filter(r => r.repeatCell?.cell?.note || r.setDataValidation?.rule);
+  // Texts: titles and help (rows 2-3), the alerts and totals (row 4), the headers (row 5).
+  await batchValues(env, [{ range: `${wq}!A2:A3`, values: [[ORDERS_TITLE], [instructions]] },
+    ...Object.entries(tabText).map(([tab, [title, text]]) => ({ range: `${tab}!A2:A3`, values: [[title], [text]] })),
+    ...tabs.map(([t]) => ({ range: `${t}!A5:${L(C.END - 1)}5`, values: [HEADERS.map(bi)] })), ...summaryRows(tabs.map(([t]) => t))], fetchImpl);
+  // Row heights, and the help messages and header notes of the supplier's columns.
+  await batch(env, tabs.flatMap(([t, id]) => [...headRows(id), courierRule(id, couriers), statusRule(id), ...only(delayFormat(id, null)), ...only(domesticFormat(id)),
+    ...only(cancelFeeFormat(id)), ...only(itemCostsFormat(id)), ...only(competitorFormat(id)), ...only(paidFormat(id)), costCheck(id), ...(t === CANCELLED_TAB ? [] : [dupCheck(id)])]), fetchImpl);
+  const billing = props.find(p => p.title === BILLING_TAB);
+  if (billing) { await batchValues(env, billingCells(wq), fetchImpl); await batch(env, billingHeadRows(billing.sheetId), fetchImpl); }
+  await quoteZh(env, fetchImpl);
+  await guideTab(env, props, fetchImpl);
+  await putSetting(DB, ZH_KEY, ZH_NOW);
+  return true;
+}
+const zhSafely = async (DB, env, fetchImpl) => { try { return await ensureBilingual(DB, env, fetchImpl); } catch (e) { console.error('English + Chinese not added', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 const DUP_ALERTS = 'supplier_dup_alerts', DUP_ALERTS_NOW = '1';
 // Added once (and again after the sheet is rebuilt): the red rule and the warning on Orders and Shipped, and row 4.
 export async function ensureDuplicateAlerts(DB, env, fetchImpl = fetch) {
@@ -398,15 +464,15 @@ const cancelFormat = (sheetId, c = C) => {
 const domesticFormat = (sheetId, c = C) => { const DOM = c.DOM; return [
   { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: DOM, endColumnIndex: DOM + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,textFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
   { repeatCell: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: DOM, endColumnIndex: DOM + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.95, blue: 0.7 }, numberFormat: { type: 'TEXT' }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,numberFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
-  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: DOM, endColumnIndex: DOM + 1 }, cell: { note: 'Supplier: the tracking number of the domestic express in China for this order. Only you fill this in; the website does not change it.' }, fields: 'note' } },
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: DOM, endColumnIndex: DOM + 1 }, cell: { note: 'Supplier: the tracking number of the domestic express in China for this order. Only you fill this in; the website does not change it.\n供应商：这个订单在中国国内快递的单号。只有你填写，网站不会修改。' }, fields: 'note' } },
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: DOM, endIndex: DOM + 1 }, properties: { pixelSize: c.widths[DOM] }, fields: 'pixelSize' } },
 ]; };
 // AI: yellow, open to the supplier, dollars.
 const cancelFeeFormat = (sheetId, c = C) => { const FEE = c.FEE; return [
   { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: FEE, endColumnIndex: FEE + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,textFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
   { repeatCell: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: FEE, endColumnIndex: FEE + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.95, blue: 0.7 }, numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' }, verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,numberFormat,verticalAlignment,horizontalAlignment)' } },
-  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: FEE, endColumnIndex: FEE + 1 }, cell: { note: 'Supplier: only for orders with Shipping status "Cancel requested" or "Cancelled". Type the cancellation fee in USD if you charge one (e.g. already bought or shipped); leave empty if none. Direct Line checks it before the client is charged.' }, fields: 'note' } },
-  { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: FEE, endColumnIndex: FEE + 1 }, rule: { condition: { type: 'NUMBER_GREATER_THAN_EQ', values: [{ userEnteredValue: '0' }] }, inputMessage: 'Cancellation fee in USD (empty = no fee)', strict: false } } },
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: FEE, endColumnIndex: FEE + 1 }, cell: { note: 'Supplier: only for orders with Shipping status "Cancel requested" or "Cancelled". Type the cancellation fee in USD if you charge one (e.g. already bought or shipped); leave empty if none. Direct Line checks it before the client is charged.\n供应商：只用于发货状态是 "Cancel requested"（申请取消）或 "Cancelled"（已取消）的订单。如果收取取消费（例如已经购买或发货），请填写美元金额；没有就留空。Direct Line 会先确认，再向客户收费。' }, fields: 'note' } },
+  { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: FEE, endColumnIndex: FEE + 1 }, rule: { condition: { type: 'NUMBER_GREATER_THAN_EQ', values: [{ userEnteredValue: '0' }] }, inputMessage: 'Cancellation fee in USD (empty = no fee)\n取消费（美元），留空 = 不收费', strict: false } } },
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: FEE, endIndex: FEE + 1 }, properties: { pixelSize: c.widths[FEE] }, fields: 'pixelSize' } },
 ]; };
 // Q (AI before layout 19): yellow, open to the supplier, kept as text (several numbers in one cell).
@@ -416,13 +482,14 @@ const itemCostsFormat = (sheetId, c = C) => { const ITEMS = c.ITEMS; return [
   { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 } } },
   { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.85, blue: 0.3 }, textFormat: { bold: true }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,textFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
   { repeatCell: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 0.95, blue: 0.7 }, numberFormat: { type: 'TEXT' }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,numberFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
-  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 }, cell: { note: 'Supplier: only for orders with several products (Product 1, 2, 3 in Product / variation). Type the cost of each product in that order, separated by commas, e.g. 10.90, 9.00, 11.00. Together they should make the Total cost. Our client sees each product\'s price.' }, fields: 'note' } },
+  { repeatCell: { range: { sheetId, startRowIndex: 4, endRowIndex: 5, startColumnIndex: ITEMS, endColumnIndex: ITEMS + 1 }, cell: { note: 'Supplier: only for orders with several products (Product 1, 2, 3 in Product / variation). Type the cost of each product in that order, separated by commas, e.g. 10.90, 9.00, 11.00. Together they should make the Total cost. Our client sees each product\'s price.\n供应商：只用于有多个商品的订单（商品 / 款式列里有 Product 1、2、3）。按这个顺序填写每个商品的成本，用逗号隔开，例如 10.90, 9.00, 11.00。加起来应等于总成本。客户能看到每个商品的价格。' }, fields: 'note' } },
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: ITEMS, endIndex: ITEMS + 1 }, properties: { pixelSize: c.widths[ITEMS] }, fields: 'pixelSize' } },
 ]; };
 const hideCD = sheetId => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 4 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } });
 // Layout 10: Shop (C) shown again, Status (D) stays hidden.
 const showShop = sheetId => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 2, endIndex: 3 }, properties: { hiddenByUser: false }, fields: 'hiddenByUser' } });
-const statusRule = (sheetId, c = C) => ({ setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: c.SHIP, endColumnIndex: c.SHIP + 1 }, rule: { condition: { type: 'ONE_OF_LIST', values: [NOT_SHIPPED, SHIPPED, CANCEL_REQ_SHIP, CANCELLED_SHIP, REFUNDED_SHIP].map(userEnteredValue => ({ userEnteredValue })) }, showCustomUi: true, strict: false } } });
+const statusRule = (sheetId, c = C) => ({ setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: c.SHIP, endColumnIndex: c.SHIP + 1 }, rule: { condition: { type: 'ONE_OF_LIST', values: [NOT_SHIPPED, SHIPPED, CANCEL_REQ_SHIP, CANCELLED_SHIP, REFUNDED_SHIP].map(userEnteredValue => ({ userEnteredValue })) }, inputMessage: SHIP_HELP, showCustomUi: true, strict: false } } });
+const SHIP_HELP = 'Pick Shipped when the parcel leaves. Cancelled, Cancel requested and Refunded are written by the website.\n包裹发出后选择 Shipped（已发货）。Not shipped = 未发货。Cancelled（已取消）、Cancel requested（客户申请取消）、Refunded（已退款）由网站填写。';
 // Sheets made with 32 columns (A-AF) get one more column for AG first.
 async function ensureColumns(env, sheetId, count, fetchImpl) {
   const props = ((await sheetsRequest(env, '?fields=sheets.properties', {}, fetchImpl)).sheets || []).map(x => x.properties || {}).find(x => x.sheetId === sheetId);
@@ -451,7 +518,7 @@ export async function refreshPaidColumn(DB, env, fetchImpl = fetch) {
   return true;
 }
 const courierRule = (sheetId, couriers, c = C) => ({ setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: c.COURIER, endColumnIndex: c.COURIER + 1 }, rule: {
-  condition: { type: 'ONE_OF_LIST', values: couriers.map(c => ({ userEnteredValue: c })) }, inputMessage: 'The courier used for this parcel. Pick one, or type another name.', strict: false, showCustomUi: true } } });
+  condition: { type: 'ONE_OF_LIST', values: couriers.map(c => ({ userEnteredValue: c })) }, inputMessage: 'The courier used for this parcel. Pick one, or type another name.\n这个包裹用的快递公司。从列表选择，或输入其他名称。', strict: false, showCustomUi: true } } });
 // The courier dropdown follows the list in Fees & settings (called when an admin saves it).
 export async function updateCourierDropdown(DB, env, fetchImpl = fetch) {
   if (!googleSheetsConfigured(env) || !await supplierSheetEnabled(DB) || await getSetting(DB, LAYOUT) !== LAYOUT_NOW) return false;
@@ -480,7 +547,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     if (sheetId == null) throw new Error('Work Queue tab not found');
     // Google refuses to read or write past a tab's last column: every supplier tab gets A-AI before anything below reads it.
     for (const tab of allTabs(wq)) { const id = tab === wq ? sheetId : await workQueueSheetId(env, fetchImpl, true, tab); if (id != null) await ensureColumns(env, id, C.END, fetchImpl); }
-    const header = async (tab = wq) => (await sheetsRequest(env, '/values/' + encodeURIComponent(`${tab}!A5:${L(C.END - 1)}5`), {}, fetchImpl)).values?.[0]?.map(norm) || [];
+    const header = async (tab = wq) => (await sheetsRequest(env, '/values/' + encodeURIComponent(`${tab}!A5:${L(C.END - 1)}5`), {}, fetchImpl)).values?.[0]?.map(v => norm(en(v))) || [];
     let h = await header();
     // Steps 1-18 work on the layout 18 columns (Cost per product in AI); a sheet that already has Cost per product in Q
     // (layout 19) uses today's columns, so those steps find their headers in place and only re-apply rules.
@@ -535,7 +602,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     const addItemCosts = h[c.ITEMS] !== ITEM_COSTS;
     // Google refuses a write past the last column: the sheet gets its columns before the header row is written.
     if (addDomestic || addCancelFee || addItemCosts) await ensureColumns(env, sheetId, c.END, fetchImpl);
-    await batchValues(env, [revisionCounter(wq), { range: `${wq}!A5:${L(c.END - 1)}5`, values: [c.h] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq, c)], fetchImpl);
+    await batchValues(env, [revisionCounter(wq), { range: `${wq}!A5:${L(c.END - 1)}5`, values: [c.h.map(bi)] }, { range: `${wq}!A3`, values: [[instructions]] }, totalsRow(wq, c)], fetchImpl);
     // 4) From now on the website writes O from the order: anything typed there before is copied to its order first.
     const idCol = colName(h.indexOf('Order ID') >= 0 ? h.indexOf('Order ID') : 27);
     const ranges = [`${wq}!O${FIRST_ROW}:O`, `${wq}!${idCol}${FIRST_ROW}:${idCol}`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
@@ -561,7 +628,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     if (addItemCosts) {
       const tabs = []; for (const tab of allTabs(wq)) { const id = await workQueueSheetId(env, fetchImpl, true, tab); if (id != null) tabs.push([tab, id]); }
       for (const [, id] of tabs) await ensureColumns(env, id, c.END, fetchImpl);
-      await batchValues(env, tabs.map(([tab]) => ({ range: `${tab}!A5:${L(c.END - 1)}5`, values: [c.h] })).concat({ range: `${wq}!A3`, values: [[instructions]] }), fetchImpl);
+      await batchValues(env, tabs.map(([tab]) => ({ range: `${tab}!A5:${L(c.END - 1)}5`, values: [c.h.map(bi)] })).concat({ range: `${wq}!A3`, values: [[instructions]] }), fetchImpl);
       await batch(env, tabs.flatMap(([, id]) => [...itemCostsFormat(id, c), fullFilter(id, c)]), fetchImpl);
     }
     if (addRefunded) {
@@ -577,12 +644,12 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
       const move = []; for (const [tab, id] of tabs) if ((await header(tab))[C18.ITEMS] === ITEM_COSTS) move.push({ moveDimension: { source: { sheetId: id, dimension: 'COLUMNS', startIndex: C18.ITEMS, endIndex: C18.ITEMS + 1 }, destinationIndex: C.ITEMS } });
       if (move.length) await batch(env, [...move, ...tabs.flatMap(([, id]) => itemCostsFormat(id))], fetchImpl);
       for (const [tab] of tabs) if ((await header(tab))[C.ITEMS] !== ITEM_COSTS) throw new Error(`Cost per product did not move to ${L(C.ITEMS)} in ${tab}`);
-      await batchValues(env, [...tabs.map(([tab]) => ({ range: `${tab}!A5:${L(C.END - 1)}5`, values: [HEADERS] })), { range: `${wq}!A3`, values: [[instructions]] }, ...summaryRows(tabs.map(([tab]) => tab))], fetchImpl);
+      await batchValues(env, [...tabs.map(([tab]) => ({ range: `${tab}!A5:${L(C.END - 1)}5`, values: [HEADERS.map(bi)] })), { range: `${wq}!A3`, values: [[instructions]] }, ...summaryRows(tabs.map(([tab]) => tab))], fetchImpl);
     }
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested') OR revision_status <> '')").run();
     await putSetting(DB, LAYOUT, LAYOUT_NOW);
-    await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?)').bind(DUP_ALERTS, REV_RULES).run(); // re-checked next time (tabs may be new)
+    await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY).run(); // re-checked next time (tabs may be new)
     return true;
   } catch (e) {
     await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(LAYOUT, 'migrating:' + t).run();
@@ -647,7 +714,7 @@ const BILL_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Qty', 'Total
 const REFUND_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Client paid', 'Total cost (USD)', 'Paid for it (USD)', 'Cancellation fee (USD)', 'Refund (USD)'];
 const REFUND_AT = 2 * BILL_COLS.length + 2, BILLING_WIDTH = REFUND_AT + REFUND_COLS.length;
 export const BILLING_HEADERS = [...BILL_COLS, '', ...BILL_COLS, '', ...REFUND_COLS];
-const BILLING_HELP = 'Every order from the Orders and Shipped tabs (not cancelled ones), newest first, so you can bill from one list. Left: orders our client has PAID. Middle: NOT PAID yet. Far right (from column U): CANCELLED orders and the refund: what our clients paid for them (Total cost, our fee not included) minus the cancellation fees; the TOTAL row adds it up. Filled in by the sheet itself: do not type here; change costs in Orders, Shipped or Cancelled and this tab follows.';
+const BILLING_HELP = 'All orders from Orders and Shipped, newest first. Left: PAID by our clients. Middle: NOT PAID yet. Right (from column U): CANCELLED orders and the refund (paid minus cancellation fees). Worked out by the sheet: do not type here.\nOrders 和 Shipped 的所有订单，最新的在前。左边：客户已付款。中间：未付款。右边（从 U 列开始）：已取消订单和退款（已付金额减取消费）。由表格自动计算，请不要在这里输入。';
 export function billingCells(wq, c = C) {
   const q = t => `'${t.replace(/'/g, "''")}'`, tabs = [wq, SHIPPED_TAB], last = L(c.PAIDC);
   const col = n => `INDIRECT("${q('@')}!${n}${FIRST_ROW}:${n}")`, both = (f, n) => tabs.map(t => f(col(n).replace('@', t)));
@@ -661,16 +728,16 @@ export function billingCells(wq, c = C) {
   // Refunds: the Cancelled tab, A to Cancellation fee.
   const cx = n => `INDIRECT("${q(CANCELLED_TAB)}!${n}${FIRST_ROW}:${n}")`, W1 = c.PAIDC + 1, P1 = c.COST + 1, F1 = c.FEE + 1, U = L(REFUND_AT);
   const got = `SUMIF(${cx(W)},"${PAID}",${cx(P)})`, fees = `SUM(${cx(L(c.FEE))})`;
-  const refundTop = `="CANCELLED: REFUND DUE "&TEXT(${got}-${fees},"$#,##0.00")&"  =  paid by our clients "&TEXT(${got},"$#,##0.00")&" ("&COUNTIF(${cx(W)},"${PAID}")&" orders)  −  cancellation fees "&TEXT(${fees},"$#,##0.00")&" ("&COUNTIF(${cx(L(c.FEE))},">0")&" orders)"`;
+  const refundTop = `="CANCELLED: REFUND DUE "&TEXT(${got}-${fees},"$#,##0.00")&"  =  paid by our clients "&TEXT(${got},"$#,##0.00")&" ("&COUNTIF(${cx(W)},"${PAID}")&" orders)  −  cancellation fees "&TEXT(${fees},"$#,##0.00")&" ("&COUNTIF(${cx(L(c.FEE))},">0")&" orders)"&CHAR(10)&"已取消：应退款 "&TEXT(${got}-${fees},"$#,##0.00")&" = 客户已付 "&TEXT(${got},"$#,##0.00")&"（"&COUNTIF(${cx(W)},"${PAID}")&" 单）− 取消费 "&TEXT(${fees},"$#,##0.00")&"（"&COUNTIF(${cx(L(c.FEE))},">0")&" 单）"`;
   const refundList = `=ARRAYFORMULA(IFERROR(LET(d,INDIRECT("${q(CANCELLED_TAB)}!A${FIRST_ROW}:${L(c.FEE)}"),f,FILTER(d,INDEX(d,,2)<>""),paid,INDEX(f,,${W1})="${PAID}",`
     + `cost,IF(ISNUMBER(INDEX(f,,${P1})),INDEX(f,,${P1}),0),fee,IF(ISNUMBER(INDEX(f,,${F1})),INDEX(f,,${F1}),0),got,IF(paid,cost,0),`
     + `VSTACK(SORT(HSTACK(CHOOSECOLS(f,1,2,3,${c.h.indexOf('Product / variation') + 1}),INDEX(f,,${W1}),cost,got,fee,got-fee),paid,FALSE,INDEX(f,,1),FALSE),`
-    + `HSTACK("","","","TOTAL","",SUM(cost),SUM(got),SUM(fee),SUM(got)-SUM(fee)))),"No cancelled orders"))`;
+    + `HSTACK("","","","TOTAL 合计","",SUM(cost),SUM(got),SUM(fee),SUM(got)-SUM(fee)))),"No cancelled orders · 暂无已取消订单"))`;
   return [
     { range: `${BILLING_TAB}!A1:A2`, values: [['Direct Line — Billing'], [BILLING_HELP]] },
-    { range: `${BILLING_TAB}!A3:K3`, values: [[`="PAID by our clients: "&(${paidN})&" orders · "&TEXT(${paidSum},"$#,##0.00")`, '', '', '', '', '', '', '', '', '', `="NOT PAID yet: "&(${openN})&" orders · "&TEXT(${openSum},"$#,##0.00")`]] },
-    { range: `${BILLING_TAB}!A4:${L(BILLING_WIDTH - 1)}4`, values: [BILLING_HEADERS] },
-    { range: `${BILLING_TAB}!A5:K5`, values: [[list(`="${PAID}"`, 'No paid orders yet'), '', '', '', '', '', '', '', '', '', list(`<>"${PAID}"`, 'No unpaid orders')]] },
+    { range: `${BILLING_TAB}!A3:K3`, values: [[`="PAID by our clients: "&(${paidN})&" orders · "&TEXT(${paidSum},"$#,##0.00")&CHAR(10)&"客户已付款："&(${paidN})&" 单 · "&TEXT(${paidSum},"$#,##0.00")`, '', '', '', '', '', '', '', '', '', `="NOT PAID yet: "&(${openN})&" orders · "&TEXT(${openSum},"$#,##0.00")&CHAR(10)&"未付款："&(${openN})&" 单 · "&TEXT(${openSum},"$#,##0.00")`]] },
+    { range: `${BILLING_TAB}!A4:${L(BILLING_WIDTH - 1)}4`, values: [BILLING_HEADERS.map(bi)] },
+    { range: `${BILLING_TAB}!A5:K5`, values: [[list(`="${PAID}"`, 'No paid orders yet · 暂无已付款订单'), '', '', '', '', '', '', '', '', '', list(`<>"${PAID}"`, 'No unpaid orders · 暂无未付款订单')]] },
     { range: `${BILLING_TAB}!${U}3`, values: [[refundTop]] },
     { range: `${BILLING_TAB}!${U}5`, values: [[refundList]] },
   ];
@@ -686,7 +753,7 @@ const billingFormat = (sheetId, email) => {
     ...[5, 15].map(i => ({ repeatCell: { range: r(4, 1000, i, i + 1), cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } })),
     ...[...widths.slice(0, 9), widths[9], ...widths.slice(0, 9)].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
     { addProtectedRange: { protectedRange: { range: { sheetId }, description: 'Billing: worked out by the sheet (Direct Line)', editors: { users: [email] } } } },
-    ...refundFormat(sheetId),
+    ...refundFormat(sheetId), ...billingHeadRows(sheetId),
   ];
 };
 // The refund part (U-AC): rose header, dollars, widths, and the TOTAL row in bold.
@@ -698,7 +765,7 @@ const refundFormat = sheetId => {
     { repeatCell: { range: r(4, 1000, A, Z), cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment)' } },
     { repeatCell: { range: r(4, 1000, A + 5, Z), cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
     ...[30, 95, 125, 135, 220, 85, 110, 110, 120, 110].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: A - 1 + i, endIndex: A + i }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
-    { addConditionalFormatRule: { rule: { ranges: [r(4, 1000, A, Z)], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=$${L(A + 3)}5="TOTAL"` }] }, format: { backgroundColor: rose, textFormat: { bold: true } } } } } },
+    { addConditionalFormatRule: { rule: { ranges: [r(4, 1000, A, Z)], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=LEFT($${L(A + 3)}5,5)="TOTAL"` }] }, format: { backgroundColor: rose, textFormat: { bold: true } } } } } },
   ];
 };
 // Adds the Billing tab if it is missing and (re)writes its formulas. Returns what it did.
@@ -776,7 +843,7 @@ export async function ensureTabNames(DB, env, fetchImpl = fetch) {
     if (tab(WQ) && tab(WQ_NEW)) throw new Error('A tab called "Orders" is in the way; the supplier tab keeps its old name.');
     if (tab(WQ)) {
       await batch(env, [rename(tab(WQ), WQ_NEW)], fetchImpl);
-      await batchValues(env, [{ range: `${WQ_NEW}!A2`, values: [['Direct Line — Orders']] }], fetchImpl);
+      await batchValues(env, [{ range: `${WQ_NEW}!A2`, values: [[ORDERS_TITLE]] }], fetchImpl);
     }
     await putSetting(DB, TAB_NAMES, 'done');
     return true;
@@ -1044,7 +1111,7 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
 const SEEN_KEY = 'dl-supplier-sheet-seen', FULL_EVERY = 3 * 3600;
 // Part of the fingerprint: changed when an update has one-time work in the sheet (e.g. the cost revision colours,
 // 3 Nov 2026), so the first minute after it is live runs a full check instead of waiting up to 3 hours.
-const SHEET_WORK = 'revision-states-1';
+const SHEET_WORK = 'bilingual-1';
 // What the website reads from each supplier tab: P-V, the order id, AH-AI and B (the row check).
 const supplierRanges = tab => [`${tab}!${L(C.COST)}${FIRST_ROW}:${L(C.REASON)}`, `${tab}!${L(C.ID)}${FIRST_ROW}:${L(C.ID)}`, `${tab}!${L(C.DOM)}${FIRST_ROW}:${L(C.FEE)}`, `${tab}!B${FIRST_ROW}:B`];
 export async function supplierSheetFingerprint(env, fetchImpl = fetch, tabs = [WQ_NEW]) {
@@ -1099,6 +1166,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     result.rulesFixed = await rulesSafely(DB, env, fetchImpl);
     result.dupAlerts = await dupSafely(DB, env, fetchImpl);
     result.revisionColours = await revSafely(DB, env, fetchImpl);
+    result.bilingual = await zhSafely(DB, env, fetchImpl);
     const { wq } = await tabNames(DB);
     // Old "ADDRESS CHANGED" warnings: take them off, a few rows a minute (Google's write limit), until none are left.
     for (const r of (await DB.prepare('SELECT id FROM client_orders WHERE address_changed_at IS NOT NULL ORDER BY id LIMIT 5').all()).results || []) {
@@ -1248,8 +1316,8 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   }
   const last = FIRST_ROW + Math.max(rows.length, 1) - 1;
   await batchValues(env, [
-    { range: `${wq}!A2:A3`, values: [['Direct Line — Orders'], [instructions]] },
-    { range: `${wq}!A5:${L(C.END - 1)}5`, values: [HEADERS] }, totalsRow(wq), revisionCounter(wq),
+    { range: `${wq}!A2:A3`, values: [[ORDERS_TITLE], [instructions]] },
+    { range: `${wq}!A5:${L(C.END - 1)}5`, values: [HEADERS.map(bi)] }, totalsRow(wq), revisionCounter(wq),
     ...(rows.length ? [{ range: `${wq}!A${FIRST_ROW}:${L(C.END - 1)}${last}`, values: rows }] : []),
   ], fetchImpl);
 
@@ -1269,7 +1337,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     { setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: C.SHIP, endColumnIndex: C.SHIP + 1 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: NOT_SHIPPED }, { userEnteredValue: SHIPPED }] }, strict: true, showCustomUi: true } } },
     ...WIDTHS.map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
     { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: C.ID, endIndex: C.CLIENT + 1 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
-    rowHeight(sheetId, 5, 44),
+    ...headRows(sheetId),
     { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: FIRST_ROW - 1, endIndex: 1000 }, properties: { pixelSize: 100 }, fields: 'pixelSize' } },
     ...rows.map((row, i) => rowHeight(sheetId, FIRST_ROW + i, rowPx(row))),
     { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: C.PHOTO2, endIndex: C.MORE + 1 } } },
@@ -1285,7 +1353,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   await splitSupplierTabs(DB, env, wq, sheetId, fetchImpl);
   await DB.prepare('DELETE FROM portal_settings WHERE key=?').bind(BILLING_KEY).run();
   // The rebuilt tabs get the duplicate and cost revision colours and warnings again (next check).
-  await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?)').bind(DUP_ALERTS, REV_RULES).run();
+  await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY).run();
   await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(SETTING, '1').run();
   await putSetting(DB, LAYOUT, LAYOUT_NOW);
   return { ok: true, rows: rows.length, sheetId, backup: !!current };

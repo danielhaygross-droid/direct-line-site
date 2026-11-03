@@ -16,6 +16,7 @@ import { sheetsRequest, googleSheetsConfig, googleSheetsConfigured } from './goo
 import { sheetProductPhotoUrl } from './sheet-photos.mjs';
 import { competitorCell, productRequoted } from './cost-revisions.mjs';
 import { withOrderLock } from './supplier-sheet.mjs';
+import { bi, en } from './sheet-zh.mjs';
 
 export const QT = 'Product Quotes';
 export const QUOTE_FIRST_ROW = 5;
@@ -47,10 +48,11 @@ const competitorFormat = sheetId => [
   { repeatCell: { range: { sheetId, startRowIndex: QUOTE_FIRST_ROW - 1, startColumnIndex: COMP, endColumnIndex: COMP + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: 0.85, green: 0.92, blue: 1 }, numberFormat: { type: 'TEXT' }, wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(backgroundColor,numberFormat,wrapStrategy,verticalAlignment,horizontalAlignment)' } },
   { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: COMP, endIndex: COMP + 1 }, properties: { pixelSize: QUOTE_WIDTHS[COMP] }, fields: 'pixelSize' } },
 ];
-export const QUOTE_HELP = 'Supplier: these are price checks from our clients before they sell a product. Fill in the yellow columns — Price per item (USD, product only) and Shipping per order (USD, one parcel), or set Available? to Not available and add a note. Several prices (sizes, colours…)? Put one option per line in the price cell, like:  Small: 3.20  (new line)  Large: 4.50. Competitor price (blue) is what other shops charge, from our client. The website updates within a minute.';
-export const PRICE_HELP = 'Price for one item in USD, product only (no shipping). Several prices? One option per line, e.g.\nSmall: 3.20\nLarge: 4.50\n(Ctrl+Enter or Alt+Enter starts a new line in the cell; ; also works.)';
+// English, then Chinese on the next line (3 Nov 2026).
+export const QUOTE_HELP = 'Price checks from our clients. Fill in the yellow columns: Price per item (USD, product only) and Shipping per order (USD, one parcel), or set Available? to Not available and add a note. Several prices? One per line, e.g. Small: 3.20 (new line) Large: 4.50.\n客户的询价。请填写黄色的列：单价（美元，只含商品）和每单运费（美元，一个包裹），或者在“有货吗？”选择 Not available（没货）并写备注。多个价格？每行一个，例如 Small: 3.20（换行）Large: 4.50。';
+export const PRICE_HELP = 'Price for one item in USD, product only (no shipping). Several prices? One option per line, e.g.\nSmall: 3.20\nLarge: 4.50\n(Ctrl+Enter or Alt+Enter starts a new line in the cell; ; also works.)\n一件商品的价格（美元），只含商品，不含运费。多个价格？每行一个（Ctrl+Enter 或 Alt+Enter 换行，也可以用 ; 隔开）。';
 export const PRICE_UNCLEAR = 'Price not clear: write Name: price, one per line';
-export const SHIPPING_HELP = 'Shipping for one order (one parcel) in USD. Added once to the order, whatever the quantity.';
+export const SHIPPING_HELP = 'Shipping for one order (one parcel) in USD. Added once to the order, whatever the quantity.\n一个订单（一个包裹）的运费（美元）。不管数量多少，每单只加一次。';
 export const SHIPPING_UNCLEAR = 'Shipping not clear: write a number in USD';
 
 const norm = v => (v === null || v === undefined ? '' : String(v).trim());
@@ -127,8 +129,8 @@ export async function ensureQuoteTab(DB, env, fetchImpl = fetch) {
     const { email } = googleSheetsConfig(env), cols = (a, b) => ({ sheetId, startColumnIndex: a, endColumnIndex: b });
     const yellow = { red: 1, green: 0.95, blue: 0.7 };
     await batchValues(env, [
-      { range: `${QT}!A1:A2`, values: [['Direct Line — Product Quotes'], [QUOTE_HELP]] },
-      { range: `${QT}!A4:P4`, values: [QUOTE_HEADERS] },
+      { range: `${QT}!A1:A2`, values: [[QUOTE_TITLE], [QUOTE_HELP]] },
+      { range: `${QT}!A4:P4`, values: [QUOTE_HEADERS.map(bi)] },
     ], fetchImpl);
     await batch(env, [
       { repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 16 } } }, fields: 'userEnteredFormat.textFormat' } },
@@ -139,11 +141,11 @@ export async function ensureQuoteTab(DB, env, fetchImpl = fetch) {
       { repeatCell: { range: { sheetId, startRowIndex: 4, startColumnIndex: 9, endColumnIndex: 11 }, cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
       ...priceCellFormat(sheetId),
       ...shippingCellFormat(sheetId),
-      { setDataValidation: { range: { sheetId, startRowIndex: 4, startColumnIndex: 11, endColumnIndex: 12 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: AVAILABLE }, { userEnteredValue: NOT_AVAILABLE }] }, strict: true, showCustomUi: true } } },
+      { setDataValidation: { range: { sheetId, startRowIndex: 4, startColumnIndex: 11, endColumnIndex: 12 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: AVAILABLE }, { userEnteredValue: NOT_AVAILABLE }] }, inputMessage: AVAILABLE_HELP, strict: true, showCustomUi: true } } },
       ...QUOTE_WIDTHS.map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
       ...competitorFormat(sheetId),
       { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: 15, endIndex: 16 }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
-      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 3, endIndex: 4 }, properties: { pixelSize: 44 }, fields: 'pixelSize' } },
+      ...quoteHeadRows(sheetId),
       { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: QUOTE_FIRST_ROW - 1, endIndex: 500 }, properties: { pixelSize: 100 }, fields: 'pixelSize' } },
       { addProtectedRange: { protectedRange: { range: cols(0, 9), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
       { addProtectedRange: { protectedRange: { range: cols(14, 16), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
@@ -194,7 +196,7 @@ export async function ensureQuoteLayout(DB, env, fetchImpl = fetch) {
   if (sheetId == null) return false;
   if (!['2', '3'].includes(now) && !await quoteLayout2(DB, env, sheetId, fetchImpl)) return false;
   const head = await sheetsRequest(env, '/values/' + encodeURIComponent(`${QT}!M4:O4`) + '?majorDimension=ROWS', {}, fetchImpl);
-  const m4 = norm(head.values?.[0]?.[0]), n4 = norm(head.values?.[0]?.[1]), o4 = norm(head.values?.[0]?.[2]);
+  const m4 = norm(en(head.values?.[0]?.[0])), n4 = norm(en(head.values?.[0]?.[1])), o4 = norm(en(head.values?.[0]?.[2]));
   // Already inserted (maybe by a run that stopped before writing the header): N is Competitor price, or empty with Status in O.
   const inserted = n4 === QUOTE_HEADERS[COMP] || (n4 === '' && o4 === 'Status');
   if (!inserted) {
@@ -212,7 +214,7 @@ export async function ensureQuoteLayout(DB, env, fetchImpl = fetch) {
 }
 async function quoteLayout2(DB, env, sheetId, fetchImpl) {
   const head = await sheetsRequest(env, '/values/' + encodeURIComponent(`${QT}!J4:L4`) + '?majorDimension=ROWS', {}, fetchImpl);
-  const j4 = norm(head.values?.[0]?.[0]), k4 = norm(head.values?.[0]?.[1]), l4 = norm(head.values?.[0]?.[2]);
+  const j4 = norm(en(head.values?.[0]?.[0])), k4 = norm(en(head.values?.[0]?.[1])), l4 = norm(en(head.values?.[0]?.[2]));
   if (!j4 && !k4 && !l4) return false; // headers not written yet (tab still being made): nothing to switch
   // Already inserted (maybe by a run that stopped before writing the header): K is the shipping column or empty with Available? in L.
   const inserted = k4 === QUOTE_HEADERS[10] || (k4 === '' && l4 === 'Available?');
@@ -241,6 +243,20 @@ export async function ensureQuoteOptionsFormat(DB, env, fetchImpl = fetch) {
 // Cost revision alerts (Erwin, 28 Oct 2026): A3 counts the products whose client asked for a lower price (orange, empty
 // when none) and those rows turn light orange (Status "Cost revision requested", column O). One-time, no columns move.
 const REV_STATUS = 'Cost revision requested';
+const quoteCounter = (F = QUOTE_FIRST_ROW) => ({ range: `${QT}!A3`, values: [[`=IF(COUNTIF(O${F}:O,"${REV_STATUS}")=0,"","⚠ "&COUNTIF(O${F}:O,"${REV_STATUS}")&" COST REVISION REQUEST(S) WAITING: see the orange rows and type a new Price per item  ·  "&COUNTIF(O${F}:O,"${REV_STATUS}")&" 个降价请求等待回复：请看橙色行，填写新的单价")`]] });
+export const QUOTE_TITLE = 'Direct Line — Product Quotes 询价';
+// Rows tall enough for two languages: help (2 lines), the counter, headers (up to 3 lines).
+const quoteHeadRows = sheetId => [[2, 42], [3, 26], [4, 64]].map(([row, px]) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: row - 1, endIndex: row }, properties: { pixelSize: px }, fields: 'pixelSize' } }));
+// English + Chinese on a Product Quotes tab made before (3 Nov 2026), once: texts, headers, help messages, row heights.
+export async function quoteZh(env, fetchImpl = fetch) {
+  const sheetId = await tabId(env, fetchImpl);
+  if (sheetId == null) return false;
+  await batchValues(env, [{ range: `${QT}!A1:A2`, values: [[QUOTE_TITLE], [QUOTE_HELP]] }, { range: `${QT}!A4:P4`, values: [QUOTE_HEADERS.map(bi)] }, quoteCounter()], fetchImpl);
+  await batch(env, [...quoteHeadRows(sheetId), ...priceCellFormat(sheetId), ...shippingCellFormat(sheetId),
+    { setDataValidation: { range: { sheetId, startRowIndex: 4, startColumnIndex: 11, endColumnIndex: 12 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: AVAILABLE }, { userEnteredValue: NOT_AVAILABLE }] }, inputMessage: AVAILABLE_HELP, strict: true, showCustomUi: true } } }], fetchImpl);
+  return true;
+}
+const AVAILABLE_HELP = 'Available or Not available (then add a note).\nAvailable = 有货，Not available = 没货（请写备注）。';
 export async function ensureQuoteRevisionAlerts(DB, env, fetchImpl = fetch) {
   if (await setting(DB, REVISION_ALERTS) === '1') return false;
   const sheetId = await tabId(env, fetchImpl);
@@ -250,7 +266,7 @@ export async function ensureQuoteRevisionAlerts(DB, env, fetchImpl = fetch) {
     { repeatCell: { range: { sheetId, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 12, foregroundColor: { red: 0.8, green: 0.35, blue: 0 } }, wrapStrategy: 'OVERFLOW_CELL' } }, fields: 'userEnteredFormat(textFormat,wrapStrategy)' } },
     { addConditionalFormatRule: { rule: { ranges: [{ sheetId, startRowIndex: F - 1, startColumnIndex: 0, endColumnIndex: 16 }], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=$O${F}="${REV_STATUS}"` }] }, format: { backgroundColor: { red: 1, green: 0.88, blue: 0.75 } } } } } },
   ], fetchImpl);
-  await batchValues(env, [{ range: `${QT}!A3`, values: [[`=IF(COUNTIF(O${F}:O,"${REV_STATUS}")=0,"","⚠ "&COUNTIF(O${F}:O,"${REV_STATUS}")&" COST REVISION REQUEST(S) WAITING: see the orange rows and type a new Price per item")`]] }], fetchImpl);
+  await batchValues(env, [quoteCounter()], fetchImpl);
   await putSetting(DB, REVISION_ALERTS, '1');
   return true;
 }
