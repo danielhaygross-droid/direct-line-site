@@ -43,7 +43,7 @@ globalThis.fetch = (real => async (url, opt = {}) => {
   if (path.startsWith('?fields=developerMetadata')) return Response.json({ developerMetadata: meta, sheets: [...sheets.keys()].map(title => ({ properties: { title } })) });
   if (path.startsWith('?fields=sheets(properties(sheetId),protectedRanges')) return Response.json({ sheets: [...sheets.values()].map(s => ({ properties: { sheetId: s.sheetId }, protectedRanges: s.prot.map((p, i) => ({ protectedRangeId: i + 1 })) })) });
   if (path.startsWith('?fields=sheets(properties(sheetId,title),conditionalFormats)')) return Response.json({ sheets: [...sheets].map(([title, s]) => ({ properties: { title, sheetId: s.sheetId }, conditionalFormats: s.cf || [] })) });
-  if (path.startsWith('?fields=sheets.properties')) return Response.json({ sheets: [...sheets].map(([title, s]) => ({ properties: { title, sheetId: s.sheetId, hidden: s.hidden } })) });
+  if (path.startsWith('?fields=sheets.properties')) return Response.json({ sheets: [...sheets].map(([title, s]) => ({ properties: { title, sheetId: s.sheetId, hidden: s.hidden, gridProperties: { columnCount: s.cols ?? 35 } } })) });
   if (path === ':batchUpdate') {
     const replies = [];
     for (const rq of body.requests) {
@@ -67,9 +67,10 @@ globalThis.fetch = (real => async (url, opt = {}) => {
       }
       else if (kind === 'deleteSheet') { const [title] = byId(a.sheetId); if (![...sheets].some(([t, s]) => t !== title && !s.hidden)) return Response.json({ error: { code: 400, message: "Invalid requests[0].deleteSheet: You can't remove all the visible sheets in a document." } }, { status: 400 }); sheets.delete(title); }
       else if (kind === 'addSheet' && a.properties.title === 'Billing' && failBilling) return Response.json({ error: { message: 'Billing tab refused (test)' } }, { status: 500 });
-      else if (kind === 'addSheet') { const p = a.properties; if (p.sheetId != null && byId(p.sheetId)) throw new Error('id in use'); const t = addTab(p.title, p.sheetId ?? nextId++); replies.push({ addSheet: { properties: { sheetId: t.sheetId, title: p.title } } }); continue; }
+      else if (kind === 'addSheet') { const p = a.properties; if (p.sheetId != null && byId(p.sheetId)) throw new Error('id in use'); const t = addTab(p.title, p.sheetId ?? nextId++); t.cols = p.gridProperties?.columnCount; replies.push({ addSheet: { properties: { sheetId: t.sheetId, title: p.title } } }); continue; }
       else if (kind === 'createDeveloperMetadata') meta.push({ metadataId: meta.length + 1, ...a.developerMetadata });
       else if (kind === 'updateDeveloperMetadata') { const l = a.dataFilters[0].developerMetadataLookup; for (const m of meta) if (m.metadataId === l.metadataId || m.metadataKey === l.metadataKey) m.metadataValue = a.developerMetadata.metadataValue; }
+      else if (kind === 'appendDimension') { const [, s] = byId(a.sheetId); s.cols = (s.cols ?? 35) + a.length; }
       else if (kind === 'deleteDimension') { const [, s] = byId(a.range.sheetId); if (a.range.dimension === 'ROWS') s.grid.splice(a.range.startIndex, a.range.endIndex - a.range.startIndex); }
       replies.push({});
     }
@@ -404,6 +405,30 @@ failBilling = false; later(); await cron(); assert.ok(sheets.has(BILLING_TAB), '
 assert.deepEqual(billingCells('Work Queue')[3].values[0][0].match(/INDIRECT\("'Work Queue'!A6:W"\)/)?.[0], `INDIRECT("'Work Queue'!A6:W")`, 'tab names with spaces are quoted');
 assert.ok(!readTabs.has(BILLING_TAB));
 console.log('PASS Billing tab: all orders, paid apart from not paid, formulas only, protected, never read, safe if it fails');
+// Refunds (Erwin, 3 Nov 2026): far right, every cancelled order (paid first) with paid, fee and refund, a TOTAL row,
+// and row 3 with the whole sum: paid by our clients minus the cancellation fees.
+{
+  const g = bill(), u3 = String(g[2][20]), u5 = String(g[4][20]);
+  assert.equal(sheets.get(BILLING_TAB).cols, 29, 'the tab is A to AC');
+  assert.deepEqual(BILLING_HEADERS.slice(20), ['Date', 'Order', 'Shop', 'Product / variation', 'Client paid', 'Total cost (USD)', 'Paid for it (USD)', 'Cancellation fee (USD)', 'Refund (USD)']);
+  assert.match(u3, /^="CANCELLED: REFUND DUE "&TEXT\(SUMIF\(INDIRECT\("'Cancelled'!W6:W"\),"Paid",INDIRECT\("'Cancelled'!P6:P"\)\)-SUM\(INDIRECT\("'Cancelled'!AI6:AI"\)\)/, 'row 3: paid by our clients minus the fees');
+  assert.match(u5, /INDIRECT\("'Cancelled'!A6:AI"\)/, 'reads the Cancelled tab, A to Cancellation fee');
+  const cols = /CHOOSECOLS\(f,([\d,]+)\)/.exec(u5)[1].split(',').map(n => HEADERS[Number(n) - 1]);
+  assert.deepEqual(cols, ['Date', 'Order', 'Shop', 'Product / variation']);
+  assert.equal(HEADERS[15], 'Total cost (USD)'); assert.equal(HEADERS[34], 'Cancellation fee (USD)');
+  assert.match(u5, /paid,INDEX\(f,,23\)="Paid",cost,IF\(ISNUMBER\(INDEX\(f,,16\)\),INDEX\(f,,16\),0\),fee,IF\(ISNUMBER\(INDEX\(f,,35\)\),INDEX\(f,,35\),0\),got,IF\(paid,cost,0\)/, 'paid = Total cost of the orders our client paid');
+  assert.match(u5, /got-fee\),paid,FALSE/, 'refund = paid - fee, paid orders first');
+  assert.match(u5, /HSTACK\("","","","TOTAL","",SUM\(cost\),SUM\(got\),SUM\(fee\),SUM\(got\)-SUM\(fee\)\)/, 'a TOTAL row');
+  assert.ok((sheets.get(BILLING_TAB).cf || []).some(r => /="TOTAL"/.test(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || '')), 'TOTAL row in bold');
+  // A Billing tab from before (A to S, version 1): widened once and rewritten.
+  const tb = sheets.get(BILLING_TAB); tb.cols = 19; tb.cf = []; tb.grid = [];
+  await DB.prepare("UPDATE portal_settings SET value = '1|' || split_part(value, '|', 2) WHERE key = 'supplier_billing_tab'").run();
+  later(); await cron();
+  assert.equal(tb.cols, 29, 'old tab widened to AC'); assert.match(String(tb.grid[4]?.[20]), /'Cancelled'!A6:AI/, 'refund list written');
+  assert.equal(tb.cf.filter(r => /="TOTAL"/.test(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || '')).length, 1);
+  later(); await cron(); assert.equal(tb.cf.length, 1, 'not added again');
+}
+console.log('PASS Billing refunds: cancelled orders, paid minus cancellation fees, TOTAL row, old tab widened once');
 
 // Colour rules that slid down (Erwin, 2 Nov 2026): orders moved to the top of Shipped pushed its rules to row 44, so
 // rows 6-43 lost the orange cost revision rows. Every sheet check puts them back to row 6.
