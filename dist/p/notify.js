@@ -123,18 +123,19 @@
     const render = () => {
       if (!built) build();
       const unread = items.filter(n => n.unread);
-      let shown = filter === 'unread' ? unread : items;
+      // Read (3 Nov 2026): the ones already seen, next to Unread.
+      let shown = filter === 'unread' ? unread : filter === 'read' ? items.filter(n => !n.unread) : items;
       if (kind) shown = shown.filter(n => n.cat === kind);
       if (q && !opts.onSearch) { const w = q.toLowerCase(); shown = shown.filter(n => (n.title + ' ' + (n.text || '')).toLowerCase().includes(w)); }
       const fresh = shown.filter(n => n.unread), old = shown.filter(n => !n.unread);
       el.querySelector('[data-dln-all]').disabled = !unread.length;
       const count = k => items.filter(n => n.cat === k).length;
-      el.querySelector('[data-dln-tabs]').innerHTML = `<button type="button" data-dln-f="all" class="${filter === 'all' ? 'on' : ''}">${L('All', 'הכל')}</button><button type="button" data-dln-f="unread" class="${filter === 'unread' ? 'on' : ''}">${L('Unread', 'לא נקראו')}${unread.length ? ` (${unread.length})` : ''}</button>`
+      el.querySelector('[data-dln-tabs]').innerHTML = `<button type="button" data-dln-f="all" class="${filter === 'all' ? 'on' : ''}">${L('All', 'הכל')}</button><button type="button" data-dln-f="unread" class="${filter === 'unread' ? 'on' : ''}">${L('Unread', 'לא נקראו')}${unread.length ? ` (${unread.length})` : ''}</button><button type="button" data-dln-f="read" class="${filter === 'read' ? 'on' : ''}">${L('Read', 'נקראו')}</button>`
         + (opts.kinds || []).filter(k => count(k.key) || kind === k.key).map(k => `<button type="button" data-dln-k="${k.key}" class="kind${kind === k.key ? ' on' : ''}">${esc(k.label)}</button>`).join('');
       let last = '';
       const days = old.map(n => { const d = n.time ? dayLabel(n.time) : L('Earlier', 'קודמות'), head = d !== last ? `<div class="dln-sec">${esc(d)}</div>` : ''; last = d; return head + itemHTML(n); }).join('');
       el.querySelector('[data-dln-body]').innerHTML = shown.length ? `${fresh.length ? `<div class="dln-sec">${L('New', 'חדשות')}</div>${fresh.map(n => itemHTML(n)).join('')}` : ''}${days}`
-        : `<div class="dln-empty"><span class="dln-ic t-mint">${icon('check')}</span>${q ? L('Nothing matches this search.', 'אין תוצאות לחיפוש הזה.') : filter === 'unread' ? L('You’re all caught up.', 'אין התראות חדשות.') : L('No notifications yet.', 'אין עדיין התראות.')}</div>`;
+        : `<div class="dln-empty"><span class="dln-ic t-mint">${icon('check')}</span>${q ? L('Nothing matches this search.', 'אין תוצאות לחיפוש הזה.') : filter === 'unread' ? L('You’re all caught up.', 'אין התראות חדשות.') : filter === 'read' ? L('Nothing read yet.', 'עדיין אין התראות שנקראו.') : L('No notifications yet.', 'אין עדיין התראות.')}</div>`;
       const foot = el.querySelector('[data-dln-foot]');
       if (foot) foot.innerHTML = `${opts.onLoadMore && opts.hasMore?.() ? `<button type="button" class="dln-more" data-dln-more${busy ? ' disabled' : ''}>${busy ? L('Loading…', 'טוען…') : L('Load older notifications', 'טען התראות קודמות')}</button>` : ''}${opts.footer ? `<span>${esc(typeof opts.footer === 'function' ? opts.footer() : opts.footer)}</span>` : ''}`;
     };

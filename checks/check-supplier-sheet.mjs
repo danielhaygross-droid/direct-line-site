@@ -470,6 +470,59 @@ assert.equal((await dupEv(DU1.id)).length, 1, 'DU1 reported once'); assert.equal
 assert.match((await dupEv(DU1.id))[0].detail, /DUP-2/, 'says which other order');
 assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(x => x.orderId === DU1.id && /dup_tracking/.test(x.detail)), 'in the admin bell');
 console.log('PASS duplicates in the sheet: red rows and tracking warning on Orders + Shipped, row 4 counts them, the admin is told once');
+// Cost revisions answered in the sheet (Erwin, 3 Nov 2026): the Competitor price cell says where each one stands
+// (orange = waiting for the supplier, purple = new cost waiting for Direct Line, green = done), a lower cost is
+// approved by itself, NO keeps the price and puts the cost back, and Total cost accepts NO.
+for (const t of [WQ_NEW, SHIPPED_TAB]) {
+  const s1 = sheets.get(t), has = w => (s1.cf || []).some(r => (r.booleanRule?.condition?.values || []).some(v => String(v.userEnteredValue || '').includes(w)));
+  assert.ok(has('NEW COST SENT') && has('✓ REVISION DONE'), t + ': purple and green rules');
+  assert.ok((s1.rules || []).some(v => v.range.startColumnIndex === N && /no\|keep\|same/.test(v.rule?.condition?.values?.[0]?.userEnteredValue || '') && v.rule.strict), t + ': Total cost takes a number or NO');
+  assert.match(String(s1.grid[3][0]), /NO and the reason if it can't be lower/, t + ': row 4 says how to refuse');
+  assert.ok((s1.rules || []).some(v => v.range.startColumnIndex === N && /\\b\[/.test(v.rule?.condition?.values?.[0]?.userEnteredValue || '')), t + ': NO needs a reason');
+}
+{ const n0 = (sheets.get(WQ_NEW).cf || []).length; await cron(); assert.equal((sheets.get(WQ_NEW).cf || []).length, n0, 'revision colours added once'); }
+const COMPC = 14, compCell = id => { const [t, r] = where(id); return String(sheets.get(t).grid[r][COMPC]); }, costCell = id => { const [t, r] = where(id); return sheets.get(t).grid[r][N]; };
+const RV = await mk('REV-S1'); await settle(); supplierTypes(RV.id, N, 30); await cron(); await settle();
+const askRev = async price => { const r = await call(`/orders/${RV.id}/cost-revision`, 'POST', { competitorPrice: price }, client); assert.equal(r.status, 200, JSON.stringify(r.data)); await settle(); };
+await askRev(25);
+assert.match(compCell(RV.id), /^COST REVISION REQUESTED: \$25\.00$/, 'orange while it waits for the supplier');
+const fee = Number((await order(RV.id)).commission || 0);
+// Lower: approved at once, the client is told, the cell turns green.
+supplierTypes(RV.id, N, 26); await cron(); await settle();
+let rv = await order(RV.id);
+assert.equal(Number(rv.price), 26 + fee, 'billed the new cost + fee without a click'); assert.equal(rv.revision_status, ''); assert.equal(rv.revision_done, 'new cost $26.00');
+assert.match(compCell(RV.id), /^✓ REVISION DONE: new cost \$26\.00 \(client's price: \$25\.00\)$/, 'green in the sheet');
+assert.ok((await call('/notifications', 'GET', null, client)).data.items.some(e => e.kind === 'revision_answered' && e.orderId === RV.id && /^lowered/.test(e.detail)), 'client told: cost lowered');
+assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(e => e.orderId === RV.id && /"f":"rev_auto"/.test(e.detail)), 'admin bell: approved automatically');
+assert.ok((await call('/admin/orders', 'GET', null, admin)).data.orders.find(o => o.id === RV.id).updates.some(u => /"f":"rev_auto"/.test(u.detail)), 'Client orders: update tag');
+// NO + reason: the price is kept, the cost goes back into the cell, the client gets the reason.
+await askRev(22); supplierTypes(RV.id, N, 'NO: factory price went up'); await cron(); await settle();
+rv = await order(RV.id);
+assert.equal(Number(rv.price), 26 + fee, 'price kept'); assert.equal(rv.revision_status, ''); assert.equal(rv.revision_done, 'cost kept: factory price went up');
+assert.equal(Number(costCell(RV.id)), 26, 'the cost is back in Total cost');
+assert.match(compCell(RV.id), /^✓ REVISION DONE: cost kept: factory price went up \(client's price: \$22\.00\)$/, 'green, with the reason');
+assert.equal((await call('/orders', 'GET', null, client)).data.orders.find(o => o.id === RV.id).revision.reply, 'factory price went up', 'the client gets the reason');
+assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(e => e.orderId === RV.id && /"f":"rev_no".*"why":"factory price went up"/.test(e.detail)), 'admin bell: the reason');
+{ const c = await cron(); assert.equal(c.changed.filter(x => x.orderId === RV.id).length, 0, 'the restored cost is not read as a new change'); }
+assert.ok((await call('/notifications', 'GET', null, client)).data.items.some(e => e.kind === 'revision_answered' && e.orderId === RV.id && /^kept/.test(e.detail)), 'client told: cost kept');
+// Higher: waits for an admin (purple, red tag), the bill does not change.
+await askRev(20); supplierTypes(RV.id, N, 31); await cron(); await settle();
+rv = await order(RV.id);
+assert.equal(rv.revision_status, 'offered'); assert.equal(Number(rv.price), 26 + fee, 'not billed');
+assert.match(compCell(RV.id), /^NEW COST SENT: \$31\.00, waiting for Direct Line \(client's price: \$20\.00\)$/, 'purple in the sheet');
+assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(e => e.orderId === RV.id && /"f":"rev_check".*"why":"higher"/.test(e.detail)), 'admin bell: needs your OK');
+assert.match(String(sheets.get(WQ_NEW).grid[3][0]), /COUNTIF\(INDIRECT\("O6:O"\),"COST REVISION REQUESTED\*"\)/, 'row 4 counts only the orange ones (purple text starts differently)');
+// The admin approves: green; a later cost change (no request) ends the green note.
+assert.equal((await call(`/admin/orders/${RV.id}/cost-revision`, 'POST', { action: 'approve', cost: 31 }, admin)).status, 200); await settle();
+assert.match(compCell(RV.id), /^✓ REVISION DONE: new cost \$31\.00/);
+supplierTypes(RV.id, N, 29); await cron(); await settle();
+assert.equal((await order(RV.id)).revision_done, ''); assert.equal(compCell(RV.id), '$20.00', 'back to the plain competitor price');
+// A big drop (probably a typo) waits for an admin.
+await askRev(18); supplierTypes(RV.id, N, 2.9); await cron(); await settle();
+rv = await order(RV.id); assert.equal(rv.revision_status, 'offered'); assert.equal(Number(rv.price), 29 + fee, 'a drop of more than half is not billed by itself');
+assert.ok((await call('/admin/notifications', 'GET', null, admin)).data.items.some(e => e.orderId === RV.id && /"why":"half"/.test(e.detail)), 'admin told it may be a typo');
+assert.equal((await call(`/admin/orders/${RV.id}/cost-revision`, 'POST', { action: 'keep' }, admin)).status, 200); supplierTypes(RV.id, N, 29); await cron(); await settle();
+console.log('PASS cost revisions in the sheet: orange / purple / green, lower approved by itself, NO keeps the price, higher or a big drop waits');
 for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 35, t + ': the filter covers A-AI');
 const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 22))])));
 const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);

@@ -453,8 +453,9 @@ async function withMessages(DB, orders, forAdmin) {
 }
 const messageOut = m => ({ id: m.id, orderId: m.order_id, author: m.author, body: m.body, createdAt: Number(m.created_at) });
 // What the admin is told about: anything a client did, and the supplier changing a cost or a cancellation fee in the sheet.
-const ADMIN_FEED = "(e.actor = 'client' OR e.kind = 'supplier_sheet' AND (e.detail LIKE ? OR e.detail LIKE ? OR e.detail LIKE ?))";
-const ADMIN_FEED_ARGS = ['{"f":"cost","from":"_%', '{"f":"cancel_fee",%"to":"_%', '{"f":"dup_%'];
+// rev_*: a cost revision the supplier answered in the sheet (approved by itself, kept, or waiting for an admin).
+const ADMIN_FEED = "(e.actor = 'client' OR e.kind = 'supplier_sheet' AND (e.detail LIKE ? OR e.detail LIKE ? OR e.detail LIKE ? OR e.detail LIKE ?))";
+const ADMIN_FEED_ARGS = ['{"f":"cost","from":"_%', '{"f":"cancel_fee",%"to":"_%', '{"f":"dup_%', '{"f":"rev_%'];
 // Each admin order carries its updates from the last 30 days (same feed as the bell), so the Client orders list can put
 // orders with unseen updates first and say what changed (Erwin, 2 Nov 2026). Seen / not seen is the bell's read state.
 async function withUpdates(DB, orders) {
