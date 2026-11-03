@@ -11,7 +11,8 @@ test('order lines: each product / colour has its own link, quantity and colour; 
   assert.deepEqual(itemsSummary(two), { etsyUrl: 'https://a.example/x\nhttps://b.example/y', quantity: 3, variant: 'Product 1:\n2 pcs\nProduct 2:\n1 × Red' }, 'two products: grouped, numbered like their links');
   assert.deepEqual(itemsSummary(orderItems([{ link: 'https://a.example/x', quantity: 4, variant: 'Gold' }])), { etsyUrl: 'https://a.example/x', quantity: 4, variant: 'Gold' }, 'one line = as before');
   assert.equal(orderItems(undefined), null, 'no lines sent: the order fields are used as they are');
-  for (const bad of [[], Array(11).fill({ link: 'https://a.example', quantity: 1 }), [{ link: 'https://a.example', quantity: 0 }], [{ link: 'https://a.example', quantity: 1.5 }], [{ link: 'https://a.example', quantity: 1000 }]])
+  assert.equal(orderItems([{ link: 'https://a.example', quantity: 3000 }])[0].quantity, 3000, 'bulk orders: up to 10,000 pieces');
+  for (const bad of [[], Array(11).fill({ link: 'https://a.example', quantity: 1 }), [{ link: 'https://a.example', quantity: 0 }], [{ link: 'https://a.example', quantity: 1.5 }], [{ link: 'https://a.example', quantity: 10001 }]])
     assert.throws(() => orderItems(bad));
   assert.throws(() => orderItems([{ link: 'https://a.example', quantity: 1 }, { link: 'https://a.example', quantity: 'x' }]), /product 2/);
 });
