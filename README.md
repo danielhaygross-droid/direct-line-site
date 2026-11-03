@@ -40,4 +40,4 @@ The client-order workbook is `Direct Line — Client Orders`. Share it as Editor
 2. If `app.js`/`styles.css` changed, bump the `?v=` in the matching `index.html`.
 3. `npm run build`, commit, push. Vercel deploys automatically.
 
-See `DIRECT_LINE_DASHBOARD_HANDOFF.md` for open issues and priorities.
+See `..\CONTINUE_HERE.md` for the current project handoff, production status, verification, and next steps.
