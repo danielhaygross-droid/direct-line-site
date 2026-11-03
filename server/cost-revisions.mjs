@@ -3,7 +3,8 @@
 // on) is required. Decisions:
 //   - the supplier gives the new cost in the sheet (the request shows in the Competitor price column); an admin can
 //     also answer from the dashboard;
-//   - an order's bill only changes after an admin approves the new cost;
+//   - an order's bill only changes after an admin approves the new cost; since 3 Nov 2026 a lower cost from the supplier
+//     is approved by itself (see offerFromSheet), and the supplier can type NO when the cost can't be lower;
 //   - a revised product quote is the product's price from then on (future orders use it; past orders keep their bill);
 //   - a client can ask again any time after an answer (one open request per order or product).
 // Requests are kept (cost_revisions), never deleted. status: open (waiting for the supplier) -> offered (supplier gave a
@@ -23,15 +24,23 @@ export const REVISION_SCHEMA = [
   // An order with several products: the client gives a competitor price per product (Erwin, 30 Oct 2026), kept as
   // the text the supplier reads, e.g. "Product 2: $20.00 · Product 3: $25.00"; competitor_price is then their sum.
   "ALTER TABLE cost_revisions ADD COLUMN IF NOT EXISTS items TEXT NOT NULL DEFAULT ''",
+  // What the last answered request ended with, for the sheet (3 Nov 2026): 'new cost $15.90' or 'cost kept'; '' when none
+  // (or the supplier's cost changed again later).
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS revision_done TEXT NOT NULL DEFAULT ''",
 ];
 const r2 = n => Math.round(Number(n || 0) * 100) / 100;
 const now = () => Math.floor(Date.now() / 1000);
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const usd = n => '$' + Number(n).toFixed(2);
 import { productLinkList } from './item-costs.mjs';
-// What the supplier reads in the Competitor price column while a request is open.
-export const REVISION_FLAG = 'COST REVISION REQUESTED';
-export const competitorCell = (text, status) => status ? `${REVISION_FLAG}: ${text || ''}`.trim() : text || '';
+// What the supplier reads in the Competitor price column (Erwin, 3 Nov 2026: in the sheet you can see where each request
+// stands): orange while it waits for the supplier, purple once the supplier gave a new cost that waits for us, green
+// when it is done. The sheet's colour rules read the start of the text.
+export const REVISION_FLAG = 'COST REVISION REQUESTED', REVISION_SENT = 'NEW COST SENT', REVISION_DONE = '✓ REVISION DONE';
+export const competitorCell = (text, status, offered = null, done = '') => status === 'offered' && offered != null ? `${REVISION_SENT}: ${usd(offered)}, waiting for Direct Line (client's price: ${text || '—'})`
+  : status ? `${REVISION_FLAG}: ${text || ''}`.trim() : done ? `${REVISION_DONE}: ${done}${text ? ` (client's price: ${text})` : ''}` : text || '';
+// "The cost can't be lower": the supplier types one of these in Total cost on an orange row.
+export const NO_WORD = /^\s*(no|keep|same)\s*\.?\s*$/i;
 
 const out = r => r ? { id: Number(r.id), status: r.status, competitorPrice: Number(r.competitor_price), note: r.note || '', oldPrice: r.old_price == null ? null : Number(r.old_price),
   offeredCost: r.offered_cost == null ? null : Number(r.offered_cost), newPrice: r.new_price == null ? null : Number(r.new_price), result: r.result || '', reply: r.reply || '',
@@ -76,7 +85,7 @@ export async function requestRevision(DB, kind, id, clientId, body, t = now()) {
     if (['cancelled', 'cancellation_requested', 'delivered'].includes(o.status)) throw fail('A cost revision isn’t possible for this order any more.');
     if (o.revision_status) throw fail('You already asked for a revision of this order. We’ll let you know.', 409);
     await DB.prepare('INSERT INTO cost_revisions (client_id, order_id, competitor_price, note, old_price, items, created_at) VALUES (?,?,?,?,?,?,?)').bind(clientId, id, f.price, f.note, r2(o.price), f.items, t).run();
-    await DB.prepare("UPDATE client_orders SET revision_status='open', competitor_price=?, sheet_sync_status='waiting', updated_at=? WHERE id=?").bind(asked, t, id).run();
+    await DB.prepare("UPDATE client_orders SET revision_status='open', revision_done='', competitor_price=?, sheet_sync_status='waiting', updated_at=? WHERE id=?").bind(asked, t, id).run();
     await DB.prepare("INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,'revision_requested','client',?,?)").bind(id, clientId, asked + (f.note ? ' · ' + f.note : ''), t).run();
     return;
   }
@@ -90,10 +99,29 @@ export async function requestRevision(DB, kind, id, clientId, body, t = now()) {
   await DB.prepare("INSERT INTO portal_product_events (product_id, client_id, actor, detail, created_at) VALUES (?,?,'client',?,?)").bind(id, clientId, 'Cost revision requested · ' + usd(f.price), t).run();
 }
 
-// Supplier sheet: a new Total cost on an order with an open request waits for an admin instead of billing.
+// Supplier sheet: a new Total cost on an order with an open request (Erwin, 3 Nov 2026: "do the change right away
+// without me needing to click a button"). When the client's price (cost + our fee) goes down, by less than half, it is
+// approved at once, like an admin's Approve. A higher or equal price, or a drop of more than half (probably a typo),
+// waits for an admin. Returns { auto: true, from, to } or { auto: false, why: 'higher' | 'same' | 'half' }.
+export function offerCheck(order, cost) {
+  const price = r2(Number(cost) + Number(order.commission || 0)), before = r2(order.price);
+  if (price < before && price >= before / 2) return { auto: true, from: before, to: price };
+  return { auto: false, why: price > before ? 'higher' : price === before ? 'same' : 'half', to: price };
+}
 export async function offerFromSheet(DB, order, cost, t = now()) {
+  const check = offerCheck(order, cost);
+  if (check.auto) { await answerOrder(DB, order.id, { action: 'approve', cost }, t); return check; }
   await DB.prepare("UPDATE cost_revisions SET status='offered', offered_cost=? WHERE id = (SELECT id FROM cost_revisions WHERE order_id=? AND status IN ('open','offered') ORDER BY id DESC LIMIT 1)").bind(r2(cost), order.id).run();
-  await DB.prepare("UPDATE client_orders SET revision_status='offered', supplier_cost=? WHERE id=?").bind(r2(cost), order.id).run();
+  await DB.prepare("UPDATE client_orders SET revision_status='offered', supplier_cost=?, sheet_sync_status='waiting' WHERE id=?").bind(r2(cost), order.id).run();
+  return check;
+}
+// The supplier typed NO (the cost can't be lower): the price is kept and the client is told, like an admin's Keep the
+// price. The cost before the request goes back into the sheet (see websiteSupplierCells in supplier-sheet.mjs).
+export async function supplierKeeps(DB, order, t = now()) {
+  const was = order.revision_status === 'offered' && order.quoted_unit_price == null ? r2(Number(order.price) - Number(order.commission || 0)) : order.supplier_cost == null ? null : r2(order.supplier_cost);
+  if (was != null) await DB.prepare('UPDATE client_orders SET supplier_cost=? WHERE id=?').bind(was, order.id).run();
+  await answerOrder(DB, order.id, { action: 'keep' }, t);
+  return was;
 }
 
 // Admin answers an order: approve a new supplier cost (bill = cost + our fee) or keep the price (with a reply).
@@ -115,18 +143,20 @@ export async function answerOrder(DB, id, body, t = now()) {
   } else if (body?.action === 'keep') {
     await DB.prepare("UPDATE cost_revisions SET status='done', result='kept', new_price=?, reply=?, answered_at=? WHERE id=?").bind(r2(o.price), reply, t, rev.id).run();
   } else throw fail('Choose Approve or Keep the price.');
-  await DB.prepare("UPDATE client_orders SET revision_status='', competitor_price=?, sheet_sync_status='waiting', updated_at=? WHERE id=?").bind(rev.items || usd(rev.competitor_price), t, id).run();
   const done = await DB.prepare('SELECT * FROM cost_revisions WHERE id=?').bind(rev.id).first();
+  await DB.prepare("UPDATE client_orders SET revision_status='', revision_done=?, competitor_price=?, sheet_sync_status='waiting', updated_at=? WHERE id=?").bind(doneText(done), rev.items || usd(rev.competitor_price), t, id).run();
   await DB.prepare("INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,'revision_answered','admin',?,?)").bind(id, o.client_id, done.result + (reply ? '|' + reply : ''), t).run();
   return changed;
 }
 
+// What the sheet shows on a finished request (see competitorCell).
+export const doneText = r => !r || r.status !== 'done' ? '' : ['lowered', 'raised'].includes(r.result) && r.offered_cost != null ? 'new cost ' + usd(r.offered_cost) : ['lowered', 'raised', 'kept'].includes(r.result) ? 'cost kept' : '';
 // A cancelled order closes its open request (result 'closed'), so the sheet row shows the red "cancelled" colour, not
 // the orange revision one (Erwin, 28 Oct 2026).
 export async function closeRevisionOnCancel(DB, orderId, t = now()) {
   const r = await DB.prepare("UPDATE cost_revisions SET status='done', result='closed', answered_at=? WHERE order_id=? AND status IN ('open','offered') RETURNING competitor_price").bind(t, orderId).first();
   if (!r) return false;
-  await DB.prepare("UPDATE client_orders SET revision_status='' WHERE id=?").bind(orderId).run();
+  await DB.prepare("UPDATE client_orders SET revision_status='', revision_done='' WHERE id=?").bind(orderId).run();
   return true;
 }
 // Products: a new quote (sheet or admin) answers an open request; an admin can also keep the price with a reply.

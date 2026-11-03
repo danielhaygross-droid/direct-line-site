@@ -82,7 +82,8 @@
   const lastNew = o => newUpdates(o)[0]?.at || 0;
   const updateLabel = u => u.kind === 'created' ? ['New order', 'gold'] : u.kind === 'duplicate' ? ['Possible duplicate', 'red'] : u.kind === 'message' ? ['New message', 'blue'] : u.kind === 'revision_requested' ? ['Cost revision requested', 'orange']
     : u.kind === 'claim' ? ['Problem reported', 'red'] : u.kind === 'tracking' ? ['Tracking added', 'mint'] : u.kind === 'photo' ? [u.detail === 'removed' ? 'Photo removed' : 'Photo added', 'orange']
-    : u.kind === 'supplier_sheet' ? (/"f":"dup_tracking"/.test(u.detail || '') ? ['Same tracking as another order', 'red'] : /"f":"dup_order"/.test(u.detail || '') ? ['Twice in the sheet', 'red'] : /"f":"cancel_fee"/.test(u.detail || '') ? ['Supplier cancellation fee', 'red'] : ['Supplier changed cost', 'orange'])
+    : u.kind === 'supplier_sheet' ? (/"f":"dup_tracking"/.test(u.detail || '') ? ['Same tracking as another order', 'red'] : /"f":"dup_order"/.test(u.detail || '') ? ['Twice in the sheet', 'red'] : /"f":"cancel_fee"/.test(u.detail || '') ? ['Supplier cancellation fee', 'red']
+      : /"f":"rev_auto"/.test(u.detail || '') ? ['Cost lowered automatically', 'mint'] : /"f":"rev_check"/.test(u.detail || '') ? ['Check the new cost', 'red'] : /"f":"rev_no"/.test(u.detail || '') ? ['Supplier can’t lower the cost', 'gold'] : ['Supplier changed cost', 'orange'])
     : u.kind === 'status' ? ({ cancellation_requested: ['Cancellation requested', 'red'], delivered: ['Marked delivered', 'mint'], cancelled: ['Cancelled by client', 'red'] }[u.detail] || ['Status changed', 'mint'])
     : u.kind === 'edited' ? (u.detail === 'customer' ? ['Customer details changed', 'orange'] : ['Order edited', 'orange']) : ['Order updated', 'gold'];
   // One tag per kind of change, newest first, with ×2 when it happened more than once.

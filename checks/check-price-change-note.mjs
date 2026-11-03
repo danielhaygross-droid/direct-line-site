@@ -65,7 +65,19 @@ try {
       assert.equal((txt.match(/Order billed/g) || []).length, 2, 'the first bills still say "Order billed"');
     } else assert.ok(txt.includes('עלות המוצר עודכנה'), 'Hebrew title');
     await page.screenshot({ path: path.join(out, `${lang}-${width}-bell.png`) });
+    // Read next to Unread (Erwin, 3 Nov 2026).
+    if (width === 1440) {
+      await page.locator('[data-dln-f="read"]').click(); await page.waitForTimeout(200);
+      assert.equal(await page.locator('.dln-panel .dln-item.unread').count(), 0, lang + ' Read shows no unread notifications');
+      if (await page.locator('[data-dln-all]').isEnabled()) { await page.locator('[data-dln-all]').click(); await page.waitForTimeout(500); }
+      if (!await page.locator('.dln-panel.open').count()) await page.locator('[data-bell]').click();
+      await page.locator('[data-dln-f="read"]').click(); await page.waitForTimeout(200);
+      assert.ok(await page.locator('.dln-panel .dln-item').count() >= 3, lang + ' after Mark all as read, Read lists them');
+      await page.screenshot({ path: path.join(out, `${lang}-${width}-bell-read.png`) });
+      await page.locator('[data-dln-f="unread"]').click(); await page.waitForTimeout(200);
+      assert.equal(await page.locator('.dln-panel .dln-item').count(), 0, lang + ' Unread is empty');
+    }
     await ctx.close();
   }
-  console.log('PASS bell: "Product cost updated" with old → new (also when the first bill is older than the latest 50), first bill stays "Order billed" (EN/HE, 1440/390)');
+  console.log('PASS bell: "Product cost updated" with old → new (also when the first bill is older than the latest 50), first bill stays "Order billed"; Read / Unread chips (EN/HE, 1440/390)');
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }

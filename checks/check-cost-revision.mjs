@@ -58,10 +58,12 @@ assert.equal(o.competitorPrice, '$24.90');
 const row = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(A).first();
 assert.match(competitorCell(row.competitor_price, row.revision_status), /^COST REVISION REQUESTED: \$24\.90$/, 'what the supplier reads in O');
 assert.ok(ok(await call('/admin/notifications', 'GET', null, admin)).items.some(e => e.kind === 'revision_requested' && e.orderId === A), 'admin bell');
-// The supplier types a new Total cost in the sheet: held for the admin, the bill does not change.
-const before = Number(row.price); await offerFromSheet(DB, row, 20);
+// The supplier types a higher Total cost in the sheet: held for the admin, the bill does not change (a lower one is
+// approved by itself, see check-supplier-sheet).
+const before = Number(row.price); assert.equal((await offerFromSheet(DB, row, before + 5)).auto, false);
 const ad = ok(await call('/admin/orders', 'GET', null, admin)).orders.find(x => x.id === A);
-assert.equal(ad.revision.status, 'offered'); assert.equal(ad.revision.offeredCost, 20); assert.equal(ad.price, before, 'not billed before approval');
+assert.equal(ad.revision.status, 'offered'); assert.equal(ad.revision.offeredCost, before + 5); assert.equal(ad.price, before, 'not billed before approval');
+assert.match(competitorCell(row.competitor_price, 'offered', before + 5), /^NEW COST SENT: /, 'purple text in the sheet');
 console.log('PASS ask: competitor price required, one open request, supplier offer held for the admin');
 try {
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
@@ -71,7 +73,8 @@ try {
     await ui.locator('[data-tab=overview]').click(); assert.ok(await ui.locator('[data-go-filter="revision"]').count() >= 1, tag + ' Needs your attention');
     await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter=revision]').click(); await ui.locator(`[data-open-order="${A}"]`).first().click(); await ui.waitForSelector('[data-rev-admin]'); await page.waitForTimeout(300);
     await ui.locator('[data-rev-admin]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-admin-order.png`) });
-    assert.equal(await ui.locator('[data-rev-answer] [name=cost]').inputValue(), '20', tag + ' supplier cost filled in');
+    assert.equal(Number(await ui.locator('[data-rev-answer] [name=cost]').inputValue()), before + 5, tag + ' supplier cost filled in');
+    assert.equal(await ui.locator('[data-rev-admin] .rev-why').count(), 1, tag + ' why it waits');
     const wa = await ui.locator('[data-rev-wa]').getAttribute('href'); assert.ok(wa.startsWith('https://wa.me/?text=') && decodeURIComponent(wa).includes('REV-1') && decodeURIComponent(wa).includes('$24.90'), tag + ' WhatsApp message to the supplier');
     assert.deepEqual(errors, [], tag); await ctx.close();
     ctx = await session(client, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));

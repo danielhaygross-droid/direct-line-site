@@ -24,7 +24,7 @@ import { splitOldNotes } from './order-notes.mjs';
 import { pollQuoteTab, QT } from './quote-sheet.mjs';
 import { createHash } from 'node:crypto';
 import { rememberPrice, backfillSavedPrices } from './saved-prices.mjs';
-import { competitorCell, offerFromSheet, REVISION_FLAG } from './cost-revisions.mjs';
+import { competitorCell, offerFromSheet, supplierKeeps, doneText, NO_WORD, REVISION_FLAG, REVISION_SENT, REVISION_DONE } from './cost-revisions.mjs';
 import { itemPrices } from './item-costs.mjs';
 
 export const SUPPLIER_SHEET_SCHEMA = [
@@ -175,7 +175,7 @@ export function websiteCells(env, o, photos, shopName) {
     txt(o.order_date || new Date(Number(o.created_at) * 1000).toISOString().slice(0, 10)), txt(o.order_ref || '#' + o.id), txt(shopName),
     STATUS[o.status] || o.status, preview, first,
     links[0] ? `=HYPERLINK("${q(links[0])}","${links.length > 1 ? 'Open product 1' : 'Open product'}")` : '', Number(o.quantity || 1), txt(product), txt(o.buyer_name),
-    txt(addressLines(o)), txt(o.tax_number), txt(o.gift_message), txt(savedPriceFlag(o) + (o.notes || '')), txt(competitorCell(o.competitor_price, o.revision_status)),
+    txt(addressLines(o)), txt(o.tax_number), txt(o.gift_message), txt(savedPriceFlag(o) + (o.notes || '')), txt(competitorCell(o.competitor_price, o.revision_status, o.supplier_cost, o.revision_done)),
   ];
   const qz = [o.client_paid || '', ...Array.from({ length: 7 }, (_, i) => urls[i + 1] ? `=HYPERLINK("${q(urls[i + 1])}","${label(photos[i + 1], i + 2)}")` : ''),
     txt(links.slice(1).map((l, i) => `Product ${i + 2}: ${l}`).join('\n')), String(o.id), String(o.client_id)];
@@ -258,7 +258,7 @@ export async function removeClientFromWorkQueue(DB, env, clientId, fetchImpl = f
 // ---------- layout ----------
 const getSetting = async (DB, key) => (await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(key).first())?.value;
 const putSetting = (DB, key, value) => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key, value).run();
-const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. ORANGE Competitor price = COST REVISION REQUESTED: our client sells at that price; please check if you can lower the cost and type the new Total cost (we confirm it before billing). Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Cost per product (USD, next to Total cost): for an order with several products, type the cost of each product in order, e.g. 10.90, 9.00, 11.00. Domestic Express Tracking Number (yellow, far right after Client paid): the tracking of the domestic express in China. RED rows are cancelled orders: do not buy or ship them. Orange rows: the client asked to cancel, wait for Direct Line. Other columns are filled in by Direct Line. Newest orders are at the top. An order moves to the Shipped tab by itself once it is Shipped and has a tracking number, and to the Cancelled tab when it is cancelled.';
+const instructions = 'Supplier: fill in the yellow columns — Total cost (USD, whole order incl. shipping), Tracking number, Courier (pick one or type another), and set Shipping status to Shipped when it leaves. If an order will be late (e.g. wrong variant, being remade), set Delayed? to Possibly delayed and write a short reason: our client sees both. The website updates within a minute. Competitor price (blue) is what other shops charge, from our client. ORANGE Competitor price = COST REVISION REQUESTED: our client sells at that price; please check if you can lower the cost and type the new Total cost (a lower cost is billed to our client right away), or type NO in Total cost if it can’t be lower. PURPLE = you sent a new cost, Direct Line is checking it. GREEN = the cost revision is done. Client paid shows if our client has paid Direct Line for the order; row 4 adds up your Total cost (all / paid / not paid). Cost per product (USD, next to Total cost): for an order with several products, type the cost of each product in order, e.g. 10.90, 9.00, 11.00. Domestic Express Tracking Number (yellow, far right after Client paid): the tracking of the domestic express in China. RED rows are cancelled orders: do not buy or ship them. Orange rows: the client asked to cancel, wait for Direct Line. Other columns are filled in by Direct Line. Newest orders are at the top. An order moves to the Shipped tab by itself once it is Shipped and has a tracking number, and to the Cancelled tab when it is cancelled.';
 const tabText = {
   [SHIPPED_TAB]: ['Direct Line — Shipped orders', 'Shipped orders with a tracking number, newest on top. They move here from the Orders tab by themselves. You can still correct the Total cost, Tracking number or Courier here: the website reads this tab too.'],
   [CANCELLED_TAB]: ['Direct Line — Cancelled orders', 'Cancelled orders: do not buy or ship them. They move here from the Orders tab by themselves, newest on top. If you charge a cancellation fee, type it in Cancellation fee (USD), the last yellow column: the website reads this tab too and bills it. Shipping status says Refunded when our client had already paid for the order.'],
@@ -315,7 +315,7 @@ const DUP_TABS = [WQ_NEW, SHIPPED_TAB];
 const seenIn = (col, v) => DUP_TABS.map(t => `COUNTIF(INDIRECT("'${t}'!${col}:${col}"),${v})`).join('+');
 const dupCount = () => { const b = all('B'), r = all(L(C.TRACK));
   return `SUMPRODUCT(((${b}<>"")*((${seenIn('B', b)})>1)+(${r}<>"")*((${seenIn(L(C.TRACK), r)})>1)>0)*1)`; };
-const revisionCounter = wq => { const rev = `COUNTIF(${all('O')},"${REVISION_FLAG}*")`, revText = `IF(${rev}=0,"","⚠ "&${rev}&" COST REVISION REQUEST(S) WAITING: see the orange rows, check the cost, type the new Total cost")`;
+const revisionCounter = wq => { const rev = `COUNTIF(${all('O')},"${REVISION_FLAG}*")`, revText = `IF(${rev}=0,"","⚠ "&${rev}&" COST REVISION REQUEST(S) WAITING: see the orange rows, type the new Total cost (or NO if it can't be lower)")`;
   if (wq === CANCELLED_TAB) return { range: `${wq}!A4`, values: [[`=${revText}`]] };
   return { range: `${wq}!A4`, values: [[`=TRIM(${revText}&IF(${dupCount()}=0,"","   ⚠ "&${dupCount()}&" ROW(S) WITH A DUPLICATE ORDER OR TRACKING NUMBER: see the red rows"))`]] }; };
 // The whole row turns red; typing a tracking number already used shows a warning on the cell (it is still accepted:
@@ -326,6 +326,44 @@ const dupRule = sheetId => ({ addConditionalFormatRule: { index: 0, rule: { rang
 const dupCheck = sheetId => ({ setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: C.TRACK, endColumnIndex: C.TRACK + 1 }, rule: {
   condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=${seenIn(L(C.TRACK), L(C.TRACK) + FIRST_ROW)}<=1` }] },
   inputMessage: 'This tracking number is already used on another order. Check it is the right parcel.', strict: false } } });
+// Where each cost revision stands (Erwin, 3 Nov 2026: "in the spreadsheet I can't know which ones they finished"): the
+// Competitor price cell turns purple once the supplier sent a new cost that waits for us (and the row light purple), and
+// green when it is done. The open ones stay orange (revisionFormat / revisionAlerts).
+const startsWith = (sheetId, word, format) => ({ addConditionalFormatRule: { index: 0, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: COMP, endColumnIndex: COMP + 1 }], booleanRule: { condition: { type: 'TEXT_STARTS_WITH', values: [{ userEnteredValue: word }] }, format } } } });
+const revisionStates = (sheetId, c = C) => [
+  startsWith(sheetId, REVISION_SENT, { backgroundColor: { red: 0.76, green: 0.65, blue: 0.96 }, textFormat: { bold: true } }),
+  startsWith(sheetId, REVISION_DONE, { backgroundColor: { red: 0.74, green: 0.9, blue: 0.74 }, textFormat: { bold: true, foregroundColor: { red: 0.08, green: 0.4, blue: 0.16 } } }),
+  { addConditionalFormatRule: { rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: c.END }], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=LEFT($O${FIRST_ROW},${REVISION_SENT.length})="${REVISION_SENT}"` }] }, format: { backgroundColor: { red: 0.93, green: 0.89, blue: 1 } } } } } },
+];
+// Total cost (P): a number, or NO / KEEP / SAME on a cost revision ("the cost can't be lower").
+const costCheck = sheetId => { const p = L(C.COST) + FIRST_ROW; return { setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: C.COST, endColumnIndex: C.COST + 1 }, rule: {
+  condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=OR(AND(ISNUMBER(${p}),${p}>=0),REGEXMATCH(LOWER(TRIM(${p}&"")),"^(no|keep|same)\.?$"))` }] },
+  inputMessage: "Total cost for the whole order in USD, product + shipping. Orange row (cost revision): type the new cost, or NO if it can't be lower.", strict: true } } }; };
+const REV_RULES = 'supplier_revision_colours', REV_RULES_NOW = '1', REV_DATA = 'revision_states_backfill';
+// Added once (and again after the sheet is rebuilt): the colours and the Total cost check on Orders and Shipped, row 4
+// and the instructions. Once ever: the sheet shows the requests already answered, and the new costs already waiting are
+// handled like a new one (approved by themselves when lower, otherwise flagged for an admin).
+export async function ensureRevisionStates(DB, env, fetchImpl = fetch, t = Math.floor(Date.now() / 1000)) {
+  if (await getSetting(DB, REV_RULES) === REV_RULES_NOW) return false;
+  const { wq } = await tabNames(DB); if (wq !== WQ_NEW) return false;
+  const data = await sheetsRequest(env, '?fields=sheets(properties(sheetId,title),conditionalFormats)', {}, fetchImpl);
+  const tabs = (data?.sheets || []).filter(x => DUP_TABS.includes(x.properties?.title));
+  if (tabs.length < DUP_TABS.length) return false;
+  const has = x => (x.conditionalFormats || []).some(r => (r.booleanRule?.condition?.values || []).some(v => String(v.userEnteredValue || '').includes(REVISION_SENT)));
+  await batch(env, tabs.flatMap(x => [...(has(x) ? [] : revisionStates(x.properties.sheetId)), costCheck(x.properties.sheetId)]), fetchImpl);
+  await batchValues(env, [...allTabs(wq).map(tab => revisionCounter(tab)), { range: `${wq}!A3`, values: [[instructions]] }], fetchImpl);
+  if (!await getSetting(DB, REV_DATA)) {
+    const done = (await DB.prepare(`SELECT DISTINCT ON (r.order_id) r.* FROM cost_revisions r JOIN client_orders o ON o.id = r.order_id
+      WHERE r.order_id IS NOT NULL AND o.revision_status = '' AND NOT o.archived AND o.status <> 'cancelled' ORDER BY r.order_id, r.id DESC`).all()).results || [];
+    for (const r of done) { const text = doneText(r); if (text) await DB.prepare("UPDATE client_orders SET revision_done=?, sheet_sync_status='waiting' WHERE id=? AND revision_done=''").bind(text, r.order_id).run(); }
+    for (const o of (await DB.prepare("SELECT * FROM client_orders WHERE revision_status='offered' AND NOT archived").all()).results || []) await revisionOffered(DB, o, Number(o.supplier_cost), t);
+    await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE revision_status='offered' AND NOT archived").run();
+    await putSetting(DB, REV_DATA, String(t));
+  }
+  await putSetting(DB, REV_RULES, REV_RULES_NOW);
+  return true;
+}
+const revSafely = async (DB, env, fetchImpl) => { try { return await ensureRevisionStates(DB, env, fetchImpl); } catch (e) { console.error('Cost revision colours not added', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 const DUP_ALERTS = 'supplier_dup_alerts', DUP_ALERTS_NOW = '1';
 // Added once (and again after the sheet is rebuilt): the red rule and the warning on Orders and Shipped, and row 4.
 export async function ensureDuplicateAlerts(DB, env, fetchImpl = fetch) {
@@ -544,7 +582,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested') OR revision_status <> '')").run();
     await putSetting(DB, LAYOUT, LAYOUT_NOW);
-    await DB.prepare('DELETE FROM portal_settings WHERE key=?').bind(DUP_ALERTS).run(); // re-checked next time (tabs may be new)
+    await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?)').bind(DUP_ALERTS, REV_RULES).run(); // re-checked next time (tabs may be new)
     return true;
   } catch (e) {
     await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(LAYOUT, 'migrating:' + t).run();
@@ -799,6 +837,8 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
 // alone. [index in P-V, cell, client_orders column, value saved there]
 function websiteSupplierCells(o) {
   const out = [], s = norm(o.sheet_shipped), shippedNow = ['shipped', 'delivered'].includes(o.status);
+  // NO in Total cost (the cost can't be lower, see applySupplierRow): the cost goes back into the cell.
+  if (NO_WORD.test(norm(o.sheet_cost)) && o.supplier_cost != null) out.push([0, Number(o.supplier_cost), 'sheet_cost', String(Number(o.supplier_cost))]);
   if (norm(o.tracking_number) && norm(o.tracking_number) !== norm(o.sheet_tracking)) out.push([S_TRACK, txt(o.tracking_number), 'sheet_tracking', norm(o.tracking_number)]);
   if (norm(o.courier) && norm(o.courier) !== norm(o.sheet_courier)) out.push([S_COURIER, txt(o.courier), 'sheet_courier', norm(o.courier)]);
   if (shippedNow && !isShipped(s)) out.push([S_SHIP, SHIPPED, 'sheet_shipped', SHIPPED]);
@@ -866,6 +906,14 @@ async function logSupplierEdits(DB, order, cells, now, t) {
     await event(DB, order, SUPPLIER_SHEET_EVENT, JSON.stringify({ f, from: norm(was[f]), to: now[f] }), t);
   }
 }
+// A new cost from the supplier on a cost revision (see offerFromSheet). The admin bell / Client orders get one line:
+// approved by itself (rev_auto), or waiting for an admin with the reason (rev_check: higher / same / half).
+async function revisionOffered(DB, order, cost, t) {
+  const r = await offerFromSheet(DB, order, cost, t);
+  const detail = r.auto ? { f: 'rev_auto', from: r.from.toFixed(2), to: r.to.toFixed(2) } : { f: 'rev_check', to: Number(cost).toFixed(2), why: r.why };
+  await event(DB, order, SUPPLIER_SHEET_EVENT, JSON.stringify(detail), t);
+  return r;
+}
 // Applies one Work Queue row (cost, tracking, shipped) to its order. Returns what changed.
 export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now() / 1000)) {
   const done = [], skipped = [];
@@ -888,17 +936,24 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
   }
   if (cost !== norm(order.sheet_cost)) {
     const n = parseCost(cells.cost);
-    if (n === null) { if (cost) skipped.push('cost not a number: ' + cost); await DB.prepare('UPDATE client_orders SET sheet_cost=? WHERE id=?').bind(cost, order.id).run(); }
-    else if (order.revision_status) {
-      // The client asked for a cost revision: the new cost waits for an admin's approval (cost-revisions.mjs).
+    if (n === null && order.revision_status && NO_WORD.test(cost)) {
+      // NO on a cost revision: the supplier can't lower the cost. The price is kept, the client is told, and the cost
+      // goes back into the cell (websiteSupplierCells).
       await DB.prepare('UPDATE client_orders SET sheet_cost=?, updated_at=? WHERE id=?').bind(cost, t, order.id).run();
-      await offerFromSheet(DB, order, n, t); done.push('cost revision offered ' + n.toFixed(2));
+      const was = await supplierKeeps(DB, order, t);
+      await event(DB, order, SUPPLIER_SHEET_EVENT, JSON.stringify({ f: 'rev_no', to: was == null ? '' : was.toFixed(2) }), t); done.push('cost revision: supplier kept the cost');
+    } else if (n === null) { if (cost) skipped.push('cost not a number: ' + cost); await DB.prepare('UPDATE client_orders SET sheet_cost=? WHERE id=?').bind(cost, order.id).run(); }
+    else if (order.revision_status) {
+      // The client asked for a cost revision: a lower cost is approved at once, anything else waits for an admin.
+      await DB.prepare('UPDATE client_orders SET sheet_cost=?, updated_at=? WHERE id=?').bind(cost, t, order.id).run();
+      const r = await revisionOffered(DB, order, n, t); done.push(r.auto ? 'cost revision approved ' + r.from.toFixed(2) + ' -> ' + r.to.toFixed(2) : 'cost revision offered ' + n.toFixed(2));
     } else if (order.quoted_unit_price != null) {
       // Fixed-quote orders keep the price the client agreed; the supplier's cost is recorded for the team.
-      await DB.prepare('UPDATE client_orders SET supplier_cost=?, sheet_cost=?, updated_at=? WHERE id=?').bind(n, cost, t, order.id).run(); done.push('cost recorded (fixed quote)');
+      await DB.prepare("UPDATE client_orders SET supplier_cost=?, sheet_cost=?, revision_done='', updated_at=? WHERE id=?").bind(n, cost, t, order.id).run(); done.push('cost recorded (fixed quote)');
     } else {
       const price = round2(n + Number(order.commission || 0));
-      await DB.prepare('UPDATE client_orders SET supplier_cost=?, product_cost=?, shipping_fee=NULL, price=?, sheet_cost=?, price_source=NULL, updated_at=? WHERE id=?').bind(n, price, price, cost, t, order.id).run();
+      // A later cost change ends the "revision done" note in the sheet.
+      await DB.prepare("UPDATE client_orders SET supplier_cost=?, product_cost=?, shipping_fee=NULL, price=?, sheet_cost=?, price_source=NULL, revision_done='', updated_at=? WHERE id=?").bind(n, price, price, cost, t, order.id).run();
       // Remembered for the next identical order (see saved-prices.mjs).
       await rememberPrice(DB, order, n, t);
       // First bill: 'billed'. A later cost change on an order already billed: 'price_changed' with old|new, so the
@@ -954,12 +1009,15 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
 // runs at least every FULL_EVERY seconds (rows waiting for the sheet are rewritten; an open admin does it at once).
 // The last fingerprint is kept on the spreadsheet itself (invisible developer metadata), not in the database.
 const SEEN_KEY = 'dl-supplier-sheet-seen', FULL_EVERY = 3 * 3600;
+// Part of the fingerprint: changed when an update has one-time work in the sheet (e.g. the cost revision colours,
+// 3 Nov 2026), so the first minute after it is live runs a full check instead of waiting up to 3 hours.
+const SHEET_WORK = 'revision-states-1';
 // What the website reads from each supplier tab: P-V, the order id, AH-AI and B (the row check).
 const supplierRanges = tab => [`${tab}!${L(C.COST)}${FIRST_ROW}:${L(C.REASON)}`, `${tab}!${L(C.ID)}${FIRST_ROW}:${L(C.ID)}`, `${tab}!${L(C.DOM)}${FIRST_ROW}:${L(C.FEE)}`, `${tab}!B${FIRST_ROW}:B`];
 export async function supplierSheetFingerprint(env, fetchImpl = fetch, tabs = [WQ_NEW]) {
   const ranges = [...[].concat(tabs).flatMap(tab => supplierRanges(tab).slice(0, 3)), `${QT}!A1:Z`].map(r => 'ranges=' + encodeURIComponent(r)).join('&');
   const data = await sheetsRequest(env, '/values:batchGet?' + ranges + '&majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', {}, fetchImpl);
-  return createHash('sha256').update(JSON.stringify((data.valueRanges || []).map(v => v.values || []))).digest('hex');
+  return createHash('sha256').update(SHEET_WORK + JSON.stringify((data.valueRanges || []).map(v => v.values || []))).digest('hex');
 }
 // The mark, and the supplier's tabs ("Work Queue" until the one-time rename, then "Orders"; see ensureTabNames; plus
 // Shipped and Cancelled once they exist).
@@ -1007,6 +1065,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     result.billing = await billingSafely(DB, env, fetchImpl);
     result.rulesFixed = await rulesSafely(DB, env, fetchImpl);
     result.dupAlerts = await dupSafely(DB, env, fetchImpl);
+    result.revisionColours = await revSafely(DB, env, fetchImpl);
     const { wq } = await tabNames(DB);
     // Old "ADDRESS CHANGED" warnings: take them off, a few rows a minute (Google's write limit), until none are left.
     for (const r of (await DB.prepare('SELECT id FROM client_orders WHERE address_changed_at IS NOT NULL ORDER BY id LIMIT 5').all()).results || []) {
@@ -1172,7 +1231,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: C.COST, endColumnIndex: C.REASON + 1 }, cell: { userEnteredFormat: { backgroundColor: yellow } }, fields: 'userEnteredFormat.backgroundColor' } },
     { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: C.COST, endColumnIndex: C.COST + 1 }, cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
     { repeatCell: { range: { sheetId, startRowIndex: 5, startColumnIndex: C.ITEMS, endColumnIndex: C.COURIER + 1 }, cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } }, fields: 'userEnteredFormat.numberFormat' } },
-    { setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: C.COST, endColumnIndex: C.COST + 1 }, rule: { condition: { type: 'NUMBER_GREATER_THAN_EQ', values: [{ userEnteredValue: '0' }] }, inputMessage: 'Total cost for the whole order in USD, product + shipping.', strict: true, showCustomUi: true } } },
+    costCheck(sheetId),
     courierRule(sheetId, courierList(await getSetting(DB, 'couriers'))),
     { setDataValidation: { range: { sheetId, startRowIndex: 5, startColumnIndex: C.SHIP, endColumnIndex: C.SHIP + 1 }, rule: { condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: NOT_SHIPPED }, { userEnteredValue: SHIPPED }] }, strict: true, showCustomUi: true } } },
     ...WIDTHS.map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
@@ -1183,7 +1242,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
     { addDimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: C.PHOTO2, endIndex: C.MORE + 1 } } },
     { updateDimensionGroup: { dimensionGroup: { range: { sheetId, dimension: 'COLUMNS', startIndex: C.PHOTO2, endIndex: C.MORE + 1 }, depth: 1, collapsed: true }, fields: 'collapsed' } },
     fullFilter(sheetId),
-    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId), ...itemCostsFormat(sheetId), hideCD(sheetId), statusRule(sheetId), showShop(sheetId), revisionFormat(sheetId), ...revisionAlerts(sheetId), ...cancelFeeFormat(sheetId),
+    ...competitorFormat(sheetId), ...paidFormat(sheetId), ...delayFormat(sheetId, null), ...cancelFormat(sheetId), ...domesticFormat(sheetId), ...itemCostsFormat(sheetId), hideCD(sheetId), statusRule(sheetId), showShop(sheetId), revisionFormat(sheetId), ...revisionAlerts(sheetId), ...revisionStates(sheetId), ...cancelFeeFormat(sheetId),
     // Only the supplier columns (and Competitor price) are editable by others; the rest is written by the website.
     { addProtectedRange: { protectedRange: { range: cols(0, 14), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
     { addProtectedRange: { protectedRange: { range: cols(C.PAIDC, C.CLIENT + 1), description: 'Filled in by the Direct Line website', editors: { users: [email] } } } },
@@ -1192,8 +1251,8 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
 
   await splitSupplierTabs(DB, env, wq, sheetId, fetchImpl);
   await DB.prepare('DELETE FROM portal_settings WHERE key=?').bind(BILLING_KEY).run();
-  // The rebuilt tabs get the duplicate colours and warnings again (next check).
-  await DB.prepare('DELETE FROM portal_settings WHERE key=?').bind(DUP_ALERTS).run();
+  // The rebuilt tabs get the duplicate and cost revision colours and warnings again (next check).
+  await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?)').bind(DUP_ALERTS, REV_RULES).run();
   await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(SETTING, '1').run();
   await putSetting(DB, LAYOUT, LAYOUT_NOW);
   return { ok: true, rows: rows.length, sheetId, backup: !!current };

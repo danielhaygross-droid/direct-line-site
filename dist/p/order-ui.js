@@ -36,6 +36,10 @@
   const SHEET_FIELD = { cost: 'Total cost', tracking: 'Tracking number', courier: 'Courier', shipped: 'Shipping status', delayed: 'Delayed?', reason: 'Delay reason', cancel_fee: 'Cancellation fee' };
   function sheetEdit(e) {
     let d; try { d = JSON.parse(e.detail); } catch (x) { return ''; }
+    // Cost revision answered in the sheet (3 Nov 2026).
+    if (/^rev_/.test(d.f || '')) { const m = x => `<bdi data-no-i18n>${esc(/^\d+(\.\d+)?$/.test(x || '') ? '$' + Number(x).toFixed(2) : x || '')}</bdi>`;
+      const what = d.f === 'rev_auto' ? `<span>Approved automatically</span>: ${m(d.from)} <span class="act-arrow"></span> ${m(d.to)}` : d.f === 'rev_no' ? `<span>Supplier typed NO: price kept</span>` : `<span>${d.why === 'half' ? 'Less than half the price: waiting for you' : d.why === 'same' ? 'Same price: waiting for you' : 'Higher price: waiting for you'}</span> · ${m(d.to)}`;
+      return `<li class="act-supplier act-cost"><b>Cost revision</b><span><span>Supplier sheet</span> · ${what}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`; }
     const v = x => x === '' ? '<i>empty</i>' : `<bdi data-no-i18n>${esc(['cost', 'cancel_fee'].includes(d.f) && /^\d+(\.\d+)?$/.test(x) ? '$' + Number(x).toFixed(2) : x)}</bdi>`;
     return `<li class="act-supplier${d.f === 'cost' ? ' act-cost' : ''}"><b>Supplier sheet change</b><span><span>Supplier sheet</span> · <span>${SHEET_FIELD[d.f] || esc(d.f)}</span>: ${v(d.from)} <span class="act-arrow"></span> ${v(d.to)}</span><time datetime="${new Date(e.createdAt*1000).toISOString()}">${esc(when(e.createdAt))}</time></li>`;
   }
