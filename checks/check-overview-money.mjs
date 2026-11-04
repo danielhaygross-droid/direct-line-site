@@ -76,16 +76,17 @@ try {
     if (lang === 'en') { const k = await ui.locator('[data-kpis]').innerText(); if (/order/.test(await ui.locator('[data-kpis] .stat').nth(2).innerText())) { const n = s => Number(s.replace(/[$,]/g, '')), big = n((await ui.locator('[data-kpis] .stat').nth(2).locator('strong').innerText())), m = k.match(/Without our fee (\$[\d,.]+) · our fee (\$[\d,.]+)/); assert.ok(m, tag + ' bill without our fee'); assert.ok(Math.abs(n(m[1]) + n(m[2]) - big) < 0.01, tag + ' without our fee + our fee = what clients owe'); } }
     await ui.locator('[data-kpis]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-kpis.png`) });
     await ui.locator('[data-money-chart]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-chart.png`) });
-    assert.equal(await ui.locator('[data-mc-key]').count(), 5, tag + ': 5 line switches (no Unpaid orders line)');
+    assert.equal(await ui.locator('[data-mc-key]').count(), 3, tag + ': 3 lines: billed, paid, our earnings');
     // v2 (29 Oct 2026): the month card shows at once, on hover (desktop) or tap (phone), with every series of that month.
     const plot = ui.locator('[data-money-chart] .mc-plot'), box = await plot.boundingBox();
     const tapX = box.x + box.width - 30, tapY = box.y + box.height / 2;
     if (width === 1440) await page.mouse.move(tapX, tapY); else await page.mouse.click(tapX, tapY);
     await ui.waitForSelector('[data-money-chart] .mc-tip.show', { timeout: 400 });
-    // 5 series: no "Unpaid orders" line since 5 Nov 2026 (unpaid money is the Not paid yet card and its window).
-    assert.equal(await ui.locator('[data-money-chart] .mc-tip-row').count(), 5, tag + ' every series in the month card');
-    assert.equal(await ui.locator('[data-ovw-cancelled]').count() + await ui.locator('[data-money-chart]').count(), 2, tag + ' chart and cancelled box stay');
-    assert.equal(await ui.locator('.ovw-grid, .mini-orders').count(), 0, tag + ' no Your clients / Latest orders on the Overview');
+    // 3 series since 5 Nov 2026: unpaid money is the Not paid yet card; cancellation fees and refunds are in Clients & payments.
+    assert.equal(await ui.locator('[data-money-chart] .mc-tip-row').count(), 3, tag + ' every series in the month card');
+    assert.equal(await ui.locator('[data-cancelled-all], .ovw-grid, .mini-orders').count(), 0, tag + ' Overview: no cancelled box, Your clients or Latest orders');
+    assert.match(await ui.locator('.adm-head h1').innerText(), lang === 'en' ? /^Clients overview$/ : /^סקירת לקוחות$/, tag + ' its own title');
+    assert.equal(await ui.locator('.adm-head [data-new-order], .adm-head [data-add-account]').count(), 0, tag + ' no buttons on the Overview header');
     assert.equal(await ui.locator('[data-money-chart] .mc-month.on').count(), 1, tag + ' the month is highlighted');
     { const t = await ui.locator('[data-money-chart] .mc-tip').boundingBox(), bars = await ui.locator('[data-money-chart] .mc-month.on .mc-bar').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return [r.left, r.right]; }));
       await page.waitForTimeout(250); const t2 = await ui.locator('[data-money-chart] .mc-tip').boundingBox();
@@ -95,10 +96,17 @@ try {
     await ui.waitForSelector('[data-money-chart] .mc-tip[hidden]', { state: 'attached', timeout: 400 });
     await ui.locator('[data-mc-key="billed"]').click(); assert.equal(await ui.locator('[data-mc-key="billed"].off').count(), 1, tag + ' line off');
     await ui.locator('[data-mc-key="billed"]').click(); await ui.locator('[data-mc-range="6"]').click(); assert.equal(await ui.locator('[data-mc-range="6"].on').count(), 1, tag + ' range');
-    await ui.locator('[data-ovw-cancelled]').scrollIntoViewIfNeeded(); await page.waitForTimeout(200); await page.screenshot({ path: path.join(out, `${tag}-cancelled.png`) });
-    assert.equal(await ui.locator('[data-ovw-cancelled] tbody tr').count(), 2, tag);
+    // Cancelled orders, all clients: under the clients table in Clients & payments, with its own title and Add client.
+    await ui.locator('[data-tab=clients]').click(); await ui.waitForSelector('[data-cancelled-all]');
+    assert.match(await ui.locator('.adm-head h1').innerText(), lang === 'en' ? /^Clients & payments$/ : /^לקוחות ותשלומים$/, tag + ' Clients & payments title');
+    assert.equal(await ui.locator('.adm-head [data-add-account=client]').count(), 1, tag + ' Add client on Clients & payments'); assert.equal(await ui.locator('.adm-head [data-new-order]').count(), 0, tag + ' no New order there');
+    await ui.locator('[data-tab=orders]').click(); await ui.waitForFunction(() => document.querySelector('[data-tab=orders]')?.classList.contains('on'));
+    assert.equal(await ui.locator('.adm-head [data-new-order]').count(), 1, tag + ' New order on Client orders'); assert.equal(await ui.locator('.adm-head [data-add-account]').count(), 0, tag + ' no Add client there');
+    await ui.locator('[data-tab=clients]').click(); await ui.waitForSelector('[data-cancelled-all]');
+    await ui.locator('[data-cancelled-all]').scrollIntoViewIfNeeded(); await page.waitForTimeout(200); await page.screenshot({ path: path.join(out, `${tag}-cancelled.png`) });
+    assert.equal(await ui.locator('[data-cancelled-all] tbody tr').count(), 2, tag);
     assert.equal(await ui.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
-    await ui.locator(`[data-ovw-cancelled] [data-open-client="${id}"]`).click(); await ui.waitForSelector('[data-cancelled-box]');
+    await ui.locator(`[data-cancelled-all] [data-open-client="${id}"]`).click(); await ui.waitForSelector('[data-cancelled-box]');
     assert.equal(await ui.locator('.subtabs [data-ctab=payments].on').count(), 1, tag + ' opens the client on Payments');
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
   }

@@ -1,8 +1,24 @@
   // ---------- layout ----------
+  // Each section its own title, one line and only its own button (Erwin, 5 Nov 2026: no duplications on each section).
+  // Titles are the Control sidebar names.
+  const HEADS = {
+    overview: ['Clients overview', 'What needs you today, and how the money stands.'],
+    orders: ['Client orders', 'Every order your clients send in. Filter, search or open one.', 'order'],
+    clients: ['Clients & payments', 'Each client’s account: billed, paid, still owed, and cancelled orders.', 'client'],
+    claims: ['Claims', 'Problems clients report with an order, and what we decided.'],
+    products: ['Client products', 'Products clients sent for a price, and their cost revision requests.'],
+    settings: ['Fees & settings', 'Our fee per order, how clients pay, shipping, the supplier sheet and team accounts.'],
+  };
+  function headHTML(tab) {
+    const [title, line, act] = HEADS[tab] || HEADS.overview;
+    // English keeps the gold "&"; Hebrew gets the whole title as one phrase, so it is translated as one.
+    const h1 = document.documentElement.lang !== 'he' && title.includes(' & ') ? title.split(' & ').map(esc).join(' <span>&amp;</span> ') : esc(title);
+    const btn = act === 'order' ? `<button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button>` : act === 'client' ? `<button type="button" class="btn btn-primary" data-add-account="client">${ic('users')}Add client</button>` : '';
+    return `<div><p class="eyebrow">Direct Line clients</p><h1>${h1}</h1><p>${esc(line)}</p></div>${btn ? `<div class="adm-actions">${btn}</div>` : ''}`;
+  }
   function shell() {
     $('#app').innerHTML = `
-      <section class="adm-head"><div><p class="eyebrow">Direct Line clients</p><h1>Clients <span>&amp;</span> orders</h1><p>Every order your clients send in, what they owe, and what we earn.</p></div>
-        <div class="adm-actions"><button type="button" class="btn" data-add-account="client">${ic('users')}Add client</button><button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button></div></section>
+      <section class="adm-head" data-adm-head>${headHTML(S.tab)}</section>
       <div class="kpi-bar"><label class="kpi-month"><span>Show</span><select data-kpi-month aria-label="Month"></select></label></div>
       <div class="kpi-wrap" data-kpi-wrap><section class="kpis" data-kpis></section></div>
       <div class="seg" role="tablist" data-main-tabs>${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['claims','Claims'], ['products','Products'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
@@ -40,6 +56,7 @@
     // The summary cards (and their month picker) belong to Clients overview only (Erwin, 4 Nov 2026), not to every section.
     for (const el of $$('.kpi-bar, [data-kpis]')) el.style.display = S.tab === 'overview' ? '' : 'none';
     if (S.tab !== 'overview') closeCardWindow(false);
+    const head = $('[data-adm-head]'); if (head) head.innerHTML = headHTML(S.tab);
     if(S.tab==='claims'){renderClaims();return;}
     if(S.tab==='products'){renderProducts();return;}
     const body = $('[data-tab-body]');
@@ -47,8 +64,8 @@
       body.innerHTML = `<div class="bar"><div class="chips" data-chips></div><div class="bar-r">${sortPick('admin-orders-2', ADMIN_ORDER_SORTS)}<select data-client-filter aria-label="Client"></select><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, tracking, client…" value="${esc(S.q)}" data-q></label></div></div>
         <section class="card" data-list></section>`;
     } else if (S.tab === 'clients') {
-      body.innerHTML = `<div class="bar"><label class="search"><span class="sr">Search clients</span>${ic('search')}<input type="search" placeholder="Search clients…" value="${esc(S.cq)}" data-cq></label>${sortPick('admin-clients', CLIENT_SORTS)}<button type="button" class="btn btn-primary" data-add-account="client">${ic('plus')}Add client</button></div>
-        <section class="card" data-list></section>`;
+      body.innerHTML = `<div class="bar"><label class="search"><span class="sr">Search clients</span>${ic('search')}<input type="search" placeholder="Search clients…" value="${esc(S.cq)}" data-cq></label>${sortPick('admin-clients', CLIENT_SORTS)}</div>
+        <section class="card" data-list></section><div data-cancelled-slot></div>`;
     } else if (S.tab === 'overview') body.innerHTML = '<div class="ovw" data-overview></div>';
     else body.innerHTML = settingsHTML();
     renderList();
