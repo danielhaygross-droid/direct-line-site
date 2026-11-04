@@ -339,10 +339,26 @@
   document.addEventListener('click', e => { if (kpiWin && !e.target.closest?.('[data-kpi-win], [data-kpi-card]')) closeCardWindow(false); }, true);
   addEventListener('resize', () => { if (kpiWin) placeCardWindow(); });
   // ---------- layout ----------
+  // Each section its own title, one line and only its own button (Erwin, 5 Nov 2026: no duplications on each section).
+  // Titles are the Control sidebar names.
+  const HEADS = {
+    overview: ['Clients overview', 'What needs you today, and how the money stands.'],
+    orders: ['Client orders', 'Every order your clients send in. Filter, search or open one.', 'order'],
+    clients: ['Clients & payments', 'Each client’s account: billed, paid, still owed, and cancelled orders.', 'client'],
+    claims: ['Claims', 'Problems clients report with an order, and what we decided.'],
+    products: ['Client products', 'Products clients sent for a price, and their cost revision requests.'],
+    settings: ['Fees & settings', 'Our fee per order, how clients pay, shipping, the supplier sheet and team accounts.'],
+  };
+  function headHTML(tab) {
+    const [title, line, act] = HEADS[tab] || HEADS.overview;
+    // English keeps the gold "&"; Hebrew gets the whole title as one phrase, so it is translated as one.
+    const h1 = document.documentElement.lang !== 'he' && title.includes(' & ') ? title.split(' & ').map(esc).join(' <span>&amp;</span> ') : esc(title);
+    const btn = act === 'order' ? `<button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button>` : act === 'client' ? `<button type="button" class="btn btn-primary" data-add-account="client">${ic('users')}Add client</button>` : '';
+    return `<div><p class="eyebrow">Direct Line clients</p><h1>${h1}</h1><p>${esc(line)}</p></div>${btn ? `<div class="adm-actions">${btn}</div>` : ''}`;
+  }
   function shell() {
     $('#app').innerHTML = `
-      <section class="adm-head"><div><p class="eyebrow">Direct Line clients</p><h1>Clients <span>&amp;</span> orders</h1><p>Every order your clients send in, what they owe, and what we earn.</p></div>
-        <div class="adm-actions"><button type="button" class="btn" data-add-account="client">${ic('users')}Add client</button><button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button></div></section>
+      <section class="adm-head" data-adm-head>${headHTML(S.tab)}</section>
       <div class="kpi-bar"><label class="kpi-month"><span>Show</span><select data-kpi-month aria-label="Month"></select></label></div>
       <div class="kpi-wrap" data-kpi-wrap><section class="kpis" data-kpis></section></div>
       <div class="seg" role="tablist" data-main-tabs>${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['claims','Claims'], ['products','Products'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
@@ -380,6 +396,7 @@
     // The summary cards (and their month picker) belong to Clients overview only (Erwin, 4 Nov 2026), not to every section.
     for (const el of $$('.kpi-bar, [data-kpis]')) el.style.display = S.tab === 'overview' ? '' : 'none';
     if (S.tab !== 'overview') closeCardWindow(false);
+    const head = $('[data-adm-head]'); if (head) head.innerHTML = headHTML(S.tab);
     if(S.tab==='claims'){renderClaims();return;}
     if(S.tab==='products'){renderProducts();return;}
     const body = $('[data-tab-body]');
@@ -387,8 +404,8 @@
       body.innerHTML = `<div class="bar"><div class="chips" data-chips></div><div class="bar-r">${sortPick('admin-orders-2', ADMIN_ORDER_SORTS)}<select data-client-filter aria-label="Client"></select><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, tracking, client…" value="${esc(S.q)}" data-q></label></div></div>
         <section class="card" data-list></section>`;
     } else if (S.tab === 'clients') {
-      body.innerHTML = `<div class="bar"><label class="search"><span class="sr">Search clients</span>${ic('search')}<input type="search" placeholder="Search clients…" value="${esc(S.cq)}" data-cq></label>${sortPick('admin-clients', CLIENT_SORTS)}<button type="button" class="btn btn-primary" data-add-account="client">${ic('plus')}Add client</button></div>
-        <section class="card" data-list></section>`;
+      body.innerHTML = `<div class="bar"><label class="search"><span class="sr">Search clients</span>${ic('search')}<input type="search" placeholder="Search clients…" value="${esc(S.cq)}" data-cq></label>${sortPick('admin-clients', CLIENT_SORTS)}</div>
+        <section class="card" data-list></section><div data-cancelled-slot></div>`;
     } else if (S.tab === 'overview') body.innerHTML = '<div class="ovw" data-overview></div>';
     else body.innerHTML = settingsHTML();
     renderList();
@@ -469,27 +486,20 @@
     ].filter(x => x[0].length > 0).map(([list, text, attrs, tone, key]) => ({ n: list.length, text, attrs, tone, key }));
   }
   // ---------- overview tab: what needs doing for clients today ----------
-  // Only what no other section shows (Erwin, 5 Nov 2026): the jobs, money by month, cancelled orders. The client list is
-  // Clients & payments (and the Clients card's window); the latest orders are Client orders and the bell.
+  // Only what no other section shows (Erwin, 5 Nov 2026): the cards, the jobs and money by month. The client list and the
+  // cancelled orders are in Clients & payments (and the cards' windows); the latest orders are Client orders and the bell.
   function renderOverview() {
     const box = $('[data-overview]'); if (!box) return;
     const todo = todoRows();
-    // All clients together (Erwin, 27 Oct 2026): cancelled-order money, and money per month in a chart.
-    const cx = S.ov.cancelled;
-    const cxStat = (k, v, note, cls = '') => `<div class="cx-stat ${cls}"><small>${k}</small><b data-no-i18n>${v}</b>${note ? `<em>${note}</em>` : ''}</div>`;
-    const cxBox = cx && (cx.count || cx.refunded) ? `<section class="card card-pad cx-box ovw-cx" data-ovw-cancelled><div class="mc-head"><h3 class="sec-title">Cancelled orders, all clients</h3><span class="muted">${cx.clients.length === 1 ? '1 client' : cx.clients.length + ' clients'}</span></div>
-      <div class="cx-stats">${cxStat('Cancelled orders', String(cx.count), cx.paidCount ? `${cx.paidCount} already paid` : '')}${cxStat('Paid for them', money(cx.paid))}${cxStat('Cancellation fees', money(cx.fees), '', cx.fees ? 'neg' : '')}${cxStat('Due back to clients', money(cx.dueBack), 'Paid minus all fees')}${cxStat('Refunded', money(cx.refunded))}${cxStat('Kept as credit', money(cx.credit), 'Counts toward their next orders', cx.credit > 0 ? 'pos' : '')}</div>
-      <div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Cancelled</th><th class="num">Fees</th><th class="num">Due back</th><th class="num">Refunded</th><th class="num">Credit</th></tr></thead><tbody>${cx.clients.map(c => `<tr class="click" data-open-client="${c.clientId}" data-client-tab="payments" tabindex="0" title="Open this client's payments"><td class="wide"><b>${esc(c.name)}</b></td><td data-label="Cancelled" class="num">${c.count}</td><td data-label="Fees" class="num">${money(c.fees)}</td><td data-label="Due back" class="num">${money(c.dueBack)}</td><td data-label="Refunded" class="num">${money(c.refunded)}</td><td data-label="Credit" class="num ${c.credit > 0 ? 'pos' : ''}">${money(c.credit)}</td></tr>`).join('')}</tbody></table></div></section>` : '';
     box.innerHTML = `<section class="card card-pad"><h3 class="sec-title">Needs your attention</h3>${todo.length ? `<div class="todo-list">${todo.map(({ n, text, attrs, tone }) => `<button type="button" class="todo" ${attrs} style="--tone:${tone}"><b>${n}</b><span>${esc(text)}</span>${UI.svg(P.chev)}</button>`).join('')}</div>` : '<p class="muted" style="margin:0">All caught up. Nothing is waiting on you.</p>'}</section>
-      <section class="card card-pad mc" data-money-chart></section>${cxBox}`;
-    // No "Unpaid orders" line (Erwin, 5 Nov 2026): unpaid money is the Not paid yet card, explained in its window.
+      <section class="card card-pad mc" data-money-chart></section>`;
+    // Three lines (Erwin, 5 Nov 2026): no "Unpaid orders" (the Not paid yet card explains it), no cancellation fees or refunds
+    // (they are in Cancelled orders, all clients, in Clients & payments).
     const months = S.ov.months || [];
     window.DLMoneyChart.mount($('[data-money-chart]'), { title: 'Money by month, all clients', key: 'dl-admin-money', months, money, series: [
       { key: 'billed', label: 'Billed', tone: 'var(--mc-gold)', note: 'What clients were billed for their orders (cancelled orders not counted)' },
       { key: 'paid', label: 'Paid', tone: 'var(--mc-teal)', note: 'Payments received from clients' },
-      { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Our share of the fees on those orders' },
-      { key: 'fees', label: 'Cancellation fees', tone: 'var(--mc-orange)', note: 'Cancellation fees billed' },
-      { key: 'refunds', label: 'Refunds', tone: 'var(--mc-violet)', note: 'Money sent back to clients' }] });
+      { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Our share of the fees on those orders' }] });
   }
 
   // ---------- orders tab ----------
@@ -554,6 +564,16 @@
     if (!a.length) return '';
     return `<details class="archived"><summary>Archived clients (${a.length})</summary><div class="acc-list" style="padding:0 16px 16px">${a.map(c => `<div><span class="ava">${esc(initials(c.name))}</span><span class="who" style="flex:1"><span><b>${esc(c.name)}</b><small>@${esc(c.username)} · ${c.orders} order${c.orders === 1 ? '' : 's'} · hidden from totals</small></span></span><button type="button" class="btn btn-sm" data-restore="${c.id}">Restore</button></div>`).join('')}</div></details>`;
   }
+  // All clients' cancelled orders (Erwin, 27 Oct 2026): fees, refunds and credit. Under the clients table since 5 Nov 2026
+  // (it is billing), not on the Overview.
+  function cancelledBoxHTML() {
+    const cx = S.ov.cancelled;
+    const cxStat = (k, v, note, cls = '') => `<div class="cx-stat ${cls}"><small>${k}</small><b data-no-i18n>${v}</b>${note ? `<em>${note}</em>` : ''}</div>`;
+    const cxBox = cx && (cx.count || cx.refunded) ? `<section class="card card-pad cx-box ovw-cx" data-cancelled-all><div class="mc-head"><h3 class="sec-title">Cancelled orders, all clients</h3><span class="muted">${cx.clients.length === 1 ? '1 client' : cx.clients.length + ' clients'}</span></div>
+      <div class="cx-stats">${cxStat('Cancelled orders', String(cx.count), cx.paidCount ? `${cx.paidCount} already paid` : '')}${cxStat('Paid for them', money(cx.paid))}${cxStat('Cancellation fees', money(cx.fees), '', cx.fees ? 'neg' : '')}${cxStat('Due back to clients', money(cx.dueBack), 'Paid minus all fees')}${cxStat('Refunded', money(cx.refunded))}${cxStat('Kept as credit', money(cx.credit), 'Counts toward their next orders', cx.credit > 0 ? 'pos' : '')}</div>
+      <div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Cancelled</th><th class="num">Fees</th><th class="num">Due back</th><th class="num">Refunded</th><th class="num">Credit</th></tr></thead><tbody>${cx.clients.map(c => `<tr class="click" data-open-client="${c.clientId}" data-client-tab="payments" tabindex="0" title="Open this client's payments"><td class="wide"><b>${esc(c.name)}</b></td><td data-label="Cancelled" class="num">${c.count}</td><td data-label="Fees" class="num">${money(c.fees)}</td><td data-label="Due back" class="num">${money(c.dueBack)}</td><td data-label="Refunded" class="num">${money(c.refunded)}</td><td data-label="Credit" class="num ${c.credit > 0 ? 'pos' : ''}">${money(c.credit)}</td></tr>`).join('')}</tbody></table></div></section>` : '';
+    return cxBox;
+  }
   function renderClients() {
     const q = S.cq.toLowerCase(), def = Number(S.ov.settings.commission_per_order);
     const list = sortList(S.ov.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q)), 'admin-clients', CLIENT_SORTS);
@@ -561,11 +581,12 @@
       ${list.map(c => `<tr class="click" data-open-client="${c.id}" tabindex="0">
         <td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small>${c.pendingTransfers ? `<small>${c.pendingTransfers} transfer confirmation${c.pendingTransfers === 1 ? '' : 's'} waiting</small>` : ''}</div></div></td>
         <td data-label="Orders" class="num">${c.orders}</td><td data-label="Billed" class="num">${money(c.billed)}</td><td data-label="Without our fee" class="num dim">${money((c.billed || 0) - (c.ourShare || 0))}</td><td data-label="Paid" class="num">${money(c.paid)}</td>
-        <td data-label="Outstanding" class="num ${c.outstanding > 0 ? 'neg' : ''}"><b>${money(c.outstanding)}</b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
+        <td data-label="Outstanding" class="num ${c.outstanding > 0 ? 'neg' : ''}"><b><bdi>${money(c.outstanding)}</bdi></b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
         <td data-label="Fee / order" class="num">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="dim" style="font-size:12px">default</span>' : ''}</td>
         <td data-label="Subscription" class="sub-cell">${subPill(c.subscription)}</td>
         <td data-label="Status">${c.active ? '<span class="st st-delivered">Active</span>' : '<span class="st st-cancelled">Disabled</span>'}</td></tr>`).join('')}
       </tbody></table></div>${archivedHTML()}` : empty(S.ov.clients.length ? 'No clients match' : 'No clients yet', S.ov.clients.length ? 'Try another search.' : 'Add a client account, then share the username and password with them.', '<button type="button" class="btn btn-primary" data-add-account="client">Add client</button>') + (list.length ? '' : archivedHTML());
+    const slot = $('[data-cancelled-slot]'); if (slot) slot.innerHTML = cancelledBoxHTML();
   }
 
   // ---------- settings tab ----------

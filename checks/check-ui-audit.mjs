@@ -186,6 +186,7 @@ try {
     await ui.locator('[data-receipt-form] [type=submit]').click(); await settle(); await run(ui, page, tag, 'admin-attach-receipt-error');
     await ui.locator('[data-receipt-cancel]').click(); await settle();
     await page.keyboard.press('Escape'); await settle();
+    await ui.locator('[data-tab=orders]').click(); await settle(); // New order is on Client orders (5 Nov 2026)
     await ui.locator('[data-new-order]').first().click(); await settle(); report(tag, 'admin-new-order', await ui.evaluate(audit)); await shot(page, tag, 'admin-new-order');
     await ui.locator('.drawer [data-submit]').click(); await settle(); await run(ui, page, tag, 'admin-new-order-error');
     // Filled in: client, store, customer, address, country, link.
@@ -200,7 +201,7 @@ try {
     await f.locator('[name=productCost]').fill('12.5').catch(() => {}); await settle();
     await run(ui, page, tag, 'admin-new-order-filled');
     // Add client: the form, then Create with nothing filled in (error message).
-    ui = await openAdmin(page, lang); await ui.locator('.adm-actions [data-add-account=client]').click(); await settle(); await run(ui, page, tag, 'admin-add-client');
+    ui = await openAdmin(page, lang); await ui.locator('[data-tab=clients]').click(); await settle(); await ui.locator('.adm-actions [data-add-account=client]').click(); await settle(); await run(ui, page, tag, 'admin-add-client');
     await ui.locator('.drawer [type=submit]').click(); await settle(); await run(ui, page, tag, 'admin-add-client-error');
     // Orders ticked: the bulk edit bar.
     ui = await openAdmin(page, lang); await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter=all]').click(); await settle();

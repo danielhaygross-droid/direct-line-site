@@ -4,7 +4,7 @@ Read this first in every new session, then just continue. No need to ask Erwin t
 **Keep it current:** after every task that ships (or stops halfway), rewrite sections 2, 4, 5 and 6 below.
 Lives in the repo root, so local and cloud sessions both see it; update it in the same PR as the work. How to work: `CLAUDE.md` (repo root). Older history: `docs/handoff/HISTORY.md` (cleaned copy of Erwin's notes), `git log`, PR descriptions. Working rules: `docs/handoff/RULES.md`. Agents: `.claude/agents/`.
 
-Last updated: 5 Nov 2026, after PR #171.
+Last updated: 5 Nov 2026, after PR #173.
 
 ---
 
@@ -16,7 +16,7 @@ Last updated: 5 Nov 2026, after PR #171.
 - Hard rules (also in `CLAUDE.md`): no secrets in files/chat; no permanent deletes of real data; never touch Byzroyal; don't invent facts for clients; **never show our fee/commission to clients**; never change sheet columns without a safe one-time switch; do all work in one session (no side sessions); every number shown must add up (Erwin, 4 Nov: "do your facts straight").
 
 ## 2. Current state (4 Nov 2026)
-- **Live:** `main` = `origin/main`, last PR **#171**. Versions: portal.js 102, admin.js 109, admin.css 33, i18n 105.
+- **Live:** `main` = `origin/main`, last PR **#173**. Versions: portal.js 102, admin.js 110, admin.css 34, i18n 106.
 - **Everything is merged; nothing half-done.** All local checkouts are saved on GitHub. `current-site/` is an old checkout on branch `codex/update-whatsapp-number` (backup only, not the live code).
 - **Supplier sheet** (`1L_C87W4jrZGIIrT2Fg_cGowNi3R5fTehdDw8d-vpZag`): tabs Orders, Shipped, Cancelled, Billing (3 parts: paid / not paid / cancelled with refund), Product Quotes, Guide 使用说明. Headers are English + Chinese (website reads the English line). Layout 19: P Total cost, Q Cost per product, R tracking, S courier, T shipping status, U Delayed?, V reason, W Client paid, X–AE photos/links, AF–AG hidden ids, AH domestic tracking, AI cancellation fee.
 - **Cost revisions** (client asks for a lower cost): shown in the Competitor price cell (orange = waiting for Ada, purple = waiting for Direct Line, green = done). A lower cost from Ada is applied by itself (unless it drops by more than half); Ada types `NO: reason` to refuse. Clients see a tag in their lists (Revision requested / Cost lowered / Cost kept).
@@ -36,6 +36,7 @@ Last updated: 5 Nov 2026, after PR #171.
 - Reports: layout files in `tools/report-template/` (shared `head.html`, Hebrew style, the 22 Oct report `body.html` + `make_he.py`, `render*.cjs`) and `tools/report-template/r1101/` (`page_fn.py` layout, `render.cjs` PDF, `shot.cjs` preview). The report text `gen.py` holds real store and billing figures, so it stays on Erwin's computer in `direct-line-control/tools/report-template/r1101/`: copy that folder to a new `rMMDD` and put screenshots in its `img/`. Scripts use the repo's `playwright-core`; set `CHROME_PATH` if Chromium is not at Erwin's path. Finished PDFs: `direct-line-control/reports/`.
 
 ## 4. Changes (most recent first)
+- #173 (5 Nov): cleanup 2/3: each admin section has its own header (title = Control sidebar name, one line, only its own button: New order on Client orders, Add client on Clients & payments; `HEADS`/`headHTML` in `02-layout.js`). "Cancelled orders, all clients" moved under the clients table (`cancelledBoxHTML()` in `08-clients-tab.js`). Money by month: 3 lines (Billed, Paid, Our earnings).
 - #171 (5 Nov): Overview cleanup 1/3: card details windows + smart button; removed Your clients, Latest orders, the money to-do row and the chart's Unpaid orders line. Orders card shows not shipped / shipped (its jobs are in Needs your attention).
 - 5 Nov: history (cleaned), working rules and the 3 agents added to the repo, so cloud sessions get everything. Report text with real figures (`gen.py`) still stays on Erwin's computer.
 - #170 (4 Nov): HANDOFF.md + CLAUDE.md in the repo, report layout files in `tools/report-template/`. The repo is public, so the notes history and report figures stay on Erwin's computer.
@@ -62,7 +63,7 @@ Last updated: 5 Nov 2026, after PR #171.
 
 ## 6. Next steps / open items
 - Nothing half-done in code. Start new work from `origin/main` on a new `claude/<name>` branch.
-- **Cleanup plan agreed with Erwin (5 Nov), PR 1 done:** PR 2 = each section its own title, one line and only its own button (no repeated "Clients & orders" header with Add client + New order); "Cancelled orders, all clients" box moves to Clients & payments; Money by month shows 3 lines by default (Billed, Paid, Our earnings). PR 3 = Clients & payments opens sorted by who owes; red only for late money (e.g. unpaid over 30 days: confirm the rule with Erwin first).
+- **Cleanup plan agreed with Erwin (5 Nov), PR 1 (#171) and PR 2 (#173) done.** PR 3 = Clients & payments opens sorted by who owes; red only for late money (e.g. unpaid over 30 days: confirm the rule with Erwin first).
 - End-of-day report for 4 Nov (PRs #164–#170) was started and paused by Erwin; the last report PDF in `reports/` is 1 Nov.
 - Not code (Erwin's side): Royal Flint ads profile still pending; Pauline adding variant photos on her orders with several variants; Ada told about numbered/named variant photos and the bilingual sheet.
 - Ada's #4211752986: her costs per product add up to $81.70 but Total cost is $79.90 (she should make them match).
