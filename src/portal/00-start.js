@@ -79,7 +79,8 @@
   const ago = sec => N.timeAgo(sec * 1000);
   const fullDate = sec => window.DL.displayTime(sec);
   const orderName = o => o.orderRef || 'Order #' + o.id;
-  const editable = o => o.status === 'pending' && !o.editLocked && Number(o.createdAt) > 0 && Date.now() < (Number(o.createdAt) + 72 * 3600) * 1000;
+  // Every detail can be edited until the order ships (Erwin, 4 Nov 2026).
+  const editable = o => !S.me?.preview && ['pending', 'processing'].includes(o.status) && !o.archived;
   const hoursLeft = o => Math.ceil(((Number(o.createdAt) + 72 * 3600) * 1000 - Date.now()) / 3600000);
   const divisor = () => Number(S.me?.settings?.volumetric_divisor) || 6000;
   // Today's date on this device (toISOString alone gives the UTC date, which is yesterday after midnight in Israel).

@@ -18,7 +18,9 @@ await mkdir(out, { recursive: true });
 
 const { admin, client, id } = await seed();
 const ok = r => { assert.ok(r.status === 200, JSON.stringify(r.data)); return r.data; };
-const mk = async ref => ok(await call('/orders', 'POST', { clientId: id, orderRef: ref, buyerName: 'Old Name', destination: 'IL', address1: '1 Old Street, Tel Aviv 6100000, +972 50 000 0000', etsyUrl: 'https://example.com/item', sellingPrice: 20 }, admin)).order;
+// Every real order has a product photo (the edit form needs one).
+const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const mk = async ref => ok(await call('/orders', 'POST', { clientId: id, orderRef: ref, buyerName: 'Old Name', destination: 'IL', address1: '1 Old Street, Tel Aviv 6100000, +972 50 000 0000', etsyUrl: 'https://example.com/item', sellingPrice: 20, photos: [{ filename: 'p.png', data: pixel }] }, admin)).order;
 const status = async (o, s) => ok(await call('/orders/' + o.id, 'PUT', { status: s }, admin));
 const row = async o => DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(o.id).first();
 const events = async o => (await DB.prepare("SELECT kind, actor, detail FROM order_events WHERE order_id=? AND kind='edited' ORDER BY id").bind(o.id).all()).results;
@@ -36,19 +38,21 @@ assert.equal(r.status, 200, JSON.stringify(r.data));
 let o = await row(running);
 assert.equal(o.buyer_name, 'Name B'); assert.match(o.address_line_1, /9 New Road/); assert.equal(o.address_changed_at, null, 'no address warning for the supplier any more');
 assert.deepEqual((await events(running)).at(-1), { kind: 'edited', actor: 'client', detail: 'customer' });
-// Everything else stays locked for an order in progress, even mixed with customer fields.
+// Every other detail can be changed too while in progress (Erwin, 4 Nov 2026: a wrong order number on an In Progress order).
 for (const body of [{ notes: 'x' }, { quantity: 5 }, { etsyUrl: 'https://example.com/other' }, { ...customer('Name C'), sku: 'NEW' }, { orderRef: 'CHANGED' }]) {
   r = await call('/orders/' + running.id, 'PUT', body, client);
-  assert.equal(r.status, 409, JSON.stringify(body)); assert.match(r.data.error, /already being processed/);
+  assert.equal(r.status, 200, JSON.stringify(body) + ' ' + JSON.stringify(r.data));
 }
-assert.equal((await row(running)).buyer_name, 'Name B');
+o = await row(running);
+assert.equal(o.order_ref, 'CHANGED', 'order number changed'); assert.equal(o.sku, 'NEW'); assert.equal(o.buyer_name, 'Name C'); assert.equal(o.status, 'processing', 'still in progress');
+assert.equal((await events(running)).at(-1).kind, 'edited', 'we are told about the change');
 // Missing details are refused.
 for (const body of [customer(''), customer('Name D', { address1: '' }), customer('Name D', { destination: '' })]) assert.equal((await call('/orders/' + running.id, 'PUT', body, client)).status, 400);
-// Pending but older than 72 h is also allowed for customer details only.
+// Pending and older than 72 h: still fully editable.
 const old72 = await mk('PENDING-OLD');
 await DB.prepare('UPDATE client_orders SET created_at=? WHERE id=?').bind(Math.floor(Date.now() / 1000) - 80 * 3600, old72.id).run();
 assert.equal((await call('/orders/' + old72.id, 'PUT', customer('Name E'), client)).status, 200);
-assert.equal((await call('/orders/' + old72.id, 'PUT', { notes: 'late' }, client)).status, 409);
+assert.equal((await call('/orders/' + old72.id, 'PUT', { notes: 'late' }, client)).status, 200, 'no 72-hour limit');
 assert.equal(Number((await row(old72)).address_changed_at || 0), 0, 'not flagged while still pending');
 // Once shipped (or delivered / cancelled) the client can't change them any more, with a clear reason.
 const shipped = await mk('SHIPPED');
@@ -63,7 +67,7 @@ assert.ok(!websiteCells(env, await row(running), [], 'Shop').am.join(' ').includ
 // The admin notification says it needs the supplier told.
 const bell = (await call('/admin/notifications', 'GET', null, admin)).data.items.find(i => i.kind === 'edited' && i.detail === 'customer' && i.orderId === running.id);
 assert.ok(bell && bell.status === 'processing' && bell.actor === 'client');
-console.log('PASS API rules: pending/in progress/old pending allowed for customer details only; shipped refused; supplier flag; admin bell data');
+console.log('PASS API rules: pending, in progress and old pending fully editable; shipped refused; admin bell data');
 
 // ---- the client portal in Chrome ----
 const server = http.createServer(async (req, res) => {
@@ -91,35 +95,29 @@ try {
     const target = await mk(`UI-${lang}-${width}`); await status(target, 'processing');
     const ctx = await session(client, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.locator(`[data-open-order="${target.id}"]`).first().click();
-    await page.waitForSelector('[data-change-customer]');
-    assert.equal(await page.locator(`a[href="#/edit/${target.id}"]`).count(), 0, tag + ' no full edit');
-    await page.locator('[data-change-customer]').click(); await page.waitForSelector('#customer-form');
-    assert.match(await page.locator('#customer-form .note').innerText(), lang === 'en' ? /already in progress/ : /כבר בטיפול/, tag + ' warning text');
-    // Empty name is refused in the form, with the field marked.
-    await page.locator('#customer-form [name=buyerName]').fill(''); await page.locator('#customer-form [type=submit]').click();
-    assert.match(await page.locator('[data-customer-msg]').innerText(), lang === 'en' ? /Please fill in: customer name/ : /נא למלא: שם הלקוח/, tag + ' validation');
-    await page.locator('#customer-form [name=buyerName]').fill('Maria Schmidt');
-    await page.locator('#customer-form [name=address1]').fill('Hauptstrasse 5, 10115 Berlin, +49 30 1234567');
-    await page.locator('#customer-form select[name=destination]').selectOption('DE');
+    // In progress (Erwin, 4 Nov 2026): the full "Edit order" form, with a note that we pass the change on.
+    await page.waitForSelector(`a[href="#/edit/${target.id}"]`);
+    assert.equal(await page.locator('[data-change-customer]').count(), 0, tag + ' one edit button');
+    await page.locator(`a[href="#/edit/${target.id}"]`).click(); await page.waitForSelector('[data-edit-progress]');
+    assert.match(await page.locator('[data-edit-progress]').innerText(), lang === 'en' ? /already in progress/ : /כבר בטיפול/, tag + ' in-progress note');
+    await page.locator('[name=orderRef]').fill(`FIXED-${lang}-${width}`);
+    await page.locator('[name=buyerName]').fill('Maria Schmidt');
     await page.screenshot({ path: path.join(out, `${lang}-${width}-form.png`) });
-    await page.locator('#customer-form [type=submit]').click();
-    await page.waitForFunction(() => !document.querySelector('#customer-form'), null, { timeout: 10000 });
+    await page.locator('[data-submit]').click();
+    await page.waitForFunction(() => !document.querySelector('[data-edit-progress]'), null, { timeout: 10000 });
     const saved = await row(target);
-    assert.equal(saved.buyer_name, 'Maria Schmidt'); assert.match(saved.address_line_1, /Hauptstrasse 5/); assert.equal(saved.destination, 'DE');
-    assert.match(await page.locator('[data-d-info]').innerText(), /Maria Schmidt/, tag + ' panel shows the change');
-    await page.waitForFunction(() => /Customer details changed|פרטי הלקוח שונו/.test(document.querySelector('.order-activity')?.innerText || ''), null, { timeout: 8000 });
-    assert.match(await page.locator('.order-activity').innerText(), lang === 'en' ? /Customer details changed/ : /פרטי הלקוח שונו/, tag + ' activity label');
+    assert.equal(saved.order_ref, `FIXED-${lang}-${width}`, tag + ' order number changed'); assert.equal(saved.buyer_name, 'Maria Schmidt'); assert.equal(saved.status, 'processing');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
-    // After it ships the button is gone.
-    await status(target, 'shipped'); await page.keyboard.press('Escape'); await page.waitForTimeout(400); await page.reload(); await page.waitForSelector(`[data-open-order="${target.id}"]`);
+    // After it ships the edit is gone.
+    await status(target, 'shipped'); await page.keyboard.press('Escape'); await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.reload(); await page.waitForSelector(`[data-open-order="${target.id}"]`);
     await page.locator(`[data-open-order="${target.id}"]`).first().click(); await page.waitForTimeout(500);
-    assert.equal(await page.locator('[data-change-customer]').count(), 0, tag + ' hidden once shipped');
-    assert.deepEqual(errors, [], tag); console.log(`PASS ${tag}: button, warning, validation, save, activity label, hidden once shipped`);
+    assert.equal(await page.locator(`a[href="#/edit/${target.id}"]`).count(), 0, tag + ' no edit once shipped');
+    assert.deepEqual(errors, [], tag); console.log(`PASS ${tag}: full edit while in progress (order number + customer), note, save, gone once shipped`);
     await ctx.close();
   }
   // Admin view-as preview stays read only.
   const ctx = await session(admin, 1440), page = await ctx.newPage();
   await page.goto(`${base}/portal/?as=${id}#/orders`); await page.locator(`[data-open-order="${running.id}"]`).first().click(); await page.waitForTimeout(600);
-  assert.equal(await page.locator('[data-change-customer]').count(), 0, 'no button in preview'); await ctx.close();
+  assert.equal(await page.locator('[data-change-customer]').count() + await page.locator(`a[href="#/edit/${running.id}"]`).count(), 0, 'no edit button in preview'); await ctx.close();
   console.log('PASS admin preview of a client portal has no customer-details button');
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }

@@ -274,9 +274,10 @@ export function subscriptionOut(u, settings, today = todayIso()) {
 const now = () => Math.floor(Date.now() / 1000);
 
 export const EDIT_WINDOW_SECONDS = 72 * 3600;
-export function canEditOrder(order, at = now()) {
-  const created = Number(order.created_at ?? order.createdAt);
-  return order.status === 'pending' && !order.edit_locked && !order.editLocked && created > 0 && at < created + EDIT_WINDOW_SECONDS;
+// The client can edit every detail of an order until it ships (Erwin, 4 Nov 2026: an In Progress order had a wrong
+// order number and only the customer details could be changed). Each edit tells us and rewrites the supplier sheet row.
+export function canEditOrder(order) {
+  return ['pending', 'processing'].includes(order.status) && !order.archived;
 }
 // Customer details (name, address, phone, country) stay editable by the client until the parcel ships, even after the
 // 72-hour / Pending window closed. Everything else about the order keeps canEditOrder().
@@ -972,8 +973,8 @@ async function routePortal(request, url, ctx, meta) {
       if (f.etsy_url && !f.etsy_url.split('\n').every(validLink)) return json({ ok: false, error: 'Please paste each product link in full, starting with https://' }, 400);
       if (!who.admin && !f.etsy_url) return json({ ok: false, error: 'Please add the product link from your store.' }, 400);
     }
-    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, store_id=?,edit_locked=edit_locked OR ?,last_tracking_update_at=CASE WHEN tracking_number<>? THEN ? ELSE last_tracking_update_at END WHERE id = ? AND status=? AND (? OR ? OR (? AND status IN (\'pending\',\'processing\')) OR (status=\'pending\' AND NOT edit_locked AND created_at > ?)) RETURNING *')
-      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, f.store_id,['processing','shipped','delivered','cancelled'].includes(status),f.tracking_number,now(), id, existing.status, who.admin, accountingOnly, customerOnly, now() - EDIT_WINDOW_SECONDS).first();
+    const row = await DB.prepare('UPDATE client_orders SET order_ref=?, tracking_number=?, destination=?, category=?, weight_kg=?, price=?, selling_price=?, product_cost=?, shipping_fee=?, notes=?, status=?, commission=?, supplier_share=?, updated_at=?, order_date=?, currency=?, buyer_name=?, buyer_phone=?, address_line_1=?, address_line_2=?, city=?, region=?, postal_code=?, item_title=?, sku=?, variant=?, quantity=?, etsy_url=?, store_id=?,edit_locked=edit_locked OR ?,last_tracking_update_at=CASE WHEN tracking_number<>? THEN ? ELSE last_tracking_update_at END WHERE id = ? AND status=? AND (? OR ? OR (? AND status IN (\'pending\',\'processing\')) OR status IN (\'pending\',\'processing\')) RETURNING *')
+      .bind(f.order_ref, f.tracking_number, f.destination, f.category, f.weight_kg, f.price, f.selling_price, f.product_cost, f.shipping_fee, f.notes, status, commission, supplierShare, now(), f.order_date, f.currency, f.buyer_name, f.buyer_phone, f.address_line_1, f.address_line_2, f.city, f.region, f.postal_code, f.item_title, f.sku, f.variant, f.quantity, f.etsy_url, f.store_id,['processing','shipped','delivered','cancelled'].includes(status),f.tracking_number,now(), id, existing.status, who.admin, accountingOnly, customerOnly).first();
     if (!row) return json({ ok: false, error: customerOnlyEdit(body) && !who.admin ? 'This order has already shipped, so the customer details can no longer be changed. Need help? Send us a message.' : 'This order is already being processed. Need a change? Send us a message.' }, 409);
     const actor = actorOf(who);
     if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);

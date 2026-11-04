@@ -39,7 +39,7 @@ test('the Etsy fee and "You earned" are stored and editable at any time, while o
   assert.equal(customerOnlyEdit({ etsyFee: 1 }), false);
   const server = await read('server/portal.mjs');
   assert.ok(server.includes("earned: earnedAfterFee(r), profit: earnedAfterFee(r) === null || (r.currency || 'USD') !== 'USD' ? null : round2(earnedAfterFee(r) - price)"));
-  assert.ok(server.includes('AND (? OR ? OR (? AND status IN') && server.includes('id, existing.status, who.admin, accountingOnly, customerOnly,'), 'the UPDATE itself allows accounting edits in any state');
+  assert.ok(server.includes('AND (? OR ? OR (? AND status IN') && server.includes('id, existing.status, who.admin, accountingOnly, customerOnly)'), 'the UPDATE itself allows accounting edits in any state');
   assert.ok(server.includes('if (changed.length && !accountingOnly) await logEvent('), 'a numbers change does not notify the admin');
   assert.ok(server.includes("'The Etsy fee must be zero or more'") && server.includes("'What you earned must be zero or more'"));
   assert.equal((server.match(/await saveEtsyEarned\(DB, /g) || []).length, 2, 'saved on new orders and on edits');
