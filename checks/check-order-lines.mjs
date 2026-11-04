@@ -155,15 +155,17 @@ try {
   // Cost per product from the supplier (AI, 30 Oct 2026): each product line shows its price.
   await DB.prepare('UPDATE client_orders SET item_costs=? WHERE id=?').bind('25\u300114.50', shown.id).run();
 
-  // In Progress (Erwin, 1 Nov 2026): the order is locked, but the client may still add a MISSING variation photo.
-  await DB.prepare("UPDATE client_orders SET status='processing', edit_locked=TRUE WHERE id=?").bind(shown.id).run();
+  // Shipped (Erwin, 1 + 4 Nov 2026): the order is locked, but the client may still add a MISSING variation photo.
+  await DB.prepare("UPDATE client_orders SET status='shipped', edit_locked=TRUE WHERE id=?").bind(shown.id).run();
   const refused = async (body, what) => { const r = await call('/orders/' + shown.id + '/photos', 'POST', body, client); assert.equal(r.status, 409, what); };
   await refused({ data: jpegs[0] }, 'no whole-order photos once locked');
   await refused({ data: jpegs[0], item: 1 }, 'a line that has its photo stays as it is');
   await refused({ data: jpegs[0], item: 5 }, 'no line 5 on a 4-line order');
   const single = (await DB.prepare("SELECT id FROM client_orders WHERE client_id=? AND id<>? AND (items IS NULL OR items NOT LIKE '%},{%') LIMIT 1").bind(shown.client_id ?? (await DB.prepare('SELECT client_id FROM client_orders WHERE id=?').bind(shown.id).first()).client_id, shown.id).first());
-  if (single) { await DB.prepare("UPDATE client_orders SET status='processing', edit_locked=TRUE WHERE id=?").bind(single.id).run(); assert.equal((await call('/orders/' + single.id + '/photos', 'POST', { data: jpegs[0], item: 1 }, client)).status, 409, 'one-line orders stay locked'); }
-  console.log('PASS in progress: only missing variation photos can be added');
+  if (single) { await DB.prepare("UPDATE client_orders SET status='shipped', edit_locked=TRUE WHERE id=?").bind(single.id).run(); assert.equal((await call('/orders/' + single.id + '/photos', 'POST', { data: jpegs[0], item: 1 }, client)).status, 409, 'one-line orders stay locked'); }
+  await DB.prepare("UPDATE client_orders SET status='processing' WHERE id=?").bind(shown.id).run();
+  if (single) await DB.prepare("UPDATE client_orders SET status='processing' WHERE id=?").bind(single.id).run();
+  console.log('PASS shipped: only missing variation photos can be added');
 
   // ---- 2. Screenshots: English + Hebrew, desktop + phone ----
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {

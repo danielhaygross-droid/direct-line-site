@@ -29,9 +29,10 @@ export async function checks() {
   assert.equal(await authenticate(DB,env,'localclient','wrong'),null);
   const row=await DB.prepare('SELECT * FROM users WHERE id=?').bind(id).first();
   assert.ok(row.last_login>0);
-  assert.equal(canEditOrder({ status:'pending',created_at:1000 },1000+72*3600-1),true);
-  assert.equal(canEditOrder({ status:'pending',created_at:1000 },1000+72*3600),false);
-  assert.equal(canEditOrder({ status:'processing',created_at:1000 },1001),false);
+  // Every detail is editable until the order ships (Erwin, 4 Nov 2026): no 72-hour limit.
+  assert.equal(canEditOrder({ status:'pending',created_at:1000 }),true);
+  assert.equal(canEditOrder({ status:'processing',created_at:1000 }),true);
+  assert.equal(canEditOrder({ status:'shipped',created_at:1000 }),false);
   const orderBody={clientId:id,orderRef:'LOCAL-1',buyerName:'Jane Sample',destination:'IL',address1:'1 Test Street',city:'Test City',postalCode:'10001',etsyUrl:'https://example.com/product'};
   assert.equal((await call('/orders','POST',{...orderBody,destination:''},admin)).status,400);
   assert.equal((await call('/orders','POST',{...orderBody,destination:'__other'},client)).status,400);
@@ -42,16 +43,19 @@ export async function checks() {
   assert.equal((await call('/orders/'+oid,'PUT',{destination:'Singapore'},client)).status,200);
   assert.equal((await call('/orders/'+oid,'PUT',{status:'processing'},admin)).status,200);
   assert.equal((await call('/orders/'+oid,'PUT',{buyerName:'Still allowed'},client)).status,200,'customer details until shipped');
-  assert.equal((await call('/orders/'+oid,'PUT',{quantity:5},client)).status,409,'other fields are locked');
-  assert.equal((await call('/orders/'+oid+'/photos','POST',{},client)).status,409);
+  assert.equal((await call('/orders/'+oid,'PUT',{quantity:5},client)).status,200,'in progress: every detail editable');
   assert.equal((await call('/orders/'+oid,'PUT',{buyerName:'Admin Changed'},admin)).status,200);
   assert.equal((await call('/orders/'+oid,'PUT',{status:'pending'},admin)).status,200,'admins can move an order back');assert.equal((await call('/orders/'+oid,'PUT',{status:'processing'},admin)).status,200);
   await DB.prepare("UPDATE client_orders SET status='pending' WHERE id=?").bind(oid).run();
   assert.equal((await call('/orders/'+oid,'PUT',{buyerName:'Still allowed 2'},client)).status,200);
-  assert.equal((await call('/orders/'+oid,'PUT',{quantity:5},client)).status,409,'locked after processing');
+  assert.equal((await call('/orders/'+oid,'PUT',{quantity:4},client)).status,200,'pending again: editable');
   await DB.prepare("UPDATE client_orders SET status='pending',created_at=? WHERE id=?").bind(Math.floor(Date.now()/1000)-72*3600,oid).run();
   assert.equal((await call('/orders/'+oid,'PUT',{buyerName:'Allowed after 72h'},client)).status,200);
+  assert.equal((await call('/orders/'+oid,'PUT',{quantity:3},client)).status,200,'no 72-hour limit');
+  await DB.prepare("UPDATE client_orders SET status='shipped' WHERE id=?").bind(oid).run();
+  assert.equal((await call('/orders/'+oid,'PUT',{quantity:5},client)).status,409,'locked once shipped');
   assert.equal((await call('/orders/'+oid+'/photos/1/delete','POST',{},client)).status,409);
+  await DB.prepare("UPDATE client_orders SET status='pending' WHERE id=?").bind(oid).run();
   assert.equal((await call('/admin/users/'+id+'/reset-password','POST',{},client)).status,403);
   const reset=await call('/admin/users/'+id+'/reset-password','POST',{},admin);
   assert.equal(reset.status,200);const temporary=reset.data.temporaryPassword;
@@ -78,7 +82,7 @@ export async function checks() {
   const overview=await call('/admin/overview','GET',null,admin);
   assert.ok(overview.data.clients[0].lastLogin>0);
   assert.ok(!JSON.stringify(overview.data).includes(temporary));
-  console.log('PASS: country create/edit; 72h boundary; processing/photo lock; admin edits; reset hashes; session revocation; mandatory password change; unified login; last login.');
+  console.log('PASS: country create/edit; editable until shipped; admin edits; reset hashes; session revocation; mandatory password change; unified login; last login.');
 }
 if (process.argv[1]?.endsWith('lib.mjs')) {
   try { await checks(); } finally { await pg.close(); }
