@@ -173,6 +173,27 @@ details.fold>summary small{margin-inline-start:auto}
 .kpis .stat-go:focus-visible{outline:2px solid var(--tone);outline-offset:2px}
 .kpis .stat-go.owe strong,.kpis .stat-plain.owe strong{color:var(--red)}
 .kpis .stat em>span{display:inline-block;max-width:100%}.kpis .stat-fee{color:var(--muted);font-size:12px}.kpis .stat-note{color:color-mix(in srgb,var(--red) 80%,var(--text));font-size:12px}.kpis .stat-go.hero .stat-note{color:#e8a79e}
+/* Overview cards: a details window under the card (Erwin, 5 Nov 2026). Outside .kpis, so its card rules don't reach it. */
+.kpi-wrap{position:relative}
+.kpi-win{position:absolute;z-index:40;display:grid;gap:14px;max-height:min(560px,78vh);overflow:auto;padding:16px 18px 18px;background:var(--surface);color:var(--text);border:1px solid color-mix(in srgb,var(--text) 18%,var(--line));border-radius:var(--radius);box-shadow:0 18px 44px rgba(17,27,39,.18),0 2px 6px rgba(17,27,39,.08);text-align:start;animation:kw-in .14s ease-out}
+@keyframes kw-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.kpi-win{animation:none}}
+.kpi-win:focus{outline:none}.kpi-win:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.kw-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.kw-head h3{margin:0;font-size:16px;font-weight:600}
+.kw-x{flex:none;display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}.kw-x svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.kpis .stat-go[aria-expanded=true]{border-color:color-mix(in srgb,var(--tone) 65%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--tone) 20%,transparent)}.kw-x:hover{background:var(--surface-2);color:var(--text)}
+.kw-body{display:grid;gap:14px}.kw-block{display:grid}.kw-block h4{margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.02em}
+.kw-row{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:baseline;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px;line-height:1.35}
+.kw-row:last-child{border-bottom:0}.kw-op{color:var(--muted);text-align:center}.kw-l{min-width:0}.kw-l small{display:block;margin-top:1px;color:var(--muted);font-size:12px}
+.kw-row>b{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}.kw-row>b.neg{color:color-mix(in srgb,var(--red) 80%,var(--text))}
+.kw-row.tot{border-top:1.5px solid color-mix(in srgb,var(--text) 35%,var(--line));border-bottom:0;font-weight:600}.kw-block .kw-row.tot{margin-top:-1px}
+button.kw-item{width:100%;margin:0;padding-inline:0;background:none;border:0;border-bottom:1px solid var(--line);color:inherit;font:inherit;font-size:13.5px;text-align:start;cursor:pointer;border-radius:0}
+button.kw-item:hover .kw-l b,button.kw-item:focus-visible .kw-l b{text-decoration:underline}button.kw-item:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+.kw-note{margin:0;color:var(--muted);font-size:12.5px}.kw-empty{margin:0}
+.kw-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding-top:2px}
+.kw-go{display:inline-flex;align-items:center;gap:5px}.kw-go b{font-weight:600}
+.kw-more{padding:6px 2px;border:0;background:none;color:var(--text);font:inherit;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.kw-more:hover{color:var(--gold)}
+@media(max-width:560px){.kpi-win{padding:14px 14px 16px}.kw-go{width:100%;justify-content:center}}
 @media(max-width:480px){.kpis .stat-go,.kpis .stat-plain{padding:14px}}
 /* Order panel: "Cancelled" in the status row opens this box (23 Oct 2026). */
 .cancel-box{margin-top:12px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--red) 35%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--red) 6%,var(--surface))}.cancel-box[hidden]{display:none}

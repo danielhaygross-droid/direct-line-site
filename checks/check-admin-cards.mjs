@@ -1,5 +1,6 @@
-// Check: the four admin cards (Erwin, 23 Oct + 4 Nov 2026). Shown on Clients overview only, numbers only (no buttons: the
-// same links are the Orders chips and the Overview's "Needs your attention"). "Not paid yet" = what clients owe now.
+// Check: the four admin cards (Erwin, 23 Oct + 4-5 Nov 2026). Shown on Clients overview only. A click opens a details
+// window (every total in it adds up) with one smart button that never repeats another card's or a "Needs your attention" row.
+// "Not paid yet" = what clients owe now.
 //   node checks/check-admin-cards.mjs      (run from the repo root)
 // Real SQL on in-memory Postgres (PGlite) + the real admin screens in Chrome. No live data.
 import { createRequire } from 'node:module';
@@ -60,9 +61,8 @@ try {
     const ctx = await session(admin, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpis] .stat');
     assert.equal(await ui.locator('[data-tab="overview"]').getAttribute('aria-selected'), 'true', tag + ': starts on Overview');
-    assert.equal(await ui.locator('[data-kpis] .stat-plain').count(), 4, tag + ': four cards');
-    assert.equal(await ui.locator('[data-kpis] button, [data-kpis] .stat-go').count(), 0, tag + ': numbers only, no buttons');
-    const card = n => ui.locator('[data-kpis] .stat-plain').nth(n), notPaid = card(2);
+    assert.equal(await ui.locator('[data-kpis] button[data-kpi-card][aria-haspopup=dialog]').count(), 4, tag + ': four cards, each opens its window');
+    const card = n => ui.locator('[data-kpis] [data-kpi-card]').nth(n), notPaid = card(2);
     // The card shows what the client owes now: B and C, minus the $5 not linked to an order.
     assert.equal(await notPaid.locator('strong').innerText(), usd(pb + pc - 5), tag + ': B + C owed, minus the unlinked $5');
     if (lang === 'en') {
@@ -73,7 +73,7 @@ try {
       assert.ok(earn.includes(usd(fee * n)) && earn.includes(`${usd(fee)} collected · ${usd(fee * (n - 2))} not paid yet · ${usd(fee)} not billed yet · 4 orders`), tag + ': earnings split, the parts add up ' + earn);
       // Not paid yet card: what is owed now = without our fee + our fee on the unpaid orders (2 Nov 2026 fix: not the total before credit).
       assert.ok((await notPaid.innerText()).includes(`Without our fee ${usd(pb + pc - 5 - fee * 2)} · our fee ${usd(fee * 2)}`), tag + ': without our fee adds up to what is owed');
-      assert.match(await card(1).innerText(), /4 waiting to be processed · 1 need cost/, tag);
+      assert.match(await card(1).innerText(), /4 not shipped yet/, tag + ': the jobs are in Needs your attention, not on the card');
     } else {
       assert.match(await notPaid.innerText(), /עוד לא שולם/, tag);
       assert.match(await notPaid.innerText(), /2 הזמנות · לקוח אחד · הישנה ביותר/, tag);
@@ -86,6 +86,68 @@ try {
     assert.ok(await notPaid.evaluate(el => el.classList.contains('owe')), tag + ': red when something is owed');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ': no sideways scroll');
     await page.screenshot({ path: path.join(out, `${tag}-cards.png`) });
+    // Details window + one smart button per card (Erwin, 5 Nov 2026).
+    const cardBtn = k => ui.locator(`[data-kpi-card="${k}"]`), win = ui.locator('[data-kpi-win]');
+    // Every block with a total adds up: the rows above it, with their + / − signs, make the total.
+    const addsUp = () => ui.evaluate(() => {
+      const num = t => Number(String(t).replace(/[^0-9.-]/g, '')) || 0, bad = [];
+      for (const b of document.querySelectorAll('[data-kpi-win] .kw-block')) {
+        const tot = b.querySelector('.kw-row.tot'); if (!tot) continue;
+        const rows = [...b.querySelectorAll('.kw-row:not(.tot)')];
+        const sum = rows.reduce((n, r) => n + (r.querySelector('.kw-op')?.textContent.trim() === '−' ? -1 : 1) * num(r.querySelector(':scope > b')?.textContent), 0);
+        if (Math.abs(sum - num(tot.querySelector(':scope > b').textContent)) > 0.005) bad.push(`${b.querySelector('h4')?.textContent || 'block'}: ${sum} vs ${tot.textContent}`);
+      }
+      return bad;
+    });
+    const blockSum = title => ui.evaluate(t => { const b = [...document.querySelectorAll('[data-kpi-win] .kw-block')].find(x => x.querySelector('h4')?.textContent === t); return b ? [...b.querySelectorAll('.kw-row > b')].reduce((n, e) => n + (Number(e.textContent.replace(/[^0-9.-]/g, '')) || 0), 0) : null; }, title);
+    const todoAttrs = await ui.locator('.todo').evaluateAll(els => els.map(e => e.getAttribute('data-go-filter') || e.getAttribute('data-go-tab')));
+    const mains = {};
+    for (const k of ['unpaid', 'orders', 'earnings', 'clients']) {
+      await cardBtn(k).click(); await win.waitFor();
+      assert.equal(await cardBtn(k).getAttribute('aria-expanded'), 'true', `${tag} ${k}: expanded`);
+      assert.deepEqual(await addsUp(), [], `${tag} ${k}: every total adds up`);
+      // Clients: one row per client counted on the card.
+      if (k === 'clients') assert.equal(String(await win.locator('.kw-item').count()), await cardBtn(k).locator('strong').innerText(), `${tag}: one row per client on the card`);
+      const box = await win.boundingBox(), vw = await ui.evaluate(() => innerWidth);
+      assert.ok(box.x >= 0 && box.x + box.width <= vw + 1, `${tag} ${k}: window inside the page`);
+      // Desktop: lined up with its card's start edge (right edge in Hebrew). Phone: under all four cards, covering none.
+      const cb = await cardBtn(k).boundingBox(), grid = await ui.locator('[data-kpis]').boundingBox();
+      // (or pushed back inside the cards' edge when it would stick out)
+      const near = (x, y) => Math.abs(x - y) < 2, end = v => v.x + v.width;
+      if (width >= 640) assert.ok(lang === 'he' ? near(end(box), end(cb)) || near(box.x, grid.x) : near(box.x, cb.x) || near(end(box), end(grid)), `${tag} ${k}: lined up with its card ${JSON.stringify([cb, box])}`);
+      else assert.ok(box.y >= grid.y + grid.height, `${tag} ${k}: under all the cards on a phone`);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${tag} ${k}: no sideways scroll`);
+      const go = win.locator('.kw-go');
+      mains[k] = await go.count() ? await go.evaluate(b => ['data-go-filter', 'data-go-tab', 'data-open-client', 'data-card-pay', 'data-card-scroll'].map(a => b.hasAttribute(a) ? a + '=' + b.getAttribute(a) : '').join('')) : null;
+      await page.waitForTimeout(250); await page.screenshot({ path: path.join(out, `${tag}-win-${k}.png`) });
+      await page.keyboard.press('Escape'); await win.waitFor({ state: 'detached' });
+      assert.equal(await ui.evaluate(k => document.activeElement?.dataset.kpiCard, k), k, `${tag} ${k}: Esc closes and gives focus back to the card`);
+    }
+    // Not paid yet: the client list and the "how long unpaid" list add up to the card and to "Unpaid orders".
+    await cardBtn('unpaid').click(); await win.waitFor();
+    const owedNow = Number((await notPaid.locator('strong').innerText()).replace(/[^0-9.]/g, ''));
+    assert.equal(Math.round(await blockSum(lang === 'en' ? 'By client' : 'לפי לקוח') * 100), Math.round(owedNow * 100), tag + ': clients add up to the card');
+    assert.equal(Math.round(await blockSum(lang === 'en' ? 'How long unpaid (before credit)' : 'כמה זמן לא שולם (לפני זיכוי)') * 100), Math.round((pb + pc) * 100), tag + ': ages add up to the unpaid orders');
+    // The four main buttons go to four different places, and none repeats a job of "Needs your attention".
+    const picked = Object.values(mains).filter(Boolean);
+    assert.equal(new Set(picked).size, picked.length, tag + ': four different buttons ' + JSON.stringify(mains));
+    for (const m of picked) assert.ok(!todoAttrs.some(a => a && m.endsWith('="' + a + '"') && /data-go-(filter|tab)/.test(m)), `${tag}: ${m} repeats a to-do row ${JSON.stringify(todoAttrs)}`);
+    assert.deepEqual(mains, { unpaid: `data-card-pay=${id}`, orders: 'data-go-filter=all', earnings: 'data-go-filter=unpaid', clients: 'data-go-tab=clients' }, tag + ': the rule picks these');
+    assert.match(await win.locator('.kw-go').innerText(), lang === 'en' ? /^Record payment from\s*\S/ : /^רישום תשלום מאת\s*\S/, tag);
+    // A click outside closes it.
+    await ui.locator('.adm-head h1').click(); await win.waitFor({ state: 'detached' });
+    // "Record payment from …" opens that client's Payments with the payment form.
+    await cardBtn('unpaid').click(); await win.locator('.kw-go').click();
+    await ui.waitForSelector('[data-pay-form]', { state: 'visible' });
+    assert.equal(await win.count(), 0, tag + ': window closed');
+    await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+    // "See all orders" opens Client orders on All.
+    await ui.evaluate(() => document.querySelector('[data-drawer-close], .drawer [data-close]')?.click());
+    await ui.locator('[data-tab="overview"]').click(); await ui.waitForSelector('[data-kpis] .stat', { state: 'visible' });
+    await cardBtn('orders').click(); await win.locator('.kw-go').click();
+    await ui.waitForFunction(() => document.querySelector('[data-tab="orders"]')?.classList.contains('on'));
+    assert.equal(await ui.locator('[data-chips] .chip.on').getAttribute('data-filter'), 'all', tag + ': See all orders → All');
+    await ui.locator('[data-tab="overview"]').click(); await ui.waitForSelector('[data-kpis] .stat', { state: 'visible' });
     // Every other section: no cards and no month picker.
     for (const tab of ['orders', 'clients', 'claims', 'products', 'settings']) {
       await ui.locator(`[data-tab="${tab}"]`).click(); await ui.waitForFunction(t => document.querySelector(`[data-tab="${t}"]`)?.classList.contains('on'), tab);
@@ -109,10 +171,13 @@ try {
   ok(await call('/admin/payments', 'POST', { clientId: id, amount: pb + pc, paidAt: '2026-10-22', method: 'Bank transfer', orderIds: [b.id, c.id] }, admin));
   const ctx = await session(admin, 1440), page = await ctx.newPage();
   await page.goto(`${base}/test-admin.html?lang=en`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpis] .stat');
-  const notPaid = ui.locator('[data-kpis] .stat-plain').nth(2);
+  const notPaid = ui.locator('[data-kpis] [data-kpi-card]').nth(2);
   assert.equal(await notPaid.locator('strong').innerText(), '$0.00');
   assert.match(await notPaid.innerText(), /Every billed order is paid/);
   assert.ok(!(await notPaid.evaluate(el => el.classList.contains('owe'))));
+  await notPaid.click(); await ui.locator('[data-kpi-win]').waitFor();
+  assert.match(await ui.locator('[data-kpi-win]').innerText(), /Every billed order is paid/);
+  assert.equal(await ui.locator('[data-kpi-win] .kw-go').count(), 0, 'nothing to do: no button');
   await ctx.close(); console.log('PASS everything paid');
   // UI UX Pro Max (4 Nov 2026): every common width, English + Hebrew, light + dark: no sideways scroll, nothing spills
   // out of a card, amounts on one line, and text contrast at least 4.5:1 (computed from the real colours).
@@ -138,6 +203,14 @@ try {
       assert.equal(r.scroll, false, tag + ': no sideways scroll'); assert.deepEqual(r.spill, [], tag + ': nothing spills out of a card'); assert.deepEqual(r.wide, [], tag + ': nothing wider than the page'); assert.deepEqual(r.wrapped, [], tag + ': amounts on one line');
       for (const [t, fg, bg] of r.colors) assert.ok(contrast(fg, bg) >= 4.5, `${tag}: "${t}" contrast ${contrast(fg, bg).toFixed(2)} (${fg} on ${bg})`);
       if ([320, 768].includes(width)) await pg2.screenshot({ path: path.join(out, `${tag}-cards.png`) });
+      // The Not paid yet window: inside the page, nothing spills, text contrast at least 4.5:1.
+      await f.locator('[data-kpi-card="unpaid"]').click(); await f.locator('[data-kpi-win]').waitFor();
+      const w = await f.evaluate(() => { const win = document.querySelector('[data-kpi-win]'), r = win.getBoundingClientRect(), bg = getComputedStyle(win).backgroundColor, colors = [];
+        for (const el of win.querySelectorAll('h3, h4, .kw-l span, .kw-l small, .kw-l b, .kw-row > b, .kw-more, .kw-note')) if (el.textContent.trim() && !el.closest('.btn')) colors.push([el.textContent.trim().slice(0, 30), getComputedStyle(el).color, bg]);
+        return { inside: r.left >= 0 && r.right <= innerWidth + 1, scroll: document.documentElement.scrollWidth > innerWidth, spill: win.scrollWidth > win.clientWidth + 1, colors }; });
+      assert.ok(w.inside, tag + ': window inside the page'); assert.equal(w.scroll, false, tag + ': no sideways scroll with the window'); assert.equal(w.spill, false, tag + ': nothing spills out of the window');
+      for (const [t, fg, bg] of w.colors) assert.ok(contrast(fg, bg) >= 4.5, `${tag} window: "${t}" contrast ${contrast(fg, bg).toFixed(2)} (${fg} on ${bg})`);
+      if ([375, 1440].includes(width)) { await pg2.waitForTimeout(250); await pg2.screenshot({ path: path.join(out, `${tag}-win.png`) }); }
       await ctx2.close();
     }
     console.log('PASS 320-1440 px, EN + HE, light + dark: no scroll, no spill, amounts on one line, contrast 4.5:1');
