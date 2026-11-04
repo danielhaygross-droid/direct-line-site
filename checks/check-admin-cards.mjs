@@ -121,7 +121,10 @@ try {
       await pg2.goto(`${base}/test-admin.html?lang=${lang}`); const f = pg2.frame({ name: 'admin' }); await f.waitForSelector('[data-kpis] .stat');
       await f.evaluate(t => { document.documentElement.dataset.theme = t; }, theme); await pg2.waitForTimeout(150);
       const r = await f.evaluate(() => {
-        const out = { scroll: document.documentElement.scrollWidth > innerWidth, spill: [], wrapped: [], colors: [] };
+        const out = { scroll: document.documentElement.scrollWidth > innerWidth, spill: [], wrapped: [], colors: [], wide: [] };
+        // Nothing on the page is wider than the header (a wide table scrolls inside its own box), whatever the fonts.
+        const edge = document.querySelector('.adm-head').getBoundingClientRect().right + 1;
+        for (const el of document.querySelectorAll('[data-tab-body] *')) if (!el.closest('.table-wrap > *') && el.getBoundingClientRect().right > edge) { out.wide.push(el.className || el.tagName); if (out.wide.length > 3) break; }
         const bgOf = el => { for (let e = el; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (!/rgba\(0, 0, 0, 0\)|transparent/.test(c)) return c; const bi = getComputedStyle(e).backgroundImage; if (bi && bi !== 'none') return null; } return getComputedStyle(document.body).backgroundColor; };
         for (const card of document.querySelectorAll('[data-kpis] .stat')) {
           if (card.scrollWidth > card.clientWidth + 1) out.spill.push(card.querySelector('small')?.textContent);
@@ -130,7 +133,7 @@ try {
         }
         return out;
       });
-      assert.equal(r.scroll, false, tag + ': no sideways scroll'); assert.deepEqual(r.spill, [], tag + ': nothing spills out of a card'); assert.deepEqual(r.wrapped, [], tag + ': amounts on one line');
+      assert.equal(r.scroll, false, tag + ': no sideways scroll'); assert.deepEqual(r.spill, [], tag + ': nothing spills out of a card'); assert.deepEqual(r.wide, [], tag + ': nothing wider than the page'); assert.deepEqual(r.wrapped, [], tag + ': amounts on one line');
       for (const [t, fg, bg] of r.colors) assert.ok(contrast(fg, bg) >= 4.5, `${tag}: "${t}" contrast ${contrast(fg, bg).toFixed(2)} (${fg} on ${bg})`);
       if ([320, 768].includes(width)) await pg2.screenshot({ path: path.join(out, `${tag}-cards.png`) });
       await ctx2.close();

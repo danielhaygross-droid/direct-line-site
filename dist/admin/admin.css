@@ -66,6 +66,9 @@ html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 .ord-thumb.none{display:grid;place-items:center;color:var(--dim);font-size:12px}
 .pm-add.busy{opacity:.55;pointer-events:none}
 .ovw{display:grid;gap:14px}
+/* Grid items may shrink below their content (4 Nov 2026: the Overview was 20px wider than the page at 768px; wide
+   tables scroll inside their own box instead). */
+[data-tab-body]>*,.ovw,.ovw>*,.ovw-grid>*{min-width:0}
 .ovw-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;align-items:start}
 .todo-list{display:grid;gap:8px}
 .todo{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:1px solid var(--line);border-inline-start:3px solid var(--tone);border-radius:12px;background:var(--surface-2);color:var(--text);text-align:start;font-size:14px;cursor:pointer}
@@ -74,7 +77,7 @@ html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 .todo span{flex:1}
 .todo svg{width:16px;height:16px;fill:none;stroke:var(--dim);stroke-width:2}
 .neg{color:var(--red)}
-@media(max-width:1000px){.ovw-grid{grid-template-columns:1fr}}
+@media(max-width:1000px){.ovw-grid{grid-template-columns:minmax(0,1fr)}}
 .sub-cell .sub-when{display:block;margin-top:3px;font-size:12px}
 .sub-cell .st{text-transform:none}
 .bill-out{margin-top:2px}
