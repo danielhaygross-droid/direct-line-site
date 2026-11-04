@@ -14,7 +14,7 @@ import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms 
 
 import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } from './files.mjs';
 import { BILLING_SCHEMA, getBilling, saveBilling } from './billing.mjs';
-import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund, withCreditPaid, syncKeptFees, clientCancelled, clientAdjustments } from './cancellations.mjs';
+import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund, withCreditPaid, syncKeptFees, clientCancelled, clientAdjustments, KEPT_FEE } from './cancellations.mjs';
 import { cancelledTotals, moneyMonths } from './money-overview.mjs';
 import { itemCostList, itemPrices } from './item-costs.mjs';
 import { REVISION_SCHEMA, withRevisions, requestRevision, answerOrder, productRequoted, keepProduct } from './cost-revisions.mjs';
@@ -654,7 +654,9 @@ async function clientSummary(DB, clientId, settings) {
   const performance=await clientPerformance(DB,clientId);
   const billed = performance.totals.billed, paid = round2(p.paid), refunded = await refundedTotal(DB, clientId);
   const commission = round2(o.commission), supplierShare = 0;
-  return { orders: Number(o.n), billed, paid, refunded, outstanding: round2(billed - paid + refunded), commission, supplierShare, ourShare: round2(commission - supplierShare), clientProfit: performance.totals.profit };
+  // Our fee kept on paid cancelled orders is ours too (Erwin, 4 Nov 2026: "accurate countings on our profit").
+  const kept = round2((await DB.prepare(`SELECT COALESCE(SUM(amount),0) AS n FROM client_balance_adjustments WHERE client_id = ? AND kind = '${KEPT_FEE}'`).bind(clientId).first())?.n);
+  return { orders: Number(o.n), billed, paid, refunded, outstanding: round2(billed - paid + refunded), commission, supplierShare, keptFees: kept, ourShare: round2(commission - supplierShare + kept), clientProfit: performance.totals.profit };
 }
 
 // ---------- request handler ----------
@@ -766,7 +768,7 @@ async function routePortal(request, url, ctx, meta) {
     if (!who.preview && !who.acting) await DB.prepare('UPDATE users SET last_seen_at=? WHERE id=? AND COALESCE(last_seen_at,0)<?').bind(now(), who.clientId, now() - 300).run();
     const u = await DB.prepare('SELECT id, username, display_name, active, trial_start, trial_end, sub_status, sub_last_payment FROM users WHERE id = ?').bind(who.clientId).first();
     if (!u || !u.active) return json({ ok: false, error: 'Account disabled' }, 403);
-    return json({ ok: true, role: 'client', preview: !!who.preview, acting: !!who.acting, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor, ...Object.fromEntries(BANK_FIELDS.map(k => [k, settings[k] || ''])) }, subscription: subscriptionOut(u, settings), summary: (({ commission, supplierShare, ourShare, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
+    return json({ ok: true, role: 'client', preview: !!who.preview, acting: !!who.acting, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor, ...Object.fromEntries(BANK_FIELDS.map(k => [k, settings[k] || ''])) }, subscription: subscriptionOut(u, settings), summary: (({ commission, supplierShare, ourShare, keptFees, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
   }
 
   // Archived orders are read-only for admins and unavailable to clients.
@@ -1123,7 +1125,7 @@ async function routePortal(request, url, ctx, meta) {
     const archived = [];
     for (const u of users.filter(u => u.role === 'client' && u.archived)) archived.push({ id: u.id, username: u.username, name: u.display_name, orders: Number((await DB.prepare('SELECT COUNT(*) AS n FROM client_orders WHERE client_id = ?').bind(u.id).first()).n) });
     for (const u of users.filter(u => u.role === 'client' && !u.archived)) clients.push({ id: u.id, username: u.username, name: u.display_name, active: u.active, pendingTransfers: pendingTransfers.get(u.id) || 0, termsAccepted: acceptedTerms.get(u.id) || null, termsRequired: acceptedTerms.get(u.id)?.version !== termsPolicy.version, lastLogin: u.last_login == null ? null : Number(u.last_login), passwordResetRequired: !!u.password_reset_required, commissionPerOrder: u.commission_per_order, supplierSharePerOrder: u.supplier_share_per_order, subscription: subscriptionOut(u, settings), ...(await clientSummary(DB, u.id, settings)) });
-    const keys = ['billed', 'paid', 'outstanding', 'commission', 'supplierShare', 'ourShare'];
+    const keys = ['billed', 'paid', 'outstanding', 'commission', 'supplierShare', 'keptFees', 'ourShare'];
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
