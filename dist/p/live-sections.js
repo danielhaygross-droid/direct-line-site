@@ -10,7 +10,7 @@
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const money = n => (typeof exactMoney === 'function' ? exactMoney(n) : '$' + Number(n || 0).toFixed(2));
+  const money = n => (typeof exactMoney === 'function' ? exactMoney(n) : (Number(n || 0) < 0 ? '-$' : '$') + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const num = n => Number(n || 0).toLocaleString(HE ? 'he-IL' : 'en-US');
   const pct = n => (Number.isFinite(n) ? Math.round(n) + '%' : '—');
   const REAL_STORES = ['zroyal', 'cursed', 'select', 'nerd'];

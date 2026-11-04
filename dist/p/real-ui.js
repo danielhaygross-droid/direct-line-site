@@ -6,7 +6,7 @@
   const HE = document.documentElement.lang === 'he';
   const L = (en, he) => (HE ? he : en);
   const $ = (s, r = document) => r.querySelector(s);
-  const money = n => (typeof exactMoney === 'function' ? exactMoney(n) : '$' + Number(n || 0).toFixed(2));
+  const money = n => (typeof exactMoney === 'function' ? exactMoney(n) : (Number(n || 0) < 0 ? '-$' : '$') + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
@@ -55,7 +55,7 @@
     const who = e.clientName || L('A client', 'לקוח'), ref = e.orderRef || '#' + e.orderId;
     const base = { id: 'ev-' + e.id, time: e.createdAt * 1000, orderId: e.orderId, action: L('Open order', 'פתח הזמנה') };
     // The supplier changed a cost in their Google Sheet (Erwin, 26 Oct 2026: know it even when nobody was online).
-    if (e.kind === 'supplier_sheet') { let d = {}; try { d = JSON.parse(e.detail); } catch (x) { /* old row */ } const usd = v => (/^\d+(\.\d+)?$/.test(v || '') ? '$' + Number(v).toFixed(2) : v || '—');
+    if (e.kind === 'supplier_sheet') { let d = {}; try { d = JSON.parse(e.detail); } catch (x) { /* old row */ } const usd = v => (/^\d+(\.\d+)?$/.test(v || '') ? '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v || '—');
       // Duplicates in the sheet (2 Nov 2026): two orders with the same order number or tracking number.
       if (d.f === 'dup_tracking') return { ...base, icon: 'alert', tone: 'red', title: L('Same tracking number on two orders', 'אותו מספר מעקב בשתי הזמנות'), text: `${ref} · ${d.to}${d.with?.length ? ' · ' + L('also on', 'גם ב-') + ' ' + d.with.join(', ') : ''}` };
       if (d.f === 'dup_order') return { ...base, icon: 'alert', tone: 'red', title: L('Order number twice in the supplier sheet', 'מספר הזמנה פעמיים בגיליון הספק'), text: `${ref} · ${who}` };

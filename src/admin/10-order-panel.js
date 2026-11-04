@@ -1,6 +1,6 @@
   // "Tell the supplier on WhatsApp" (Erwin, 28 Oct 2026): opens the admin's own WhatsApp with the message written;
   // they choose Ye's chat and press Send (automatic sending needs a WhatsApp Business account).
-  const usd2 = n => '$' + Number(n || 0).toFixed(2);
+  const usd2 = n => (Number(n || 0) < 0 ? '-$' : '$') + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   function revisionWhatsApp(o, r) {
     const cost = o.supplierCost != null && r.status !== 'offered' ? o.supplierCost : Math.round((Number(o.price || 0) - Number(o.commission || 0)) * 100) / 100;
     const text = `Hi Ye, our client asks for a lower cost on order ${o.orderRef || '#' + o.id} (orange row in the Orders sheet). ${r.items ? `It has several products; their competitor prices: ${r.items}. The Total cost now is ${usd2(cost)}${o.itemCosts?.length ? ` (cost per product ${o.itemCosts.map(usd2).join(', ')})` : ''}` : `They sell it at ${usd2(r.competitorPrice)} (competitor price) and the Total cost now is ${usd2(cost)}`}, so they earn very little. Can you check if you can lower it? If yes, please type the new Total cost${r.items ? ' and the new Cost per product' : ''} in the sheet. Thank you!`;

@@ -76,7 +76,10 @@ try {
       assert.match(await notPaid.innerText(), /עוד לא שולם/, tag);
       assert.match(await notPaid.innerText(), /2 הזמנות · לקוח אחד · הישנה ביותר/, tag);
       assert.match(await notPaid.innerText(), /זיכוי ותשלומים קודמים/, tag);
-      assert.match(await card(3).innerText(), /נגבו · .* עוד לא שולמו/, tag + ': earnings split in Hebrew');
+      assert.match(await card(3).innerText(), /נגבו \$[\d,.]+ · עוד לא שולמו \$[\d,.]+/, tag + ': earnings split in Hebrew, word then amount');
+      // Right to left: each part sits to the left of the one before it, and its amount stays inside the part.
+      const parts = await card(3).locator('em > span').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { t: e.textContent, right: r.right, top: r.top }; }));
+      for (let i = 1; i < parts.length; i++) assert.ok(parts[i].top > parts[i - 1].top + 2 || parts[i].right <= parts[i - 1].right, tag + ': RTL order ' + JSON.stringify(parts));
     }
     assert.ok(await notPaid.evaluate(el => el.classList.contains('owe')), tag + ': red when something is owed');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ': no sideways scroll');
@@ -109,4 +112,33 @@ try {
   assert.match(await notPaid.innerText(), /Every billed order is paid/);
   assert.ok(!(await notPaid.evaluate(el => el.classList.contains('owe'))));
   await ctx.close(); console.log('PASS everything paid');
+  // UI UX Pro Max (4 Nov 2026): every common width, English + Hebrew, light + dark: no sideways scroll, nothing spills
+  // out of a card, amounts on one line, and text contrast at least 4.5:1 (computed from the real colours).
+  {
+    const contrast = (fg, bg) => { const lum = c => { const v = c.match(/[\d.]+/g).slice(0, 3).map(Number).map(x => x / 255).map(x => x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; }; const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
+    for (const lang of ['en', 'he']) for (const theme of ['light', 'dark']) for (const width of [320, 375, 414, 768, 1024, 1440]) {
+      const tag = `${lang}-${theme}-${width}`, ctx2 = await session(admin, width), pg2 = await ctx2.newPage();
+      await pg2.goto(`${base}/test-admin.html?lang=${lang}`); const f = pg2.frame({ name: 'admin' }); await f.waitForSelector('[data-kpis] .stat');
+      await f.evaluate(t => { document.documentElement.dataset.theme = t; }, theme); await pg2.waitForTimeout(150);
+      const r = await f.evaluate(() => {
+        const out = { scroll: document.documentElement.scrollWidth > innerWidth, spill: [], wrapped: [], colors: [], wide: [] };
+        // Nothing on the page is wider than the header (a wide table scrolls inside its own box), whatever the fonts.
+        const edge = document.querySelector('.adm-head').getBoundingClientRect().right + 1;
+        for (const el of document.querySelectorAll('[data-tab-body] *')) if (!el.closest('.table-wrap > *') && el.getBoundingClientRect().right > edge) { out.wide.push(el.className || el.tagName); if (out.wide.length > 3) break; }
+        const bgOf = el => { for (let e = el; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (!/rgba\(0, 0, 0, 0\)|transparent/.test(c)) return c; const bi = getComputedStyle(e).backgroundImage; if (bi && bi !== 'none') return null; } return getComputedStyle(document.body).backgroundColor; };
+        for (const card of document.querySelectorAll('[data-kpis] .stat')) {
+          if (card.scrollWidth > card.clientWidth + 1) out.spill.push(card.querySelector('small')?.textContent);
+          const big = card.querySelector('strong'); if (big && big.getClientRects().length > 1 || big.offsetHeight > parseFloat(getComputedStyle(big).lineHeight || 40) * 1.5) out.wrapped.push(big.textContent);
+          for (const el of card.querySelectorAll('small, em')) { const bg = card.classList.contains('hero') ? 'rgb(17, 27, 39)' : bgOf(el); if (bg && el.textContent.trim()) out.colors.push([el.textContent.trim().slice(0, 40), getComputedStyle(el).color, bg]); }
+        }
+        return out;
+      });
+      assert.equal(r.scroll, false, tag + ': no sideways scroll'); assert.deepEqual(r.spill, [], tag + ': nothing spills out of a card'); assert.deepEqual(r.wide, [], tag + ': nothing wider than the page'); assert.deepEqual(r.wrapped, [], tag + ': amounts on one line');
+      for (const [t, fg, bg] of r.colors) assert.ok(contrast(fg, bg) >= 4.5, `${tag}: "${t}" contrast ${contrast(fg, bg).toFixed(2)} (${fg} on ${bg})`);
+      if ([320, 768].includes(width)) await pg2.screenshot({ path: path.join(out, `${tag}-cards.png`) });
+      await ctx2.close();
+    }
+    console.log('PASS 320-1440 px, EN + HE, light + dark: no scroll, no spill, amounts on one line, contrast 4.5:1');
+  }
+
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }

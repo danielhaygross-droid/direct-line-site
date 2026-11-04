@@ -301,7 +301,7 @@
       { key: 'billed', label: 'Billed', tone: 'var(--mc-gold)', note: 'What clients were billed for their orders (cancelled orders not counted)' },
       { key: 'paid', label: 'Paid', tone: 'var(--mc-teal)', note: 'Payments received from clients' },
       // Not the "Not paid yet" card above (what clients owe after credit): these are the unpaid orders themselves.
-      { key: 'unpaid', label: 'Unpaid orders (before credit)', tone: 'var(--mc-red)', note: 'Billed orders with no payment yet, by order month, before any credit from cancelled orders' },
+      { key: 'unpaid', label: 'Unpaid orders', tone: 'var(--mc-red)', note: 'Billed orders with no payment yet, by order month, before any credit from cancelled orders' },
       { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Our share of the fees on those orders' },
       { key: 'fees', label: 'Cancellation fees', tone: 'var(--mc-orange)', note: 'Cancellation fees billed' },
       { key: 'refunds', label: 'Refunds', tone: 'var(--mc-violet)', note: 'Money sent back to clients' }] });
@@ -309,7 +309,7 @@
 
   // ---------- orders tab ----------
   // What the client's customer paid; left blank by many clients (it's optional), so never shown as 0.00.
-  const customerPaid = o => o.sellingPrice == null ? '<span class="dim">Not entered</span>' : `${esc(o.currency || 'USD')} ${Number(o.sellingPrice).toFixed(2)}`;
+  const customerPaid = o => o.sellingPrice == null ? '<span class="dim">Not entered</span>' : `${esc(o.currency || 'USD')} ${Number(o.sellingPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   // Not billed yet: no product cost or shipping fee, and no fixed unit quote (quoted orders are billed from the quote).
   const needsCost = o => o.status !== 'cancelled' && o.productCost == null && o.shippingFee == null && o.quotedUnitPrice == null;
   const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'updates' ? newUpdates(o).length > 0 : f === 'followups' ? o.unreadMessages > 0 : f === 'needscost' ? needsCost(o) : f === 'revision' ? ['open', 'offered'].includes(o.revision?.status) : f === 'unpaid' ? window.DLPayOrders.state(o) === 'unpaid' : o.status === f));
@@ -544,7 +544,7 @@
 
   // "Tell the supplier on WhatsApp" (Erwin, 28 Oct 2026): opens the admin's own WhatsApp with the message written;
   // they choose Ye's chat and press Send (automatic sending needs a WhatsApp Business account).
-  const usd2 = n => '$' + Number(n || 0).toFixed(2);
+  const usd2 = n => (Number(n || 0) < 0 ? '-$' : '$') + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   function revisionWhatsApp(o, r) {
     const cost = o.supplierCost != null && r.status !== 'offered' ? o.supplierCost : Math.round((Number(o.price || 0) - Number(o.commission || 0)) * 100) / 100;
     const text = `Hi Ye, our client asks for a lower cost on order ${o.orderRef || '#' + o.id} (orange row in the Orders sheet). ${r.items ? `It has several products; their competitor prices: ${r.items}. The Total cost now is ${usd2(cost)}${o.itemCosts?.length ? ` (cost per product ${o.itemCosts.map(usd2).join(', ')})` : ''}` : `They sell it at ${usd2(r.competitorPrice)} (competitor price) and the Total cost now is ${usd2(cost)}`}, so they earn very little. Can you check if you can lower it? If yes, please type the new Total cost${r.items ? ' and the new Cost per product' : ''} in the sheet. Thank you!`;
