@@ -28,15 +28,19 @@
     const os = inMonth.filter(o => o.status !== 'cancelled'), pending = os.filter(o => o.status === 'pending').length, noCost = os.filter(needsCost).length;
     const unpaid = live.filter(o => PO.state(o) === 'unpaid'), owed = unpaid.reduce((n, o) => n + PO.dueCents(o), 0);
     const owing = new Set(unpaid.map(o => o.clientId)).size, oldest = unpaid.map(o => M.dateKey(o)).filter(Boolean).sort()[0];
-    // Payments not linked to orders make the account balance differ from the unpaid orders: say so instead of hiding it.
-    const gap = cents(t.outstanding) - owed;
-    const fees = month === 'all' ? t.ourShare : os.reduce((n, o) => n + cents(o.commission), 0) / 100;
+    // Our earnings (Erwin, 4 Nov 2026): our fee on every order of the period, plus the fee we keep on a cancelled order the
+    // client had paid; split into what is already collected (paid orders) and what is still to collect.
+    const keptOn = inMonth.filter(o => o.status === 'cancelled' && o.paymentId && cents(o.commission) > 0);
+    const feeC = o => cents(o.commission), collectedC = os.filter(o => PO.state(o) === 'paid').reduce((n, o) => n + feeC(o), 0) + keptOn.reduce((n, o) => n + feeC(o), 0);
+    const feesC = os.reduce((n, o) => n + feeC(o), 0) + keptOn.reduce((n, o) => n + feeC(o), 0), fees = feesC / 100;
+    // What clients owe right now: each client's balance (unpaid orders minus credit and payments not linked to orders).
+    const balanceC = cl.reduce((n, c) => n + Math.max(0, cents(c.outstanding)), 0);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const cards = [
       { k: 'Clients', v: clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)' },
       { k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: pending || noCost ? [pending ? `${pending} waiting to be processed` : '', noCost ? `${noCost} need cost` : ''].filter(Boolean) : ['Nothing waiting'], icon: 'orders', tone: 'var(--orange)', go: `data-go-filter="${pending ? 'pending' : noCost ? 'needscost' : 'all'}"`, hint: pending ? 'Show waiting orders' : noCost ? 'Show orders that need cost' : 'Show orders' },
-      { k: 'Not paid yet', v: money(owed / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(gap) >= 1 ? `Account balance ${money(t.outstanding)}: some payments aren’t linked to orders` : '', icon: 'money', tone: owed > 0 ? 'var(--red)' : 'var(--mint)', go: 'data-go-filter="unpaid"', hint: 'Show unpaid orders', owe: owed > 0 },
-      { k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(fees), sub: [month === 'all' ? `Fees collected ${money(t.commission)}` : `Fees on ${plural(os.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
+      { k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(owed - balanceC) >= 1 ? `Unpaid orders ${money(owed / 100)} − credit and earlier payments ${money((owed - balanceC) / 100)}` : '', icon: 'money', tone: owed > 0 ? 'var(--red)' : 'var(--mint)', go: 'data-go-filter="unpaid"', hint: 'Show unpaid orders', owe: owed > 0 },
+      { k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(fees), sub: [`${money(collectedC / 100)} collected`, `${money((feesC - collectedC) / 100)} not paid yet`, `${plural(os.length + keptOn.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
     ];
     // Only the boxes that open a filtered list are buttons; Clients and Earnings are in the navigation already.
     $('[data-kpis]').innerHTML = cards.map(c => { const inner = `<span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}`, cls = `stat${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}`;

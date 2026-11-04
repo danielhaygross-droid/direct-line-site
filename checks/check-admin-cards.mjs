@@ -64,16 +64,22 @@ try {
     assert.equal(await ui.locator('[data-kpis] .stat-plain').count(), 2, tag + ': Clients and Our earnings are plain');
     assert.equal(await ui.locator('[data-kpis] .stat-more').count(), 0, tag + ': no extra link lines');
     const notPaid = cards.nth(1);
-    assert.equal(await notPaid.locator('strong').innerText(), usd(pb + pc), tag + ': only B and C are owed (A is paid)');
+    // The card shows what the client owes now (Erwin, 4 Nov 2026): B and C, minus the $5 not linked to an order.
+    assert.equal(await notPaid.locator('strong').innerText(), usd(pb + pc - 5), tag + ': B + C owed, minus the unlinked $5');
     if (lang === 'en') {
       assert.match(await notPaid.innerText(), /2 orders · 1 client · oldest 9 Oct 2026/, tag);
-      assert.match(await notPaid.innerText(), new RegExp(`Account balance \\${usd(pb + pc - 5)}: some payments aren’t linked to orders`), tag + ': unlinked payment explained');
+      assert.match(await notPaid.innerText(), new RegExp(`Unpaid orders \\${usd(pb + pc)} − credit and earlier payments \\$5\\.00`), tag + ': the difference explained');
+      // Our earnings: our fee on every order, split into collected (A is paid) and not paid yet.
+      const fee = Number((await DB.prepare('SELECT commission FROM client_orders WHERE id=?').bind(a.id).first()).commission), n = 4;
+      const earn = await ui.locator('[data-kpis] .stat-plain').nth(1).innerText();
+      assert.ok(earn.includes(usd(fee * n)) && earn.includes(`${usd(fee)} collected · ${usd(fee * (n - 1))} not paid yet · 4 orders`), tag + ': earnings split ' + earn);
       assert.doesNotMatch(await ui.locator('[data-kpis]').innerText(), /Billed|paid \$/, tag + ': no billed / paid totals');
       assert.match(await cards.nth(0).innerText(), /4 waiting to be processed · 1 need cost/, tag);
     } else {
       assert.match(await notPaid.innerText(), /עוד לא שולם/, tag);
       assert.match(await notPaid.innerText(), /2 הזמנות · לקוח אחד · הישנה ביותר/, tag);
-      assert.match(await notPaid.innerText(), /חלק מהתשלומים לא מקושרים להזמנות/, tag);
+      assert.match(await notPaid.innerText(), /זיכוי ותשלומים קודמים/, tag);
+      assert.match(await ui.locator('[data-kpis] .stat-plain').nth(1).innerText(), /נגבו · .* עוד לא שולמו/, tag + ': earnings split in Hebrew');
     }
     assert.ok(await notPaid.evaluate(el => el.classList.contains('owe')), tag + ': red when something is owed');
     await page.screenshot({ path: path.join(out, `${tag}-cards.png`) });

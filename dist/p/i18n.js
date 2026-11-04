@@ -598,6 +598,8 @@
     [/^Saved prices \((\d+)\)$/, (_, n) => `מחירים שמורים (${n})`],
     [/^Updated (\d+) orders?\.(?: (\d+) not changed — they stay selected\.)?$/, (_, n, f) => `עודכנו ${n} הזמנות.${f ? ` ${f} לא שונו — הן נשארות מסומנות.` : ''}`],
     [/^Fees collected (.+)$/, (_, m) => `עמלות שנגבו ${m}`],
+    [/^(-?\$[\d,.]+) collected$/, (_, m) => `${m} נגבו`], [/^(-?\$[\d,.]+) not paid yet$/, (_, m) => `${m} עוד לא שולמו`],
+    [/^Unpaid orders (\S+) − credit and earlier payments (\S+)$/, (_, a, b) => `הזמנות שלא שולמו ${a} − זיכוי ותשלומים קודמים ${b}`],
     [/^Updating (\d+) of (\d+)…$/, (_, a, b) => `מעדכן ${a} מתוך ${b}…`],
     [/^Click again to archive (\d+)$/, (_, n) => `לחצו שוב כדי להעביר ${n} לארכיון`],
     [/^Couldn’t load payments: (.*)$/, (_, m) => `לא ניתן לטעון את התשלומים: ${m}`],
