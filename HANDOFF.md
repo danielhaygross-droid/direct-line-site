@@ -2,9 +2,9 @@
 
 Read this first in every new session, then just continue. No need to ask Erwin to explain again.
 **Keep it current:** after every task that ships (or stops halfway), rewrite sections 2, 4, 5 and 6 below.
-Lives in the repo root, so local and cloud sessions both see it; update it in the same PR as the work. How to work: `CLAUDE.md` (repo root). Older history: `git log`, PR descriptions, and on Erwin's computer `../CONTINUE_HERE.md` (kept off GitHub: the repo is public).
+Lives in the repo root, so local and cloud sessions both see it; update it in the same PR as the work. How to work: `CLAUDE.md` (repo root). Older history: `docs/handoff/HISTORY.md` (cleaned copy of Erwin's notes), `git log`, PR descriptions. Working rules: `docs/handoff/RULES.md`. Agents: `.claude/agents/`.
 
-Last updated: 4 Nov 2026, after PR #170.
+Last updated: 5 Nov 2026, after the handoff-everything PR.
 
 ---
 
@@ -31,10 +31,11 @@ Last updated: 4 Nov 2026, after PR #170.
 - Admin money cards: `src/admin/02-layout.js`; Clients table `src/admin/08-clients-tab.js`; client panel `src/admin/11-client-panel.js`; Overview tab `src/admin/04-overview-tab.js`.
 - Server: `server/portal.mjs` (API, orders, photos), `server/supplier-sheet.mjs` (sheet layout, sync, minute check, Billing tab, `fixRuleRanges`), `server/sheet-photos.mjs` + `server/photo-collage.mjs` (sheet pictures), `server/cost-revisions.mjs`, `server/item-costs.mjs`, `server/claims.mjs`.
 - Checks: `checks/check-*.mjs` (PGlite + Playwright, fake Google Sheets inside); screenshots land in `%TEMP%/direct-line-checks/<name>/`.
-- Notes: this file + `CLAUDE.md` (both in the repo). Erwin's computer only: `../CONTINUE_HERE.md` (full history; has personal data, so it stays off the public repo), memory in `~/.claude/projects/C--Users-erwin-Downloads-Direct-Line/memory/`.
+- Notes (all in the repo): this file, `CLAUDE.md`, `docs/handoff/HISTORY.md` (history, newest on top; emails, usernames, login setup and money amounts removed), `docs/handoff/RULES.md` (rules from Claude's memory), `.claude/agents/` (design-reviewer, report-writer, sheet-checker). Erwin's computer also has the full `../CONTINUE_HERE.md` and the memory folder `~/.claude/projects/C--Users-erwin-Downloads-Direct-Line/memory/`; when a rule is added there, copy it to `RULES.md`, and add new history notes to both.
 - Reports: layout files in `tools/report-template/` (shared `head.html`, Hebrew style, the 22 Oct report `body.html` + `make_he.py`, `render*.cjs`) and `tools/report-template/r1101/` (`page_fn.py` layout, `render.cjs` PDF, `shot.cjs` preview). The report text `gen.py` holds real store and billing figures, so it stays on Erwin's computer in `direct-line-control/tools/report-template/r1101/`: copy that folder to a new `rMMDD` and put screenshots in its `img/`. Scripts use the repo's `playwright-core`; set `CHROME_PATH` if Chromium is not at Erwin's path. Finished PDFs: `direct-line-control/reports/`.
 
 ## 4. Changes (most recent first)
+- 5 Nov: history (cleaned), working rules and the 3 agents added to the repo, so cloud sessions get everything. Report text with real figures (`gen.py`) still stays on Erwin's computer.
 - #170 (4 Nov): HANDOFF.md + CLAUDE.md in the repo, report layout files in `tools/report-template/`. The repo is public, so the notes history and report figures stay on Erwin's computer.
 - #169 (4 Nov): "without our fee" fixed so it adds up to what clients owe (it used the total before credit). Earnings split adds "not billed yet".
 - #168 (4 Nov): admin sees bills without our fee (Overview, Clients table, client panel). Admin only.

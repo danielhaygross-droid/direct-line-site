@@ -5,12 +5,12 @@ Erwin builds and runs the **Direct Line** client portal + admin dashboard (owner
 ## Start of every session
 1. **Read `HANDOFF.md` (repo root) first** — Goal · Current state · Active files · Changes · Failed attempts · Next steps · Skills — and continue from it without asking Erwin to explain again.
 2. **Keep it current:** every PR that ships (or work that stops halfway) also updates `HANDOFF.md` sections 2, 4, 5, 6 (and 7 if skills change), in the same PR. The file travels with the code, so the next session (local or cloud) sees it.
-3. Older history: `git log`, the PR descriptions on GitHub, and (on Erwin's computer only) `../CONTINUE_HERE.md`. **The repo is public:** never commit notes with personal data (emails, usernames, phone numbers), login/security details or money figures; those stay in `../CONTINUE_HERE.md`.
+3. Older history: `docs/handoff/HISTORY.md` (newest on top), `git log`, the PR descriptions. Working rules learned with Erwin: `docs/handoff/RULES.md` (follow them). Subagents: `.claude/agents/`. **The repo is public:** never commit personal data (emails, usernames, phone numbers), login/security details or money figures; the full notes stay in `../CONTINUE_HERE.md` on Erwin's computer.
 4. **Admin and portal code is one file per screen**: edit `src/admin/NN-*.js` / `src/portal/NN-*.js`, then run `node scripts/build-screens.mjs` (joins them into `dist/admin/admin.js` / `dist/portal/portal.js`). Never edit those two dist files by hand: `npm test` and GitHub fail if they aren't built from `src/`.
 
 ## Where you are
 - **Erwin's computer:** the repo is `C:\Users\erwin\Downloads\Direct Line\direct-line-control\continuation` (git worktree). In Bash: `export PATH="$PATH:/c/Program Files/GitHub CLI"`. Code map: `graphify` (exe `/c/Users/erwin/AppData/Roaming/Python/Python314/Scripts/graphify.exe`, output `graphify-out/`, git-ignored): `graphify query "<question>"`, `graphify explain "<fn>"`; refresh after merges with `graphify update . && graphify cluster-only . --no-label`.
-- **Cloud session:** you have only this repo. Run `npm ci` first. No `../CONTINUE_HERE.md`, no graphify, no local memory: `HANDOFF.md` + this file are the whole briefing. Some skills/connectors (Google Sheets, PDFs) may be missing; say so and do what the repo allows. Push a `claude/<name>` branch and open the PR as below.
+- **Cloud session:** you have only this repo. Run `npm ci` first. No `../CONTINUE_HERE.md`, no graphify, no local memory: `HANDOFF.md`, this file and `docs/handoff/` are the whole briefing. Some skills/connectors (Google Sheets, PDFs) may be missing; say so and do what the repo allows. Push a `claude/<name>` branch and open the PR as below.
 
 ## Shipping a change (do all of it, don't stop halfway)
 - Branch from `origin/main` (`git fetch -q && git checkout -q -b claude/<name> origin/main`).
