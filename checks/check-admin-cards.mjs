@@ -70,7 +70,9 @@ try {
       assert.match(await notPaid.innerText(), new RegExp(`Unpaid orders \\${usd(pb + pc)} − credit and earlier payments \\$5\\.00`), tag + ': the difference explained');
       const fee = Number((await DB.prepare('SELECT commission FROM client_orders WHERE id=?').bind(a.id).first()).commission), n = 4;
       const earn = await card(3).innerText();
-      assert.ok(earn.includes(usd(fee * n)) && earn.includes(`${usd(fee)} collected · ${usd(fee * (n - 1))} not paid yet · 4 orders`), tag + ': earnings split ' + earn);
+      assert.ok(earn.includes(usd(fee * n)) && earn.includes(`${usd(fee)} collected · ${usd(fee * (n - 2))} not paid yet · ${usd(fee)} not billed yet · 4 orders`), tag + ': earnings split, the parts add up ' + earn);
+      // Not paid yet card: what is owed now = without our fee + our fee on the unpaid orders (2 Nov 2026 fix: not the total before credit).
+      assert.ok((await notPaid.innerText()).includes(`Without our fee ${usd(pb + pc - 5 - fee * 2)} · our fee ${usd(fee * 2)}`), tag + ': without our fee adds up to what is owed');
       assert.match(await card(1).innerText(), /4 waiting to be processed · 1 need cost/, tag);
     } else {
       assert.match(await notPaid.innerText(), /עוד לא שולם/, tag);
