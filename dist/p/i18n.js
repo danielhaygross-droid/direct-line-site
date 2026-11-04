@@ -598,6 +598,7 @@
     [/^Saved prices \((\d+)\)$/, (_, n) => `מחירים שמורים (${n})`],
     [/^Updated (\d+) orders?\.(?: (\d+) not changed — they stay selected\.)?$/, (_, n, f) => `עודכנו ${n} הזמנות.${f ? ` ${f} לא שונו — הן נשארות מסומנות.` : ''}`],
     [/^Fees collected (.+)$/, (_, m) => `עמלות שנגבו ${m}`],
+    [/^Unpaid orders \(before credit\)$/, () => 'הזמנות שלא שולמו (לפני זיכוי)'], [/^Billed orders with no payment yet, by order month, before any credit from cancelled orders$/, () => 'הזמנות שחויבו ועוד לא שולמו, לפי חודש ההזמנה, לפני זיכוי מהזמנות שבוטלו'],
     [/^(-?\$[\d,.]+) collected$/, (_, m) => `${m} נגבו`], [/^(-?\$[\d,.]+) not paid yet$/, (_, m) => `${m} עוד לא שולמו`],
     [/^Unpaid orders (\S+) − credit and earlier payments (\S+)$/, (_, a, b) => `הזמנות שלא שולמו ${a} − זיכוי ותשלומים קודמים ${b}`],
     [/^Updating (\d+) of (\d+)…$/, (_, a, b) => `מעדכן ${a} מתוך ${b}…`],
