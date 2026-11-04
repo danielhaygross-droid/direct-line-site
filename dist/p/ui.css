@@ -73,7 +73,10 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .stat .stat-ic svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .stat small{display:block;color:var(--muted);font-size:13px;font-weight:500}
 .stat strong{display:block;margin-top:10px;font-size:27px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.stat em{display:block;margin-top:4px;font-style:normal;font-size:12.5px;color:var(--dim)}
+/* Contrast 4.5:1 (UI UX Pro Max, 4 Nov 2026): the line under a number uses --muted, not --dim (2.8:1). */
+.stat em{display:block;margin-top:4px;font-style:normal;font-size:12.5px;color:var(--muted)}
+/* Hebrew: each part ("$6.00 collected") keeps its amount next to its words. */
+.stat em>span{unicode-bidi:isolate}
 .stat.hero{background:linear-gradient(150deg,var(--navy),var(--navy-2));border-color:transparent;color:var(--on-navy)}
 .stat.hero small,.stat.hero em{color:#9aa6b2}.stat.hero strong{color:#fff}
 .stat.hero .stat-ic{background:rgba(212,188,132,.15);color:#d4bc84}

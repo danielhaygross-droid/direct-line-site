@@ -12,7 +12,7 @@
   const dueCents = (o, adjustments) => (o.status === 'cancelled' ? 0 : cents(o.price)) + adjOf(adjustments, o.id);
   // A cancelled order's fee taken from the client's cancellation credit counts as paid (server: paidFromCredit).
   const state = (o, adjustments) => o.paymentId || o.paidFromCredit ? 'paid' : dueCents(o, adjustments) > 0 ? 'unpaid' : o.status === 'cancelled' ? null : 'unbilled';
-  const fmt = c => (c < 0 ? '-$' : '$') + (Math.abs(c) / 100).toFixed(2);
+  const fmt = c => (c < 0 ? '-$' : '$') + (Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const he = () => root.DLi18n?.lang === 'he';
   // "14 Oct 2026" from 'YYYY-MM-DD' or from seconds, in the page language.
   const day = v => {

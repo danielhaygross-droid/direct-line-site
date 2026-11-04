@@ -35,7 +35,8 @@
     return { total: round2(freight + REGISTRATION_FEE + eu), estimated: !!rate.est, perKg, chargeable: round2(chargeable * 1000) / 1000, volumetric: round2(volumetric * 1000) / 1000, usedVolumetric: volumetric > actual, freight, registration: REGISTRATION_FEE, euTax: eu };
   }
 
-  const money = v => (v === null || v === undefined || v === '' ? '—' : (Number(v) < 0 ? '-$' : '$') + Math.abs(Number(v)).toFixed(2));
+  // Thousands separators (4 Nov 2026): $1,829.20, the same in English and Hebrew.
+  const money = v => (v === null || v === undefined || v === '' ? '—' : (Number(v) < 0 ? '-$' : '$') + Math.abs(Number(v)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const hebrewTime = () => window.DLi18n?.lang === 'he' || (!window.DLi18n && document.documentElement.lang === 'he');
   const displayTimeZone = () => hebrewTime() ? 'Asia/Jerusalem' : Intl.DateTimeFormat().resolvedOptions().timeZone;

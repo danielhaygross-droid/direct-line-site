@@ -92,10 +92,10 @@
   // Nothing is estimated: without the Etsy fee (or "You earned") there is no profit figure.
   const earnedOf = o => o.earned ?? null;
   const profitOf = o => o.status === 'cancelled' || !o.priced || earnedOf(o) == null ? null : o.profit;
-  const money2 = (v, o) => (o.currency || 'USD') === 'USD' ? money(v) : `${o.currency} ${Number(v).toFixed(2)}`;
+  const money2 = (v, o) => (o.currency || 'USD') === 'USD' ? money(v) : `${o.currency} ${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const earnedCell = o => earnedOf(o) != null ? `<b>${esc(money2(earnedOf(o), o))}</b>` : o.sellingPrice != null && o.status !== 'cancelled' ? '<span class="dim">Add Etsy fee</span>' : '<span class="dim">—</span>';
   const notUsd = o => (o.currency || 'USD') !== 'USD';
   const profitCell = o => o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : notUsd(o) && earnedOf(o) != null ? '<span class="dim" title="Profit is only worked out for orders in USD">Not in USD</span>' : profitOf(o) == null ? '<span class="dim">—</span>' : `<b>${money(profitOf(o))}</b>`;
-  const customerPaid = o => o.sellingPrice == null ? '' : `${o.currency || 'USD'} ${Number(o.sellingPrice).toFixed(2)}`;
+  const customerPaid = o => o.sellingPrice == null ? '' : `${o.currency || 'USD'} ${Number(o.sellingPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const inProgress = o => !['delivered', 'cancelled'].includes(o.status);
 
