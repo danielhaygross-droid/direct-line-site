@@ -36,9 +36,10 @@
     updated: ['Recently updated', (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)],
     cost_desc: ['Cost: high to low', bySort.num(p => p.supplierCost, true)], cost_asc: ['Cost: low to high', bySort.num(p => p.supplierCost)],
   };
+  // Who owes first (Erwin, 5 Nov 2026): the first sort is the default until the admin picks another.
   const CLIENT_SORTS = {
-    name: ['Name A–Z', bySort.text(c => c.name)],
     outstanding: ['Outstanding: high to low', bySort.num(c => c.outstanding, true)],
+    name: ['Name A–Z', bySort.text(c => c.name)],
     orders: ['Most orders', bySort.num(c => c.orders, true)],
     billed: ['Billed: high to low', bySort.num(c => c.billed, true)],
     login: ['Last sign-in', bySort.num(c => c.lastLogin, true)],

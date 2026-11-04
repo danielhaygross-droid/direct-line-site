@@ -3,6 +3,10 @@
   // and one main button, picked by cardActions(). The window sits next to the cards (data-kpi-wrap), not inside them.
   let kpiWin = null; // the card whose window is open: 'clients' | 'orders' | 'unpaid' | 'earnings'
   const kwPlural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  // Red only for late money (Erwin, 5 Nov 2026): an unpaid order is late after 14 days, the same rule as the client's own
+  // reminder in the portal (src/portal/13-payments.js). Days by order date, counted the same way.
+  const LATE_DAYS = 14, unpaidDays = o => Math.floor((Date.now() - Date.parse(window.DLClientStoreMath.dateKey(o) + 'T12:00:00Z')) / 864e5);
+  const lateClientIds = () => new Set(S.orders.filter(o => !o.archived && window.DLPayOrders.state(o) === 'unpaid' && !(unpaidDays(o) <= LATE_DAYS)).map(o => o.clientId));
 
   // Every number the four cards show, worked out once for the cards and for their windows.
   function kpiFacts() {
@@ -25,9 +29,12 @@
     const balanceC = cl.reduce((n, c) => n + Math.max(0, cents(c.outstanding)), 0);
     const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
-    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, balanceC, feePartC, clientsN };
+    const lateIds = lateClientIds(), late = balanceC > 0 && f_late(cl, lateIds, cents);
+    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, balanceC, feePartC, clientsN, lateIds, late };
   }
 
+  // Late = a client who still owes money has an unpaid order older than 14 days.
+  function f_late(cl, lateIds, cents) { return cl.some(c => lateIds.has(c.id) && cents(c.outstanding) > 0); }
   // A client's plan, when it needs the admin (the same rule as "Needs your attention").
   function planNote(c) {
     const s = c.subscription || {};
@@ -97,14 +104,12 @@
       const owes = f.cl.filter(c => f.cents(c.outstanding) > 0).sort((a, b) => b.outstanding - a.outstanding);
       const clients = owes.map(c => {
         const mine = f.unpaid.filter(o => o.clientId === c.id), old = mine.map(o => f.M.dateKey(o)).filter(Boolean).sort()[0];
-        return kwItem(`data-open-client="${c.id}" data-client-tab="payments"`, c.name, [mine.length ? kwPlural(mine.length, 'order') : '', old ? `oldest ${f.PO.day(old)}` : ''].filter(Boolean).join(' · '), kwMoney(f.cents(c.outstanding)), 'neg');
+        return kwItem(`data-open-client="${c.id}" data-client-tab="payments"`, c.name, [mine.length ? kwPlural(mine.length, 'order') : '', old ? `oldest ${f.PO.day(old)}` : ''].filter(Boolean).join(' · '), kwMoney(f.cents(c.outstanding)), f.lateIds.has(c.id) ? 'neg' : '');
       }).join('');
-      // How long the orders have been unpaid, by order date (before credit, so these add up to "Unpaid orders").
-      const day0 = new Date(); day0.setHours(0, 0, 0, 0);
-      const age = o => Math.round((day0 - new Date(f.M.dateKey(o) + 'T00:00:00')) / 864e5);
-      const ages = [['Up to 7 days', a => a <= 7], ['8–30 days', a => a > 7 && a <= 30], ['Over 30 days', a => !(a <= 30)]].map(([label, test]) => {
-        const list = f.unpaid.filter(o => test(age(o)));
-        return list.length ? kwRow('', label, kwMoney(list.reduce((n, o) => n + f.PO.dueCents(o), 0)), kwPlural(list.length, 'order')) : '';
+      // How long the orders have been unpaid, by order date (before credit, so these add up to "Unpaid orders"); late in red.
+      const ages = [['Up to 14 days', a => a <= 14, ''], ['15–30 days', a => a > 14 && a <= 30, 'late'], ['Over 30 days', a => !(a <= 30), 'late']].map(([label, test, cls]) => {
+        const list = f.unpaid.filter(o => test(unpaidDays(o)));
+        return list.length ? kwRow('', label, kwMoney(list.reduce((n, o) => n + f.PO.dueCents(o), 0)), kwPlural(list.length, 'order'), cls) : '';
       }).join('');
       return kwBlock('', sum) + kwBlock('Without our fee', split) + kwBlock('By client', clients) + kwBlock('How long unpaid (before credit)', ages);
     }
@@ -133,7 +138,7 @@
     const active = f.cl.filter(c => c.active).sort((a, b) => b.outstanding - a.outstanding || String(a.name).localeCompare(String(b.name)));
     if (!active.length) return '<p class="muted kw-empty">No clients yet</p>';
     const orders = id => f.live.filter(o => o.clientId === id && o.status !== 'cancelled').length;
-    const rows = active.map(c => kwItem(`data-open-client="${c.id}" data-client-tab="orders"`, c.name, [kwPlural(orders(c.id), 'order'), planNote(c)].filter(Boolean).join(' · '), f.cents(c.outstanding) > 0 ? kwMoney(f.cents(c.outstanding)) : '', 'neg')).join('');
+    const rows = active.map(c => kwItem(`data-open-client="${c.id}" data-client-tab="orders"`, c.name, [kwPlural(orders(c.id), 'order'), planNote(c)].filter(Boolean).join(' · '), f.cents(c.outstanding) > 0 ? kwMoney(f.cents(c.outstanding)) : '', f.lateIds.has(c.id) ? 'neg' : '')).join('');
     const off = f.cl.length - active.length;
     return kwBlock('', rows) + `<p class="kw-note" data-kw-count><span>Active clients:</span> <b data-no-i18n>${active.length}</b></p>` + (off ? `<p class="kw-note"><span>Disabled accounts, not counted:</span> <b data-no-i18n>${off}</b></p>` : '');
   }

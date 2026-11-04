@@ -83,7 +83,9 @@ try {
       const parts = await card(3).locator('em > span').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { t: e.textContent, right: r.right, top: r.top }; }));
       for (let i = 1; i < parts.length; i++) assert.ok(parts[i].top > parts[i - 1].top + 2 || parts[i].right <= parts[i - 1].right, tag + ': RTL order ' + JSON.stringify(parts));
     }
-    assert.ok(await notPaid.evaluate(el => el.classList.contains('owe')), tag + ': red when something is owed');
+    // Red only for late money (5 Nov 2026): an unpaid order older than 14 days (B is from 9 Oct 2026).
+    const lateNow = Math.floor((Date.now() - Date.parse('2026-10-09T12:00:00Z')) / 864e5) > 14;
+    assert.equal(await notPaid.evaluate(el => el.classList.contains('late')), lateNow, tag + ': red only when late');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ': no sideways scroll');
     await page.screenshot({ path: path.join(out, `${tag}-cards.png`) });
     // Details window + one smart button per card (Erwin, 5 Nov 2026).
@@ -178,6 +180,14 @@ try {
   await notPaid.click(); await ui.locator('[data-kpi-win]').waitFor();
   assert.match(await ui.locator('[data-kpi-win]').innerText(), /Every billed order is paid/);
   assert.equal(await ui.locator('[data-kpi-win] .kw-go').count(), 0, 'nothing to do: no button');
+  // A new unpaid order from today: owed, but not late, so not red; Clients & payments opens sorted by who owes.
+  const today = new Date().toISOString().slice(0, 10), e = await mk('CARD-E', today, 15);
+  await page.reload(); const ui2 = page.frame({ name: 'admin' }); await ui2.waitForSelector('[data-kpis] .stat');
+  const np2 = ui2.locator('[data-kpi-card="unpaid"]');
+  assert.ok(await np2.evaluate(el => el.classList.contains('owe') && !el.classList.contains('late')), 'owed but not late');
+  await ui2.locator('[data-tab=clients]').click(); await ui2.waitForSelector('[data-list] tbody tr');
+  assert.equal(await ui2.locator('[data-list] td[data-label=Outstanding].neg').count(), 0, 'a client with no late order is not red');
+  console.log('PASS owed but not late: not red');
   await ctx.close(); console.log('PASS everything paid');
   // UI UX Pro Max (4 Nov 2026): every common width, English + Hebrew, light + dark: no sideways scroll, nothing spills
   // out of a card, amounts on one line, and text contrast at least 4.5:1 (computed from the real colours).

@@ -36,9 +36,10 @@
     updated: ['Recently updated', (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)],
     cost_desc: ['Cost: high to low', bySort.num(p => p.supplierCost, true)], cost_asc: ['Cost: low to high', bySort.num(p => p.supplierCost)],
   };
+  // Who owes first (Erwin, 5 Nov 2026): the first sort is the default until the admin picks another.
   const CLIENT_SORTS = {
-    name: ['Name A–Z', bySort.text(c => c.name)],
     outstanding: ['Outstanding: high to low', bySort.num(c => c.outstanding, true)],
+    name: ['Name A–Z', bySort.text(c => c.name)],
     orders: ['Most orders', bySort.num(c => c.orders, true)],
     billed: ['Billed: high to low', bySort.num(c => c.billed, true)],
     login: ['Last sign-in', bySort.num(c => c.lastLogin, true)],
@@ -141,6 +142,10 @@
   // and one main button, picked by cardActions(). The window sits next to the cards (data-kpi-wrap), not inside them.
   let kpiWin = null; // the card whose window is open: 'clients' | 'orders' | 'unpaid' | 'earnings'
   const kwPlural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  // Red only for late money (Erwin, 5 Nov 2026): an unpaid order is late after 14 days, the same rule as the client's own
+  // reminder in the portal (src/portal/13-payments.js). Days by order date, counted the same way.
+  const LATE_DAYS = 14, unpaidDays = o => Math.floor((Date.now() - Date.parse(window.DLClientStoreMath.dateKey(o) + 'T12:00:00Z')) / 864e5);
+  const lateClientIds = () => new Set(S.orders.filter(o => !o.archived && window.DLPayOrders.state(o) === 'unpaid' && !(unpaidDays(o) <= LATE_DAYS)).map(o => o.clientId));
 
   // Every number the four cards show, worked out once for the cards and for their windows.
   function kpiFacts() {
@@ -163,9 +168,12 @@
     const balanceC = cl.reduce((n, c) => n + Math.max(0, cents(c.outstanding)), 0);
     const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
-    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, balanceC, feePartC, clientsN };
+    const lateIds = lateClientIds(), late = balanceC > 0 && f_late(cl, lateIds, cents);
+    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, balanceC, feePartC, clientsN, lateIds, late };
   }
 
+  // Late = a client who still owes money has an unpaid order older than 14 days.
+  function f_late(cl, lateIds, cents) { return cl.some(c => lateIds.has(c.id) && cents(c.outstanding) > 0); }
   // A client's plan, when it needs the admin (the same rule as "Needs your attention").
   function planNote(c) {
     const s = c.subscription || {};
@@ -235,14 +243,12 @@
       const owes = f.cl.filter(c => f.cents(c.outstanding) > 0).sort((a, b) => b.outstanding - a.outstanding);
       const clients = owes.map(c => {
         const mine = f.unpaid.filter(o => o.clientId === c.id), old = mine.map(o => f.M.dateKey(o)).filter(Boolean).sort()[0];
-        return kwItem(`data-open-client="${c.id}" data-client-tab="payments"`, c.name, [mine.length ? kwPlural(mine.length, 'order') : '', old ? `oldest ${f.PO.day(old)}` : ''].filter(Boolean).join(' · '), kwMoney(f.cents(c.outstanding)), 'neg');
+        return kwItem(`data-open-client="${c.id}" data-client-tab="payments"`, c.name, [mine.length ? kwPlural(mine.length, 'order') : '', old ? `oldest ${f.PO.day(old)}` : ''].filter(Boolean).join(' · '), kwMoney(f.cents(c.outstanding)), f.lateIds.has(c.id) ? 'neg' : '');
       }).join('');
-      // How long the orders have been unpaid, by order date (before credit, so these add up to "Unpaid orders").
-      const day0 = new Date(); day0.setHours(0, 0, 0, 0);
-      const age = o => Math.round((day0 - new Date(f.M.dateKey(o) + 'T00:00:00')) / 864e5);
-      const ages = [['Up to 7 days', a => a <= 7], ['8–30 days', a => a > 7 && a <= 30], ['Over 30 days', a => !(a <= 30)]].map(([label, test]) => {
-        const list = f.unpaid.filter(o => test(age(o)));
-        return list.length ? kwRow('', label, kwMoney(list.reduce((n, o) => n + f.PO.dueCents(o), 0)), kwPlural(list.length, 'order')) : '';
+      // How long the orders have been unpaid, by order date (before credit, so these add up to "Unpaid orders"); late in red.
+      const ages = [['Up to 14 days', a => a <= 14, ''], ['15–30 days', a => a > 14 && a <= 30, 'late'], ['Over 30 days', a => !(a <= 30), 'late']].map(([label, test, cls]) => {
+        const list = f.unpaid.filter(o => test(unpaidDays(o)));
+        return list.length ? kwRow('', label, kwMoney(list.reduce((n, o) => n + f.PO.dueCents(o), 0)), kwPlural(list.length, 'order'), cls) : '';
       }).join('');
       return kwBlock('', sum) + kwBlock('Without our fee', split) + kwBlock('By client', clients) + kwBlock('How long unpaid (before credit)', ages);
     }
@@ -271,7 +277,7 @@
     const active = f.cl.filter(c => c.active).sort((a, b) => b.outstanding - a.outstanding || String(a.name).localeCompare(String(b.name)));
     if (!active.length) return '<p class="muted kw-empty">No clients yet</p>';
     const orders = id => f.live.filter(o => o.clientId === id && o.status !== 'cancelled').length;
-    const rows = active.map(c => kwItem(`data-open-client="${c.id}" data-client-tab="orders"`, c.name, [kwPlural(orders(c.id), 'order'), planNote(c)].filter(Boolean).join(' · '), f.cents(c.outstanding) > 0 ? kwMoney(f.cents(c.outstanding)) : '', 'neg')).join('');
+    const rows = active.map(c => kwItem(`data-open-client="${c.id}" data-client-tab="orders"`, c.name, [kwPlural(orders(c.id), 'order'), planNote(c)].filter(Boolean).join(' · '), f.cents(c.outstanding) > 0 ? kwMoney(f.cents(c.outstanding)) : '', f.lateIds.has(c.id) ? 'neg' : '')).join('');
     const off = f.cl.length - active.length;
     return kwBlock('', rows) + `<p class="kw-note" data-kw-count><span>Active clients:</span> <b data-no-i18n>${active.length}</b></p>` + (off ? `<p class="kw-note"><span>Disabled accounts, not counted:</span> <b data-no-i18n>${off}</b></p>` : '');
   }
@@ -383,10 +389,10 @@
     const cards = [
       { key: 'clients', k: 'Clients', v: f.clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(f.cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)' },
       { key: 'orders', k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: os.length ? [notShipped ? `${notShipped} not shipped yet` : '', shipped ? `${shipped} shipped` : ''].filter(Boolean) : ['No orders yet'], icon: 'orders', tone: 'var(--orange)' },
-      { key: 'unpaid', k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${f.PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(owed - balanceC) >= 1 ? `Unpaid orders ${money(owed / 100)} − credit and earlier payments ${money((owed - balanceC) / 100)}` : '', sub3: balanceC > 0 ? `Without our fee ${money((balanceC - feePartC) / 100)} · our fee ${money(feePartC / 100)}` : '', icon: 'money', tone: owed > 0 ? 'var(--red)' : 'var(--mint)', owe: balanceC > 0 },
+      { key: 'unpaid', k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${f.PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(owed - balanceC) >= 1 ? `Unpaid orders ${money(owed / 100)} − credit and earlier payments ${money((owed - balanceC) / 100)}` : '', sub3: balanceC > 0 ? `Without our fee ${money((balanceC - feePartC) / 100)} · our fee ${money(feePartC / 100)}` : '', icon: 'money', tone: f.late ? 'var(--red)' : balanceC > 0 ? 'var(--orange)' : 'var(--mint)', owe: balanceC > 0, late: f.late },
       { key: 'earnings', k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(f.feesC / 100), sub: [`${money(f.collectedC / 100)} collected`, `${money((f.feesC - f.collectedC - f.noBillC) / 100)} not paid yet`, ...(f.noBillC ? [`${money(f.noBillC / 100)} not billed yet`] : []), `${plural(os.length + f.keptOn.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
     ];
-    $('[data-kpis]').innerHTML = cards.map(c => `<button type="button" class="stat stat-go${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}" style="--tone:${c.tone}" data-kpi-card="${c.key}" aria-haspopup="dialog" aria-expanded="${kpiWin === c.key}" title="Show details"><span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}${c.sub3 ? `<em class="stat-fee">${esc(c.sub3)}</em>` : ''}</button>`).join('');
+    $('[data-kpis]').innerHTML = cards.map(c => `<button type="button" class="stat stat-go${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}${c.late ? ' late' : ''}" style="--tone:${c.tone}" data-kpi-card="${c.key}" aria-haspopup="dialog" aria-expanded="${kpiWin === c.key}" title="Show details"><span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}${c.sub3 ? `<em class="stat-fee">${esc(c.sub3)}</em>` : ''}</button>`).join('');
     if (kpiWin) showCardWindow(kpiWin, false);
     const unread = S.orders.filter(o => o.unreadMessages).length;
     const b = $('[data-tab-badge="orders"]'); if (b) b.innerHTML = unread ? `<span class="badge-new">${unread}</span>` : '';
@@ -576,12 +582,13 @@
   }
   function renderClients() {
     const q = S.cq.toLowerCase(), def = Number(S.ov.settings.commission_per_order);
+    const lateIds = lateClientIds(); // red only when an unpaid order is over 14 days old (5 Nov 2026)
     const list = sortList(S.ov.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q)), 'admin-clients', CLIENT_SORTS);
     $('[data-list]').innerHTML = list.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Orders</th><th class="num">Billed</th><th class="num" title="Billed minus our fee: the supplier's cost">Without our fee</th><th class="num">Paid</th><th class="num">Outstanding</th><th class="num">Our earnings</th><th class="num">Fee / order</th><th>Subscription</th><th>Status</th></tr></thead><tbody>
       ${list.map(c => `<tr class="click" data-open-client="${c.id}" tabindex="0">
         <td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small>${c.pendingTransfers ? `<small>${c.pendingTransfers} transfer confirmation${c.pendingTransfers === 1 ? '' : 's'} waiting</small>` : ''}</div></div></td>
         <td data-label="Orders" class="num">${c.orders}</td><td data-label="Billed" class="num">${money(c.billed)}</td><td data-label="Without our fee" class="num dim">${money((c.billed || 0) - (c.ourShare || 0))}</td><td data-label="Paid" class="num">${money(c.paid)}</td>
-        <td data-label="Outstanding" class="num ${c.outstanding > 0 ? 'neg' : ''}"><b><bdi>${money(c.outstanding)}</bdi></b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
+        <td data-label="Outstanding" class="num ${c.outstanding > 0 && lateIds.has(c.id) ? 'neg' : ''}"><b><bdi>${money(c.outstanding)}</bdi></b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
         <td data-label="Fee / order" class="num">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="dim" style="font-size:12px">default</span>' : ''}</td>
         <td data-label="Subscription" class="sub-cell">${subPill(c.subscription)}</td>
         <td data-label="Status">${c.active ? '<span class="st st-delivered">Active</span>' : '<span class="st st-cancelled">Disabled</span>'}</td></tr>`).join('')}

@@ -353,7 +353,7 @@
     // Overview card windows (5 Nov 2026).
     'Show details': 'הצגת פרטים', 'Credit and earlier payments': 'זיכוי ותשלומים קודמים', 'Other amounts on the balance': 'סכומים אחרים ביתרה', 'Clients owe now': 'הלקוחות חייבים עכשיו',
     'Our fee': 'העמלה שלנו', 'By client': 'לפי לקוח', 'By status': 'לפי סטטוס', 'How long unpaid (before credit)': 'כמה זמן לא שולם (לפני זיכוי)',
-    'Up to 7 days': 'עד 7 ימים', '8–30 days': '8–30 ימים', 'Over 30 days': 'יותר מ-30 ימים', 'Cancelled orders, not counted above:': 'הזמנות שבוטלו, לא נספרו למעלה:',
+    'Up to 14 days': 'עד 14 ימים', '15–30 days': '15–30 ימים', 'Over 30 days': 'יותר מ-30 ימים', 'Cancelled orders, not counted above:': 'הזמנות שבוטלו, לא נספרו למעלה:',
     'Disabled accounts, not counted:': 'חשבונות מושבתים, לא נספרו:', 'No fees yet': 'עדיין אין עמלות', 'Collected': 'נגבה', 'Not billed yet': 'עוד לא חויב',
     'No cost yet, so not on a bill': 'עוד אין עלות, אז עוד לא בחיוב', 'Our fee on orders': 'העמלה שלנו על הזמנות', 'Fees kept on cancelled orders': 'עמלות שנשארו אצלנו מהזמנות שבוטלו', 'Where it comes from': 'מאיפה זה מגיע',
     'Clients with orders:': 'לקוחות עם הזמנות:', 'Active clients:': 'לקוחות פעילים:', 'Subscription overdue': 'המנוי באיחור', 'Free month over': 'החודש החינמי נגמר', 'Free month ends today': 'החודש החינמי נגמר היום',
