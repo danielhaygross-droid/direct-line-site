@@ -1,0 +1,115 @@
+<body>
+<section class="cover">
+  <div>
+    <div class="brand">direct<b>↗</b>line.</div>
+    <div style="margin-top:22px" class="kicker">Work report · client portal &amp; admin dashboard</div>
+    <h1>What we built and shipped</h1>
+    <div class="date">20 October 2026</div>
+    <div class="summary">
+      <h3>In short</h3>
+      <ul>
+        <li><b>Competitor price, entered by clients:</b> yesterday's sheet column was empty. Now clients type it in their portal (on a product, on a new order, or later under "Your numbers"). It shows in the supplier sheet's blue column and in admin.</li>
+        <li><b>Export orders to Excel (Shahar's request):</b> clients download their orders as an Excel file with prices and a Yes / No "Paid" column. The paid and not-paid totals update by themselves. Also in admin, on each client's Orders tab.</li>
+        <li><b>Word first, then Excel:</b> a Word version went live first (#86). You preferred Excel, so #87 replaced it.</li>
+        <li><b>Client message + WhatsApp images</b> in English and Hebrew explain the new export.</li>
+      </ul>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>3</b><span>pull requests merged and live (#85–#87)</span></div>
+      <div class="stat"><b>151 + 34</b><span>unit tests and screen checks, all passing</span></div>
+      <div class="stat"><b>EN + HE</b><span>every screen and file checked in both languages</span></div>
+      <div class="stat"><b>Word + Excel</b><span>exported files opened in Microsoft Office</span></div>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>PR</th><th>What</th><th>Who asked</th></tr></thead>
+    <tbody>
+      <tr><td class="pr">#85</td><td>Competitor price comes from the client portal (products, orders) and fills the supplier sheet</td><td>Erwin</td></tr>
+      <tr><td class="pr">#86</td><td>Export orders to Word with prices and a Paid check box (replaced by #87)</td><td>Shahar (client request)</td></tr>
+      <tr><td class="pr">#87</td><td>Export orders to Excel instead of Word: prices, Paid Yes / No, automatic totals</td><td>Erwin / Shahar</td></tr>
+    </tbody>
+  </table>
+  <p class="note">Screenshots in this report come from local test runs with sample data (real database code, real screens), not from real client accounts.</p>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>1 · Competitor price from the client portal</h2><span class="pr">PR #85 · live</span></div>
+  <p class="why">You pointed out that clients, not Ye, know what competitors charge. Yesterday's blue column in the supplier sheet was empty, so clients now fill it in from their portal.</p>
+  <table>
+    <thead><tr><th>Where the client enters it</th><th>When</th></tr></thead>
+    <tbody>
+      <tr><td><b>Send a product for a quote</b> (new optional field)</td><td>When sending the product</td></tr>
+      <tr><td><b>Product panel</b> (click a product, then Save)</td><td>Any time; it also shows in the My Products list</td></tr>
+      <tr><td><b>New order</b>, step 2</td><td>Filled in from the chosen product</td></tr>
+      <tr><td><b>Order › Your numbers</b></td><td>Any time, also while the order is in progress; it never changes the bill</td></tr>
+    </tbody>
+  </table>
+  <div class="shots two">
+    <figure><img src="img/cp-form.png"><figcaption>Client › My Products: the new "Competitor price" field, and the price shown in the list.</figcaption></figure>
+    <figure><img src="img/cp-numbers.png"><figcaption>Client › order › Your numbers: changeable any time.</figcaption></figure>
+  </div>
+  <ul style="margin-top:8px">
+    <li><b>Supplier sheet:</b> Work Queue column O and Product Quotes column N now show what the client entered. Before that, anything already typed in those cells was copied into the order or product, so nothing was lost. The live sheet was read afterwards: both tabs switched.</li>
+    <li><b>Admin:</b> shown in the order panel ("Competitor price, from the client") and in the product price form.</li>
+  </ul>
+  <p class="checks"><b>Checked:</b> a new screen check goes from the portal to the database to admin, in EN/HE at 1440 and 390 px. The sheet checks cover portal → sheet, rewrites and rebuilds, and the one-time copy. In Hebrew, "$27.50 on Amazon" first showed reversed; fixed before shipping.</p>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>1 · Competitor price (more screens)</h2><span class="pr">PR #85 · live</span></div>
+  <div class="shots wide-phone">
+    <figure><img src="img/cp-admin.png"><figcaption>Admin › order: "Competitor price, from the client".</figcaption></figure>
+    <figure><img src="img/cp-panel-he.png"><figcaption>Hebrew, phone: the product panel with the competitor price and Save.</figcaption></figure>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>2 · Export orders to Excel</h2><span class="pr">PR #86 → #87 · live</span></div>
+  <p class="why">Shahar: a client wants to export their orders to see the prices and mark which ones have been paid. It went out first as Word (#86). You preferred Excel, so #87 replaced the Word export.</p>
+  <ul>
+    <li><b>Client portal › Orders:</b> an <b>Export to Excel</b> button. It exports the orders on screen, following the store, status, search and sort.</li>
+    <li><b>Admin › client panel › Orders:</b> the same button, for that client.</li>
+    <li><b>The file:</b> Order · Date · Customer · Product · Qty · Status · <b>Total</b> · <b>Paid</b> (a Yes / No drop-down, green when Yes). Under the table: <b>Total</b>, <b>Paid</b> and <b>Not paid yet</b>, which update by themselves.</li>
+    <li>Orders without a price show "Not priced yet" and cancelled orders show "Cancelled"; neither is counted. Each header has a filter button, the header row stays visible, and the sheet prints landscape. Hebrew: right-to-left, with Paid = כן / לא.</li>
+  </ul>
+  <div class="shots">
+    <figure><img src="img/xl-portal.png" style="height:200px;object-fit:cover;object-position:right 23%"><figcaption>Client › Orders: "Export to Excel" next to Sort.</figcaption></figure>
+    <figure><img src="img/xl-file.png"><figcaption>The Excel file in Microsoft Excel: one order set to Yes, so Paid is $34.40 and Not paid yet is $114.10.</figcaption></figure>
+  </div>
+  <p class="checks"><b>Checked:</b> unit tests read the file back (valid ZIP, rows, numbers, formulas, drop-down, filter, right-to-left). A screen check downloads it from the portal (also filtered) and from admin, in EN/HE at 1440 and 390 px. The files were opened in Excel: no repair prompt, and marking an order Yes moved its total from "Not paid yet" to "Paid". The Word version (#86) had also been opened in Word before it was replaced.</p>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>3 · Message for clients, with WhatsApp images</h2><span class="pr">ready to send</span></div>
+  <p class="why">A short message in English and Hebrew, plus one image per language: step 1 shows where the button is, step 2 shows the Excel file. They use a made-up "Sample Shop" and made-up customers only.</p>
+  <div class="shots two">
+    <figure><img src="img/guide-en.png" style="height:auto"><figcaption>English image.</figcaption></figure>
+    <figure><img src="img/guide-he.png" style="height:auto"><figcaption>Hebrew image.</figcaption></figure>
+  </div>
+  <p class="note">Saved in direct-line-control/reports/client-messages/.</p>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>4 · End of day wrap-up</h2><span class="pr">status</span></div>
+  <h3 style="margin:4px 0 6px">Status at the end of the day</h3>
+  <ul class="todo">
+    <li><span class="tag green">done</span> Competitor price: clients enter it in the portal; the supplier sheet and admin show it.</li>
+    <li><span class="tag green">done</span> Shahar's export request: Excel export live in the portal and admin.</li>
+    <li><span class="tag green">done</span> Client message and WhatsApp images (EN + HE) sent to clients.</li>
+  </ul>
+  <p><b>Nothing is left open from today.</b></p>
+  <h3 style="margin:14px 0 6px">How every change was checked</h3>
+  <div class="wall">
+    <img src="img/wall1.png"><img src="img/wall2.png"><img src="img/wall3.png"><img src="img/wall4.png">
+    <img src="img/wall5.png"><img src="img/wall6.png"><img src="img/wall7.png"><img src="img/wall8.png">
+  </div>
+  <p class="note">Some of today's screen check screenshots: client and admin screens, English and Hebrew, desktop and phone.</p>
+  <ul>
+    <li>151 unit tests and 34 screen and server checks (new: competitor price, Excel export), run locally and again on GitHub for every pull request.</li>
+    <li>Screenshots in English and Hebrew at desktop (1440 px) and phone (390 px), reviewed before each merge. Exported files were opened in Microsoft Word and Excel.</li>
+    <li>After each merge, the live version numbers were confirmed on direct-line-control.vercel.app (admin.js 72, portal.js 60). The live supplier sheet was read after the competitor price switch.</li>
+    <li>The code map (graphify) was refreshed after the merges.</li>
+  </ul>
+</section>
+</body>
+</html>

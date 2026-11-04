@@ -5,7 +5,7 @@ Erwin builds and runs the **Direct Line** client portal + admin dashboard (owner
 ## Start of every session
 1. **Read `HANDOFF.md` (repo root) first** — Goal · Current state · Active files · Changes · Failed attempts · Next steps · Skills — and continue from it without asking Erwin to explain again.
 2. **Keep it current:** every PR that ships (or work that stops halfway) also updates `HANDOFF.md` sections 2, 4, 5, 6 (and 7 if skills change), in the same PR. The file travels with the code, so the next session (local or cloud) sees it.
-3. Older history: `git log`, the PR descriptions on GitHub, and (on Erwin's computer only) `../CONTINUE_HERE.md`.
+3. Older history: `git log`, the PR descriptions on GitHub, and (on Erwin's computer only) `../CONTINUE_HERE.md`. **The repo is public:** never commit notes with personal data (emails, usernames, phone numbers), login/security details or money figures; those stay in `../CONTINUE_HERE.md`.
 4. **Admin and portal code is one file per screen**: edit `src/admin/NN-*.js` / `src/portal/NN-*.js`, then run `node scripts/build-screens.mjs` (joins them into `dist/admin/admin.js` / `dist/portal/portal.js`). Never edit those two dist files by hand: `npm test` and GitHub fail if they aren't built from `src/`.
 
 ## Where you are
