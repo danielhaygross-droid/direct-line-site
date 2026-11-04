@@ -171,7 +171,7 @@ details.fold>summary small{margin-inline-start:auto}
 .kpis .stat-go{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;width:100%;text-align:start;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s}
 .kpis .stat-go:hover{border-color:color-mix(in srgb,var(--tone) 45%,var(--line));box-shadow:var(--shadow);transform:translateY(-1px)}.kpis .stat-go.hero:hover{border-color:transparent}
 .kpis .stat-go:focus-visible{outline:2px solid var(--tone);outline-offset:2px}
-.kpis .stat-go.owe strong,.kpis .stat-plain.owe strong{color:var(--red)}
+.kpis .stat.late strong{color:var(--red)}.kpis .stat:not(.late) .stat-note{color:var(--muted)}
 .kpis .stat em>span{display:inline-block;max-width:100%}.kpis .stat-fee{color:var(--muted);font-size:12px}.kpis .stat-note{color:color-mix(in srgb,var(--red) 80%,var(--text));font-size:12px}.kpis .stat-go.hero .stat-note{color:#e8a79e}
 /* Overview cards: a details window under the card (Erwin, 5 Nov 2026). Outside .kpis, so its card rules don't reach it. */
 .kpi-wrap{position:relative}[data-cancelled-slot]:empty{display:none}
@@ -185,7 +185,7 @@ details.fold>summary small{margin-inline-start:auto}
 .kw-body{display:grid;gap:14px}.kw-block{display:grid}.kw-block h4{margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.02em}
 .kw-row{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:baseline;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px;line-height:1.35}
 .kw-row:last-child{border-bottom:0}.kw-op{color:var(--muted);text-align:center}.kw-l{min-width:0}.kw-l small{display:block;margin-top:1px;color:var(--muted);font-size:12px}
-.kw-row>b{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}.kw-row>b.neg{color:color-mix(in srgb,var(--red) 80%,var(--text))}
+.kw-row>b{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}.kw-row>b.neg,.kw-row.late>b{color:color-mix(in srgb,var(--red) 80%,var(--text))}
 .kw-row.tot{border-top:1.5px solid color-mix(in srgb,var(--text) 35%,var(--line));border-bottom:0;font-weight:600}.kw-block .kw-row.tot{margin-top:-1px}
 button.kw-item{width:100%;margin:0;padding-inline:0;background:none;border:0;border-bottom:1px solid var(--line);color:inherit;font:inherit;font-size:13.5px;text-align:start;cursor:pointer;border-radius:0}
 button.kw-item:hover .kw-l b,button.kw-item:focus-visible .kw-l b{text-decoration:underline}button.kw-item:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
