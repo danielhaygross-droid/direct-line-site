@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direct Line — Work report, 20 October 2026</title>
+<style>
+@page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+:root { --ink:#1c2420; --muted:#5f6862; --line:#e4ddcf; --gold:#9c7a3c; --gold-soft:#f4ecdc; --navy:#10221b; --green:#1f6b4f; --red:#a8452f; }
+* { box-sizing: border-box; }
+body { margin:0; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color:var(--ink); font-size:10.5pt; line-height:1.45; }
+h1,h2,h3 { margin:0; line-height:1.2; }
+p { margin:0 0 6px; }
+ul { margin:4px 0 8px; padding-left:18px; } li { margin:2px 0; }
+.cover { height: 255mm; display:flex; flex-direction:column; justify-content:space-between; page-break-after:always; }
+.brand { font-size:22pt; font-weight:800; letter-spacing:-.5px; color:var(--navy); } .brand b { color:var(--gold); }
+.kicker { text-transform:uppercase; letter-spacing:2px; font-size:8.5pt; color:var(--gold); font-weight:700; }
+.cover h1 { font-size:26pt; margin:8px 0 4px; color:var(--navy); }
+.cover .date { font-size:13pt; color:var(--muted); }
+.summary { background:var(--gold-soft); border-radius:12px; padding:14px 18px; margin-top:16px; }
+.summary h3 { font-size:11pt; margin-bottom:6px; }
+.stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:14px; }
+.stat { border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+.stat b { display:block; font-size:18pt; color:var(--navy); } .stat span { font-size:8.5pt; color:var(--muted); }
+table { width:100%; border-collapse:collapse; font-size:9.5pt; }
+th { text-align:left; font-size:8pt; text-transform:uppercase; letter-spacing:1px; color:var(--muted); border-bottom:1.5px solid var(--line); padding:5px 6px; }
+td { border-bottom:1px solid var(--line); padding:3px 6px; vertical-align:top; }
+td.pr { white-space:nowrap; font-weight:700; color:var(--gold); }
+.section { page-break-before:always; }
+.section-head { display:flex; align-items:baseline; justify-content:space-between; border-bottom:2px solid var(--gold); padding-bottom:6px; margin-bottom:10px; }
+.section-head h2 { font-size:17pt; color:var(--navy); }
+.section-head .pr { font-size:9pt; color:var(--gold); font-weight:700; }
+.why { background:#f7f5f0; border-left:3px solid var(--gold); padding:7px 11px; border-radius:0 8px 8px 0; margin:0 0 10px; font-size:10pt; }
+.wall { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:6px 0; } .wall img { height:125px; object-fit:cover; object-position:top center; border-radius:6px; }
+.cols { display:grid; grid-template-columns: 1.7fr 1fr; gap:14px; align-items:start; }
+.cols figure img { max-height:410px; object-fit:cover; object-position:top; }
+.shots.two figure img { height:290px; object-fit:cover; object-position:top left; }
+.shots.wide-phone figure img { max-height:520px; object-fit:cover; object-position:top; }
+.shots { display:grid; gap:10px; margin-top:10px; }
+.shots.two { grid-template-columns: 1fr 1fr; }
+.shots.wide-phone { grid-template-columns: 2.3fr 1fr; align-items:start; }
+figure { margin:0; break-inside:avoid; }
+figure img { width:100%; display:block; border:1px solid var(--line); border-radius:8px; }
+figcaption { font-size:8.3pt; color:var(--muted); margin-top:3px; }
+.checks { font-size:9.3pt; color:var(--muted); margin-top:8px; }
+.checks b { color:var(--ink); }
+.tag { display:inline-block; font-size:8pt; font-weight:700; padding:1px 7px; border-radius:999px; background:var(--gold-soft); color:var(--gold); }
+.tag.green { background:#e3f1ea; color:var(--green); } .tag.red { background:#f6e3de; color:var(--red); }
+.todo li { margin:4px 0; }
+.note { font-size:8.5pt; color:var(--muted); }
+pre { background:#f7f5f0; border-radius:8px; padding:8px 10px; font-size:9.5pt; margin:6px 0; }
+</style>
