@@ -6,6 +6,7 @@
     const extra = !!(ed && (ed.sellingPrice != null || ed.etsyFee != null || ed.etsyEarned != null || ed.sku || ed.notes || (ed.currency && ed.currency !== 'USD')));
     return `<form class="form-layout" id="order-form" novalidate>
       <div class="form-main">
+        ${ed && ed.status === 'processing' ? '<p class="note" data-edit-progress>Your order is already in progress. Direct Line is told about every change and passes it on to the supplier. If the product is already bought or packed, we will message you.</p>' : ''}
         <section class="card card-pad"><h3 class="form-sec"><i>1</i>Store order number</h3><div class="form-grid">
           <label class="field full" data-f="storeId"${S.stores.filter(s=>!s.archived).length===1&&(!ed||!S.stores.find(s=>s.id===ed.storeId)?.archived)?' hidden':''}><span>Store</span><select name="storeId" required><option value="">Choose a store</option>${S.stores.filter(s=>!s.archived||s.id===ed?.storeId).map(st=>`<option value="${st.id}"${st.id===(ed?.storeId||(S.stores.some(s=>s.id===S.storeId&&!s.archived)?S.storeId:0)||(S.stores.filter(s=>!s.archived).length===1?S.stores.find(s=>!s.archived).id:0))?' selected':''}>${esc(st.name)}${st.status==='suspended'?' · Suspended':''}</option>`).join('')}</select></label>
           <label class="field" data-f="orderRef"><span>Order number</span><input name="orderRef" required maxlength="120" inputmode="text" placeholder="e.g. 3412345678" value="${esc(ed?.orderRef)}">

@@ -7,17 +7,18 @@ import { websiteCells } from '../server/supplier-sheet.mjs';
 const read = p => readFile(new URL('../' + p, import.meta.url), 'utf8');
 const T = 1_800_000_000;
 
-test('customer details stay editable until shipped; the rest keeps the 72 h / Pending rule', () => {
+test('every detail stays editable until shipped (Erwin, 4 Nov 2026)', () => {
   const fresh = { status: 'pending', created_at: T, edit_locked: false };
   assert.equal(canEditOrder(fresh, T + 3600), true);
   for (const status of ['pending', 'processing']) assert.equal(canEditCustomer({ status }), true, status);
   for (const status of ['shipped', 'delivered', 'cancelled', 'cancellation_requested']) assert.equal(canEditCustomer({ status }), false, status);
   assert.equal(canEditCustomer({ status: 'processing', archived: true }), false);
-  // In progress: the full edit is closed but customer details are open.
+  // In progress: the full edit stays open (order number, products, notes…), not only the customer details.
   const running = { status: 'processing', created_at: T, edit_locked: true };
-  assert.equal(canEditOrder(running, T + 60), false); assert.equal(canEditCustomer(running), true);
-  // Pending but older than 72 h.
-  assert.equal(canEditOrder({ ...fresh }, T + 72 * 3600 + 1), false);
+  assert.equal(canEditOrder(running), true); assert.equal(canEditCustomer(running), true);
+  // Pending and older than 72 h: still editable.
+  assert.equal(canEditOrder({ ...fresh }), true);
+  assert.equal(canEditOrder({ ...fresh, status: 'shipped' }), false);
 });
 
 test('only requests made of customer fields count as customer edits', () => {
