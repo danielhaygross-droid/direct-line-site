@@ -1,5 +1,5 @@
-// Check: the four admin cards above the tabs (Erwin, 23 Oct 2026). "Not paid yet" = billed orders with no payment
-// linked (paid orders drop out), a note when a payment isn't linked to orders, and every card opens its list.
+// Check: the four admin cards (Erwin, 23 Oct + 4 Nov 2026). Shown on Clients overview only, numbers only (no buttons: the
+// same links are the Orders chips and the Overview's "Needs your attention"). "Not paid yet" = what clients owe now.
 //   node checks/check-admin-cards.mjs      (run from the repo root)
 // Real SQL on in-memory Postgres (PGlite) + the real admin screens in Chrome. No live data.
 import { createRequire } from 'node:module';
@@ -58,41 +58,36 @@ try {
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
     const tag = `${lang}-${width}`;
     const ctx = await session(admin, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpis] .stat-go');
-    const cards = ui.locator('[data-kpis] .stat-go');
-    assert.equal(await cards.count(), 2, tag + ': only Orders and Not paid yet open a list');
-    assert.equal(await ui.locator('[data-kpis] .stat-plain').count(), 2, tag + ': Clients and Our earnings are plain');
-    assert.equal(await ui.locator('[data-kpis] .stat-more').count(), 0, tag + ': no extra link lines');
-    const notPaid = cards.nth(1);
-    // The card shows what the client owes now (Erwin, 4 Nov 2026): B and C, minus the $5 not linked to an order.
+    await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpis] .stat');
+    assert.equal(await ui.locator('[data-tab="overview"]').getAttribute('aria-selected'), 'true', tag + ': starts on Overview');
+    assert.equal(await ui.locator('[data-kpis] .stat-plain').count(), 4, tag + ': four cards');
+    assert.equal(await ui.locator('[data-kpis] button, [data-kpis] .stat-go').count(), 0, tag + ': numbers only, no buttons');
+    const card = n => ui.locator('[data-kpis] .stat-plain').nth(n), notPaid = card(2);
+    // The card shows what the client owes now: B and C, minus the $5 not linked to an order.
     assert.equal(await notPaid.locator('strong').innerText(), usd(pb + pc - 5), tag + ': B + C owed, minus the unlinked $5');
     if (lang === 'en') {
       assert.match(await notPaid.innerText(), /2 orders · 1 client · oldest 9 Oct 2026/, tag);
       assert.match(await notPaid.innerText(), new RegExp(`Unpaid orders \\${usd(pb + pc)} − credit and earlier payments \\$5\\.00`), tag + ': the difference explained');
-      // Our earnings: our fee on every order, split into collected (A is paid) and not paid yet.
       const fee = Number((await DB.prepare('SELECT commission FROM client_orders WHERE id=?').bind(a.id).first()).commission), n = 4;
-      const earn = await ui.locator('[data-kpis] .stat-plain').nth(1).innerText();
+      const earn = await card(3).innerText();
       assert.ok(earn.includes(usd(fee * n)) && earn.includes(`${usd(fee)} collected · ${usd(fee * (n - 1))} not paid yet · 4 orders`), tag + ': earnings split ' + earn);
-      assert.doesNotMatch(await ui.locator('[data-kpis]').innerText(), /Billed|paid \$/, tag + ': no billed / paid totals');
-      assert.match(await cards.nth(0).innerText(), /4 waiting to be processed · 1 need cost/, tag);
+      assert.match(await card(1).innerText(), /4 waiting to be processed · 1 need cost/, tag);
     } else {
       assert.match(await notPaid.innerText(), /עוד לא שולם/, tag);
       assert.match(await notPaid.innerText(), /2 הזמנות · לקוח אחד · הישנה ביותר/, tag);
       assert.match(await notPaid.innerText(), /זיכוי ותשלומים קודמים/, tag);
-      assert.match(await ui.locator('[data-kpis] .stat-plain').nth(1).innerText(), /נגבו · .* עוד לא שולמו/, tag + ': earnings split in Hebrew');
+      assert.match(await card(3).innerText(), /נגבו · .* עוד לא שולמו/, tag + ': earnings split in Hebrew');
     }
     assert.ok(await notPaid.evaluate(el => el.classList.contains('owe')), tag + ': red when something is owed');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ': no sideways scroll');
     await page.screenshot({ path: path.join(out, `${tag}-cards.png`) });
-    // Each card opens its list.
-    await notPaid.click();
-    await ui.waitForSelector('.chip.t-unpaid.on');
-    assert.equal(await ui.locator('[data-tab="orders"]').getAttribute('aria-selected'), 'true', tag);
-    const rows = await ui.locator('[data-list]').innerText();
-    assert.ok(rows.includes('CARD-B') && rows.includes('CARD-C') && !rows.includes('CARD-A'), tag + ': the unpaid orders');
-    await page.screenshot({ path: path.join(out, `${tag}-unpaid-list.png`) });
-    await cards.nth(0).click(); await ui.waitForSelector('.chip.t-pending.on');
-    // Hover shows the card is clickable.
-    if (width === 1440) { await notPaid.hover(); await page.waitForTimeout(250); await page.screenshot({ path: path.join(out, `${tag}-hover.png`), clip: { x: 0, y: 150, width: 1440, height: 330 } }); }
+    // Every other section: no cards and no month picker.
+    for (const tab of ['orders', 'clients', 'claims', 'products', 'settings']) {
+      await ui.locator(`[data-tab="${tab}"]`).click(); await ui.waitForFunction(t => document.querySelector(`[data-tab="${t}"]`)?.classList.contains('on'), tab);
+      assert.equal(await ui.locator('[data-kpis]').isVisible(), false, `${tag}: no cards on ${tab}`); assert.equal(await ui.locator('.kpi-bar').isVisible(), false, `${tag}: no month picker on ${tab}`);
+      if (tab === 'orders') await page.screenshot({ path: path.join(out, `${tag}-orders.png`) });
+    }
+    await ui.locator('[data-tab="overview"]').click(); await ui.waitForSelector('[data-kpis] .stat', { state: 'visible' });
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
   }
   // Inside the Control page (its sidebar has [data-client-tab]) the sidebar is the navigation: no inner tab bar,
@@ -101,14 +96,15 @@ try {
     const ctx = await session(admin, 1440), page = await ctx.newPage(); await page.goto(`${base}/test-control.html`);
     const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpis] .stat');
     assert.equal(await ui.locator('[data-main-tabs]').isVisible(), false, 'no second row of tabs inside Control');
-    for (const tab of ['claims', 'products', 'orders']) { await page.evaluate(t => frames[0].postMessage({ type: 'dl-set-tab', tab: t }, location.origin), tab); await ui.waitForFunction(t => document.querySelector(`[data-tab="${t}"]`)?.classList.contains('on'), tab); }
-    await ctx.close(); console.log('PASS inside Control: sidebar only, Claims and Products reachable');
+    assert.equal(await ui.locator('[data-kpis]').isVisible(), true, 'cards on Clients overview');
+    for (const tab of ['claims', 'products', 'orders']) { await page.evaluate(t => frames[0].postMessage({ type: 'dl-set-tab', tab: t }, location.origin), tab); await ui.waitForFunction(t => document.querySelector(`[data-tab="${t}"]`)?.classList.contains('on'), tab); assert.equal(await ui.locator('[data-kpis]').isVisible(), false, 'no cards on ' + tab); }
+    await ctx.close(); console.log('PASS inside Control: sidebar only, Claims and Products reachable, cards on Clients overview only');
   }
   // Everything paid: the card says so and is no longer red.
   ok(await call('/admin/payments', 'POST', { clientId: id, amount: pb + pc, paidAt: '2026-10-22', method: 'Bank transfer', orderIds: [b.id, c.id] }, admin));
   const ctx = await session(admin, 1440), page = await ctx.newPage();
-  await page.goto(`${base}/test-admin.html?lang=en`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpis] .stat-go');
-  const notPaid = ui.locator('[data-kpis] .stat-go').nth(1);
+  await page.goto(`${base}/test-admin.html?lang=en`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpis] .stat');
+  const notPaid = ui.locator('[data-kpis] .stat-plain').nth(2);
   assert.equal(await notPaid.locator('strong').innerText(), '$0.00');
   assert.match(await notPaid.innerText(), /Every billed order is paid/);
   assert.ok(!(await notPaid.evaluate(el => el.classList.contains('owe'))));

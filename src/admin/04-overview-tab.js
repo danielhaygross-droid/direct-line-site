@@ -39,7 +39,8 @@
     window.DLMoneyChart.mount($('[data-money-chart]'), { title: 'Money by month, all clients', key: 'dl-admin-money', months, money, series: [
       { key: 'billed', label: 'Billed', tone: 'var(--mc-gold)', note: 'What clients were billed for their orders (cancelled orders not counted)' },
       { key: 'paid', label: 'Paid', tone: 'var(--mc-teal)', note: 'Payments received from clients' },
-      { key: 'unpaid', label: 'Not paid yet', tone: 'var(--mc-red)', note: 'Billed orders with no payment yet, by order month' },
+      // Not the "Not paid yet" card above (what clients owe after credit): these are the unpaid orders themselves.
+      { key: 'unpaid', label: 'Unpaid orders (before credit)', tone: 'var(--mc-red)', note: 'Billed orders with no payment yet, by order month, before any credit from cancelled orders' },
       { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Our share of the fees on those orders' },
       { key: 'fees', label: 'Cancellation fees', tone: 'var(--mc-orange)', note: 'Cancellation fees billed' },
       { key: 'refunds', label: 'Refunds', tone: 'var(--mc-violet)', note: 'Money sent back to clients' }] });

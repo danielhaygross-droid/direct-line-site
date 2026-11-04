@@ -176,11 +176,12 @@
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const cards = [
       { k: 'Clients', v: clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)' },
-      { k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: pending || noCost ? [pending ? `${pending} waiting to be processed` : '', noCost ? `${noCost} need cost` : ''].filter(Boolean) : ['Nothing waiting'], icon: 'orders', tone: 'var(--orange)', go: `data-go-filter="${pending ? 'pending' : noCost ? 'needscost' : 'all'}"`, hint: pending ? 'Show waiting orders' : noCost ? 'Show orders that need cost' : 'Show orders' },
-      { k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(owed - balanceC) >= 1 ? `Unpaid orders ${money(owed / 100)} − credit and earlier payments ${money((owed - balanceC) / 100)}` : '', icon: 'money', tone: owed > 0 ? 'var(--red)' : 'var(--mint)', go: 'data-go-filter="unpaid"', hint: 'Show unpaid orders', owe: owed > 0 },
+      { k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: pending || noCost ? [pending ? `${pending} waiting to be processed` : '', noCost ? `${noCost} need cost` : ''].filter(Boolean) : ['Nothing waiting'], icon: 'orders', tone: 'var(--orange)' },
+      { k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(owed - balanceC) >= 1 ? `Unpaid orders ${money(owed / 100)} − credit and earlier payments ${money((owed - balanceC) / 100)}` : '', icon: 'money', tone: owed > 0 ? 'var(--red)' : 'var(--mint)', owe: balanceC > 0 },
       { k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(fees), sub: [`${money(collectedC / 100)} collected`, `${money((feesC - collectedC) / 100)} not paid yet`, `${plural(os.length + keptOn.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
     ];
-    // Only the boxes that open a filtered list are buttons; Clients and Earnings are in the navigation already.
+    // Numbers only, no buttons (Erwin, 4 Nov 2026: the same links were already on the page, as the Orders chips and the
+    // Overview's "Needs your attention" list).
     $('[data-kpis]').innerHTML = cards.map(c => { const inner = `<span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}`, cls = `stat${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}`;
       return c.go ? `<button type="button" class="${cls} stat-go" style="--tone:${c.tone}" ${c.go} title="${esc(c.hint)}" aria-label="${esc(c.k)}: ${esc(c.hint)}">${inner}</button>` : `<div class="${cls} stat-plain" style="--tone:${c.tone}">${inner}</div>`; }).join('');
     const unread = S.orders.filter(o => o.unreadMessages).length;
@@ -188,6 +189,8 @@
   }
   function renderTab() {
     $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === S.tab); b.setAttribute('aria-selected', String(b.dataset.tab === S.tab)); });
+    // The summary cards (and their month picker) belong to Clients overview only (Erwin, 4 Nov 2026), not to every section.
+    for (const el of $$('.kpi-bar, [data-kpis]')) el.style.display = S.tab === 'overview' ? '' : 'none';
     if(S.tab==='claims'){renderClaims();return;}
     if(S.tab==='products'){renderProducts();return;}
     const body = $('[data-tab-body]');
@@ -297,7 +300,8 @@
     window.DLMoneyChart.mount($('[data-money-chart]'), { title: 'Money by month, all clients', key: 'dl-admin-money', months, money, series: [
       { key: 'billed', label: 'Billed', tone: 'var(--mc-gold)', note: 'What clients were billed for their orders (cancelled orders not counted)' },
       { key: 'paid', label: 'Paid', tone: 'var(--mc-teal)', note: 'Payments received from clients' },
-      { key: 'unpaid', label: 'Not paid yet', tone: 'var(--mc-red)', note: 'Billed orders with no payment yet, by order month' },
+      // Not the "Not paid yet" card above (what clients owe after credit): these are the unpaid orders themselves.
+      { key: 'unpaid', label: 'Unpaid orders (before credit)', tone: 'var(--mc-red)', note: 'Billed orders with no payment yet, by order month, before any credit from cancelled orders' },
       { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Our share of the fees on those orders' },
       { key: 'fees', label: 'Cancellation fees', tone: 'var(--mc-orange)', note: 'Cancellation fees billed' },
       { key: 'refunds', label: 'Refunds', tone: 'var(--mc-violet)', note: 'Money sent back to clients' }] });
