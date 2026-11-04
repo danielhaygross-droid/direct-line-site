@@ -172,7 +172,7 @@ details.fold>summary small{margin-inline-start:auto}
 .kpis .stat-go:hover{border-color:color-mix(in srgb,var(--tone) 45%,var(--line));box-shadow:var(--shadow);transform:translateY(-1px)}.kpis .stat-go.hero:hover{border-color:transparent}
 .kpis .stat-go:focus-visible{outline:2px solid var(--tone);outline-offset:2px}
 .kpis .stat-go.owe strong,.kpis .stat-plain.owe strong{color:var(--red)}
-.kpis .stat-note{color:color-mix(in srgb,var(--red) 80%,var(--text));font-size:12px}.kpis .stat-go.hero .stat-note{color:#e8a79e}
+.kpis .stat-fee{color:var(--muted);font-size:12px}.kpis .stat-note{color:color-mix(in srgb,var(--red) 80%,var(--text));font-size:12px}.kpis .stat-go.hero .stat-note{color:#e8a79e}
 @media(max-width:480px){.kpis .stat-go,.kpis .stat-plain{padding:14px}}
 /* Order panel: "Cancelled" in the status row opens this box (23 Oct 2026). */
 .cancel-box{margin-top:12px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--red) 35%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--red) 6%,var(--surface))}.cancel-box[hidden]{display:none}

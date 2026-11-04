@@ -72,6 +72,9 @@ try {
     const ctx = await session(admin, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=overview]');
     await ui.locator('[data-tab=overview]').click(); await ui.waitForSelector('[data-money-chart] .mc-svg'); await page.waitForTimeout(400);
+    // Admin only (Erwin, 4 Nov 2026): the unpaid bills without our fee, under "Not paid yet".
+    if (lang === 'en') { const k = await ui.locator('[data-kpis]').innerText(); if (/order/.test(await ui.locator('[data-kpis] .stat').nth(2).innerText())) assert.match(k, /Unpaid orders without our fee \$[\d,.]+ · our fee \$[\d,.]+/, tag + ' bill without our fee'); }
+    await ui.locator('[data-kpis]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-kpis.png`) });
     await ui.locator('[data-money-chart]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-chart.png`) });
     assert.equal(await ui.locator('[data-mc-key]').count(), 6, tag);
     // v2 (29 Oct 2026): the month card shows at once, on hover (desktop) or tap (phone), with every series of that month.
