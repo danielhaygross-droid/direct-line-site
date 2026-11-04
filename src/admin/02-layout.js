@@ -33,16 +33,19 @@
     const keptOn = inMonth.filter(o => o.status === 'cancelled' && o.paymentId && cents(o.commission) > 0);
     const feeC = o => cents(o.commission), collectedC = os.filter(o => PO.state(o) === 'paid').reduce((n, o) => n + feeC(o), 0) + keptOn.reduce((n, o) => n + feeC(o), 0);
     const feesC = os.reduce((n, o) => n + feeC(o), 0) + keptOn.reduce((n, o) => n + feeC(o), 0), fees = feesC / 100;
+    // Fees on orders with no bill yet (no cost): neither collected nor in Not paid yet, so the three parts add up.
+    const noBillC = os.filter(o => PO.state(o) === 'unbilled').reduce((n, o) => n + feeC(o), 0);
     // What clients owe right now: each client's balance (unpaid orders minus credit and payments not linked to orders).
     const balanceC = cl.reduce((n, c) => n + Math.max(0, cents(c.outstanding)), 0);
-    // The unpaid bills without our fee (Erwin, 4 Nov 2026, admin only): what of the unpaid orders is the supplier's cost.
+    // What clients owe without our fee (Erwin, 4 Nov 2026, admin only): the amount above minus our fee on the unpaid orders
+    // (credit and earlier payments lower the supplier's part; our fee stays ours).
     const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const cards = [
       { k: 'Clients', v: clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)' },
       { k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: pending || noCost ? [pending ? `${pending} waiting to be processed` : '', noCost ? `${noCost} need cost` : ''].filter(Boolean) : ['Nothing waiting'], icon: 'orders', tone: 'var(--orange)' },
-      { k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(owed - balanceC) >= 1 ? `Unpaid orders ${money(owed / 100)} − credit and earlier payments ${money((owed - balanceC) / 100)}` : '', sub3: unpaid.length ? `Unpaid orders without our fee ${money((owed - unpaidFeeC) / 100)} · our fee ${money(unpaidFeeC / 100)}` : '', icon: 'money', tone: owed > 0 ? 'var(--red)' : 'var(--mint)', owe: balanceC > 0 },
-      { k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(fees), sub: [`${money(collectedC / 100)} collected`, `${money((feesC - collectedC) / 100)} not paid yet`, `${plural(os.length + keptOn.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
+      { k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(owed - balanceC) >= 1 ? `Unpaid orders ${money(owed / 100)} − credit and earlier payments ${money((owed - balanceC) / 100)}` : '', sub3: balanceC > 0 ? `Without our fee ${money(Math.max(0, balanceC - unpaidFeeC) / 100)} · our fee ${money(Math.min(unpaidFeeC, balanceC) / 100)}` : '', icon: 'money', tone: owed > 0 ? 'var(--red)' : 'var(--mint)', owe: balanceC > 0 },
+      { k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(fees), sub: [`${money(collectedC / 100)} collected`, `${money((feesC - collectedC - noBillC) / 100)} not paid yet`, ...(noBillC ? [`${money(noBillC / 100)} not billed yet`] : []), `${plural(os.length + keptOn.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
     ];
     // Numbers only, no buttons (Erwin, 4 Nov 2026: the same links were already on the page, as the Orders chips and the
     // Overview's "Needs your attention" list).

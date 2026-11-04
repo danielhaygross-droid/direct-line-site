@@ -118,6 +118,13 @@
   }
   const pendingTransfer = () => transferProofs.find(t => t.id === S.drawer?.transferId && t.status === 'pending');
   // Paid / not paid at a glance, and payments that still need their orders ticked.
+  // What the client owes without our fee (admin only): the balance minus our fee on their unpaid orders (credit and
+  // earlier payments lower the supplier's part; our fee stays ours). Same rule as the Overview's Not paid yet card.
+  function owedNoFee(c) {
+    const fee = S.orders.filter(o => o.clientId === c.id && !o.archived && PO.state(o) === 'unpaid').reduce((n, o) => n + Math.round(Number(o.commission || 0) * 100), 0);
+    const owed = Math.round(Math.max(0, Number(c.outstanding || 0)) * 100);
+    return Math.max(0, owed - fee) / 100;
+  }
   function paySummary(c) {
     const mine = S.orders.filter(o => o.clientId === c.id && !o.archived), st = o => PO.state(o, balanceAdjustments);
     const unpaid = mine.filter(o => st(o) === 'unpaid'), due = unpaid.reduce((n, o) => n + PO.dueCents(o, balanceAdjustments), 0) / 100;
@@ -129,7 +136,7 @@
         <div><small>Paid orders</small><b class="pos">${mine.filter(o => st(o) === 'paid').length}</b></div>
         <div><small>Not paid yet</small><b class="${unpaid.length ? 'neg' : ''}">${unpaid.length}</b><em>${money(due)}</em>${unpaid.length ? `<em><span>Without our fee</span> ${money(due - unpaidFee)}</em>` : ''}</div>
         <div><small>No bill yet</small><b>${mine.filter(o => st(o) === 'unbilled').length}</b><em>No cost yet</em></div>
-        <div><small>Balance</small><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b><em><span>Billed</span> ${money(c.billed)} · <span>Paid</span> ${money(c.paid)}</em><em><span>Without our fee</span> ${money((c.billed || 0) - (c.ourShare || 0))}</em></div></div>
+        <div><small>Balance</small><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b><em><span>Billed</span> ${money(c.billed)} · <span>Paid</span> ${money(c.paid)}</em><em><span>Without our fee</span> ${money(owedNoFee(c))}</em></div></div>
       ${todo.length ? `<div class="pay-todo"><b class="pay-todo-title">To do</b>${todo.map(([l, one, many, hint]) => `<p><button type="button" class="link-btn" data-scroll-pay="pay-${l[0].id}"><b>${l.length}</b> <span>${l.length === 1 ? one : many}</span></button> <span class="dim">${hint}</span></p>`).join('')}</div>` : ''}</section>`;
   }
   // Billing details for receipts (the client fills them in on their Payments page; Ada uses them for the invoice header).
@@ -255,7 +262,7 @@
     d.body.innerHTML = `
       <div class="kpis">
         <div><span>Orders</span><b>${c.orders}</b></div>
-        <div><span>Outstanding</span><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b><small><span>Billed</span> ${money(c.billed)}</small><small><span>Without our fee</span> ${money((c.billed || 0) - (c.ourShare || 0))}</small></div>
+        <div><span>Outstanding</span><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b><small><span>Billed</span> ${money(c.billed)}</small><small><span>Without our fee</span> ${money(owedNoFee(c))}</small></div>
         <div><span>Paid</span><b class="pos">${money(c.paid)}</b></div>
         <div><span>Our earnings</span><b>${money(c.ourShare)}</b><small><span>Client’s profit</span> ${money(c.clientProfit)}</small></div></div>
       <div class="gtabs" role="tablist">${CLIENT_GROUPS.map(([g, label, secs]) => `<button type="button" role="tab" aria-selected="${group === g}" class="${group === g ? 'on' : ''}" data-ctab="${S.drawer.last?.[g] || secs[0]}">${label}${g === 'orders' ? ` <small>${orders.length}</small>` : ''}${g === 'shop' && waiting ? '<i class="tab-dot" title="Waiting for a price"></i>' : ''}</button>`).join('')}</div>
