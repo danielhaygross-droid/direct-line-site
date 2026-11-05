@@ -112,9 +112,11 @@
   const dayOf = o => PO.day(window.DLClientStoreMath.dateKey(o));
   // Orders a payment can be for: billed and not paid yet (plus the ones already on this payment), oldest first.
   const payableOrders = (clientId, paymentId = null) => S.orders.filter(o => o.clientId === clientId && !o.archived && (paymentId && o.paymentId === paymentId || !o.paymentId && PO.dueCents(o, balanceAdjustments) > 0)).sort(oldestFirst);
-  function poList(clientId, { paymentId = null, checked = [], amount = 0, compare = true, all = false } = {}) {
+  // A new payment: the client's credit (balance lower than their unpaid orders) is taken off, as in the client's pay box.
+  const clientCredit = c => PO.creditCents(payableOrders(c.id).reduce((n, o) => n + PO.dueCents(o, balanceAdjustments), 0), c.outstanding || 0);
+  function poList(clientId, { paymentId = null, checked = [], amount = 0, compare = true, all = false, credit = 0 } = {}) {
     const orders = all ? S.orders.filter(o => o.clientId === clientId && !o.archived && o.status !== 'cancelled').sort(oldestFirst) : payableOrders(clientId, paymentId);
-    return PO.checklist({ orders, checked: new Set(checked), adjustments: balanceAdjustments, orderName, dateOf: dayOf, esc, amount, compare, empty: all ? 'No orders yet.' : 'No billed orders are waiting for payment.' });
+    return PO.checklist({ orders, checked: new Set(checked), adjustments: balanceAdjustments, orderName, dateOf: dayOf, esc, amount, compare, credit, empty: all ? 'No orders yet.' : 'No billed orders are waiting for payment.' });
   }
   const pendingTransfer = () => transferProofs.find(t => t.id === S.drawer?.transferId && t.status === 'pending');
   // Paid / not paid at a glance, and payments that still need their orders ticked.
@@ -172,7 +174,7 @@
       <label class="field"><span>Method</span><select name="method">${methods('').map(m => `<option value="${m}">${m}</option>`).join('')}</select></label>
       <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="500"${tr ? ` placeholder="Transfer confirmation #${tr.id}"` : ''}></label>
       <p class="pay-step full"><b>2</b><span>Which orders it pays</span></p>
-      <div class="full">${poList(c.id, { checked: tr ? tr.orderIds || [] : [], amount: tr ? tr.amount : 0 })}</div>
+      <div class="full">${poList(c.id, { checked: tr ? tr.orderIds || [] : [], amount: tr ? tr.amount : 0, credit: clientCredit(c) })}</div>
       <p class="pay-step full"><b>3</b><span>Receipt for the client <small>optional: you can also attach it later</small></span></p>
       ${receiptInput()}
       <div class="full pay-actions"><button class="btn btn-primary" type="submit">Record payment</button><button type="button" class="btn" data-pay-cancel>Cancel</button><p class="form-msg" data-pay-msg></p></div></form>`;

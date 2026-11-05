@@ -370,3 +370,5 @@ small{font-size:max(12px,.85em)}.store-label small{opacity:1;color:var(--muted)}
 .store-add [data-client-store-form]>h3,.store-edit [data-client-store-form]>h3{display:none}
 /* Phone order cards (stacked rows): no empty tracking / earned / profit lines (5 Nov 2026). */
 @media(max-width:760px){.tbl.stack td.empty-sm{display:none}}
+/* Pay box: ticked orders minus the credit on the account (5 Nov 2026). */
+.pf-credit{margin:0 0 6px;font-size:14px;color:var(--muted)}.pf-credit b{color:var(--text)}.pf-credit b:last-child{color:var(--mint)}

@@ -82,3 +82,23 @@ test('wired up: script on both pages, Hebrew for the new text, payments linked o
   const portal = await read('../server/portal.mjs');
   assert.ok(portal.includes('SCHEMA.push(...PAYMENT_ORDER_SCHEMA, ...BILLING_SCHEMA'));
 });
+
+test('credit: money the client already has with us comes off what they send (5 Nov 2026)', async () => {
+  const P = (await load('payment-orders.js')).DLPayOrders;
+  assert.equal(P.creditCents(12345, 100.45), 2300, 'unpaid orders $123.45, balance $100.45: $23.00 credit');
+  assert.equal(P.creditCents(5000, 50), 0); assert.equal(P.creditCents(5000, 80), 0, 'balance above the orders: no credit');
+  assert.equal(P.creditCents(5000, -10), 6000, 'balance already in credit: all of it');
+  const orders = [{ id: 1, orderRef: 'A-1', status: 'pending', price: 20 }, { id: 2, orderRef: 'B-2', status: 'pending', price: 25 }];
+  const box = opts => P.checklist({ orders, orderName: o => o.orderRef, dateOf: () => '1 Oct 2026', esc, checked: new Set([1, 2]), ...opts });
+  let html = box({ amount: 35, credit: 1000 });
+  assert.match(html, /data-credit="1000"/); assert.match(html, /Credit on the account, taken off:/); assert.match(html, /-\$10\.00/);
+  assert.match(html, /The amount matches the ticked orders minus credit\./);
+  assert.match(box({ amount: 45, credit: 1000 }), /The amount is \$10\.00 more than the ticked orders minus credit\./);
+  assert.doesNotMatch(box({ amount: 45 }), /data-credit|Credit on the account/, 'no credit: nothing extra');
+  // "Tick oldest up to the amount" counts the credit too: $25 + $10 credit covers A-1 ($20), not B-2 as well ($45).
+  const inputs = [2000, 2500].map(c => ({ dataset: { cents: String(c) }, checked: false }));
+  P.tickOldest({ dataset: { credit: '1000' }, closest: () => ({ querySelector: () => ({ value: '25' }) }), querySelectorAll: () => inputs });
+  assert.deepEqual(inputs.map(i => i.checked), [true, false]);
+  P.tickOldest({ dataset: { credit: '1000' }, closest: () => ({ querySelector: () => ({ value: '35' }) }), querySelectorAll: () => inputs });
+  assert.deepEqual(inputs.map(i => i.checked), [true, true]);
+});

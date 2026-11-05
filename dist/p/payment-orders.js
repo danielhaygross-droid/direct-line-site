@@ -3,6 +3,8 @@
    window.DLPayOrders:
      dueCents(order, adjustments) what the order adds to the bill, in cents (same rule as the balance)
      state(order, adjustments)    'paid' | 'unpaid' | 'unbilled' (nothing billed yet) | null (cancelled, nothing billed)
+     creditCents(unpaid, balance) money the client already has with us that no order shows (cancelled-order credit, a
+                                  payment bigger than its orders): unpaid orders minus the balance, never below 0
      checklist(opts)              tick boxes with a running total, compared with the form's amount field
      picked(form)                 the ticked order ids
      linked(opts)                 "For 40 orders · $1301.00" with the orders listed, for a recorded payment */
@@ -24,13 +26,17 @@
   const tag = (o, adjustments, line = false) => { const s = state(o, adjustments), t = o.status === 'cancelled' && o.paymentId ? '<span class="pay-tag refunded">Refunded</span>' : s === 'paid' ? '<span class="pay-tag paid">Paid</span>' : s === 'unpaid' ? '<span class="pay-tag unpaid">Not paid</span>' : ''; return t && line ? `<div class="pay-line">${t}</div>` : t; };
   const orderWord = n => n === 1 ? 'order' : 'orders';
 
-  // Compares the amount with the ticked orders: '' when no amount or nothing ticked.
-  function gapText(amountCents, sumCents, ticked) {
+  // Erwin, 5 Nov 2026 (Balance due lower than "Send the total"): what the client already has with us and
+  // no order shows is taken off what they still have to send, so the pay box and the balance give the same number.
+  const creditCents = (unpaidCents, balance) => Math.max(0, Math.round(unpaidCents) - cents(balance));
+  // Compares the amount with the ticked orders (minus the credit): '' when no amount or nothing ticked.
+  function gapText(amountCents, sumCents, ticked, credit = 0) {
     if (!ticked || !(amountCents > 0)) return { text: '', tone: '' };
-    if (amountCents === sumCents) return { text: 'The amount matches the ticked orders.', tone: 'ok' };
-    return amountCents > sumCents
-      ? { text: `The amount is ${fmt(amountCents - sumCents)} more than the ticked orders.`, tone: 'warn' }
-      : { text: `The amount is ${fmt(sumCents - amountCents)} less than the ticked orders.`, tone: 'warn' };
+    const target = Math.max(0, sumCents - credit), what = credit > 0 ? 'the ticked orders minus credit' : 'the ticked orders';
+    if (amountCents === target) return { text: `The amount matches ${what}.`, tone: 'ok' };
+    return amountCents > target
+      ? { text: `The amount is ${fmt(amountCents - target)} more than ${what}.`, tone: 'warn' }
+      : { text: `The amount is ${fmt(target - amountCents)} less than ${what}.`, tone: 'warn' };
   }
   const sumText = (n, c) => n ? `${n} ${orderWord(n)} ticked · ${fmt(c)}` : 'No orders ticked';
 
@@ -39,6 +45,7 @@
              empty: text when there is nothing to tick, note: small text under the list } */
   function checklist(opts) {
     const { orders, checked = new Set(), adjustments = [], orderName, dateOf, esc, amount = 0, compare = true, empty = 'No orders waiting for payment.', note = '' } = opts;
+    const credit = Math.max(0, Math.round(opts.credit || 0)), cr = credit ? ` data-credit="${credit}"` : '';
     if (!orders.length) return `<div class="po-box" data-po${compare ? ' data-po-compare' : ''}><p class="muted po-empty">${esc(empty)}</p></div>`;
     let n = 0, sum = 0;
     const rows = orders.map(o => {
@@ -47,11 +54,11 @@
       const tag = o.status === 'cancelled' ? '<span class="po-tag">Cancelled</span>' : '';
       return `<label class="po-row"><input type="checkbox" name="poOrder" value="${o.id}" data-cents="${due}"${on ? ' checked' : ''}><span class="po-main"><b data-no-i18n dir="auto">${esc(orderName(o))}</b><small><span data-no-i18n>${esc(dateOf(o))}</span>${o.buyerName ? ` · <span data-no-i18n>${esc(o.buyerName)}</span>` : ''}</small></span>${tag}<b class="po-amt">${fmt(due)}</b></label>`;
     }).join('');
-    const gap = compare ? gapText(cents(amount), sum, n) : { text: '', tone: '' };
-    return `<div class="po-box" data-po${compare ? ' data-po-compare' : ''}>
+    const gap = compare ? gapText(cents(amount), sum, n, credit) : { text: '', tone: '' };
+    return `<div class="po-box" data-po${compare ? ' data-po-compare' : ''}${cr}>
       <div class="po-head"><b class="po-sum" data-po-sum>${sumText(n, sum)}</b><span class="po-tools">${compare ? '<button type="button" class="btn btn-sm" data-po-oldest title="Ticks the oldest orders first, as many as the amount covers">Tick oldest up to the amount</button>' : ''}<button type="button" class="btn btn-sm" data-po-all>Tick all</button><button type="button" class="btn btn-sm" data-po-none>Clear</button></span></div>
       <div class="po-list">${rows}</div>
-      <p class="po-gap${gap.tone ? ' ' + gap.tone : ''}" data-po-gap>${gap.text}</p>${note ? `<p class="note po-note">${esc(note)}</p>` : ''}
+      ${credit && compare ? `<p class="po-credit"><span>Credit on the account, taken off:</span> <b data-no-i18n><bdi dir="ltr">-${fmt(credit)}</bdi></b></p>` : ''}<p class="po-gap${gap.tone ? ' ' + gap.tone : ''}" data-po-gap>${gap.text}</p>${note ? `<p class="note po-note">${esc(note)}</p>` : ''}
     </div>`;
   }
   const picked = form => [...form.querySelectorAll('[name=poOrder]:checked')].map(i => Number(i.value));
@@ -61,7 +68,7 @@
     const on = [...box.querySelectorAll('[name=poOrder]:checked')], sum = on.reduce((n, i) => n + Number(i.dataset.cents || 0), 0);
     const s = box.querySelector('[data-po-sum]'); if (s) s.textContent = sumText(on.length, sum);
     const g = box.querySelector('[data-po-gap]'); if (!g) return;
-    const amount = box.closest('form')?.querySelector('[name=amount]'), gap = box.hasAttribute('data-po-compare') ? gapText(cents(amount?.value), sum, on.length) : { text: '', tone: '' };
+    const amount = box.closest('form')?.querySelector('[name=amount]'), gap = box.hasAttribute('data-po-compare') ? gapText(cents(amount?.value), sum, on.length, Number(box.dataset.credit || 0)) : { text: '', tone: '' };
     g.textContent = gap.text; g.className = 'po-gap' + (gap.tone ? ' ' + gap.tone : '');
   }
   // Ticks the oldest orders (the list is oldest first) in order, and stops at the first one the amount doesn't cover,
@@ -69,7 +76,7 @@
   function tickOldest(box) {
     const amount = cents(box.closest('form')?.querySelector('[name=amount]')?.value);
     if (!(amount > 0)) { box.closest('form')?.querySelector('[name=amount]')?.focus(); return; }
-    let left = amount, full = false;
+    let left = amount + Number(box.dataset?.credit || 0), full = false;
     for (const i of box.querySelectorAll('[name=poOrder]')) { const c = Number(i.dataset.cents || 0); i.checked = !full && c <= left; if (i.checked) left -= c; else full = true; }
   }
 
@@ -122,5 +129,5 @@
         <div class="full form-actions"><button class="btn btn-primary" type="submit">Save refund</button><p class="form-msg" data-refund-msg></p></div></form></details>` : ''}
     </section>`;
   }
-  root.DLPayOrders = { cancelledBox, dueCents, state, tag, day, checklist, picked, linked, refresh, tickOldest };
+  root.DLPayOrders = { cancelledBox, dueCents, state, tag, day, checklist, picked, linked, refresh, tickOldest, creditCents };
 })(typeof window !== 'undefined' ? window : globalThis);

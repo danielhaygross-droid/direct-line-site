@@ -13,13 +13,17 @@
   // Billed orders that are not paid yet (all stores), oldest first.
   const unpaidOrders = () => S.orders.filter(o => window.DLPayOrders.state(o, S.adjustments) === 'unpaid').sort((a, b) => window.DLClientStoreMath.dateKey(a).localeCompare(window.DLClientStoreMath.dateKey(b)) || a.createdAt - b.createdAt || a.id - b.id);
   const unpaidCents = () => unpaidOrders().reduce((n, o) => n + window.DLPayOrders.dueCents(o, S.adjustments), 0);
+  // Erwin, 5 Nov 2026: what the client already has with us (cancelled-order credit, money not matched to an order) comes
+  // off what they send, so "Send the total" = Balance due when every order is ticked.
+  const creditCents = () => window.DLPayOrders.creditCents(unpaidCents(), S.me.summary?.outstanding || 0);
+  const toSendCents = (sum = unpaidCents()) => Math.max(0, sum - creditCents());
   // Short "N orders not paid yet · $X  [Pay for orders]" line for Home and Orders (nothing when all is paid).
   function payStrip() {
-    const list = unpaidOrders(); if (!list.length || S.me.preview) return '';
+    const list = unpaidOrders(); if (!list.length || S.me.preview || !toSendCents()) return '';
     // Reminder (portal review, 28 Oct 2026): once the oldest unpaid order is more than 14 days old the strip turns red and
     // says since when. Only a reminder: nothing is blocked or charged.
     const oldest = list.map(o => window.DLClientStoreMath.dateKey(o)).sort()[0], days = oldest ? Math.floor((Date.now() - Date.parse(oldest + 'T12:00:00Z')) / 864e5) : 0, late = days > 14;
-    return `<a class="pay-strip${late ? ' late' : ''}" href="#/payments?pay=1" data-pay-go><span class="pay-strip-ic">${ic('wallet')}</span><span class="pay-strip-txt"><b>${list.length} ${list.length === 1 ? 'order' : 'orders'} not paid yet</b><small>${money(unpaidCents() / 100)}${late ? ` · <span>oldest from</span> <span data-no-i18n>${esc(window.DLPayOrders.day(oldest))}</span> (<span>${days} days ago</span>)` : ''}</small></span><span class="btn btn-primary btn-sm">Pay for orders</span></a>`;
+    return `<a class="pay-strip${late ? ' late' : ''}" href="#/payments?pay=1" data-pay-go><span class="pay-strip-ic">${ic('wallet')}</span><span class="pay-strip-txt"><b>${list.length} ${list.length === 1 ? 'order' : 'orders'} not paid yet</b><small>${money(toSendCents() / 100)}${late ? ` · <span>oldest from</span> <span data-no-i18n>${esc(window.DLPayOrders.day(oldest))}</span> (<span>${days} days ago</span>)` : ''}</small></span><span class="btn btn-primary btn-sm">Pay for orders</span></a>`;
   }
   // "Not paid yet": the orders still to pay, so the client can see what the balance is made of (preview mode only;
   // clients get the same list as step 1 of "Pay for your orders").
@@ -49,13 +53,13 @@
      Typing another amount stops the automatic fill; a note says how it differs from the ticked orders. */
   function payFlow() {
     if (S.me.preview) return `${unpaidCard()}${S.transfers.length ? `<section class="card card-pad"><h3 class="sec-title">Your transfer confirmations</h3>${confirmationCards()}</section>` : ''}`;
-    const list = unpaidOrders(), PO = window.DLPayOrders, total = unpaidCents(), today = localDay(), bank = bankRows();
+    const list = unpaidOrders(), PO = window.DLPayOrders, credit = creditCents(), total = toSendCents(), today = localDay(), bank = bankRows();
     const amt = c => (c / 100).toFixed(2);
     const step = (n, title, body) => `<li class="pf-step"><span class="pf-n">${n}</span><div class="pf-body"><h4>${title}</h4>${body}</div></li>`;
-    const ticks = list.length ? step(1, 'Choose the orders you are paying for', PO.checklist({ orders: list, checked: new Set(list.map(o => o.id)), adjustments: S.adjustments, orderName, dateOf: o => PO.day(window.DLClientStoreMath.dateKey(o)), esc, compare: false })) : '';
+    const ticks = list.length ? step(1, 'Choose the orders you are paying for', PO.checklist({ orders: list, checked: new Set(list.map(o => o.id)), adjustments: S.adjustments, orderName, dateOf: o => PO.day(window.DLClientStoreMath.dateKey(o)), esc, compare: false, credit })) : '';
     const n0 = list.length ? 1 : 0;
     const send = step(n0 + 1, list.length ? `<span>Send the total</span> <b class="pf-total" data-pf-total>${money(total / 100)}</b> <span>by bank transfer</span>` : 'Send your payment by bank transfer',
-      `${list.length ? `<p class="pf-copy"><button type="button" class="btn btn-sm" data-copy="${amt(total)}" data-pf-copy>${ic('copy')}Copy amount</button></p>` : ''}${bank || '<p class="muted">Use the bank details Direct Line gave you.</p>'}`);
+      `${list.length && credit ? `<p class="pf-credit" data-pf-credit><span>Ticked orders</span> <b data-no-i18n data-pf-sum>${money(unpaidCents() / 100)}</b> <span>minus the credit on your account</span> <b data-no-i18n><bdi dir="ltr">-${money(credit / 100)}</bdi></b></p>` : ''}${list.length ? `<p class="pf-copy"><button type="button" class="btn btn-sm" data-copy="${amt(total)}" data-pf-copy>${ic('copy')}Copy amount</button></p>` : ''}${bank || '<p class="muted">Use the bank details Direct Line gave you.</p>'}`);
     const upload = step(n0 + 2, 'Upload the transfer confirmation', `<div class="form-grid">
         <label class="field"><span>Amount you sent (USD)</span><input name="amount" type="number" min="0.01" max="9999999" step="0.01" required value="${list.length ? amt(total) : ''}"></label>
         <label class="field"><span>Transfer date</span><input name="date" type="date" value="${today}" required></label>
@@ -69,14 +73,16 @@
   }
   // Keeps the total, the Copy button and (until the client types their own) the amount in step with the ticks.
   function syncPayFlow(f, typed) {
-    const on = [...f.querySelectorAll('[name=poOrder]:checked')], sum = on.reduce((n, i) => n + Number(i.dataset.cents || 0), 0), box = f.querySelector('[data-po]');
+    const on = [...f.querySelectorAll('[name=poOrder]:checked')], ticked = on.reduce((n, i) => n + Number(i.dataset.cents || 0), 0), box = f.querySelector('[data-po]');
     if (!box) return;
+    const credit = Number(box.dataset.credit || 0), sum = Math.max(0, ticked - credit), what = credit ? 'the ticked orders minus your credit' : 'the ticked orders';
     if (typed) f.dataset.amountTyped = '1';
     else if (f.dataset.amountTyped !== '1') f.amount.value = sum ? (sum / 100).toFixed(2) : '';
     const t = f.querySelector('[data-pf-total]'); if (t) t.textContent = money(sum / 100);
+    const ps = f.querySelector('[data-pf-sum]'); if (ps) ps.textContent = money(ticked / 100);
     const c = f.querySelector('[data-pf-copy]'); if (c) c.dataset.copy = (sum / 100).toFixed(2);
     const g = f.querySelector('[data-pf-gap]'), sent = Math.round(Number(f.amount.value || 0) * 100);
-    g.textContent = !on.length ? 'No orders ticked: the payment won’t be linked to orders.' : !(sent > 0) || sent === sum ? '' : sent > sum ? `The amount is ${money((sent - sum) / 100)} more than the ticked orders.` : `The amount is ${money((sum - sent) / 100)} less than the ticked orders.`;
+    g.textContent = !on.length ? 'No orders ticked: the payment won’t be linked to orders.' : !(sent > 0) || sent === sum ? '' : sent > sum ? `The amount is ${money((sent - sum) / 100)} more than ${what}.` : `The amount is ${money((sum - sent) / 100)} less than ${what}.`;
     g.className = 'po-gap full' + (g.textContent ? ' warn' : '');
   }
   function bindPayments() {
