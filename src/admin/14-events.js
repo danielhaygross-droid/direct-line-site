@@ -187,7 +187,13 @@
       if (!ar.dataset.armed) { ar.dataset.armed = '1'; ar.textContent = 'Click again to archive'; setTimeout(() => { if (ar.isConnected) { delete ar.dataset.armed; ar.textContent = 'Archive client'; } }, 4000); return; }
       setArchived(Number(ar.dataset.archive), true, ar); return;
     }
-    const record=t.closest('[data-record-transfer]'), restore=t.closest('[data-restore-payment]');
+    const record=t.closest('[data-record-transfer]'), restore=t.closest('[data-restore-payment]'), rmTr=t.closest('[data-remove-transfer]');
+    if (rmTr) {
+      if (!confirm('Remove this transfer confirmation? Use it for one sent twice or by mistake. No payment is recorded.')) return;
+      rmTr.disabled=true;
+      try { await api('/admin/transfers/'+rmTr.dataset.removeTransfer+'/remove',{method:'POST'}); await loadAll();renderList();await loadPayments(S.drawer.id);toast('Transfer confirmation removed.'); }
+      catch(ex) {toast(ex.message);rmTr.disabled=false;} return;
+    }
     if (record) { S.drawer.transferId=Number(record.dataset.recordTransfer); delete S.drawer.payEdit; delete S.drawer.payAttach; fillClient(clientOf(S.drawer.id), false); setTimeout(()=>$('[data-pay-card]')?.scrollIntoView({behavior:'smooth',block:'start'}),50); return; }
     if (restore) {
       const b=restore;b.disabled=true;

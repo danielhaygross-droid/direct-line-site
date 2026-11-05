@@ -61,6 +61,12 @@ export async function saveTransfer(DB, clientId, body) {
 }
 // Records a transfer confirmation as a payment. The admin may correct the amount / date / method / note
 // (e.g. bank fees) and choose the orders; without orderIds, the client's ticked orders that are still open are used.
+// A confirmation sent twice (or by mistake) leaves the list without a payment (Erwin, 5 Nov 2026). Soft: the file stays,
+// archived; only a confirmation with no payment recorded from it.
+export async function removeTransfer(DB, id) {
+  const row=await DB.prepare("UPDATE portal_files f SET archived=TRUE WHERE f.id=? AND f.kind='confirmation' AND NOT f.archived AND NOT EXISTS (SELECT 1 FROM client_payments p WHERE p.confirmation_id=f.id) RETURNING id").bind(id).first();
+  return !!row;
+}
 export async function recordTransfer(DB, id, body={}) {
   const f=await DB.prepare("SELECT * FROM portal_files WHERE id=? AND kind='confirmation' AND NOT archived").bind(id).first();
   if (!f) return null;

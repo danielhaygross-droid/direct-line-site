@@ -1065,7 +1065,7 @@
   }
   function transferProofHTML() {
     const list = transferProofs.filter(t => t.status !== 'recorded');
-    return list.length ? `<section class="card card-pad attn-card"><h3 class="sec-title">Transfer confirmations to check</h3><p class="note">The client sent these. Check that the money arrived, then record the payment.</p>${list.map(t=>`<div class="confirmation-row"><div><b>${money(t.amount)}</b> <small data-no-i18n>${esc(PO.day(t.date))}</small><p><a href="/api/portal/files/${t.id}${t.mime.startsWith('image/') ? '?inline=1" data-photo="1' : ''}" target="_blank" rel="noopener">Open confirmation</a></p>${t.orderIds?.length ? `<small class="dim"><span>Orders ticked by the client:</span> ${t.orderIds.length}</small>` : ''}${t.mime.startsWith('image/') ? `<img data-photo src="/api/portal/files/${t.id}?inline=1" style="max-width:160px;max-height:120px;object-fit:contain" alt="Transfer confirmation">` : ''}</div>${t.status==='pending' ? `<button type="button" class="btn btn-primary" data-record-transfer="${t.id}">Record this payment</button>` : `<button type="button" class="btn" data-restore-payment="${t.paymentId}">Restore payment</button>`}</div>`).join('')}</section>` : '';
+    return list.length ? `<section class="card card-pad attn-card"><h3 class="sec-title">Transfer confirmations to check</h3><p class="note">The client sent these. Check that the money arrived, then record the payment.</p>${list.map(t=>`<div class="confirmation-row"><div><b>${money(t.amount)}</b> <small data-no-i18n>${esc(PO.day(t.date))}</small><p><a href="/api/portal/files/${t.id}${t.mime.startsWith('image/') ? '?inline=1" data-photo="1' : ''}" target="_blank" rel="noopener">Open confirmation</a></p>${t.orderIds?.length ? `<small class="dim"><span>Orders ticked by the client:</span> ${t.orderIds.length}</small>` : ''}${t.mime.startsWith('image/') ? `<img data-photo src="/api/portal/files/${t.id}?inline=1" style="max-width:160px;max-height:120px;object-fit:contain" alt="Transfer confirmation">` : ''}</div>${t.status==='pending' ? `<button type="button" class="btn btn-primary" data-record-transfer="${t.id}">Record this payment</button><button type="button" class="btn btn-ghost" data-remove-transfer="${t.id}" title="For a confirmation sent twice or by mistake. Nothing is paid or deleted.">Remove</button>` : `<button type="button" class="btn" data-restore-payment="${t.paymentId}">Restore payment</button>`}</div>`).join('')}</section>` : '';
   }
   // ---------- Money > Payments (Erwin, 21 Oct 2026): one card per payment — the amount, the orders it pays and its
   // receipt. "Attach receipt" sends the receipt to the client (notification + download on their Payments page). ----------
@@ -1579,7 +1579,13 @@
       if (!ar.dataset.armed) { ar.dataset.armed = '1'; ar.textContent = 'Click again to archive'; setTimeout(() => { if (ar.isConnected) { delete ar.dataset.armed; ar.textContent = 'Archive client'; } }, 4000); return; }
       setArchived(Number(ar.dataset.archive), true, ar); return;
     }
-    const record=t.closest('[data-record-transfer]'), restore=t.closest('[data-restore-payment]');
+    const record=t.closest('[data-record-transfer]'), restore=t.closest('[data-restore-payment]'), rmTr=t.closest('[data-remove-transfer]');
+    if (rmTr) {
+      if (!confirm('Remove this transfer confirmation? Use it for one sent twice or by mistake. No payment is recorded.')) return;
+      rmTr.disabled=true;
+      try { await api('/admin/transfers/'+rmTr.dataset.removeTransfer+'/remove',{method:'POST'}); await loadAll();renderList();await loadPayments(S.drawer.id);toast('Transfer confirmation removed.'); }
+      catch(ex) {toast(ex.message);rmTr.disabled=false;} return;
+    }
     if (record) { S.drawer.transferId=Number(record.dataset.recordTransfer); delete S.drawer.payEdit; delete S.drawer.payAttach; fillClient(clientOf(S.drawer.id), false); setTimeout(()=>$('[data-pay-card]')?.scrollIntoView({behavior:'smooth',block:'start'}),50); return; }
     if (restore) {
       const b=restore;b.disabled=true;
