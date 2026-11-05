@@ -54,10 +54,10 @@
         <td class="wide" data-sort-value="${Number(o.createdAt) || 0}"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small title="${esc(window.DL.displayTime(o.createdAt))}">${esc(fullDate(o.createdAt))}</small>${updateTags(o)}</span></div></td>
         <td data-label="Customer"><span data-no-i18n>${esc(o.buyerName) || '—'}</span></td>
         <td data-label="Store">${window.DLClientStoreUI.label(S.stores.find(s=>s.id===o.storeId))}</td>${compact ? '' : `<td data-label="Destination" class="hide-sm">${esc(place(o.destination))}</td>
-        <td data-label="Tracking"${o.trackingNumber ? '' : ' class="hide-sm"'}>${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>${o.courier ? `<br><small class="dim" data-no-i18n>${esc(o.courier)}</small>` : ''}${UI.notShippedYet(o) ? '<small class="ship-warn">Not shipped yet</small>' : ''}` : '<span class="dim">Not yet</span>'}</td>`}
-        <td data-label="Earned" class="num${earnedOf(o) == null ? ' hide-sm' : ''}">${earnedCell(o)}</td>
+        <td data-label="Tracking"${o.trackingNumber ? '' : ' class="empty-sm"'}>${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>${o.courier ? `<br><small class="dim" data-no-i18n>${esc(o.courier)}</small>` : ''}${UI.notShippedYet(o) ? '<small class="ship-warn">Not shipped yet</small>' : ''}` : '<span class="dim">Not yet</span>'}</td>`}
+        <td data-label="Earned" class="num${earnedOf(o) == null ? ' empty-sm' : ''}">${earnedCell(o)}</td>
         <td data-label="Cost" class="num">${o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : `<b>${money(o.price)}</b>`}${window.DLPayOrders.tag(o, S.adjustments, true)}</td>
-        <td data-label="Profit" class="num ${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}${profitOf(o) == null ? ' hide-sm' : ''}">${profitCell(o)}</td>
+        <td data-label="Profit" class="num ${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}${profitOf(o) == null ? ' empty-sm' : ''}">${profitCell(o)}</td>
         <td data-label="Status" data-sort-value="${STATUSES.indexOf(o.status)} ${o.status}">${UI.pill(o.status)}${UI.delayTag(o)}${UI.revTag(o)}</td>
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
