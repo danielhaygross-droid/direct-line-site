@@ -85,6 +85,14 @@ try {
       assert.deepEqual(r.tap, [], `${tag} ${route}: buttons under 44px on a phone ${JSON.stringify(r.tap)}`);
       if (lang === 'he') for (const d of r.dates) assert.ok(d.includes('\u2066'), `${tag} ${route}: Hebrew date kept left to right: ${d}`);
       await page.screenshot({ path: path.join(out, `${tag}-${route}.png`) });
+      // PR 2 (5 Nov 2026): the unpaid strip is on Home and Payments, not Orders; on a phone an order card shows no empty
+      // lines ("—", "Not yet") and no update tag that repeats its status pill ("Now Delivered" + "Delivered").
+      if (route === 'orders') {
+        assert.equal(await page.locator('.pay-strip').count(), 0, tag + ': no unpaid strip on Orders');
+        const rows = await page.evaluate(() => [...document.querySelectorAll('[data-orders-list] tr[data-open-order]')].map(tr => ({ empty: [...tr.querySelectorAll('td[data-label]')].filter(td => td.offsetParent && /^(—|Not yet|לא עדיין|עדיין לא)$/.test(td.innerText.trim())).map(td => td.dataset.label), pill: tr.querySelector('.pill')?.innerText.trim(), tags: [...tr.querySelectorAll('.upd-tag')].map(t => t.innerText.trim()) })));
+        assert.ok(rows.length > 0, tag + ': orders listed');
+        for (const r of rows) { if (width < 600) assert.deepEqual(r.empty, [], tag + ': empty lines on a phone card'); assert.ok(!r.tags.some(t => r.pill && t.endsWith(r.pill)), tag + ': status said twice ' + JSON.stringify(r)); }
+      }
     }
     // The order panel shows the exact times (activity).
     await page.evaluate(id => { location.hash = '#/orders'; }, ORDER); await page.waitForTimeout(500);

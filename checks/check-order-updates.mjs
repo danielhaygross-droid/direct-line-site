@@ -91,7 +91,8 @@ try {
     const first = await page.locator('[data-orders-list] tbody tr[data-open-order]').first().getAttribute('data-open-order');
     assert.equal(Number(first), A.id, tag + ' client: A first');
     const tagsA = await page.locator(`[data-orders-list] tr[data-open-order="${A.id}"] .upd-tag`).allInnerTexts();
-    assert.ok(tagsA.includes(lang === 'he' ? 'נוסף מספר מעקב' : 'Tracking added') && tagsA.includes(lang === 'he' ? 'עכשיו בטיפול' : 'Now In Progress'), tag + ' client tags: ' + tagsA.join(', '));
+    // 5 Nov 2026: no "Now In Progress" tag next to the In Progress pill (the status is said once); other updates stay.
+    assert.ok(tagsA.includes(lang === 'he' ? 'נוסף מספר מעקב' : 'Tracking added') && !tagsA.includes(lang === 'he' ? 'עכשיו בטיפול' : 'Now In Progress'), tag + ' client tags: ' + tagsA.join(', '));
     await page.screenshot({ path: path.join(out, `${tag}-portal.png`) });
     await page.locator(`[data-orders-list] tr[data-open-order="${A.id}"]`).click(); await page.waitForTimeout(500); await page.keyboard.press('Escape'); await page.waitForTimeout(400);
     await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('[data-orders-list] tbody tr'); await page.waitForTimeout(500);

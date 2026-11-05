@@ -48,6 +48,14 @@
     // Hebrew: the date and time stay one left-to-right run (U+2066 … U+2069), so "04/11/2026, 19:56" doesn't flip (5 Nov 2026).
     return hebrewTime() ? '\u2066' + f.format(new Date(Number(sec)*1000)) + '\u2069 (שעון ישראל)' : f.format(new Date(Number(sec)*1000)) + ` (${zone})`;
   };
+  // Short date (and time) for lists, the order panel and the timeline (UI UX Pro Max, 5 Nov 2026): "5 Nov 2026, 19:56";
+  // Hebrew "05/11/2026 19:56" in one left-to-right run. No seconds and no zone on every line: the zone note is shown once.
+  const shortTime = (sec, withTime = true) => {
+    if (!Number.isFinite(Number(sec)) || Number(sec) <= 0) return '';
+    const he = hebrewTime(), t = withTime ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' } : {};
+    const s = new Intl.DateTimeFormat('en-GB', { timeZone: displayTimeZone(), day: he ? '2-digit' : 'numeric', month: he ? '2-digit' : 'short', year: 'numeric', ...t }).format(new Date(Number(sec) * 1000));
+    return he ? '\u2066' + s.replace(',', '') + '\u2069' : s;
+  };
   const date = s => (s ? new Date(s * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
   const trackingUrl = n => 'https://t.17track.net/en#nums=' + encodeURIComponent(n);
   // A product link pasted without https:// ("www.etsy.com/listing/…") is completed. Same rule as productLinks() on the server.
@@ -510,5 +518,5 @@
   let markQueued = false;
   if (typeof MutationObserver === 'function') new MutationObserver(() => { if (markQueued) return; markQueued = true; requestAnimationFrame(() => { markQueued = false; markSortable(document); }); }).observe(document.documentElement, { childList: true, subtree: true });
   const idle = () => Date.now() - lastActive > 10 * 60 * 1000;
-  window.DL = { idle, sortPick, sortList, setSort, sortKey, bySort, LIST_SORTS, openPhoto, closePhoto, addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
+  window.DL = { idle, shortTime, sortPick, sortList, setSort, sortKey, bySort, LIST_SORTS, openPhoto, closePhoto, addressLines, setRates, shrinkImage, photoUrl, productMedia, visibleArea, toast, openThread, RATES, COUNTRIES, OTHER, countryName, destinationPicker, hasRate, CATEGORIES, quote, money, esc, date, displayTime, displayTimeZone, timeZoneNote, trackingUrl, fullLink, api, logout, renderLogin, mountCalculator, countryOptions, categoryOptions, $, $$ };
 })();

@@ -15,6 +15,7 @@ test('Home starts with the money, and the earnings live only on Home', async () 
   assert.ok(portal.includes("'Cancellation fees', money(c.fees)") && portal.includes("'Credit from cancelled orders', money(c.credit)"), 'cancellation fees and credit on Home');
   assert.ok(!portal.includes('profitChart') && !portal.includes('Profit over selected period'), 'the old profit bars are gone (Money by month shows the profit)');
   assert.ok(!portal.includes('earningsInner') && !portal.includes('data-earn'), 'no earnings block on the Orders page');
-  assert.ok(portal.includes('const viewOrders = () => `${payStrip()}<div class="toolbar">'), 'Orders starts with the toolbar and the list');
+  // 5 Nov 2026 (no duplication): the unpaid strip is on Home and Payments only; Orders starts with the toolbar and the list.
+  assert.ok(portal.includes('const viewOrders = () => `<div class="toolbar">'), 'Orders starts with the toolbar and the list');
   for (const s of ['Your money', 'Payments details', 'Credit from cancelled orders', 'Already counted in your balance']) assert.ok(i18n.includes(`'${s}':`), s);
 });

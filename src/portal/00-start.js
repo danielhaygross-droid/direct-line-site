@@ -77,7 +77,7 @@
   const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
   const place = d => (d ? countryName(d) : '—');
   const ago = sec => N.timeAgo(sec * 1000);
-  const fullDate = sec => window.DL.displayTime(sec);
+  const fullDate = sec => window.DL.shortTime(sec); // exact time + zone: window.DL.displayTime (tooltips, Order activity note)
   const orderName = o => o.orderRef || 'Order #' + o.id;
   // Every detail can be edited until the order ships (Erwin, 4 Nov 2026).
   const editable = o => !S.me?.preview && ['pending', 'processing'].includes(o.status) && !o.archived;
