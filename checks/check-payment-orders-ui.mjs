@@ -58,15 +58,17 @@ try {
   // ---- 1. The full flow once (English, desktop) ----
   {
     let ctx = await session(client, 1440), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.goto(`${base}/portal/?lang=en#/payments`); await page.reload(); await page.waitForSelector('#transfer-form');
+    await page.goto(`${base}/portal/?lang=en#/payments?tab=pay`); await page.reload(); await page.waitForSelector('#transfer-form');
     assert.equal(await page.locator('#transfer-form [data-pf-total]').innerText(), '$75.00', 'pay for orders: A + B + C ticked to start (D has no cost yet)');
     // Billing details: refused without contact, then saved.
+    await page.locator('[data-pay-tab=billing]').click(); await page.waitForSelector('#billing-form');  // Payments sections (5 Nov 2026)
     const bf = page.locator('#billing-form');
     await bf.locator('[name=name]').fill('Sample Person'); await bf.locator('[name=company]').fill('Sample Shop Ltd'); await bf.locator('[name=address]').fill('1 Sample Street\nTel Aviv');
     await bf.locator('[type=submit]').click(); await page.waitForSelector('[data-billing-msg]:has-text("email or a phone")');
     await bf.locator('[name=email]').fill('billing@example.com'); await bf.locator('[type=submit]').click();
     await page.waitForSelector('.bill-view:has-text("Sample Shop Ltd")');
     // The client unticks the order they are not paying for: total and amount follow the ticks.
+    await page.locator('[data-pay-tab=pay]').click(); await page.waitForSelector('#transfer-form');
     const tf = page.locator('#transfer-form');
     assert.equal(await tf.locator('[name=amount]').inputValue(), '75.00');
     await tf.locator(`[name=poOrder][value="${C}"]`).uncheck();
@@ -126,7 +128,7 @@ try {
     const notes = ok(await call('/notifications', 'GET', null, client)).items.filter(n => n.kind === 'invoice');
     assert.equal(notes.length, 1, 'one receipt notification (the removed one is gone)'); assert.match(notes[0].detail, /^45\.00\|\d{4}-\d{2}-\d{2}$/);
     ctx = await session(client, 1440); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.goto(`${base}/portal/?lang=en#/payments`); await page.reload(); await page.waitForSelector('.cpay-receipt a');
+    await page.goto(`${base}/portal/?lang=en#/payments?tab=history`); await page.reload(); await page.waitForSelector('.cpay-receipt a');
     assert.equal(await page.locator('.cpay-receipt a').count(), 1); assert.match(await page.locator('.cpay-receipt a').innerText(), /Download receipt/);
     assert.equal(await page.evaluate(async href => (await fetch(href)).status, await page.locator('.cpay-receipt a').getAttribute('href')), 200, 'the file downloads');
     await page.locator('[data-bell]').click(); await page.waitForTimeout(300);
@@ -140,13 +142,13 @@ try {
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
     const tag = `${lang}-${width}`;
     let ctx = await session(client, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
-    await page.goto(`${base}/portal/?lang=${lang}#/payments`); await page.reload(); await page.waitForSelector('#transfer-form');
+    await page.goto(`${base}/portal/?lang=${lang}#/payments?tab=pay`); await page.reload(); await page.waitForSelector('#transfer-form');
     await page.screenshot({ path: path.join(out, `${tag}-portal-payments.png`) });
     await page.locator('#transfer-form [name=amount]').fill('30'); await page.waitForTimeout(150);
     await page.locator('#transfer-form [data-po]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-portal-transfer.png`) });
-    await page.locator('[data-billing]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-portal-billing.png`) });
+    await page.locator('[data-pay-tab=billing]').click(); await page.waitForSelector('[data-billing]'); await page.screenshot({ path: path.join(out, `${tag}-portal-billing.png`) });
+    await page.locator('[data-pay-tab=history]').click(); await page.waitForSelector('.cpay-list'); await page.screenshot({ path: path.join(out, `${tag}-portal-history.png`) });
     assert.equal(await page.locator('.po-linked .po-tag').count(), 0, tag + ' clients see which orders, not the gap');
-    await page.locator('.cpay-list').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-portal-history.png`) });
     await page.locator('[data-bell]').click(); await page.waitForTimeout(300); await page.screenshot({ path: path.join(out, `${tag}-portal-notification.png`) }); await page.keyboard.press('Escape');
     await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('.pay-tag'); await page.waitForTimeout(300);
     assert.equal(await page.locator('.pay-tag.paid').count(), 2, tag); assert.equal(await page.locator('.pay-tag.unpaid').count(), 1, tag);

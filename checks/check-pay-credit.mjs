@@ -99,4 +99,18 @@ try {
     await pf.locator('[data-po]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, 'en-1440-admin-record.png') });
     assert.deepEqual(errors, []); await ctx.close(); console.log('PASS admin list takes the credit off');
   }
+  // A paid order's cost goes down afterwards (Erwin, 5 Nov 2026: the client paid, then asked for a cost revision and the
+  // supplier lowered it): the difference is credit too, so it comes off the next payment. C was $30, paid; now $24.
+  ok(await call('/orders/' + C, 'PUT', { productCost: 24, shippingFee: 0 }, admin));
+  {
+    const ctx = await session(client, 1440), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
+    await page.goto(`${base}/portal/?lang=en#/payments?pay=1`); await page.reload(); await page.waitForSelector('#pay-flow [name=poOrder]');
+    const f = page.locator('#transfer-form');
+    // Billed $69 - paid $40 = $29; unpaid A + B = $45; credit $16 = $10 extra paid + $6 lowered cost.
+    assert.match(await page.locator('.stat.hero strong').first().innerText(), /\$29\.00/, 'balance due after the lower cost');
+    assert.equal(await f.locator('[data-pf-total]').innerText(), '$29.00', 'send the total = balance due');
+    assert.match(await f.locator('[data-pf-credit]').innerText(), /Ticked orders \$45\.00 minus the credit on your account -\$16\.00/);
+    await f.locator('[data-pf-credit]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, 'en-1440-lowered-after-paid.png') });
+    assert.deepEqual(errors, []); await ctx.close(); console.log('PASS a lower cost on a paid order comes off the next payment');
+  }
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }

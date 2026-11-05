@@ -76,7 +76,7 @@ try {
     assert.match(await page.locator('.sum-profit').innerText(), /25\.00/, tag + ' profit = 40 - (12 + 3)');
     await page.locator('.sum-profit').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-profit.png`) });
     // 4) Payments Excel.
-    await page.goto(`${base}/portal/?lang=${lang}#/payments`); await page.waitForSelector('[data-pay-excel]');
+    await page.goto(`${base}/portal/?lang=${lang}#/payments?tab=history`); await page.waitForSelector('[data-pay-excel]');
     const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('[data-pay-excel]').click()]);
     const file = await readFile(await dl.path()); assert.equal(file.subarray(0, 2).toString(), 'PK', tag + ' a real .xlsx'); assert.match(dl.suggestedFilename(), /^Direct-Line-payments-\d{4}-\d{2}-\d{2}\.xlsx$/);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');

@@ -108,6 +108,12 @@
     if (unpaid.length) list.push({ id: 'todo-supplier-unpaid', sig: unpaid.map(o => o.orderNumber).join(','), icon: 'money', tone: 'orange', view: 'profit',
       title: L(`${unpaid.length} order${unpaid.length > 1 ? 's' : ''} unpaid to the supplier`, `${unpaid.length} הזמנות שלא שולמו לספק`), text: money(unpaid.reduce((t, o) => t + Number(o.supplierCost || 0) * Number(o.quantity || 1), 0)) });
     if (portal?.clients) {
+      // A client sent a bank transfer confirmation (Erwin, 5 Nov 2026: "it didn't notify the admin"): check it, then
+      // record the payment from the client's Payments. Unread again whenever a new one arrives.
+      const sent = portal.clients.filter(c => c.pendingTransfers > 0), nSent = sent.reduce((t, c) => t + c.pendingTransfers, 0);
+      if (nSent) list.push({ id: 'todo-client-transfers', sig: sent.map(c => c.id + ':' + c.pendingTransfers).join(','), icon: 'money', tone: 'gold', view: 'client-orders',
+        title: L(`${nSent} transfer confirmation${nSent > 1 ? 's' : ''} to check`, nSent > 1 ? `${nSent} אישורי העברה לבדיקה` : 'אישור העברה אחד לבדיקה'),
+        text: sent.map(c => c.name).slice(0, 3).join(', ') + L(' · record the payment in Clients & payments', ' · לרשום את התשלום בלקוחות ותשלומים') });
       const owing = portal.clients.filter(c => c.outstanding > 0);
       if (owing.length) list.push({ id: 'todo-client-owing', sig: owing.map(c => c.id + ':' + c.outstanding).join(','), icon: 'money', tone: 'blue', view: 'client-orders',
         title: L(`${owing.length} client${owing.length > 1 ? 's' : ''} with a balance due`, `${owing.length} לקוחות עם יתרה לתשלום`), text: money(owing.reduce((t, c) => t + c.outstanding, 0)) + L(' outstanding', ' לגבייה') });

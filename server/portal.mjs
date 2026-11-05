@@ -12,7 +12,7 @@ import { googleSheetsConfigured, retryPendingGoogleSheetOrders, syncClientToGoog
 
 import { TERMS_SCHEMA, currentTerms, termsAcceptance, acceptTerms, publishTerms } from './terms.mjs';
 
-import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, downloadFile } from './files.mjs';
+import { FILE_SCHEMA, transfers, saveTransfer, recordTransfer, removeTransfer, downloadFile } from './files.mjs';
 import { BILLING_SCHEMA, getBilling, saveBilling } from './billing.mjs';
 import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund, withCreditPaid, syncKeptFees, clientCancelled, clientAdjustments, KEPT_FEE } from './cancellations.mjs';
 import { cancelledTotals, moneyMonths } from './money-overview.mjs';
@@ -1074,6 +1074,8 @@ async function routePortal(request, url, ctx, meta) {
     catch (e) { return json({ ok: false, error: e.message }, 400); }
   }
   if (path === '/admin/transfers' && method === 'GET') return json({ ok:true, transfers:await transfers(DB,Number(url.searchParams.get('clientId') || 0)) });
+  const removeMatch=/^\/admin\/transfers\/(\d+)\/remove$/.exec(path);
+  if (removeMatch && method === 'POST') return await removeTransfer(DB,Number(removeMatch[1])) ? json({ok:true}) : json({ok:false,error:'This confirmation already has a payment, or it is gone.'},400);
   const recordMatch=/^\/admin\/transfers\/(\d+)\/record$/.exec(path);
   if (recordMatch && method === 'POST') {
     try {

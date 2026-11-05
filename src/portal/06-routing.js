@@ -8,6 +8,8 @@
     if (r === 'import') { location.replace('#/home'); return; }
     S.route = ROUTES[r] ? r : 'home'; S.id = id ? Number(id) : null;
     S.payOpen = S.route === 'payments' && new URLSearchParams(query).get('pay') === '1';
+    // Payments sections (Erwin, 5 Nov 2026: "hard to scroll very long"): #/payments?tab=history opens that section.
+    if (S.route === 'payments') { const tab = new URLSearchParams(query).get('tab'); if (S.payOpen) S.payTab = 'pay'; else if (tab) S.payTab = tab; }
     if (S.route === 'edit' && !S.orders.some(o => o.id === S.id && editable(o))) { location.hash = '#/orders'; return; }
     // Admin preview is view only: no forms for adding or editing orders.
     if (S.me?.preview && ['new', 'edit'].includes(S.route)) { location.hash = '#/home'; return; }

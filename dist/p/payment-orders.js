@@ -92,6 +92,8 @@
 
   if (typeof document !== 'undefined' && document.addEventListener) {
     document.addEventListener('click', e => {
+      const m = e.target.closest?.('[data-cx-more]');
+      if (m) { const box = m.closest('[data-cancelled-box]'), all = !box.classList.contains('cx-all'); box.classList.toggle('cx-all', all); m.textContent = all ? m.dataset.less : m.dataset.more; m.setAttribute('aria-expanded', String(all)); return; }
       const b = e.target.closest?.('[data-po-oldest],[data-po-all],[data-po-none]'); if (!b) return;
       const box = b.closest('[data-po]'); if (!box) return;
       e.preventDefault();
@@ -114,12 +116,13 @@
   function cancelledBox(c, { admin = false } = {}) {
     if (!c || (!c.count && !c.refunds?.length)) return '';
     const stat = (label, value, note, cls = '') => `<div class="cx-stat ${cls}"><small>${label}</small><b data-no-i18n>${value}</b>${note ? `<em>${note}</em>` : ''}</div>`;
-    const rows = c.orders.map(o => `<tr><td><button type="button" class="link-btn" data-open-order="${o.id}"><bdi data-no-i18n>${esc(o.orderRef || '#' + o.id)}</bdi></button>${o.store ? `<small data-no-i18n>${esc(o.store)}</small>` : ''}</td>`
+    const FOLD = 5, more = n => he() ? `הצגת כל ${n} ההזמנות שבוטלו` : `Show all ${n} cancelled orders`, less = () => he() ? 'הצגת פחות' : 'Show fewer';
+    const rows = c.orders.map((o, i) => `<tr${i >= FOLD ? ' class="cx-more"' : ''}><td><button type="button" class="link-btn" data-open-order="${o.id}"><bdi data-no-i18n>${esc(o.orderRef || '#' + o.id)}</bdi></button>${o.store ? `<small data-no-i18n>${esc(o.store)}</small>` : ''}</td>`
       + `<td class="num" data-no-i18n>${o.paid ? usd(o.paid) : '—'}</td><td class="num" data-no-i18n>${o.fee ? usd(o.fee) : '—'}</td><td class="num" data-no-i18n><b><bdi dir="ltr">${o.paid || o.fromCredit ? usd(o.back) : '—'}</bdi></b>${o.fromCredit ? `<small class="cx-from-credit">${he() ? 'מהזיכוי' : 'From credit'}</small>` : ''}</td></tr>`).join('');
     const refunds = (c.refunds || []).map(r => `<div class="cx-refund"><span data-no-i18n>${day(r.refundedAt)}</span><b data-no-i18n>${usd(r.amount)}</b><span data-no-i18n>${esc([r.method, r.note].filter(Boolean).join(' · '))}</span>${admin ? `<button type="button" class="btn btn-sm btn-ghost" data-refund-undo="${r.id}">Undo</button>` : ''}</div>`).join('');
     return `<section class="card card-pad cx-box" data-cancelled-box><h3 class="sec-title">Cancelled orders</h3>
       <div class="cx-stats">${stat('Cancelled orders', String(c.count), c.paidCount ? `${c.paidCount} already paid` : '')}${stat('Paid for them', usd(c.paid))}${stat('Cancellation fees', usd(c.fees), admin && c.kept ? `Includes ${usd(c.kept)} of our fees kept` : '', c.fees ? 'neg' : '')}${stat(admin ? 'Due back to the client' : 'Due back to you', usd(c.dueBack), 'Paid minus all fees')}${stat('Refunded', usd(c.refunded))}${stat('Kept as credit', usd(c.credit), admin ? 'Counts toward their next orders' : 'Counts toward your next orders', c.credit > 0 ? 'pos' : '')}</div>
-      ${rows ? `<div class="table-wrap"><table class="tbl cx-table"><thead><tr><th>Order</th><th class="num">Paid</th><th class="num">Fee</th><th class="num">Back</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+      ${rows ? `<div class="table-wrap"><table class="tbl cx-table"><thead><tr><th>Order</th><th class="num">Paid</th><th class="num">Fee</th><th class="num">Back</th></tr></thead><tbody>${rows}</tbody></table></div>${c.orders.length > FOLD ? `<button type="button" class="btn btn-sm cx-more-btn" data-cx-more data-more="${esc(more(c.orders.length))}" data-less="${esc(less())}" aria-expanded="false">${esc(more(c.orders.length))}</button>` : ''}` : ''}
       ${refunds ? `<h4 class="cx-sub">Refunds</h4><div class="cx-refunds">${refunds}</div>` : ''}
       ${admin ? `<details class="cx-add"${c.credit > 0 ? '' : ''}><summary class="btn btn-sm">Record refund</summary><form class="form-grid" data-refund-form novalidate>
         <label class="field"><span>Amount (USD)</span><span class="money"><input name="amount" type="number" min="0" step="0.01" inputmode="decimal" value="${c.credit > 0 ? c.credit.toFixed(2) : ''}"></span></label>

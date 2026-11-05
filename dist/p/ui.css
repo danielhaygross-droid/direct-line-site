@@ -469,3 +469,5 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-we
 .upd-tag.t-blue{--tone:var(--blue)}.upd-tag.t-mint{--tone:var(--mint)}.upd-tag.t-orange{--tone:var(--orange)}.upd-tag.t-red{--tone:var(--red)}
 /* Credit taken off the ticked orders (5 Nov 2026). */
 .po-credit{margin:0;padding:9px 12px;border-top:1px solid var(--line);font-size:13px;display:flex;justify-content:space-between;gap:8px;color:var(--muted)}.po-credit b{color:var(--mint)}
+/* Cancelled orders box: first 5 rows, "Show all" for the rest (5 Nov 2026). */
+[data-cancelled-box]:not(.cx-all) tr.cx-more{display:none}.cx-more-btn{margin-top:10px}

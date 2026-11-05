@@ -86,6 +86,10 @@
     g.className = 'po-gap full' + (g.textContent ? ' warn' : '');
   }
   function bindPayments() {
+    $('.pay-tabs')?.addEventListener('click', e => { const b = e.target.closest('[data-pay-tab]'); if (!b || b.dataset.payTab === payTab()) return;
+      S.payTab = b.dataset.payTab; history.replaceState(null, '', '#/payments?tab=' + S.payTab); renderView(); $('[data-pay-tab].on')?.focus(); });
+    $('.pay-tabs')?.addEventListener('keydown', e => { if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return; const all = $$('[data-pay-tab]'), i = all.indexOf(document.activeElement); if (i < 0) return;
+      const step = (e.key === 'ArrowRight') !== (document.documentElement.dir === 'rtl') ? 1 : -1; all[(i + step + all.length) % all.length].click(); e.preventDefault(); });
     const bc=$('[data-billing]');
     bc?.addEventListener('click',e=>{if(e.target.closest('[data-billing-edit]')){S.billingEdit=true;renderView();}else if(e.target.closest('[data-billing-cancel]')){S.billingEdit=false;renderView();}});
     const bf=$('#billing-form');
