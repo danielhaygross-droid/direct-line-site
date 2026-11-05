@@ -28,10 +28,14 @@
       <section class="card card-pad mc" data-money-chart></section>`;
     // Three lines (Erwin, 5 Nov 2026): no "Unpaid orders" (the Not paid yet card explains it), no cancellation fees or refunds
     // (they are in Cancelled orders, all clients, in Clients & payments).
-    const months = S.ov.months || [];
+    // Our earnings = client fees + the supplier's own amount per paid, not cancelled order (Shahar, 5-6 Nov 2026), the same
+    // rule as the Our earnings card (kpiFacts); per month by order date.
+    const M = window.DLClientStoreMath, PO = window.DLPayOrders, rateC = Math.round(Number(S.ov.settings?.supplier_bonus_per_order ?? 1) * 100), sup = {};
+    for (const o of S.orders) if (!o.archived && o.status !== 'cancelled' && PO.state(o) === 'paid') { const k = M.dateKey(o).slice(0, 7); sup[k] = (sup[k] || 0) + rateC; }
+    const months = (S.ov.months || []).map(m => ({ ...m, earned: Math.round(Number(m.earned || 0) * 100 + (sup[m.month] || 0)) / 100 }));
     window.DLMoneyChart.mount($('[data-money-chart]'), { title: 'Money by month, all clients', key: 'dl-admin-money', months, money, series: [
       { key: 'billed', label: 'Billed', tone: 'var(--mc-gold)', note: 'What clients were billed for their orders (cancelled orders not counted)' },
       { key: 'paid', label: 'Paid', tone: 'var(--mc-teal)', note: 'Payments received from clients' },
-      { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Our share of the fees on those orders' }] });
+      { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Client fees on those orders, plus what the supplier pays us per paid order' }] });
   }
 

@@ -81,6 +81,9 @@ try {
       await card(3).click(); await ui.locator('[data-kpi-win]').waitFor(); const ew = await ui.locator('[data-kpi-win]').innerText();
       const flat = ew.replace(/\s+/g, ' '); assert.ok(flat.includes(`Client fees 4 orders ${usd(fee * n)} + From the supplier 1 paid order × $1.00 $1.00 = Total ${usd(fee * n + 1)}`), tag + ': window: client fees + supplier = total ' + flat);
       await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+      // Money by month: Our earnings = the server's client fees per month + $1 for the one paid order (6 Nov 2026).
+      const srv = ok(await call('/admin/overview', 'GET', null, admin)).months.reduce((t, x) => t + Number(x.earned || 0), 0);
+      assert.equal(await ui.locator('[data-mc-key="earned"] b').innerText(), usd(srv + 1), tag + ': chart earnings include the supplier part');
     } else {
       assert.match(await notPaid.innerText(), /עוד לא שולם/, tag);
       assert.match(await notPaid.innerText(), /2 הזמנות · לקוח אחד · הישנה ביותר/, tag);
