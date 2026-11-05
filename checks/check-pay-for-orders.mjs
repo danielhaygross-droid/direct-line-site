@@ -60,8 +60,10 @@ try {
     if (lang === 'en') assert.match(await page.locator('.pay-strip').innerText(), /3 orders not paid yet\s*\$75\.00[^\n]*\s*Pay for orders/, tag);
     else assert.match(await page.locator('.pay-strip').innerText(), /3 הזמנות שעוד לא שולמו[\s\S]*תשלום על הזמנות/, tag);
     await page.locator('.pay-strip').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-home-strip.png`) });
-    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('.pay-strip');
-    await page.screenshot({ path: path.join(out, `${tag}-orders-strip.png`) });
+    // 5 Nov 2026: the strip is on Home and Payments only (no repeat on Orders, which has the "Not paid" chip).
+    await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('[data-orders-list] tr[data-open-order]');
+    assert.equal(await page.locator('.pay-strip').count(), 0, tag + ' no strip on Orders');
+    await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('.pay-strip');
     await page.locator('.pay-strip').click(); await page.waitForSelector('#pay-flow');
     assert.match(page.url(), /#\/payments\?pay=1$/, tag);
     await page.waitForFunction(() => { const r = document.querySelector('#pay-flow').getBoundingClientRect(); return r.top >= -2 && r.top < 200; }, null, { timeout: 4000 });
