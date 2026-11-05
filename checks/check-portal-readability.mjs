@@ -94,6 +94,20 @@ try {
         for (const r of rows) { if (width < 600) assert.deepEqual(r.empty, [], tag + ': empty lines on a phone card'); assert.ok(!r.tags.some(t => r.pill && t.endsWith(r.pill)), tag + ': status said twice ' + JSON.stringify(r)); }
       }
     }
+    // PR 3 (5 Nov 2026): a missing field says what is missing right under it, and the message goes when it is filled in.
+    await page.evaluate(() => { location.hash = '#/new'; }); await page.waitForSelector('[data-submit]'); await page.waitForTimeout(300);
+    await page.locator('[data-submit]').click(); await page.waitForTimeout(400);
+    const errs = await page.evaluate(() => [...document.querySelectorAll('.field.bad[data-f]')].map(f => ({ key: f.dataset.f, msg: f.querySelector('.field-err')?.innerText || '' })));
+    assert.ok(errs.length >= 3 && errs.every(e => e.msg.length > 5), tag + ': a message under each missing field ' + JSON.stringify(errs));
+    await page.screenshot({ path: path.join(out, `${tag}-new-errors.png`) });
+    await page.locator('[name=buyerName]').fill('Sample Buyer'); await page.waitForTimeout(100);
+    assert.equal(await page.locator('[data-f="buyerName"] .field-err').count(), 0, tag + ': the message goes when the field is filled in');
+    // Stores: the forms open on "Add store" / "Edit store".
+    await page.evaluate(() => { location.hash = '#/stores'; }); await page.waitForSelector('[data-store-status]'); await page.waitForTimeout(300);
+    assert.equal(await page.locator('.store-add [data-client-store-form]').isVisible(), false, tag + ': add form closed');
+    assert.equal(await page.locator('.store-edit [data-client-store-form]').first().isVisible(), false, tag + ': edit form closed');
+    await page.locator('.store-add > summary').click(); assert.equal(await page.locator('.store-add [data-client-store-form]').isVisible(), true, tag + ': Add store opens the form');
+    await page.screenshot({ path: path.join(out, `${tag}-stores.png`) });
     // The order panel shows the exact times (activity).
     await page.evaluate(id => { location.hash = '#/orders'; }, ORDER); await page.waitForTimeout(500);
     await page.locator(`[data-open-order="${ORDER}"]`).first().click(); await page.waitForTimeout(700);

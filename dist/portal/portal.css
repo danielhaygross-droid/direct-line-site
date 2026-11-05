@@ -362,3 +362,9 @@ small{font-size:max(12px,.85em)}.store-label small{opacity:1;color:var(--muted)}
   .field>span{flex-wrap:wrap;justify-content:flex-start;column-gap:8px}.field>span>small{flex-basis:100%}
   .top h1{white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.2}
 }
+/* The message under a missing field (5 Nov 2026). */
+.field .field-err,.field-err{display:block;margin-top:2px;color:color-mix(in srgb,var(--red) 85%,var(--text));font-size:12.5px;font-weight:500}
+/* Stores: Add store / Edit store open their form (5 Nov 2026); the form's own title would repeat the button. */
+.store-add>summary,.store-edit>summary{list-style:none;cursor:pointer;width:max-content;max-width:100%}.store-add>summary::-webkit-details-marker,.store-edit>summary::-webkit-details-marker{display:none}
+.store-add:not([open]){padding:0;border:0;background:none;box-shadow:none}.store-add[open]>summary,.store-edit[open]>summary{margin-bottom:14px}.store-edit{margin-top:10px}
+.store-add [data-client-store-form]>h3,.store-edit [data-client-store-form]>h3{display:none}

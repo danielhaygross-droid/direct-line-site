@@ -63,6 +63,7 @@ try {
     await page.screenshot({ path: path.join(out, `${tag}-stores.png`) });
     await page.locator('[data-store-status="all"]').click();
     if (lang === 'en' && width === 1440) { // set it back to Active in the form
+      await page.locator(`[data-store-edit="${second.id}"]`).click(); // the form opens on Edit store (5 Nov 2026)
       const f = page.locator(`[data-client-store-form="${second.id}"]`); await f.locator('input[value=active]').check({ force: true }); await f.locator('[type=submit]').click(); await page.waitForTimeout(600);
       assert.equal(ok(await call('/client-stores', 'GET', null, client)).stores.find(s => s.id === second.id).status, 'active', 'saved from the form');
       ok(await call('/client-stores/' + second.id, 'POST', { status: 'suspended' }, client));

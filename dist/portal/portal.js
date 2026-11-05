@@ -865,8 +865,8 @@
     function showUnit(){const box=$('[data-product-price]',form);if(!box)return;const u=unitPrice();box.innerHTML=selectedProduct&&u!=null?`<span>Fixed unit quote</span> <b>${money(u)}</b>${shippingNow()!=null?` · <span>Shipping per order</span> <b>${money(shippingNow())}</b>`:''}`:'';}
     form.productOption?.addEventListener('change',()=>{showUnit();updateSum();});
     // ----- check everything at once, mark what's missing -----
-    const mark = (key, bad) => { const f = form.querySelector(`[data-f="${key}"]`); if (f) f.classList.toggle('bad', !!bad); };
-    form.addEventListener('input', e => { const f = e.target.closest('[data-f]'); if (f) f.classList.remove('bad'); });
+    const mark = (key, bad) => { const f = form.querySelector(`[data-f="${key}"]`); if (f) { f.classList.toggle('bad', !!bad); if (!bad) f.querySelector('.field-err')?.remove(); } };
+    form.addEventListener('input', e => { const f = e.target.closest('[data-f]'); if (f) { f.classList.remove('bad'); f.querySelector('.field-err')?.remove(); } });
     // Expected profit (portal review, 28 Oct 2026): with a quoted product, what the client earns on Etsy (after fees, in USD)
     // minus the order total. Only an estimate in the summary; nothing is saved from it.
     function profitRow(total) {
@@ -926,6 +926,12 @@
       check('address1', form.address1.value.trim(), 'full address');
       check('destination', dest.get(), 'country');
       $('#country-error').hidden = !!dest.get();
+      // What is missing, right under each field too (UI UX Pro Max, 5 Nov 2026: errors next to the field, not only at the bottom).
+      $$('.field-err', form).forEach(x => x.remove());
+      for (const key of [...new Set(missing.map(m => m[0]))]) {
+        const f = form.querySelector(`[data-f="${key}"]`); if (!f) continue;
+        f.insertAdjacentHTML('beforeend', `<small class="field-err" role="alert">${esc('Please fill in: ' + missing.filter(m => m[0] === key).map(m => m[1]).join(', ') + '.')}</small>`);
+      }
       form.classList.toggle('tried', missing.length > 0);
       if (missing.length) {
         setMsg('Please fill in: ' + missing.map(m => m[1]).join(', ') + '.', 'err');
@@ -1100,7 +1106,7 @@
   function selectStore(id){S.storeId=Number(id)||0;store.set('dl-client-store-'+S.me.id,S.storeId);location.hash='#/'+S.route+(S.id?'/'+S.id:'')+'?store='+S.storeId;}
   // Shop status filter (Erwin, 27 Oct 2026): All / Active / Suspended, remembered on this device.
   function viewStores(){const f=store.get('dl-store-status','all'),n=k=>S.stores.filter(s=>k==='all'||s.status===k).length,shown=sortList(S.stores.filter(s=>f==='all'||s.status===f),'portal-stores',window.DL.LIST_SORTS.stores);
-    return `<div class="chips store-filter" role="group" aria-label="Shop status">${[['all','All'],['active','Active'],['suspended','Suspended']].map(([k,t])=>`<button type="button" class="chip${f===k?' on':''}" aria-pressed="${f===k}" data-store-status="${k}"><span>${t}</span> <b data-no-i18n>${n(k)}</b></button>`).join('')}${S.stores.length>1?sortPick('portal-stores',window.DL.LIST_SORTS.stores):''}</div>${S.me.preview?'':`<section class="card card-pad">${window.DLClientStoreUI.form(null,S.me.id)}</section>`}${shown.length?shown.map(s=>`<section class="card card-pad store-card${s.status==='suspended'?' is-suspended':''}">${window.DLClientStoreUI.label(s)}${S.me.preview?'':window.DLClientStoreUI.form(s,S.me.id)}</section>`).join(''):'<p class="muted card card-pad">No shops with this status.</p>'}`;}
+    return `<div class="chips store-filter" role="group" aria-label="Shop status">${[['all','All'],['active','Active'],['suspended','Suspended']].map(([k,t])=>`<button type="button" class="chip${f===k?' on':''}" aria-pressed="${f===k}" data-store-status="${k}"><span>${t}</span> <b data-no-i18n>${n(k)}</b></button>`).join('')}${S.stores.length>1?sortPick('portal-stores',window.DL.LIST_SORTS.stores):''}</div>${S.me.preview?'':`<details class="card card-pad store-add"><summary class="btn btn-primary">${ic('plus')}<span>Add store</span></summary>${window.DLClientStoreUI.form(null,S.me.id)}</details>`}${shown.length?shown.map(s=>`<section class="card card-pad store-card${s.status==='suspended'?' is-suspended':''}">${window.DLClientStoreUI.label(s)}${S.me.preview?'':`<details class="store-edit"><summary class="btn btn-sm" data-store-edit="${s.id}">${ic('edit')}<span>Edit store</span></summary>${window.DLClientStoreUI.form(s,S.me.id)}</details>`}</section>`).join(''):'<p class="muted card card-pad">No shops with this status.</p>'}`;}
   function bindStores(){
     for(const b of $$('[data-store-status]'))b.addEventListener('click',()=>{store.set('dl-store-status',b.dataset.storeStatus);renderView();});
     for(const f of $$('[data-client-store-form]')){
