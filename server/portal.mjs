@@ -251,7 +251,9 @@ const BANK_DEFAULTS = {
   bank_ach: '028000024', bank_wire: '021000021', bank_swift: 'CHASUS33', bank_name: 'JP MORGAN CHASE BANK, N.A.',
   bank_address: '383 MADISON AVENUE, NEW YORK, NY 10179', bank_reference: 'Use your Direct Line username as the reference',
 };
-export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_share_per_order: '1', volumetric_divisor: '6000', subscription_price: '29', couriers: DEFAULT_COURIERS, ...BANK_DEFAULTS };
+// supplier_bonus_per_order (Shahar, 5 Nov 2026): what the supplier pays us for every order, apart from the client's fee.
+// Admin only, never shown to clients.
+export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_bonus_per_order: '1', supplier_share_per_order: '1', volumetric_divisor: '6000', subscription_price: '29', couriers: DEFAULT_COURIERS, ...BANK_DEFAULTS };
 // ---------- subscription (first month free, then monthly) ----------
 export const SUB_STATUSES = ['trial', 'active', 'overdue', 'cancelled'];
 export const isoDate = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v ? v : null);
@@ -1395,6 +1397,7 @@ async function routePortal(request, url, ctx, meta) {
     const body = await readBody(request);
     const updates = {};
     if (body.commission_per_order !== undefined) { const v = money(body.commission_per_order); if (v === null || !isMoney(v)) return json({ ok: false, error: 'Invalid commission' }, 400); updates.commission_per_order = String(v); }
+    if (body.supplier_bonus_per_order !== undefined) { const v = money(body.supplier_bonus_per_order); if (v === null || !isMoney(v) || v > 1000) return json({ ok: false, error: 'Invalid amount from the supplier' }, 400); updates.supplier_bonus_per_order = String(v); }
     if (body.monthly_order_goal !== undefined) { const v = Number(body.monthly_order_goal); if (!(Number.isInteger(v) && v >= 0 && v <= 1e6)) return json({ ok: false, error: 'Goal must be a whole number' }, 400); updates.monthly_order_goal = String(v); }
     if (body.subscription_price !== undefined) { const v = money(body.subscription_price); if (v === null || !isMoney(v) || v > 100000) return json({ ok: false, error: 'Invalid subscription price' }, 400); updates.subscription_price = String(v); }
     if (body.volumetric_divisor !== undefined) { const v = Number(body.volumetric_divisor); if (!(v >= 1000 && v <= 10000)) return json({ ok: false, error: 'Divisor must be 1000-10000' }, 400); updates.volumetric_divisor = String(v); }

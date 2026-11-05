@@ -163,13 +163,17 @@
     const keptC = keptOn.reduce((n, o) => n + feeC(o), 0), onOrdersC = os.reduce((n, o) => n + feeC(o), 0), feesC = onOrdersC + keptC;
     const collectedC = os.filter(o => PO.state(o) === 'paid').reduce((n, o) => n + feeC(o), 0) + keptC;
     const noBillC = os.filter(o => PO.state(o) === 'unbilled').reduce((n, o) => n + feeC(o), 0);
+    // Successful orders (Erwin/Shahar, 5 Nov 2026): not cancelled and paid by the client. The supplier pays us its own amount
+    // for each of them ("two fees on all orders": the client's fee plus $1 from the supplier; Fees & settings sets it).
+    const paidOs = os.filter(o => PO.state(o) === 'paid'), cxN = inMonth.length - os.length;
+    const supRateC = cents(S.ov.settings?.supplier_bonus_per_order ?? 1), supC = paidOs.length * supRateC, totalC = feesC + supC;
     // What clients owe right now: each client's balance (unpaid orders minus credit and payments not linked to orders), and
     // that amount without our fee (admin only): minus our fee on the unpaid orders (credit lowers the supplier's part).
     const balanceC = cl.reduce((n, c) => n + Math.max(0, cents(c.outstanding)), 0);
     const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const lateIds = lateClientIds(), late = balanceC > 0 && f_late(cl, lateIds, cents);
-    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, balanceC, feePartC, clientsN, lateIds, late };
+    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, totalC, balanceC, feePartC, clientsN, lateIds, late };
   }
 
   // Late = a client who still owes money has an unpaid order older than 14 days.
@@ -257,17 +261,21 @@
       const st = ['pending', 'processing', 'cancellation_requested', 'shipped', 'delivered'], n = s => f.os.filter(o => o.status === s).length;
       const other = f.os.filter(o => !st.includes(o.status)).length;
       const status = st.map(s => n(s) ? kwRow('', UI.LABEL[s], String(n(s))) : '').join('') + (other ? kwRow('', 'Other', String(other)) : '') + kwRow('=', 'Total', String(f.os.length), '', 'tot');
+      // Successful orders = not cancelled and paid (what the supplier's $1 per order is counted on).
+      const payState = kwRow('', 'Paid', String(f.paidOs.length), 'successful orders') + kwRow('+', 'Not paid yet', String(f.os.length - f.paidOs.length)) + kwRow('=', 'Total', String(f.os.length), 'cancelled not counted', 'tot');
       const per = kwByClient(f.os, l => l.length).map(x => kwItem(`data-open-client="${x.id}" data-client-tab="orders"`, x.c?.name || '—', '', String(x.v))).join('');
       const cx = f.inMonth.filter(o => o.status === 'cancelled').length;
-      return kwBlock('By status', status) + kwBlock('By client', per) + (cx ? `<p class="kw-note"><span>Cancelled orders, not counted above:</span> <b data-no-i18n>${cx}</b></p>` : '');
+      return kwBlock('By status', status) + kwBlock('Paid by the client', payState) + kwBlock('By client', per) + (cx ? `<p class="kw-note"><span>Cancelled orders, not counted above:</span> <b data-no-i18n>${cx}</b></p>` : '');
     }
     if (k === 'earnings') {
-      if (!f.feesC) return '<p class="muted kw-empty">No fees yet</p>';
+      if (!f.totalC) return '<p class="muted kw-empty">No fees yet</p>';
       const notPaid = f.feesC - f.collectedC - f.noBillC;
+      const both = f.supC ? kwRow('', 'Client fees', kwMoney(f.feesC), kwPlural(f.os.length + f.keptOn.length, 'order')) + kwRow('+', 'From the supplier', kwMoney(f.supC), `${kwPlural(f.paidOs.length, 'paid order')} × ${kwMoney(f.supRateC)}`) + kwRow('=', 'Total', kwMoney(f.totalC), '', 'tot') : '';
       const sum = kwRow('', 'Collected', kwMoney(f.collectedC)) + kwRow('+', 'Not paid yet', kwMoney(notPaid)) + (f.noBillC ? kwRow('+', 'Not billed yet', kwMoney(f.noBillC), 'No cost yet, so not on a bill') : '') + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot');
       const from = f.keptC ? kwRow('', 'Our fee on orders', kwMoney(f.onOrdersC), kwPlural(f.os.length, 'order')) + kwRow('+', 'Fees kept on cancelled orders', kwMoney(f.keptC), kwPlural(f.keptOn.length, 'order')) + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot') : '';
-      const per = kwByClient([...f.os, ...f.keptOn], l => l.reduce((t, o) => t + f.feeC(o), 0)).filter(x => x.v).map(x => kwItem(`data-open-client="${x.id}" data-client-tab="payments"`, x.c?.name || '—', kwPlural(x.list.length, 'order'), kwMoney(x.v))).join('');
-      return kwBlock('', sum) + kwBlock('Where it comes from', from) + kwBlock('By client', per);
+      const per = kwByClient([...f.os, ...f.keptOn], l => l.reduce((t, o) => t + f.feeC(o) + (o.status !== 'cancelled' && f.PO.state(o) === 'paid' ? f.supRateC : 0), 0)).filter(x => x.v).map(x => kwItem(`data-open-client="${x.id}" data-client-tab="payments"`, x.c?.name || '—', kwPlural(x.list.length, 'order'), kwMoney(x.v))).join('');
+      const supNote = f.supC ? `<p class="kw-note"><span>From the supplier: for each paid order that isn't cancelled. The supplier pays it, it's not on the client's bill.</span></p>` : '';
+      return kwBlock('', both) + kwBlock(f.supC ? 'Client fees' : '', sum) + kwBlock('Where it comes from', from) + supNote + kwBlock('By client', per);
     }
     // Clients: all time = every active client, with what they owe and their plan; a month = clients with orders that month.
     if (f.month !== 'all') {
@@ -388,9 +396,9 @@
     const shipped = os.filter(o => ['shipped', 'delivered'].includes(o.status)).length, notShipped = os.length - shipped;
     const cards = [
       { key: 'clients', k: 'Clients', v: f.clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(f.cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)' },
-      { key: 'orders', k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: os.length ? [notShipped ? `${notShipped} not shipped yet` : '', shipped ? `${shipped} shipped` : ''].filter(Boolean) : ['No orders yet'], icon: 'orders', tone: 'var(--orange)' },
+      { key: 'orders', k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: os.length ? [`${f.paidOs.length} paid`, notShipped ? `${notShipped} not shipped yet` : '', shipped ? `${shipped} shipped` : ''].filter(Boolean) : ['No orders yet'], sub2: f.cxN ? `${f.cxN} cancelled, not counted` : '', icon: 'orders', tone: 'var(--orange)' },
       { key: 'unpaid', k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${f.PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(owed - balanceC) >= 1 ? `Unpaid orders ${money(owed / 100)} − credit and earlier payments ${money((owed - balanceC) / 100)}` : '', sub3: balanceC > 0 ? `Without our fee ${money((balanceC - feePartC) / 100)} · our fee ${money(feePartC / 100)}` : '', icon: 'money', tone: f.late ? 'var(--red)' : balanceC > 0 ? 'var(--orange)' : 'var(--mint)', owe: balanceC > 0, late: f.late },
-      { key: 'earnings', k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(f.feesC / 100), sub: [`${money(f.collectedC / 100)} collected`, `${money((f.feesC - f.collectedC - f.noBillC) / 100)} not paid yet`, ...(f.noBillC ? [`${money(f.noBillC / 100)} not billed yet`] : []), `${plural(os.length + f.keptOn.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
+      { key: 'earnings', k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(f.totalC / 100), sub: [...(f.supC ? [`${money(f.feesC / 100)} client fees`, `${money(f.supC / 100)} from the supplier`] : []), `${money(f.collectedC / 100)} collected`, `${money((f.feesC - f.collectedC - f.noBillC) / 100)} not paid yet`, ...(f.noBillC ? [`${money(f.noBillC / 100)} not billed yet`] : []), `${plural(os.length + f.keptOn.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
     ];
     $('[data-kpis]').innerHTML = cards.map(c => `<button type="button" class="stat stat-go${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}${c.late ? ' late' : ''}" style="--tone:${c.tone}" data-kpi-card="${c.key}" aria-haspopup="dialog" aria-expanded="${kpiWin === c.key}" title="Show details"><span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}${c.sub3 ? `<em class="stat-fee">${esc(c.sub3)}</em>` : ''}</button>`).join('');
     if (kpiWin) showCardWindow(kpiWin, false);
@@ -609,6 +617,7 @@
       <section class="card card-pad"><h3 class="form-sec">Fee per order</h3>
         <form class="form-grid" id="settings-form" novalidate>
           <label class="field"><span>Fee per order (USD)</span><span class="money"><input name="commission_per_order" type="number" min="0" step="0.01" value="${esc(s.commission_per_order)}"></span></label>
+          <label class="field"><span>From the supplier per order (USD) <small>the supplier pays us this for every order, apart from the client's fee</small></span><span class="money"><input name="supplier_bonus_per_order" type="number" min="0" step="0.01" value="${esc(s.supplier_bonus_per_order ?? 1)}"></span></label>
           <div class="full split" data-split></div>
           <label class="field"><span>Client subscription <small>₪ / month, after the free month</small></span><input name="subscription_price" type="number" min="0" step="0.01" value="${esc(s.subscription_price ?? 29)}"></label>
           <label class="field"><span>Size-to-weight divisor <small>cm³ per kg</small></span><input name="volumetric_divisor" type="number" min="1000" max="10000" step="1" value="${esc(s.volumetric_divisor)}"></label>
@@ -737,14 +746,14 @@
     });
     const f = $('#settings-form');
     const split = () => {
-      const fee = parseFloat(f.commission_per_order.value);
-      $('[data-split]').innerHTML = `<div><small>Client pays (inside product cost)</small><b>${Number.isFinite(fee) ? money(fee) : '—'}</b></div><div><small>We earn</small><b class="pos">${Number.isFinite(fee) ? money(fee) : '—'}</b></div>`;
+      const fee = parseFloat(f.commission_per_order.value), sup = parseFloat(f.supplier_bonus_per_order.value) || 0;
+      $('[data-split]').innerHTML = `<div><small>Client pays (inside product cost)</small><b>${Number.isFinite(fee) ? money(fee) : '—'}</b></div><div><small>The supplier pays us</small><b>${money(sup)}</b></div><div><small>We earn per order</small><b class="pos">${Number.isFinite(fee) ? money(fee + sup) : '—'}</b></div>`;
     };
     f.addEventListener('input', split); split();
     f.addEventListener('submit', async e => {
       e.preventDefault();
       const m = $('[data-settings-msg]');
-      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg full ok'; await loadAll(); }
+      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_bonus_per_order: f.supplier_bonus_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg full ok'; await loadAll(); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
     });
     const c = $('[data-calc]'), out = $('[data-calc-out]');

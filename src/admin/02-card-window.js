@@ -24,13 +24,17 @@
     const keptC = keptOn.reduce((n, o) => n + feeC(o), 0), onOrdersC = os.reduce((n, o) => n + feeC(o), 0), feesC = onOrdersC + keptC;
     const collectedC = os.filter(o => PO.state(o) === 'paid').reduce((n, o) => n + feeC(o), 0) + keptC;
     const noBillC = os.filter(o => PO.state(o) === 'unbilled').reduce((n, o) => n + feeC(o), 0);
+    // Successful orders (Erwin/Shahar, 5 Nov 2026): not cancelled and paid by the client. The supplier pays us its own amount
+    // for each of them ("two fees on all orders": the client's fee plus $1 from the supplier; Fees & settings sets it).
+    const paidOs = os.filter(o => PO.state(o) === 'paid'), cxN = inMonth.length - os.length;
+    const supRateC = cents(S.ov.settings?.supplier_bonus_per_order ?? 1), supC = paidOs.length * supRateC, totalC = feesC + supC;
     // What clients owe right now: each client's balance (unpaid orders minus credit and payments not linked to orders), and
     // that amount without our fee (admin only): minus our fee on the unpaid orders (credit lowers the supplier's part).
     const balanceC = cl.reduce((n, c) => n + Math.max(0, cents(c.outstanding)), 0);
     const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const lateIds = lateClientIds(), late = balanceC > 0 && f_late(cl, lateIds, cents);
-    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, balanceC, feePartC, clientsN, lateIds, late };
+    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, totalC, balanceC, feePartC, clientsN, lateIds, late };
   }
 
   // Late = a client who still owes money has an unpaid order older than 14 days.
@@ -118,17 +122,21 @@
       const st = ['pending', 'processing', 'cancellation_requested', 'shipped', 'delivered'], n = s => f.os.filter(o => o.status === s).length;
       const other = f.os.filter(o => !st.includes(o.status)).length;
       const status = st.map(s => n(s) ? kwRow('', UI.LABEL[s], String(n(s))) : '').join('') + (other ? kwRow('', 'Other', String(other)) : '') + kwRow('=', 'Total', String(f.os.length), '', 'tot');
+      // Successful orders = not cancelled and paid (what the supplier's $1 per order is counted on).
+      const payState = kwRow('', 'Paid', String(f.paidOs.length), 'successful orders') + kwRow('+', 'Not paid yet', String(f.os.length - f.paidOs.length)) + kwRow('=', 'Total', String(f.os.length), 'cancelled not counted', 'tot');
       const per = kwByClient(f.os, l => l.length).map(x => kwItem(`data-open-client="${x.id}" data-client-tab="orders"`, x.c?.name || '—', '', String(x.v))).join('');
       const cx = f.inMonth.filter(o => o.status === 'cancelled').length;
-      return kwBlock('By status', status) + kwBlock('By client', per) + (cx ? `<p class="kw-note"><span>Cancelled orders, not counted above:</span> <b data-no-i18n>${cx}</b></p>` : '');
+      return kwBlock('By status', status) + kwBlock('Paid by the client', payState) + kwBlock('By client', per) + (cx ? `<p class="kw-note"><span>Cancelled orders, not counted above:</span> <b data-no-i18n>${cx}</b></p>` : '');
     }
     if (k === 'earnings') {
-      if (!f.feesC) return '<p class="muted kw-empty">No fees yet</p>';
+      if (!f.totalC) return '<p class="muted kw-empty">No fees yet</p>';
       const notPaid = f.feesC - f.collectedC - f.noBillC;
+      const both = f.supC ? kwRow('', 'Client fees', kwMoney(f.feesC), kwPlural(f.os.length + f.keptOn.length, 'order')) + kwRow('+', 'From the supplier', kwMoney(f.supC), `${kwPlural(f.paidOs.length, 'paid order')} × ${kwMoney(f.supRateC)}`) + kwRow('=', 'Total', kwMoney(f.totalC), '', 'tot') : '';
       const sum = kwRow('', 'Collected', kwMoney(f.collectedC)) + kwRow('+', 'Not paid yet', kwMoney(notPaid)) + (f.noBillC ? kwRow('+', 'Not billed yet', kwMoney(f.noBillC), 'No cost yet, so not on a bill') : '') + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot');
       const from = f.keptC ? kwRow('', 'Our fee on orders', kwMoney(f.onOrdersC), kwPlural(f.os.length, 'order')) + kwRow('+', 'Fees kept on cancelled orders', kwMoney(f.keptC), kwPlural(f.keptOn.length, 'order')) + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot') : '';
-      const per = kwByClient([...f.os, ...f.keptOn], l => l.reduce((t, o) => t + f.feeC(o), 0)).filter(x => x.v).map(x => kwItem(`data-open-client="${x.id}" data-client-tab="payments"`, x.c?.name || '—', kwPlural(x.list.length, 'order'), kwMoney(x.v))).join('');
-      return kwBlock('', sum) + kwBlock('Where it comes from', from) + kwBlock('By client', per);
+      const per = kwByClient([...f.os, ...f.keptOn], l => l.reduce((t, o) => t + f.feeC(o) + (o.status !== 'cancelled' && f.PO.state(o) === 'paid' ? f.supRateC : 0), 0)).filter(x => x.v).map(x => kwItem(`data-open-client="${x.id}" data-client-tab="payments"`, x.c?.name || '—', kwPlural(x.list.length, 'order'), kwMoney(x.v))).join('');
+      const supNote = f.supC ? `<p class="kw-note"><span>From the supplier: for each paid order that isn't cancelled. The supplier pays it, it's not on the client's bill.</span></p>` : '';
+      return kwBlock('', both) + kwBlock(f.supC ? 'Client fees' : '', sum) + kwBlock('Where it comes from', from) + supNote + kwBlock('By client', per);
     }
     // Clients: all time = every active client, with what they owe and their plan; a month = clients with orders that month.
     if (f.month !== 'all') {
