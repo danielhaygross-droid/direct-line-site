@@ -45,7 +45,8 @@
     if (!Number.isFinite(Number(sec)) || Number(sec) <= 0) return '';
     const zone = displayTimeZone();
     const f = new Intl.DateTimeFormat('en-GB', {timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
-    return f.format(new Date(Number(sec)*1000)) + (hebrewTime() ? ' (שעון ישראל)' : ` (${zone})`);
+    // Hebrew: the date and time stay one left-to-right run (U+2066 … U+2069), so "04/11/2026, 19:56" doesn't flip (5 Nov 2026).
+    return hebrewTime() ? '\u2066' + f.format(new Date(Number(sec)*1000)) + '\u2069 (שעון ישראל)' : f.format(new Date(Number(sec)*1000)) + ` (${zone})`;
   };
   const date = s => (s ? new Date(s * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
   const trackingUrl = n => 'https://t.17track.net/en#nums=' + encodeURIComponent(n);

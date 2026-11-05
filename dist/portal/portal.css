@@ -349,3 +349,16 @@ details.more[open]>summary i{font-size:0}details.more[open]>summary i::before{co
 .dup-box{margin:0 0 12px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--orange) 45%,var(--line));border-inline-start:4px solid var(--orange);border-radius:12px;background:color-mix(in srgb,var(--orange) 8%,var(--surface))}
 .dup-box b{display:block;margin-bottom:2px}.dup-box p{margin:0 0 6px;font-size:14px}.dup-box .dup-ref{color:var(--muted);font-size:13px}
 .dup-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+
+/* Readable and easy to tap (UI UX Pro Max review, 5 Nov 2026): text that carries information is at least 12px
+   (chart axes, counters in small badges and the logo line stay small); on a phone every button is at least 44px. */
+.nav-label,.tabs a,.tabs .fab,.store-label small,.var-photo .pm-add.sm small,.pm-line .pm-add.sm small,.track-step small,.bubble small,.dl-bubble small,
+.po-tag,.pay-tag,.store-status,.upd-tag,.pill-new,.sum-profit small,.tbl.stack td[data-label]::before,.stack-table td[data-label]::before{font-size:12px}
+small{font-size:max(12px,.85em)}.store-label small{opacity:1;color:var(--muted)}.bubble small,.dl-bubble small{opacity:.85}
+@media(max-width:560px){
+  .icon-btn{width:44px;height:44px}
+  .pm-paste,.quick button,.chip,.seg-pick span,.sort-pick select,.btn{min-height:44px}
+  /* Form hints go under their label, and the page title may take two lines instead of being cut off. */
+  .field>span{flex-wrap:wrap;justify-content:flex-start;column-gap:8px}.field>span>small{flex-basis:100%}
+  .top h1{white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.2}
+}
