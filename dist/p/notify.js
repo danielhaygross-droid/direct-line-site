@@ -11,7 +11,8 @@
     if(!ms)return '';
     if(window.DL?.displayTime)return window.DL.displayTime(ms/1000);
     const zone=he() ? 'Asia/Jerusalem' : Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return new Intl.DateTimeFormat('en-GB',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(ms))+(he() ? ' (שעון ישראל)' : ` (${zone})`);
+    const t=new Intl.DateTimeFormat('en-GB',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(ms));
+    return he() ? '⁦'+t+'⁩ (שעון ישראל)' : t+` (${zone})`; // same as DL.displayTime: Hebrew keeps the date one left-to-right run
   };
   function timeAgo(ms) {
     if (!ms) return '';
