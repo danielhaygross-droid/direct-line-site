@@ -4,7 +4,7 @@ Read this first in every new session, then just continue. No need to ask Erwin t
 **Keep it current:** after every task that ships (or stops halfway), rewrite sections 2, 4, 5 and 6 below.
 Lives in the repo root, so local and cloud sessions both see it; update it in the same PR as the work. How to work: `CLAUDE.md` (repo root). Older history: `docs/handoff/HISTORY.md` (cleaned copy of Erwin's notes), `git log`, PR descriptions. Working rules: `docs/handoff/RULES.md`. Agents: `.claude/agents/`.
 
-Last updated: 5 Nov 2026, after PR #176.
+Last updated: 5 Nov 2026, after PR #177.
 
 ---
 
@@ -16,7 +16,7 @@ Last updated: 5 Nov 2026, after PR #176.
 - Hard rules (also in `CLAUDE.md`): no secrets in files/chat; no permanent deletes of real data; never touch Byzroyal; don't invent facts for clients; **never show our fee/commission to clients**; never change sheet columns without a safe one-time switch; do all work in one session (no side sessions); every number shown must add up (Erwin, 4 Nov: "do your facts straight").
 
 ## 2. Current state (4 Nov 2026)
-- **Live:** `main` = `origin/main`, last PR **#176**. Versions: portal.js 103, admin.js 111, admin.css 35, i18n 107, ui.css 36, portal.css 45, common.js 31, order-ui.js 24, notify.js 6.
+- **Live:** `main` = `origin/main`, last PR **#177**. Versions: portal.js 104, admin.js 111, admin.css 35, i18n 107, ui.css 36, portal.css 46, common.js 31, order-ui.js 24, notify.js 6.
 - **Everything is merged; nothing half-done.** All local checkouts are saved on GitHub. `current-site/` is an old checkout on branch `codex/update-whatsapp-number` (backup only, not the live code).
 - **Supplier sheet** (`1L_C87W4jrZGIIrT2Fg_cGowNi3R5fTehdDw8d-vpZag`): tabs Orders, Shipped, Cancelled, Billing (3 parts: paid / not paid / cancelled with refund), Product Quotes, Guide 使用说明. Headers are English + Chinese (website reads the English line). Layout 19: P Total cost, Q Cost per product, R tracking, S courier, T shipping status, U Delayed?, V reason, W Client paid, X–AE photos/links, AF–AG hidden ids, AH domestic tracking, AI cancellation fee.
 - **Cost revisions** (client asks for a lower cost): shown in the Competitor price cell (orange = waiting for Ada, purple = waiting for Direct Line, green = done). A lower cost from Ada is applied by itself (unless it drops by more than half); Ada types `NO: reason` to refuse. Clients see a tag in their lists (Revision requested / Cost lowered / Cost kept).
@@ -36,6 +36,7 @@ Last updated: 5 Nov 2026, after PR #176.
 - Reports: layout files in `tools/report-template/` (shared `head.html`, Hebrew style, the 22 Oct report `body.html` + `make_he.py`, `render*.cjs`) and `tools/report-template/r1101/` (`page_fn.py` layout, `render.cjs` PDF, `shot.cjs` preview). The report text `gen.py` holds real store and billing figures, so it stays on Erwin's computer in `direct-line-control/tools/report-template/r1101/`: copy that folder to a new `rMMDD` and put screenshots in its `img/`. Scripts use the repo's `playwright-core`; set `CHROME_PATH` if Chromium is not at Erwin's path. Finished PDFs: `direct-line-control/reports/`.
 
 ## 4. Changes (most recent first)
+- #177 (5 Nov): client portal 3/3: New order shows "Please fill in: …" under each missing field (`.field-err`, cleared when typed), besides the red border and the message at the bottom; Stores: "Add store" and "Edit store" are buttons (`<details>`) that open the form (`data-store-edit` in checks). Phone order cards hide empty lines with `empty-sm` (`hide-sm` = never on a phone).
 - #176 (5 Nov): client portal 2/3: short dates `DL.shortTime` ("5 Nov 2026, 19:56"; Hebrew "05/11/2026 19:56" left-to-right; exact time + zone stays `DL.displayTime`, in tooltips and the Order activity note) for the order list, panel and timeline (timeline = date only; order-ui is shared with admin); phone order cards hide destination and empty tracking/earned/profit (`hide-sm`); no "Now <status>" update tag next to the same pill; no unpaid strip on Orders (Home + Payments only); order panel "Message us" button instead of a grey link.
 - #175 (5 Nov): client portal readability 1/3 (UI UX Pro Max): grey text 4.5:1 (`--dim` = old `--muted`, `--muted` darker; dark `--dim` #839890; shared with admin), info text at least 12px (a bare `<small>` was 10.8px), 44px buttons on phones, form hints under labels and a two-line title on phones, Hebrew dates kept left-to-right (U+2066/U+2069 in `displayTime` and the notify.js fallback). New check `check-portal-readability`.
 - #174 (5 Nov): cleanup 3/3: red only for late money = an unpaid order over 14 days old (same rule as the client portal reminder; `LATE_DAYS`, `lateClientIds()` in `02-card-window.js`): Not paid yet card (orange when owed but not late), client amounts in the windows, Outstanding in the Clients table. "How long unpaid" buckets: up to 14 / 15–30 / over 30 days. Clients & payments opens sorted by Outstanding (first sort in `CLIENT_SORTS`) until the admin picks another.
@@ -69,7 +70,7 @@ Last updated: 5 Nov 2026, after PR #176.
 - Nothing half-done in code. Start new work from `origin/main` on a new `claude/<name>` branch.
 - **Cleanup plan agreed with Erwin (5 Nov): all 3 PRs done** (#171 cards, #173 section headers, #174 late money). Ideas not done yet: Overview "Show" month picker could sit beside the subtitle; cancelled box rows on phone could line up better.
 - Reports: 4–5 Nov report sent (#164–#174, plus the Claude Pro renewal). Done and not to list again: Royal Flint ads profile, Pauline's variant photos, Ada's #4211752986 costs.
-- **Client portal plan (Erwin, 5 Nov): 3 PRs, one after the other without asking.** PR 1 readability done (#175), PR 2 order list done (#176). PR 2 was: compact order cards (hide empty fields), one status chip per card (no "Now Delivered" + "Delivered"), the unpaid banner only on Home + Payments (a balance chip on Orders), order panel short dates with the time zone once, one main button. PR 3: form errors under each field + summary, shorter new-order form (fold sections, one-line help), Stores: "Add store" behind a button, edit opens on tap. Later ideas: To-do home, one-tap Pay, reorder from a past order, one updates inbox.
+- **Client portal plan (Erwin, 5 Nov): all 3 PRs done** (#175 readability, #176 order list, #177 forms). Ideas not done yet: To-do home ("Pay $X" first), one-tap Pay, reorder from a past order, one updates inbox (bell + Messages), folding the long New order form on phones.
 - When Erwin asks for the end-of-day report: use the daily-report skill, full 22 Oct format with screenshots, only that day's work.
 
 ## 7. Installed skills and agents (use them; check the session's skill list for new ones — a cloud session may not have the Erwin-installed ones)
