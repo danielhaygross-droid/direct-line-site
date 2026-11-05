@@ -26,8 +26,8 @@
   const delayNote = o => isLate(o) ? `<div class="delay-note" role="status"><b>Possibly delayed</b>${o.delayReason ? `<span data-no-i18n>${esc(o.delayReason)}</span>` : ''}<small><span>Marked</span> <time data-no-i18n>${esc(when(o.delayedAt))}</time></small></div>` : '';
   // A tracking number is given before the parcel leaves: it must not go on Etsy until the order is Shipped.
   const notShippedYet = o => !!o?.trackingNumber && ['pending', 'processing', 'cancellation_requested'].includes(o.status);
-  const when = sec => window.DL.displayTime(sec);
-  const day = when;
+  const when = sec => window.DL.shortTime ? window.DL.shortTime(sec) : window.DL.displayTime(sec);
+  const day = sec => window.DL.shortTime ? window.DL.shortTime(sec, false) : window.DL.displayTime(sec);
   // Claim problem types and decisions as people read them (stored as keys like 'missing_parts').
   const CLAIM_LABEL = { damaged: 'Damaged', defective: 'Defective', missing_parts: 'Missing parts', wrong_item: 'Wrong item', lost: 'Lost parcel', approved: 'Approved', rejected: 'Rejected', resolved: 'Resolved' };
   // A claim's two files: the photo/video of the problem and the shipping label.

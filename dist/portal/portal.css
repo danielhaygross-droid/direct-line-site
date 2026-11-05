@@ -362,3 +362,5 @@ small{font-size:max(12px,.85em)}.store-label small{opacity:1;color:var(--muted)}
   .field>span{flex-wrap:wrap;justify-content:flex-start;column-gap:8px}.field>span>small{flex-basis:100%}
   .top h1{white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.2}
 }
+/* Phone order cards (stacked rows): no empty tracking / earned / profit lines (5 Nov 2026). */
+@media(max-width:760px){.tbl.stack td.empty-sm{display:none}}

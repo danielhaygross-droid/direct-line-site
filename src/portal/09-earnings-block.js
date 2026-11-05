@@ -42,27 +42,30 @@
   // One tag per kind of change, newest first (×2 when it happened more than once).
   function updateTags(o) {
     const seen = new Map();
-    for (const x of (newByOrder.get(o.id) || []).slice().sort((a, b) => b.time - a.time)) { const [label, tone] = x.tag; const y = seen.get(label); if (y) y.n++; else seen.set(label, { tone, n: 1 }); }
+    // "Now Delivered" next to the Delivered pill says the same thing twice: the pill is enough (the dot still marks the update).
+    const same = noteTag({ kind: 'status', detail: o.status })[0];
+    for (const x of (newByOrder.get(o.id) || []).slice().sort((a, b) => b.time - a.time)) { const [label, tone] = x.tag; if (label === same) continue; const y = seen.get(label); if (y) y.n++; else seen.set(label, { tone, n: 1 }); }
     return seen.size ? `<span class="upd-tags">${[...seen].map(([label, y]) => `<span class="upd-tag t-${y.tone}">${esc(label)}${y.n > 1 ? `<span data-no-i18n> ×${y.n}</span>` : ''}</span>`).join('')}</span>` : '';
   }
   function ordersTable(list, compact) {
     const fresh = unreadOrderIds();
     return `<table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Store</th>${compact ? '' : '<th>Destination</th><th>Tracking</th>'}<th class="num" title="What you earned on Etsy after Etsy’s fees">Earned</th><th class="num" title="What you pay Direct Line">Cost</th><th class="num" title="Earned minus cost">Profit</th><th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
       ${list.map(o => `<tr class="click${fresh.has(o.id) ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
-        <td class="wide" data-sort-value="${Number(o.createdAt) || 0}"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small>${esc(fullDate(o.createdAt))}</small>${updateTags(o)}</span></div></td>
+        <td class="wide" data-sort-value="${Number(o.createdAt) || 0}"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small title="${esc(window.DL.displayTime(o.createdAt))}">${esc(fullDate(o.createdAt))}</small>${updateTags(o)}</span></div></td>
         <td data-label="Customer"><span data-no-i18n>${esc(o.buyerName) || '—'}</span></td>
-        <td data-label="Store">${window.DLClientStoreUI.label(S.stores.find(s=>s.id===o.storeId))}</td>${compact ? '' : `<td data-label="Destination">${esc(place(o.destination))}</td>
-        <td data-label="Tracking">${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>${o.courier ? `<br><small class="dim" data-no-i18n>${esc(o.courier)}</small>` : ''}${UI.notShippedYet(o) ? '<small class="ship-warn">Not shipped yet</small>' : ''}` : '<span class="dim">Not yet</span>'}</td>`}
-        <td data-label="Earned" class="num">${earnedCell(o)}</td>
+        <td data-label="Store">${window.DLClientStoreUI.label(S.stores.find(s=>s.id===o.storeId))}</td>${compact ? '' : `<td data-label="Destination" class="hide-sm">${esc(place(o.destination))}</td>
+        <td data-label="Tracking"${o.trackingNumber ? '' : ' class="empty-sm"'}>${o.trackingNumber ? `<span class="tracking">${esc(o.trackingNumber)}</span>${o.courier ? `<br><small class="dim" data-no-i18n>${esc(o.courier)}</small>` : ''}${UI.notShippedYet(o) ? '<small class="ship-warn">Not shipped yet</small>' : ''}` : '<span class="dim">Not yet</span>'}</td>`}
+        <td data-label="Earned" class="num${earnedOf(o) == null ? ' empty-sm' : ''}">${earnedCell(o)}</td>
         <td data-label="Cost" class="num">${o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : `<b>${money(o.price)}</b>`}${window.DLPayOrders.tag(o, S.adjustments, true)}</td>
-        <td data-label="Profit" class="num ${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}">${profitCell(o)}</td>
+        <td data-label="Profit" class="num ${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}${profitOf(o) == null ? ' empty-sm' : ''}">${profitCell(o)}</td>
         <td data-label="Status" data-sort-value="${STATUSES.indexOf(o.status)} ${o.status}">${UI.pill(o.status)}${UI.delayTag(o)}${UI.revTag(o)}</td>
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
   }
   // Orders page (Erwin, 28 Oct 2026: "he cant even properly sort out the orders"): the list and its filters come first;
   // the earnings (store table, cards, profit chart) are folded below it and closed until the client opens them.
-  const viewOrders = () => `${payStrip()}<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders-2', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
+  // No unpaid strip here (5 Nov 2026): it is on Home and Payments; the "Not paid" chip filters the unpaid orders.
+  const viewOrders = () => `<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders-2', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
       <section class="card" data-orders-list></section>`;
   const isUnpaid = o => window.DLPayOrders.state(o, S.adjustments) === 'unpaid';
   // "Cost revisions": every order the client asked a cost revision on (waiting or answered).
