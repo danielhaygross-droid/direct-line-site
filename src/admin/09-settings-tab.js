@@ -11,6 +11,7 @@
       <section class="card card-pad"><h3 class="form-sec">Fee per order</h3>
         <form class="form-grid" id="settings-form" novalidate>
           <label class="field"><span>Fee per order (USD)</span><span class="money"><input name="commission_per_order" type="number" min="0" step="0.01" value="${esc(s.commission_per_order)}"></span></label>
+          <label class="field"><span>From the supplier per order (USD) <small>the supplier pays us this for every order, apart from the client's fee</small></span><span class="money"><input name="supplier_bonus_per_order" type="number" min="0" step="0.01" value="${esc(s.supplier_bonus_per_order ?? 1)}"></span></label>
           <div class="full split" data-split></div>
           <label class="field"><span>Client subscription <small>₪ / month, after the free month</small></span><input name="subscription_price" type="number" min="0" step="0.01" value="${esc(s.subscription_price ?? 29)}"></label>
           <label class="field"><span>Size-to-weight divisor <small>cm³ per kg</small></span><input name="volumetric_divisor" type="number" min="1000" max="10000" step="1" value="${esc(s.volumetric_divisor)}"></label>
@@ -139,14 +140,14 @@
     });
     const f = $('#settings-form');
     const split = () => {
-      const fee = parseFloat(f.commission_per_order.value);
-      $('[data-split]').innerHTML = `<div><small>Client pays (inside product cost)</small><b>${Number.isFinite(fee) ? money(fee) : '—'}</b></div><div><small>We earn</small><b class="pos">${Number.isFinite(fee) ? money(fee) : '—'}</b></div>`;
+      const fee = parseFloat(f.commission_per_order.value), sup = parseFloat(f.supplier_bonus_per_order.value) || 0;
+      $('[data-split]').innerHTML = `<div><small>Client pays (inside product cost)</small><b>${Number.isFinite(fee) ? money(fee) : '—'}</b></div><div><small>The supplier pays us</small><b>${money(sup)}</b></div><div><small>We earn per order</small><b class="pos">${Number.isFinite(fee) ? money(fee + sup) : '—'}</b></div>`;
     };
     f.addEventListener('input', split); split();
     f.addEventListener('submit', async e => {
       e.preventDefault();
       const m = $('[data-settings-msg]');
-      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg full ok'; await loadAll(); }
+      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_bonus_per_order: f.supplier_bonus_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg full ok'; await loadAll(); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
     });
     const c = $('[data-calc]'), out = $('[data-calc-out]');
