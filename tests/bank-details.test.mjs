@@ -15,6 +15,6 @@ test('bank details have defaults from Shahar\'s list and are editable settings',
 });
 
 test('payments page shows the bank details with Copy buttons in "Pay for your orders"; bank values are not translated', () => {
-  assert.ok(portal.includes('function bankRows()') && portal.includes('bank = bankRows()') && portal.includes('${payFlow()}'));
+  assert.ok(portal.includes('function bankRows()') && portal.includes('bank = bankRows()') && portal.includes('pay: () => payFlow()'));
   assert.ok(/<b data-no-i18n>\$\{esc\(shown\)\}<\/b><button type="button" class="btn btn-sm" data-copy=/.test(portal));
 });
