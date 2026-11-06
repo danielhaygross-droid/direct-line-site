@@ -255,3 +255,11 @@ body.in-control [data-main-tabs]{display:none}
 .cl-overdue{padding:2px 8px;border-radius:7px;background:color-mix(in srgb,var(--red) 14%,transparent);color:var(--red);font-size:12px;font-weight:700}
 .cl-days{white-space:nowrap;font-size:14px}.cl-days small{color:var(--dim);font-size:12px}
 .cl-body>p{margin:0 0 10px}.cl-body .err-text{margin:0 0 8px}.cl-body textarea{min-height:64px}.cl-reply span:first-child{color:var(--dim);font-size:12px;display:block}
+/* Client panel: long lists show 20 rows + "Show 20 more"; cancelled orders fold to one line (7 Nov 2026) */
+.panel-more{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;padding:12px 16px}
+.cx-fold{margin-bottom:16px}.cx-fold>summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0;cursor:pointer;list-style:none}
+.cx-fold>summary::-webkit-details-marker{display:none}.cx-fold>summary::marker{content:""}.cx-fold>summary .sec-title{margin:0}
+.cx-fold-sum{flex:1;color:var(--dim);font-size:13px}.cx-fold-sum b{color:var(--text)}.cx-fold>summary svg{width:18px;height:18px;color:var(--dim);transition:transform .2s ease}
+.cx-fold[open]>summary{border-bottom-left-radius:0;border-bottom-right-radius:0;margin-bottom:-1px}.cx-fold[open]>summary svg{transform:rotate(180deg)}
+.cx-fold>summary:focus-visible{outline:2px solid var(--gold-2);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.cx-fold>summary svg{transition:none}}

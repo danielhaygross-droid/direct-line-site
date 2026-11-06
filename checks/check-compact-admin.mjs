@@ -66,6 +66,8 @@ const D = await mk('SHOP-303', '2026-10-20', 60);
 const owes = ok(await call('/me', 'GET', null, client)).summary.outstanding;
 assert.equal(owes, r2(await priceOf(D) - cx.credit), 'the new bill minus the credit');
 
+// 20 more orders (no cost yet, so nothing is billed): the client panel shows 20 rows, then "Show 20 more" (7 Nov 2026).
+for (let i = 0; i < 20; i++) ok(await call('/orders', 'POST', { storeId: store.id, orderRef: 'SHOP-5' + String(i).padStart(2, '0'), orderDate: '2026-10-25', buyerName: 'Sample Buyer', address1: '1 Sample St', destination: 'US', etsyUrl: 'https://example.com/i', photos: [photo] }, client));
 // Products: one waiting for a price, one approved, one not available.
 const P = [];
 for (const name of ['Glass tea set', 'Brass key hooks', 'Wall coat rack']) P.push((await call('/products', 'POST', { name, link: 'https://detail.1688.com/offer/7', variant: 'Gold', photos: [photo] }, client)).data.product);
@@ -155,8 +157,21 @@ try {
     // Record payment: the fee the credit paid (C) isn't listed and adds no credit (nothing is owed after D)
     if (tag === 'en-1440') {
       await ui.locator('[data-tab=clients]').click(); await ui.locator(`[data-open-client="${id}"]`).first().click();
+      // Orders tab: 20 rows, then Show 20 more shows the rest
+      await ui.waitForSelector('.drawer.open .ord-row'); const nOrders = Number((await DB.prepare('SELECT COUNT(*) AS n FROM client_orders WHERE client_id=? AND NOT archived').bind(id).first()).n);
+      assert.ok(nOrders > 20); assert.equal(await ui.locator('.drawer.open .ord-row').count(), 20, 'first 20 orders');
+      { const t = (await ui.locator('.drawer.open .panel-more').innerText()).replace(/\s+/g, ' '); assert.equal(t, `Show ${Math.min(20, nOrders - 20)} more ${20} of ${nOrders} shown`); }
+      await ui.locator('.drawer.open .panel-more').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, 'en-1440-panel-orders-more.png') });
+      await ui.locator('[data-panel-more=orders]').click(); await page.waitForTimeout(300);
+      assert.equal(await ui.locator('.drawer.open .ord-row').count(), Math.min(40, nOrders), 'Show more adds 20'); 
       await ui.locator('.gtabs button').nth(2).click(); await page.waitForTimeout(300); await ui.locator('.subtabs [data-ctab=payments]').click();
-      await ui.waitForSelector('.pay-cards'); await page.waitForTimeout(400); await ui.locator('[data-pay-new]').first().click(); await ui.waitForSelector('[data-pay-form]');
+      await ui.waitForSelector('.pay-cards'); await page.waitForTimeout(400);
+      // Payments: cancelled orders fold to one line with the credit left; opening it shows the box
+      await ui.evaluate(() => { try { localStorage.removeItem('dl-fold-cx'); } catch {} });
+      assert.equal(await ui.locator('.drawer.open .cx-fold').evaluate(d => d.open), false, 'cancelled orders folded');
+      assert.match(await ui.locator('.drawer.open .cx-fold > summary').innerText(), /Cancelled orders[\s\S]*3 orders[\s\S]*Credit left[\s\S]*\$0\.00/i);
+      await page.screenshot({ path: path.join(out, 'en-1440-panel-payments.png') });
+      await ui.locator('.drawer.open .cx-fold > summary').click(); assert.equal(await ui.locator('.drawer.open [data-cancelled-box]').isVisible(), true); await ui.locator('[data-pay-new]').first().click(); await ui.waitForSelector('[data-pay-form]');
       assert.equal(await ui.locator(`[data-pay-form] [name=poOrder][value="${C}"]`).count(), 0, 'fee paid from credit is not in the payment list');
       const po = ui.locator('[data-pay-form] [data-po]'); if (await po.count()) assert.ok([null, '0'].includes(await po.getAttribute('data-credit')), 'no credit left to take off');
       await page.keyboard.press('Escape'); await ui.evaluate(() => location.reload()); await ui.waitForSelector('[data-tab=clients]');

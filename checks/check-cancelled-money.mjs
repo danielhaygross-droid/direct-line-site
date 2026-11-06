@@ -105,7 +105,9 @@ try {
     ctx = await session(admin, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=clients]');
     await ui.locator('[data-tab=clients]').click(); await ui.locator(`[data-open-client="${id}"]`).first().click(); await ui.waitForSelector('.gtabs');
-    await ui.locator('.gtabs button').nth(2).click(); await ui.locator('.subtabs [data-ctab=payments]').click(); await ui.waitForSelector('[data-cancelled-box]'); await page.waitForTimeout(400);
+    await ui.locator('.gtabs button').nth(2).click(); await ui.locator('.subtabs [data-ctab=payments]').click(); await ui.waitForSelector('.cx-fold > summary');
+    if (!(await ui.locator('.cx-fold').evaluate(d => d.open))) await ui.locator('.cx-fold > summary').click(); // folded in the panel since 7 Nov 2026
+    await ui.waitForSelector('[data-cancelled-box]'); await page.waitForTimeout(400);
     await ui.locator('.cx-add > summary').click(); await ui.locator('[data-cancelled-box]').scrollIntoViewIfNeeded(); await page.waitForTimeout(300);
     await page.screenshot({ path: path.join(out, `${tag}-admin.png`) });
     assert.equal(await ui.locator('[data-refund-undo]').count(), 1, tag);
