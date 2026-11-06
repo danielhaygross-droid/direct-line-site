@@ -11,8 +11,8 @@ const read = p => readFile(new URL('../' + p, import.meta.url), 'utf8').then(t =
 test('Home starts with the money, and the earnings live only on Home', async () => {
   const portal = await read('dist/portal/portal.js'), i18n = await read('dist/p/i18n.js');
   assert.equal(portal.split('function statCardsHTML()').length, 2, 'one definition of the cards');
-  assert.ok(portal.includes('${moneyNow()}\n      ${payStrip()}\n      ${window.DLClientStoreUI.periodFields('), 'Your money and the unpaid strip right under the greeting');
-  assert.ok(portal.includes("'Cancellation fees', money(c.fees)") && portal.includes("'Credit from cancelled orders', money(c.credit)"), 'cancellation fees and credit on Home');
+  assert.ok(portal.includes('${payStrip()}\n      ${moneyNow()}\n      ${window.DLClientStoreUI.periodFields('), 'the unpaid strip (to-do) first, then Your money (7 Nov 2026)');
+  assert.ok(portal.includes("'Cancellation fees', money(c.fees)") && portal.includes("'Credit left', money(cx.leftC / 100)"), 'cancellation fees and credit left on Home, only while open (check-compact-admin)');
   assert.ok(!portal.includes('profitChart') && !portal.includes('Profit over selected period'), 'the old profit bars are gone (Money by month shows the profit)');
   assert.ok(!portal.includes('earningsInner') && !portal.includes('data-earn'), 'no earnings block on the Orders page');
   // 5 Nov 2026 (no duplication): the unpaid strip is on Home and Payments only; Orders starts with the toolbar and the list.
