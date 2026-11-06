@@ -59,7 +59,9 @@ try {
     assert.deepEqual(errors, [], tag); await ctx.close();
     ctx = await session(admin, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=products]');
-    await ui.locator('[data-tab=products]').click(); await ui.waitForSelector(`[data-product-quote="${P[0].id}"] [name=shipping]`);
+    await ui.locator('[data-tab=products]').click(); await ui.waitForSelector(`[data-pq="${P[0].id}"]`);
+    await ui.locator(`[data-pq="${P[0].id}"] summary`).click(); // approved products are a short row that opens on a click (6 Nov 2026)
+    await ui.waitForSelector(`[data-product-quote="${P[0].id}"] [name=shipping]`);
     assert.equal(await ui.locator(`[data-product-quote="${P[0].id}"] [name=shipping]`).inputValue(), '3.25');
     await ui.locator(`[data-product-quote="${P[0].id}"] [name=shipping]`).scrollIntoViewIfNeeded(); await page.waitForTimeout(200);
     await page.screenshot({ path: path.join(out, `${tag}-admin.png`) });

@@ -84,7 +84,9 @@ try {
     assert.match(await ui.locator('.drawer').innerText(), /\$27\.50 on Amazon/, 'admin sees it on the order');
     await ui.locator('.drawer dd', { hasText: '$27.50 on Amazon' }).scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-admin-order.png`) });
     await page.keyboard.press('Escape'); await page.waitForTimeout(300);
-    await ui.locator('[data-tab=products]').click(); await ui.waitForSelector(`[data-product-quote="${prod.id}"]`);
+    await ui.locator('[data-tab=products]').click(); await ui.waitForSelector(`[data-pq="${prod.id}"]`);
+    await ui.locator(`[data-pq="${prod.id}"]`).evaluate(d => { d.open = true; }); // product rows open on a click (6 Nov 2026)
+    await ui.waitForSelector(`[data-product-quote="${prod.id}"]`);
     assert.match(await ui.locator(`[data-product-quote="${prod.id}"]`).innerText(), /WoodCo/, 'admin sees it on the product');
     await ui.locator(`[data-product-quote="${prod.id}"]`).scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-admin-product.png`) });
     assert.deepEqual(errors, [], tag + ' admin'); await ctx.close();

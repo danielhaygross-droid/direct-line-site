@@ -47,7 +47,9 @@ export async function cancelledSummary(DB, clientId) {
     pool -= fee; o.fromCredit = true; o.back = r2(-o.fee);
   }
   const dueBack = sum('back');
-  return { orders, refunds, count: orders.length, paidCount: orders.filter(o => o.paid > 0).length, paid: sum('paid'), fees: sum('fee'), kept: sum('kept'), dueBack, refunded, credit: r2(dueBack - refunded) };
+  // feesOwed: fees not taken from money the client already paid (they are on the bill; settled once the balance is paid).
+  const feesOwed = r2(orders.reduce((n, o) => n + (o.paid || o.fromCredit ? 0 : o.fee), 0));
+  return { orders, refunds, count: orders.length, paidCount: orders.filter(o => o.paid > 0).length, paid: sum('paid'), fees: sum('fee'), kept: sum('kept'), dueBack, refunded, credit: r2(dueBack - refunded), feesOwed };
 }
 
 // Our fee on a cancelled order the client had paid stays billed (Erwin, 29 Oct 2026: "once we billed those profit its
