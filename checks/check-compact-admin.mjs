@@ -52,10 +52,13 @@ const mk = async (ref, date, cost) => {
 };
 // Two paid orders get cancelled (the second with a $5 supplier fee): what was paid minus the fees is credit.
 const A = await mk('SHOP-301', '2026-10-02', 20), B = await mk('SHOP-302', '2026-10-04', 25);
+// C was never paid: its $3 fee is taken from the credit, so it counts as paid (7 Nov 2026: not in the admin's payment list).
+const C = await mk('SHOP-304', '2026-10-06', 10);
 const priceOf = async oid => Number((await DB.prepare('SELECT price FROM client_orders WHERE id=?').bind(oid).first()).price);
 ok(await call('/admin/payments', 'POST', { clientId: id, amount: r2(await priceOf(A) + await priceOf(B)), paidAt: '2026-10-05', method: 'Bank transfer', orderIds: [A, B] }, admin));
 await DB.prepare('UPDATE client_orders SET supplier_cancel_fee=5 WHERE id=?').bind(B).run();
-for (const o of [A, B]) { ok(await call('/orders/' + o + '/request-cancellation', 'POST', { reason: 'Store suspended' }, client)); ok(await call('/orders/' + o + '/approve-cancellation', 'POST', {}, admin)); }
+await DB.prepare('UPDATE client_orders SET supplier_cancel_fee=3 WHERE id=?').bind(C).run();
+for (const o of [A, B, C]) { ok(await call('/orders/' + o + '/request-cancellation', 'POST', { reason: 'Store suspended' }, client)); ok(await call('/orders/' + o + '/approve-cancellation', 'POST', {}, admin)); }
 const cx = ok(await call('/payments', 'GET', null, client)).cancelled;
 assert.ok(cx.credit > 0 && cx.fees > 0, 'credit and fees to work with'); assert.equal(cx.feesOwed, 0, 'both fees came from paid money');
 // A later order is paid with the credit taken off: the credit is used up, nothing is owed.
@@ -129,6 +132,8 @@ try {
     assert.equal(await ui.locator(`[data-pq="${P[0].id}"]`).evaluate(d => d.open), true, tag + ' waiting for a price: open');
     assert.equal(await ui.locator(`[data-pq="${P[1].id}"]`).evaluate(d => d.open), false, tag + ' approved: closed');
     assert.equal(await ui.locator(`[data-product-quote="${P[0].id}"] [name=unitPrice]`).isVisible(), true);
+    assert.equal(await ui.locator(`[data-product-quote="${P[0].id}"] [name=status]`).inputValue(), '', tag + ' waiting product: no status picked yet');
+    assert.equal(await ui.locator(`[data-product-quote="${P[1].id}"] [name=status]`).inputValue(), 'approved', tag + ' approved product keeps Approved');
     if (lang === 'en') assert.match(await ui.locator(`[data-pq="${P[1].id}"] summary`).innerText(), /Brass key hooks[\s\S]*Approved[\s\S]*\$5\.40/, tag);
     await page.screenshot({ path: path.join(out, `${tag}-products.png`) });
     await ui.locator(`[data-pq="${P[1].id}"] summary`).click();
@@ -147,6 +152,15 @@ try {
     await ui.locator(`[data-cl="${CL[1].id}"] summary`).click(); assert.match(await ui.locator(`[data-cl="${CL[1].id}"]`).innerText(), /Photo shows no damage/);
     await ui.locator('[data-claim-filter=open]').click(); assert.deepEqual(await ui.locator('[data-cl]').evaluateAll(xs => xs.map(x => Number(x.dataset.cl))), [CL[0].id], tag + ' Open filter');
     await ui.locator('[data-claim-filter=all]').click();
+    // Record payment: the fee the credit paid (C) isn't listed and adds no credit (nothing is owed after D)
+    if (tag === 'en-1440') {
+      await ui.locator('[data-tab=clients]').click(); await ui.locator(`[data-open-client="${id}"]`).first().click();
+      await ui.locator('.gtabs button').nth(2).click(); await page.waitForTimeout(300); await ui.locator('.subtabs [data-ctab=payments]').click();
+      await ui.waitForSelector('.pay-cards'); await page.waitForTimeout(400); await ui.locator('[data-pay-new]').first().click(); await ui.waitForSelector('[data-pay-form]');
+      assert.equal(await ui.locator(`[data-pay-form] [name=poOrder][value="${C}"]`).count(), 0, 'fee paid from credit is not in the payment list');
+      const po = ui.locator('[data-pay-form] [data-po]'); if (await po.count()) assert.ok([null, '0'].includes(await po.getAttribute('data-credit')), 'no credit left to take off');
+      await page.keyboard.press('Escape'); await ui.evaluate(() => location.reload()); await ui.waitForSelector('[data-tab=clients]');
+    }
     // All clients: Cancelled orders box agrees with the client's
     await ui.locator('[data-tab=clients]').click(); await ui.waitForSelector('[data-cancelled-all]');
     const all = await cxText(ui.locator('[data-cancelled-all]'));

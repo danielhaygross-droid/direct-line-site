@@ -609,7 +609,7 @@
     const from = p.priceOptions ? `<div class="note full" style="margin:0"><p style="margin:0"><span>Several prices from the sheet (supplier → client):</span></p><ul class="price-options">${p.priceOptions.map(o => `<li><span data-no-i18n>${esc(o.label)}</span> <b data-no-i18n dir="ltr">${money(o.supplierPrice)} → ${money(o.unitPrice)}</b></li>`).join('')}</ul><p style="margin:0"><span>Saving a price here replaces the options with one price.</span></p></div>`
       : p.supplierPrice != null ? `<p class="note full" style="margin:0"><span>Supplier price from the sheet:</span> <b data-no-i18n>${money(p.supplierPrice)}</b> <span>(the client price adds the client’s fee per order)</span></p>` : '';
     return `<form class="pq-form" data-product-quote="${p.id}">${rev}${side}<div class="form-grid pq-fields">
-      <label class="field"><span>Status</span><select name="status"><option value="approved"${p.status === 'approved' ? ' selected' : ''}>Approved</option><option value="not_available"${p.status === 'not_available' ? ' selected' : ''}>Not available</option></select></label>
+      <label class="field"><span>Status</span><select name="status" required>${p.status === 'awaiting_quote' ? '<option value="" selected disabled>Choose…</option>' : ''}<option value="approved"${p.status === 'approved' ? ' selected' : ''}>Approved</option><option value="not_available"${p.status === 'not_available' ? ' selected' : ''}>Not available</option></select></label>
       <label class="field"><span>Client price per item (USD) <small>product only</small></span><input name="unitPrice" type="number" min="0" step="0.01" value="${p.unitPrice ?? ''}"></label>
       <label class="field"><span>Shipping per order (USD) <small>one parcel, optional</small></span><input name="shipping" type="number" min="0" step="0.01" value="${p.shipping ?? ''}"></label>
       ${from}<label class="field full"><span>Note</span><textarea name="note" rows="2" maxlength="1000">${esc(p.note)}</textarea></label>
@@ -1116,7 +1116,8 @@
   const oldestFirst = (a, b) => window.DLClientStoreMath.dateKey(a).localeCompare(window.DLClientStoreMath.dateKey(b)) || a.createdAt - b.createdAt || a.id - b.id;
   const dayOf = o => PO.day(window.DLClientStoreMath.dateKey(o));
   // Orders a payment can be for: billed and not paid yet (plus the ones already on this payment), oldest first.
-  const payableOrders = (clientId, paymentId = null) => S.orders.filter(o => o.clientId === clientId && !o.archived && (paymentId && o.paymentId === paymentId || !o.paymentId && PO.dueCents(o, balanceAdjustments) > 0)).sort(oldestFirst);
+  // A cancellation fee the credit already paid (paidFromCredit) is paid: not in the list and not owed (7 Nov 2026).
+  const payableOrders = (clientId, paymentId = null) => S.orders.filter(o => o.clientId === clientId && !o.archived && (paymentId && o.paymentId === paymentId || !o.paymentId && !o.paidFromCredit && PO.dueCents(o, balanceAdjustments) > 0)).sort(oldestFirst);
   // A new payment: the client's credit (balance lower than their unpaid orders) is taken off, as in the client's pay box.
   // Credit still on the account for the Cancelled orders box, worked out like the client's pay box: unpaid orders plus the
   // cancellation fees nobody paid yet (fees the credit already took are paid), minus the balance (6 Nov 2026).
