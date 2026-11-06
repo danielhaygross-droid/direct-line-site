@@ -161,6 +161,7 @@
     const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient, oc.dataset.clientTab || 'orders'); return; }
     const oo = t.closest('[data-open-order]'); if (oo) { openOrder(oo.dataset.openOrder, null, oo.dataset.back ? Number(oo.dataset.back) : null); return; }
     const ct = t.closest('[data-ctab]'); if (ct) { S.drawer.tab = ct.dataset.ctab; S.drawer.last = { ...S.drawer.last, [groupOf(ct.dataset.ctab)]: ct.dataset.ctab }; fillClient(clientOf(S.drawer.id)); if (ct.dataset.ctab==='payments') await loadPayments(S.drawer.id); if (ct.dataset.ctab==='prices') await loadSavedPrices(S.drawer.id); if (ct.dataset.ctab==='activity') await loadActivity(S.drawer.id); return; }
+    const pm = t.closest('[data-panel-more]'); if (pm && S.drawer?.kind === 'client') { const k = pm.dataset.panelMore; (S.drawer.more ||= {})[k] = (S.drawer.more[k] || 20) + 20; fillClient(clientOf(S.drawer.id)); return; }
     const fp = t.closest('[data-forget-price]');
     if (fp) {
       if (!fp.dataset.armed) { fp.dataset.armed = '1'; fp.textContent = 'Click again to forget'; setTimeout(() => { if (fp.isConnected) { delete fp.dataset.armed; fp.textContent = 'Forget'; } }, 4000); return; }

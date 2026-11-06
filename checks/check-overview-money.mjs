@@ -106,7 +106,9 @@ try {
     await ui.locator('[data-cancelled-all]').scrollIntoViewIfNeeded(); await page.waitForTimeout(200); await page.screenshot({ path: path.join(out, `${tag}-cancelled.png`) });
     assert.equal(await ui.locator('[data-cancelled-all] tbody tr').count(), 2, tag);
     assert.equal(await ui.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
-    await ui.locator(`[data-cancelled-all] [data-open-client="${id}"]`).click(); await ui.waitForSelector('[data-cancelled-box]');
+    await ui.locator(`[data-cancelled-all] [data-open-client="${id}"]`).click(); await ui.waitForSelector('.cx-fold > summary');
+    if (!(await ui.locator('.cx-fold').evaluate(d => d.open))) await ui.locator('.cx-fold > summary').click(); // folded in the panel since 7 Nov 2026
+    await ui.waitForSelector('[data-cancelled-box]');
     assert.equal(await ui.locator('.subtabs [data-ctab=payments].on').count(), 1, tag + ' opens the client on Payments');
     assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);
   }
