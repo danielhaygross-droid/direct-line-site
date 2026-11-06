@@ -69,6 +69,16 @@ for (const name of ['Glass tea set', 'Brass key hooks', 'Wall coat rack']) P.pus
 await DB.prepare("UPDATE portal_products SET status='approved', unit_price=5.4, supplier_price=4.9 WHERE id=?").bind(P[1].id).run();
 await DB.prepare("UPDATE portal_products SET status='not_available' WHERE id=?").bind(P[2].id).run();
 
+// Claims: one waiting for a decision, one decided (rejected) (6 Nov 2026: short rows like Client products).
+const t0 = Math.floor(Date.now() / 1000), CL = [];
+for (const [ref, desc] of [['CLAIM-401', 'Broken lid'], ['CLAIM-402', 'Cracked glass']]) {
+  const oid = ok(await call('/orders', 'POST', { clientId: id, orderRef: ref, buyerName: 'Demo', address1: '12 Main St', city: 'Sample City', postalCode: '00123', destination: 'IL', productCost: 35, shippingFee: 10, photos: [photo] }, admin)).order.id;
+  ok(await call('/admin/payments', 'POST', { clientId: id, amount: await priceOf(oid), paidAt: '2026-10-01', method: 'Bank transfer', orderIds: [oid] }, admin)); // paid: the balance stays as above
+  ok(await call('/orders/' + oid, 'PUT', { status: 'delivered' }, admin)); await DB.prepare('UPDATE client_orders SET delivered_at=? WHERE id=?').bind(t0 - 3 * 86400, oid).run();
+  CL.push(ok(await call('/orders/' + oid + '/claims', 'POST', { problem: 'damaged', description: desc, resolution: 'refund', proof: photo, label: photo }, client)).claim);
+}
+ok(await call('/admin/claims/' + CL[1].id, 'POST', { status: 'rejected', reply: 'Photo shows no damage' }, admin)); // no money moves, so the balance stays
+
 const visiblePanels = ui => ui.locator('[data-set-panel]:not([hidden])').evaluateAll(xs => xs.map(x => x.dataset.setPanel));
 const cxText = async loc => (await loc.innerText()).replace(/\s+/g, ' ');
 let paidD = false;
@@ -127,6 +137,16 @@ try {
     await ui.locator('[data-pq-filter=todo]').click();
     assert.deepEqual(await ui.locator('[data-pq]').evaluateAll(xs => xs.map(x => Number(x.dataset.pq))), [P[0].id], tag + ' Needs you = the one waiting');
     await ui.locator('[data-pq-filter=all]').click(); assert.equal(await ui.locator('[data-pq]').count(), 3);
+    // Claims: short rows; the one waiting for a decision is open with its form, the decided one is closed
+    await ui.locator('[data-tab=claims]').click(); await ui.waitForSelector(`[data-cl="${CL[0].id}"]`);
+    assert.equal(await ui.locator(`[data-cl="${CL[0].id}"]`).evaluate(d => d.open), true, tag + ' open claim: open');
+    assert.equal(await ui.locator(`[data-cl="${CL[1].id}"]`).evaluate(d => d.open), false, tag + ' decided claim: closed');
+    assert.equal(await ui.locator(`[data-claim-decision="${CL[0].id}"] [name=reply]`).isVisible(), true);
+    if (lang === 'en') assert.match(await ui.locator(`[data-cl="${CL[1].id}"] summary`).innerText(), /CLAIM-402[\s\S]*Damaged[\s\S]*Refund[\s\S]*Rejected/i, tag);
+    await page.screenshot({ path: path.join(out, `${tag}-claims.png`) });
+    await ui.locator(`[data-cl="${CL[1].id}"] summary`).click(); assert.match(await ui.locator(`[data-cl="${CL[1].id}"]`).innerText(), /Photo shows no damage/);
+    await ui.locator('[data-claim-filter=open]').click(); assert.deepEqual(await ui.locator('[data-cl]').evaluateAll(xs => xs.map(x => Number(x.dataset.cl))), [CL[0].id], tag + ' Open filter');
+    await ui.locator('[data-claim-filter=all]').click();
     // All clients: Cancelled orders box agrees with the client's
     await ui.locator('[data-tab=clients]').click(); await ui.waitForSelector('[data-cancelled-all]');
     const all = await cxText(ui.locator('[data-cancelled-all]'));
