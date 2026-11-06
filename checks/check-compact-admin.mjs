@@ -99,6 +99,11 @@ try {
       ok(await call('/admin/payments', 'POST', { clientId: id, amount: owes, paidAt: '2026-10-21', method: 'Bank transfer', orderIds: [D] }, admin)); paidD = true;
       assert.equal(ok(await call('/me', 'GET', null, client)).summary.outstanding, 0, 'nothing owed');
     }
+    // Client Home (7 Nov 2026: shorter, to-dos first)
+    await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.reload(); await page.waitForSelector('[data-money-now]'); await page.waitForTimeout(500);
+    if (lang === 'en') { const mn = await page.locator('[data-money-now]').innerText(); assert.ok(!/Cancellation fees|Credit left/.test(mn), tag + ' settled cancellation money is not on Home: ' + mn); }
+    assert.ok(await page.evaluate(() => document.documentElement.scrollHeight) < (width < 500 ? 3300 : 2300), tag + ' Home is shorter');
+    await page.screenshot({ path: path.join(out, `${tag}-client-home.png`), fullPage: true });
     await page.goto(`${base}/portal/?lang=${lang}#/payments?tab=cancelled`); await page.reload(); await page.waitForSelector('[data-cancelled-box]'); await page.waitForTimeout(300);
     const box = page.locator('[data-cancelled-box]'), t = await cxText(box);
     if (lang === 'en') {

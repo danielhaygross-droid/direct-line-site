@@ -40,7 +40,7 @@ test('client portal: local dates, account-wide home numbers, blank customer paid
   assert.ok(!/new Date\(\)\.toISOString\(\)\.slice/.test(portal), 'no UTC "today" defaults');
   assert.ok(portal.includes('const today = localDay();') && portal.includes('value="${localDay().slice(0,7)}"'));
   assert.ok(portal.includes('const all = storeOrders(), active = all.filter(inProgress).length;'));
-  assert.ok(portal.includes('ordersTable(all.slice(0, 5), true)'));
+  assert.ok(portal.includes('ordersTable(all.slice(0, 3), true)'));
   assert.ok(portal.includes("o.sellingPrice == null ? '<span class=\"dim\">Not entered</span>'"));
   assert.ok(portal.includes('data-really-delivered=') && !/data-delivered[\s\S]{0,80}mark-delivered/.test(portal.slice(portal.indexOf("const delivered=t.closest"), portal.indexOf('const reallyDelivered'))), 'first click only asks');
   for (const s of ['Has your customer received the parcel?', 'Only mark it as delivered once it has arrived.', 'Yes, mark as delivered', 'Keep it', 'Not entered', 'Not yet'])
