@@ -111,7 +111,8 @@
   const oldestFirst = (a, b) => window.DLClientStoreMath.dateKey(a).localeCompare(window.DLClientStoreMath.dateKey(b)) || a.createdAt - b.createdAt || a.id - b.id;
   const dayOf = o => PO.day(window.DLClientStoreMath.dateKey(o));
   // Orders a payment can be for: billed and not paid yet (plus the ones already on this payment), oldest first.
-  const payableOrders = (clientId, paymentId = null) => S.orders.filter(o => o.clientId === clientId && !o.archived && (paymentId && o.paymentId === paymentId || !o.paymentId && PO.dueCents(o, balanceAdjustments) > 0)).sort(oldestFirst);
+  // A cancellation fee the credit already paid (paidFromCredit) is paid: not in the list and not owed (7 Nov 2026).
+  const payableOrders = (clientId, paymentId = null) => S.orders.filter(o => o.clientId === clientId && !o.archived && (paymentId && o.paymentId === paymentId || !o.paymentId && !o.paidFromCredit && PO.dueCents(o, balanceAdjustments) > 0)).sort(oldestFirst);
   // A new payment: the client's credit (balance lower than their unpaid orders) is taken off, as in the client's pay box.
   // Credit still on the account for the Cancelled orders box, worked out like the client's pay box: unpaid orders plus the
   // cancellation fees nobody paid yet (fees the credit already took are paid), minus the balance (6 Nov 2026).
