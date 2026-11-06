@@ -44,7 +44,7 @@
     billed: ['Billed: high to low', bySort.num(c => c.billed, true)],
     login: ['Last sign-in', bySort.num(c => c.lastLogin, true)],
   };
-  const S = { picked: new Set(), ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], pqOpen: {}, pqFilter: 'all', claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
+  const S = { picked: new Set(), ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], pqOpen: {}, pqFilter: 'all', clOpen: {}, claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
   const embedded = window.top !== window.self;
   const tell = m => { if (embedded) parent.postMessage(m, location.origin); };
   const P = {

@@ -44,7 +44,7 @@
     billed: ['Billed: high to low', bySort.num(c => c.billed, true)],
     login: ['Last sign-in', bySort.num(c => c.lastLogin, true)],
   };
-  const S = { picked: new Set(), ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], pqOpen: {}, pqFilter: 'all', claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
+  const S = { picked: new Set(), ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], pqOpen: {}, pqFilter: 'all', clOpen: {}, claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
   const embedded = window.top !== window.self;
   const tell = m => { if (embedded) parent.postMessage(m, location.origin); };
   const P = {
@@ -572,8 +572,30 @@
     return '<span class="st" style="--tone:var(--dim)">Cancelled</span>';
   }
 
-  function adminClaimCard(c){return c?`<section class="card card-pad${c.overdue?' claim-overdue':''}"><h3 data-no-i18n>${esc(c.orderRef||'#'+c.orderId)} · ${esc(c.clientName)}</h3><p><span>${c.status==='open'?'Open':c.status==='approved'?'Approved':c.status==='rejected'?'Rejected':'Resolved'}</span> · <span>${c.resolution==='refund'?'Refund':'Reshipment'}</span></p><p><b data-no-i18n>${c.businessDays}</b> <span>business days (Mon–Fri)</span></p>${c.overdue?'<p class="err-text">Overdue: more than 3 business days</p>':''}<p><b>${esc(UI.CLAIM_LABEL[c.problem]||c.problem)}</b>${c.description?`: <span data-no-i18n>${esc(c.description)}</span>`:''}</p>${c.fileIds.length||c.reshipmentOrderId?`<div class="claim-files">${UI.claimFiles(c).map(f=>`<a class="btn btn-sm" href="/api/portal/files/${f.id}" target="_blank" rel="noopener">${f.label}</a>`).join('')}${c.reshipmentOrderId?`<button class="btn btn-sm" type="button" data-open-order="${c.reshipmentOrderId}">Open reshipment</button>`:''}</div>`:''}${['open','approved'].includes(c.status)?`<form class="form-grid" data-claim-decision="${c.id}"><label class="field full"><span>Admin reply</span><textarea name="reply" maxlength="2000">${esc(c.reply)}</textarea></label><div class="full claim-decide"><label class="field"><span>Decision</span><select name="status">${c.status==='open'?'<option value="approved">Approved</option><option value="rejected">Rejected</option>':'<option value="resolved">Resolved</option>'}</select></label><button class="btn btn-primary" type="submit">Save claim decision</button></div><p class="form-msg full" data-claim-msg></p></form>`:`<p data-no-i18n>${esc(c.reply)}</p>`}</section>`:'';}
-  function renderClaims(){$('[data-tab-body]').innerHTML=`<div class="chips">${['all','open','approved','rejected','resolved'].map(s=>`<button class="chip${S.claimFilter===s?' on':''}" type="button" data-claim-filter="${s}">${s==='all'?'All':s==='open'?'Open':s==='approved'?'Approved':s==='rejected'?'Rejected':'Resolved'}</button>`).join('')}${S.claims.length>1?sortPick('admin-claims',CLAIM_SORTS):''}</div>${sortList(S.claims.filter(c=>S.claimFilter==='all'||c.status===S.claimFilter),'admin-claims',CLAIM_SORTS).map(adminClaimCard).join('')||'<p>No claims yet.</p>'}`;}
+  // ---------- claims ----------
+  const CL_ST = { open: ['Open', 'pending'], approved: ['Approved', 'processing'], rejected: ['Rejected', 'na'], resolved: ['Resolved', 'delivered'] };
+  const CL_TODO = c => ['open', 'approved'].includes(c.status);
+  // What the claim is about, its files and the reply / decision form (the order panel card and the Claims rows share it).
+  function claimBody(c) {
+    return `<p><b>${esc(UI.CLAIM_LABEL[c.problem] || c.problem)}</b>${c.description ? `: <span data-no-i18n>${esc(c.description)}</span>` : ''}</p>${c.fileIds.length || c.reshipmentOrderId ? `<div class="claim-files">${UI.claimFiles(c).map(f => `<a class="btn btn-sm" href="/api/portal/files/${f.id}" target="_blank" rel="noopener">${f.label}</a>`).join('')}${c.reshipmentOrderId ? `<button class="btn btn-sm" type="button" data-open-order="${c.reshipmentOrderId}">Open reshipment</button>` : ''}</div>` : ''}${CL_TODO(c) ? `<form class="form-grid" data-claim-decision="${c.id}"><label class="field full"><span>Admin reply</span><textarea name="reply" rows="2" maxlength="2000">${esc(c.reply)}</textarea></label><div class="full claim-decide"><label class="field"><span>Decision</span><select name="status">${c.status === 'open' ? '<option value="approved">Approved</option><option value="rejected">Rejected</option>' : '<option value="resolved">Resolved</option>'}</select></label><button class="btn btn-primary" type="submit">Save claim decision</button></div><p class="form-msg full" data-claim-msg></p></form>` : c.reply ? `<p class="cl-reply"><span>Admin reply</span> <span data-no-i18n>${esc(c.reply)}</span></p>` : ''}`;
+  }
+  function adminClaimCard(c){return c?`<section class="card card-pad${c.overdue?' claim-overdue':''}"><h3 data-no-i18n>${esc(c.orderRef||'#'+c.orderId)} · ${esc(c.clientName)}</h3><p><span>${c.status==='open'?'Open':c.status==='approved'?'Approved':c.status==='rejected'?'Rejected':'Resolved'}</span> · <span>${c.resolution==='refund'?'Refund':'Reshipment'}</span></p><p><b data-no-i18n>${c.businessDays}</b> <span>business days (Mon–Fri)</span></p>${c.overdue?'<p class="err-text">Overdue: more than 3 business days</p>':''}${claimBody(c)}</section>`:'';}
+  // Admin Claims (Erwin, 6 Nov 2026: make the admin screens shorter, like Client products): one short row per claim
+  // (order, client, problem, refund or reshipment, days, status); a row opens to the claim. Claims waiting for a decision
+  // (open / approved) open by themselves; what the admin opens or closes is kept until that claim is saved (S.clOpen).
+  function claimRow(c) {
+    const [label, tone] = CL_ST[c.status] || [c.status, 'na'], open = S.clOpen[c.id] ?? CL_TODO(c);
+    return `<details class="card pq cl-row${CL_TODO(c) ? ' pq-todo' : ''}${c.overdue ? ' cl-late' : ''}" data-cl="${c.id}"${open ? ' open' : ''}><summary class="pq-sum">
+      <span class="pq-name"><b data-no-i18n>${esc(c.orderRef || '#' + c.orderId)} · ${esc(c.clientName)}</b><small><span>${esc(UI.CLAIM_LABEL[c.problem] || c.problem)}</span> · <span>${c.resolution === 'refund' ? 'Refund' : 'Reshipment'}</span></small></span>
+      <span class="pq-meta">${c.overdue ? '<span class="cl-overdue" title="More than 3 business days">Overdue</span>' : ''}<span class="cl-days"><b data-no-i18n>${c.businessDays}</b> <small>business days</small></span><span class="st st-${tone}">${label}</span></span>
+      <span class="pq-chev" aria-hidden="true">${UI.svg('<path d="m6 9 6 6 6-6"/>')}</span></summary>
+      <div class="pq-body cl-body">${c.overdue ? '<p class="err-text">Overdue: more than 3 business days</p>' : ''}${claimBody(c)}</div></details>`;
+  }
+  function renderClaims() {
+    const list = sortList(S.claims.filter(c => S.claimFilter === 'all' || c.status === S.claimFilter), 'admin-claims', CLAIM_SORTS);
+    $('[data-tab-body]').innerHTML = `<div class="pq-bar"><div class="chips" role="group" aria-label="Show claims">${['all', 'open', 'approved', 'rejected', 'resolved'].map(s => `<button class="chip${S.claimFilter === s ? ' on' : ''}" type="button" data-claim-filter="${s}" aria-pressed="${S.claimFilter === s}">${s === 'all' ? 'All' : CL_ST[s][0]} <span data-no-i18n>${S.claims.filter(c => s === 'all' || c.status === s).length}</span></button>`).join('')}</div>${S.claims.length > 1 ? sortPick('admin-claims', CLAIM_SORTS) : ''}</div>
+      ${list.map(claimRow).join('') || `<p class="muted">${S.claims.length ? 'No claims here.' : 'No claims yet.'}</p>`}`;
+  }
   // ---------- client products ----------
   // Erwin, 6 Nov 2026: Client products "took so much space, needs to scroll so far down". One short row per product
   // (photo, name, client, status, price); a row opens to its quote form. Products that need us (no price yet, or a cost
@@ -1527,7 +1549,7 @@
     if (e.target.matches('[data-pick-all]')) { $$('[data-pick]').forEach(c => { const id = Number(c.dataset.pick); if (e.target.checked) S.picked.add(id); else S.picked.delete(id); }); renderOrders(); }
   }
   // Client products rows: keep what the admin opened or closed (toggle doesn't bubble, so listen in the capture phase).
-  document.addEventListener('toggle', e => { const d = e.target; if (d.matches?.('[data-pq]')) S.pqOpen[d.dataset.pq] = d.open; }, true);
+  document.addEventListener('toggle', e => { const d = e.target; if (d.matches?.('[data-pq]')) S.pqOpen[d.dataset.pq] = d.open; else if (d.matches?.('[data-cl]')) S.clOpen[d.dataset.cl] = d.open; }, true);
   document.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
     const row = e.target.closest?.('tr[data-open-order], tr[data-open-client]');
@@ -1723,7 +1745,7 @@
       return;
     }
     const storeForm=e.target.closest('[data-client-store-form]');if(storeForm){e.preventDefault();const sf=storeForm,b=$('[type=submit]',sf),m=$('[data-store-msg]',sf);b.disabled=true;try{await api('/admin/client-stores'+(sf.dataset.clientStoreForm?'/'+sf.dataset.clientStoreForm:''),{method:'POST',body:{clientId:Number(sf.dataset.clientId),name:sf.storeName.value,platform:sf.platform.value,link:sf.link.value,color:sf.dataset.clientStoreForm||sf.dataset.colourEdited?sf.color.value:undefined,archived:!!sf.archived?.checked,status:sf.status?.value||'active'}});document.activeElement?.blur();await loadAll();refreshDrawer();toast('Store saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
-    const cd=e.target.closest('[data-claim-decision]');if(cd){e.preventDefault();const b=$('[type=submit]',cd),m=$('[data-claim-msg]',cd);b.disabled=true;try{await api('/admin/claims/'+cd.dataset.claimDecision,{method:'POST',body:{status:cd.status.value,reply:cd.reply.value}});document.activeElement?.blur();await loadAll();if(S.tab==='claims')renderClaims();else refreshDrawer();toast('Claim decision saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
+    const cd=e.target.closest('[data-claim-decision]');if(cd){e.preventDefault();const b=$('[type=submit]',cd),m=$('[data-claim-msg]',cd);b.disabled=true;delete S.clOpen[cd.dataset.claimDecision];try{await api('/admin/claims/'+cd.dataset.claimDecision,{method:'POST',body:{status:cd.status.value,reply:cd.reply.value}});document.activeElement?.blur();await loadAll();if(S.tab==='claims')renderClaims();else refreshDrawer();toast('Claim decision saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     const pq=e.target.closest('[data-product-quote]');if(pq){e.preventDefault();const b=$('[type=submit]',pq),m=$('[data-quote-msg]',pq);b.disabled=true;try{await api('/admin/products/'+pq.dataset.productQuote,{method:'POST',body:{status:pq.status.value,unitPrice:pq.unitPrice.value,shipping:pq.shipping.value,note:pq.note.value}});document.activeElement?.blur();delete S.pqOpen[pq.dataset.productQuote];await loadAll();if(S.tab==='products')renderProducts();else refreshDrawer();toast('Quote saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     const inf=e.target.closest('[data-invoice-form]');
     if(inf){e.preventDefault();const b=$('[type=submit]',inf),m=$('[data-invoice-msg]',inf);b.disabled=true;try{const file=await invoiceFile(inf);if(!file)throw new Error('Choose the receipt file.');await api('/admin/invoices',{method:'POST',body:{clientId:Number(inf.dataset.invoiceForm),orderIds:inf.dataset.orderId?[Number(inf.dataset.orderId)]:PO.picked(inf),paymentId:inf.invoicePayment?.value||null,date:inf.invoiceDate.value,file}});document.activeElement?.blur();inf.reset();invoiceFiles=(await api('/admin/invoices?clientId='+inf.dataset.invoiceForm)).invoices;refreshDrawer();toast('Receipt saved. The client can download it now.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}

@@ -250,3 +250,8 @@ body.in-control [data-main-tabs]{display:none}
 @media(max-width:900px){.set-bank{grid-template-columns:repeat(2,minmax(0,1fr))}.pq-form{grid-template-columns:minmax(0,1fr)}.pq-side{grid-template-columns:auto minmax(0,1fr);align-items:start}.pq-side .qf-photos{grid-row:span 4}}
 @media(max-width:640px){.set-tabs{display:grid;grid-template-columns:1fr 1fr}.set-tab{padding:0 8px;font-size:13px}.set-bank,.pq-fields,#terms-publish{grid-template-columns:minmax(0,1fr)}.set-bank .wide{grid-column:auto}
   .pq-sum{flex-wrap:wrap;padding:10px 12px}.pq-meta{order:3;width:100%;justify-content:flex-start;padding-inline-start:60px}.pq-body{padding:12px}.pq-side{grid-template-columns:minmax(0,1fr)}.pq-side .qf-photos{grid-row:auto}}
+/* Admin Claims: short rows like Client products (6 Nov 2026) */
+.cl-row .pq-sum{min-height:60px}.cl-late{border-color:color-mix(in srgb,var(--red) 55%,var(--line))}.cl-late.pq-todo{border-inline-start-color:var(--red)}
+.cl-overdue{padding:2px 8px;border-radius:7px;background:color-mix(in srgb,var(--red) 14%,transparent);color:var(--red);font-size:12px;font-weight:700}
+.cl-days{white-space:nowrap;font-size:14px}.cl-days small{color:var(--dim);font-size:12px}
+.cl-body>p{margin:0 0 10px}.cl-body .err-text{margin:0 0 8px}.cl-body textarea{min-height:64px}.cl-reply span:first-child{color:var(--dim);font-size:12px;display:block}
