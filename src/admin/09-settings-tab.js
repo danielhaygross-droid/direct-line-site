@@ -5,9 +5,20 @@
   }
   const BANK_UI = [['bank_currency', 'Currency'], ['bank_holder', 'Account holder name'], ['bank_account', 'Account number'], ['bank_ach', 'ACH routing number'],
     ['bank_wire', 'Wire routing number'], ['bank_swift', 'SWIFT/BIC'], ['bank_name', 'Bank name'], ['bank_address', 'Bank address'], ['bank_reference', 'Payment reference note']];
+  // Erwin, 6 Nov 2026: Fees & settings "took so much space, needs to scroll so far down". The page is in sections with a
+  // tab bar (same pattern as the client Payments page): only one section shows. All sections stay in the page (hidden), so
+  // every form keeps what was typed when the admin switches. The last section is remembered in this browser.
+  const SET_TABS = [['fees', 'Fees'], ['bank', 'Bank details'], ['supplier', 'Supplier'], ['terms', 'Terms'], ['team', 'Team & tools']];
+  const SET_KEY = 'dl-admin-settings-tab';
+  function setTab() {
+    let t = S.setTab; if (!t) try { t = localStorage.getItem(SET_KEY); } catch { t = null; }
+    return SET_TABS.some(([k]) => k === t) ? t : 'fees';
+  }
   function settingsHTML() {
-    const s = S.ov.settings, rated = COUNTRIES.filter(([c]) => RATES[c]);
-    return `<div class="settings-grid">
+    const s = S.ov.settings, rated = COUNTRIES.filter(([c]) => RATES[c]), on = setTab();
+    const tabs = `<nav class="set-tabs" role="tablist" aria-label="Settings sections">${SET_TABS.map(([k, l]) => `<button type="button" class="set-tab${k === on ? ' on' : ''}" role="tab" id="set-tab-${k}" aria-controls="set-panel-${k}" aria-selected="${k === on}" tabindex="${k === on ? 0 : -1}" data-set-tab="${k}">${l}${k === 'bank' && !String(s.bank_account || '').trim() ? '<span class="set-tab-dot" role="img" aria-label="Missing"></span>' : ''}</button>`).join('')}</nav>`;
+    const panel = (k, cls, body) => `<div class="settings-grid${cls}" role="tabpanel" id="set-panel-${k}" aria-labelledby="set-tab-${k}" data-set-panel="${k}"${k === on ? '' : ' hidden'}>${body}</div>`;
+    return tabs + panel('fees', '', `
       <section class="card card-pad"><h3 class="form-sec">Fee per order</h3>
         <form class="form-grid" id="settings-form" novalidate>
           <label class="field"><span>Fee per order (USD)</span><span class="money"><input name="commission_per_order" type="number" min="0" step="0.01" value="${esc(s.commission_per_order)}"></span></label>
@@ -15,31 +26,10 @@
           <div class="full split" data-split></div>
           <label class="field"><span>Client subscription <small>₪ / month, after the free month</small></span><input name="subscription_price" type="number" min="0" step="0.01" value="${esc(s.subscription_price ?? 29)}"></label>
           <label class="field"><span>Size-to-weight divisor <small>cm³ per kg</small></span><input name="volumetric_divisor" type="number" min="1000" max="10000" step="1" value="${esc(s.volumetric_divisor)}"></label>
-          <div class="field" style="align-content:end"><button class="btn btn-primary" type="submit">Save settings</button></div>
-          <p class="form-msg full" data-settings-msg></p>
+          <div class="full set-actions"><button class="btn btn-primary" type="submit">Save settings</button><p class="form-msg" data-settings-msg></p></div>
         </form>
-        <p class="note" style="margin-top:6px">The fee is already inside the product cost the client pays, so clients don’t see it. Changes apply to new orders only. Size-based weight = L × W × H ÷ divisor (6000 until the supplier confirms).</p>
+        <p class="note set-note">The fee is already inside the product cost the client pays, so clients don’t see it. Changes apply to new orders only. Size-based weight = L × W × H ÷ divisor (6000 until the supplier confirms).</p>
       </section>
-      <section class="card card-pad"><h3 class="form-sec">Couriers</h3>
-        <form class="form-grid" id="couriers-form" novalidate>
-          <label class="field full"><span>Couriers the supplier can pick <small>one per line</small></span><textarea name="couriers" rows="4" maxlength="1000" data-no-i18n>${esc(String(s.couriers || ''))}</textarea></label>
-          <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save couriers</button><p class="form-msg" data-couriers-msg style="margin:0"></p></div>
-        </form>
-        <p class="note" style="margin-top:6px">These show as a dropdown in the Courier column of the supplier sheet. The supplier can also type a name that isn’t listed. Clients see the courier next to the tracking number.</p>
-      </section>
-      <section class="card card-pad"><h3 class="form-sec">How clients pay (bank details)</h3>
-        <form class="form-grid" id="bank-form" novalidate>
-          ${BANK_UI.map(([k, label]) => `<label class="field${k === 'bank_address' || k === 'bank_reference' ? ' full' : ''}"><span>${label}</span><input name="${k}" type="text" maxlength="200" value="${esc(s[k] ?? '')}"></label>`).join('')}
-          <div class="field" style="align-content:end"><button class="btn btn-primary" type="submit">Save bank details</button></div>
-          <p class="form-msg full" data-bank-msg></p>
-        </form>
-        <p class="note" style="margin-top:6px">Clients see these on their Payments page under “How to pay”, each with a Copy button. Leave a field empty to hide it.</p>
-      </section>
-      <section class="card card-pad"><h3 class="form-sec">Terms of Service</h3><p class="note">Publishing a new version requires every client to accept again. Previous versions and acceptance records are preserved.</p>
-        <form id="terms-publish" class="form-grid"><label class="field full"><span>New version number</span><input name="version" type="number" min="${S.ov.termsPolicy.version + 1}" value="${S.ov.termsPolicy.version + 1}" required></label>
-          <label class="field full"><span>English policy text</span><textarea name="english" rows="10" maxlength="18000" required>${esc(S.ov.termsPolicy.english)}</textarea></label>
-          <label class="field full"><span>Hebrew policy text</span><textarea name="hebrew" rows="10" maxlength="18000" dir="rtl" required>${esc(S.ov.termsPolicy.hebrew)}</textarea></label>
-          <div class="field full"><button type="submit" class="btn btn-primary">Publish new terms version</button></div><p class="form-msg full" data-terms-msg role="status"></p></form></section>
       <section class="card card-pad"><h3 class="form-sec">Shipping calculator</h3>
         <form class="form-grid" data-calc onsubmit="return false">
           <label class="field"><span>Destination</span><select name="country">${rated.map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('')}</select></label>
@@ -48,18 +38,52 @@
           <div class="field"><span>Size L × W × H (cm)</span><div class="dims"><input name="l" type="number" min="0" placeholder="L" aria-label="Length"><input name="w" type="number" min="0" placeholder="W" aria-label="Width"><input name="h" type="number" min="0" placeholder="H" aria-label="Height"></div></div>
         </form>
         <div class="calc-out" data-calc-out><small>Shipping fee</small><strong>—</strong><div class="bd">Enter a weight.</div></div>
-      </section>
-      <section class="card card-pad"><h3 class="form-sec">Team accounts</h3><div class="acc-list" data-admins>${adminsHTML()}</div>
-        <button type="button" class="btn" style="margin-top:12px" data-add-account="admin">${ic('plus')}Add admin</button></section>
+      </section>`) + panel('bank', ' one', `
+      <section class="card card-pad"><h3 class="form-sec">How clients pay (bank details)</h3>
+        <form class="form-grid set-bank" id="bank-form" novalidate>
+          ${BANK_UI.map(([k, label]) => `<label class="field${k === 'bank_address' || k === 'bank_reference' ? ' wide' : ''}"><span>${label}</span><input name="${k}" type="text" maxlength="200" value="${esc(s[k] ?? '')}"></label>`).join('')}
+          <div class="full set-actions"><button class="btn btn-primary" type="submit">Save bank details</button><p class="form-msg" data-bank-msg></p></div>
+        </form>
+        <p class="note set-note">Clients see these on their Payments page under “How to pay”, each with a Copy button. Leave a field empty to hide it.</p>
+      </section>`) + panel('supplier', '', `
       <section class="card card-pad"><h3 class="form-sec">Supplier sheet</h3><div data-supplier-sheet><p class="muted" style="margin:0">Loading…</p></div>
         <div class="row-actions" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-supplier-setup>Set up supplier sheet</button><button type="button" class="btn btn-sm" data-supplier-check hidden>Check sheet now</button></div>
         <p class="form-msg" data-supplier-msg role="status"></p></section>
-      <section class="card card-pad"><h3 class="form-sec">Storage &amp; backups</h3><div data-storage><p class="muted" style="margin:0">Loading…</p></div>
-        <div class="row-actions" data-storage-actions hidden style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-backup-now>Back up now</button><button type="button" class="btn btn-sm" data-copy-files>Copy files now</button></div>
-        <p class="form-msg" data-storage-msg role="status"></p></section>
+      <section class="card card-pad"><h3 class="form-sec">Couriers</h3>
+        <form class="form-grid" id="couriers-form" novalidate>
+          <label class="field full"><span>Couriers the supplier can pick <small>one per line</small></span><textarea name="couriers" rows="4" maxlength="1000" data-no-i18n>${esc(String(s.couriers || ''))}</textarea></label>
+          <div class="full set-actions"><button class="btn btn-primary" type="submit">Save couriers</button><p class="form-msg" data-couriers-msg></p></div>
+        </form>
+        <p class="note set-note">These show as a dropdown in the Courier column of the supplier sheet. The supplier can also type a name that isn’t listed. Clients see the courier next to the tracking number.</p>
+      </section>`) + panel('terms', ' one', `
+      <section class="card card-pad"><h3 class="form-sec">Terms of Service</h3><p class="note">Publishing a new version requires every client to accept again. Previous versions and acceptance records are preserved.</p>
+        <form id="terms-publish" class="form-grid"><label class="field set-ver"><span>New version number</span><input name="version" type="number" min="${S.ov.termsPolicy.version + 1}" value="${S.ov.termsPolicy.version + 1}" required></label>
+          <label class="field full-sm"><span>English policy text</span><textarea name="english" rows="12" maxlength="18000" required>${esc(S.ov.termsPolicy.english)}</textarea></label>
+          <label class="field full-sm"><span>Hebrew policy text</span><textarea name="hebrew" rows="12" maxlength="18000" dir="rtl" required>${esc(S.ov.termsPolicy.hebrew)}</textarea></label>
+          <div class="field full"><button type="submit" class="btn btn-primary">Publish new terms version</button></div><p class="form-msg full" data-terms-msg role="status"></p></form></section>`) + panel('team', '', `
+      <section class="card card-pad"><h3 class="form-sec">Team accounts</h3><div class="acc-list" data-admins>${adminsHTML()}</div>
+        <button type="button" class="btn" style="margin-top:12px" data-add-account="admin">${ic('plus')}Add admin</button></section>
       <section class="card card-pad"><h3 class="form-sec">Client portal link</h3><p class="muted" style="margin:0 0 10px;font-size:14px">Clients sign in here with the username and password you give them.</p>
         <div class="copy-line"><span style="flex:1">${esc(location.origin)}/portal/</span><button type="button" class="btn btn-sm" data-copy="${esc(location.origin)}/portal/">${ic('copy')}Copy</button></div></section>
-    </div>`;
+      <section class="card card-pad"><h3 class="form-sec">Storage &amp; backups</h3><div data-storage><p class="muted" style="margin:0">Loading…</p></div>
+        <div class="row-actions" data-storage-actions hidden style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-backup-now>Back up now</button><button type="button" class="btn btn-sm" data-copy-files>Copy files now</button></div>
+        <p class="form-msg" data-storage-msg role="status"></p></section>`);
+  }
+  function bindSetTabs() {
+    const tabs = $$('[data-set-tab]');
+    const show = (k, focus) => {
+      S.setTab = k; try { localStorage.setItem(SET_KEY, k); } catch { /* private window: the choice lasts for this visit */ }
+      tabs.forEach(b => { const on = b.dataset.setTab === k; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; if (on && focus) b.focus(); });
+      $$('[data-set-panel]').forEach(p => { p.hidden = p.dataset.setPanel !== k; });
+    };
+    tabs.forEach((b, i) => {
+      b.addEventListener('click', () => show(b.dataset.setTab));
+      b.addEventListener('keydown', e => {
+        const rtl = document.documentElement.dir === 'rtl', step = { ArrowRight: rtl ? -1 : 1, ArrowLeft: rtl ? 1 : -1 }[e.key];
+        const to = step ? (i + step + tabs.length) % tabs.length : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
+        if (to < 0) return; e.preventDefault(); show(tabs[to].dataset.setTab, true);
+      });
+    });
   }
   const kb = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
   function storageHTML(d) {
@@ -115,6 +139,7 @@
     run('[data-supplier-check]', '/admin/supplier-sheet/check', r => r.ok ? `${r.changed.length} orders updated from the sheet.` : r.error);
   }
   function bindSettings() {
+    bindSetTabs();
     bindStorage();
     bindSupplierSheet();
     const tf = $('#terms-publish');
@@ -127,8 +152,8 @@
     if (bf) bf.addEventListener('submit', async e => {
       e.preventDefault();
       const m = $('[data-bank-msg]');
-      try { await api('/admin/settings', { method: 'POST', body: Object.fromEntries(BANK_UI.map(([k]) => [k, bf[k].value])) }); m.textContent = 'Saved. Clients see the new details right away.'; m.className = 'form-msg full ok'; await loadAll(); }
-      catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
+      try { await api('/admin/settings', { method: 'POST', body: Object.fromEntries(BANK_UI.map(([k]) => [k, bf[k].value])) }); m.textContent = 'Saved. Clients see the new details right away.'; m.className = 'form-msg ok'; await loadAll(); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
     });
     const cf = $('#couriers-form');
     cf?.addEventListener('submit', async e => {
@@ -147,8 +172,8 @@
     f.addEventListener('submit', async e => {
       e.preventDefault();
       const m = $('[data-settings-msg]');
-      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_bonus_per_order: f.supplier_bonus_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg full ok'; await loadAll(); }
-      catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
+      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_bonus_per_order: f.supplier_bonus_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg ok'; await loadAll(); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
     });
     const c = $('[data-calc]'), out = $('[data-calc-out]');
     const upd = () => {

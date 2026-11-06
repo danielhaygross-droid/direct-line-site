@@ -44,7 +44,7 @@
     billed: ['Billed: high to low', bySort.num(c => c.billed, true)],
     login: ['Last sign-in', bySort.num(c => c.lastLogin, true)],
   };
-  const S = { picked: new Set(), ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
+  const S = { picked: new Set(), ov: null, orders: [], archivedOrders: [], tab: 'overview', filter: null, q: '', client: '', cq: '', drawer: null, products:[], pqOpen: {}, pqFilter: 'all', claims:[], claimFilter:'all', stores:[], period:'month', from:'', to:'' };
   const embedded = window.top !== window.self;
   const tell = m => { if (embedded) parent.postMessage(m, location.origin); };
   const P = {
@@ -574,8 +574,41 @@
 
   function adminClaimCard(c){return c?`<section class="card card-pad${c.overdue?' claim-overdue':''}"><h3 data-no-i18n>${esc(c.orderRef||'#'+c.orderId)} · ${esc(c.clientName)}</h3><p><span>${c.status==='open'?'Open':c.status==='approved'?'Approved':c.status==='rejected'?'Rejected':'Resolved'}</span> · <span>${c.resolution==='refund'?'Refund':'Reshipment'}</span></p><p><b data-no-i18n>${c.businessDays}</b> <span>business days (Mon–Fri)</span></p>${c.overdue?'<p class="err-text">Overdue: more than 3 business days</p>':''}<p><b>${esc(UI.CLAIM_LABEL[c.problem]||c.problem)}</b>${c.description?`: <span data-no-i18n>${esc(c.description)}</span>`:''}</p>${c.fileIds.length||c.reshipmentOrderId?`<div class="claim-files">${UI.claimFiles(c).map(f=>`<a class="btn btn-sm" href="/api/portal/files/${f.id}" target="_blank" rel="noopener">${f.label}</a>`).join('')}${c.reshipmentOrderId?`<button class="btn btn-sm" type="button" data-open-order="${c.reshipmentOrderId}">Open reshipment</button>`:''}</div>`:''}${['open','approved'].includes(c.status)?`<form class="form-grid" data-claim-decision="${c.id}"><label class="field full"><span>Admin reply</span><textarea name="reply" maxlength="2000">${esc(c.reply)}</textarea></label><div class="full claim-decide"><label class="field"><span>Decision</span><select name="status">${c.status==='open'?'<option value="approved">Approved</option><option value="rejected">Rejected</option>':'<option value="resolved">Resolved</option>'}</select></label><button class="btn btn-primary" type="submit">Save claim decision</button></div><p class="form-msg full" data-claim-msg></p></form>`:`<p data-no-i18n>${esc(c.reply)}</p>`}</section>`:'';}
   function renderClaims(){$('[data-tab-body]').innerHTML=`<div class="chips">${['all','open','approved','rejected','resolved'].map(s=>`<button class="chip${S.claimFilter===s?' on':''}" type="button" data-claim-filter="${s}">${s==='all'?'All':s==='open'?'Open':s==='approved'?'Approved':s==='rejected'?'Rejected':'Resolved'}</button>`).join('')}${S.claims.length>1?sortPick('admin-claims',CLAIM_SORTS):''}</div>${sortList(S.claims.filter(c=>S.claimFilter==='all'||c.status===S.claimFilter),'admin-claims',CLAIM_SORTS).map(adminClaimCard).join('')||'<p>No claims yet.</p>'}`;}
-  function productQuoteForm(p){return `<form class="form-grid" data-product-quote="${p.id}"><h3 class="full" data-no-i18n>${esc(p.name)} · ${esc(p.clientName)}</h3>${p.revision&&['open','offered'].includes(p.revision.status)?`<div class="full rev-admin-p" data-rev-product><p><b>Cost revision requested</b> · <span>Client’s competitor price</span>: <b data-no-i18n>${money(p.revision.competitorPrice)}</b>${p.revision.note?` · <span data-no-i18n>${esc(p.revision.note)}</span>`:''}</p><p class="note">Save a lower price below (or the supplier changes it in the sheet): it’s used for this product’s next orders. Or keep the price:</p><div class="rev-keep-row"><input name="revReply" maxlength="1000" aria-label="Reply to the client" placeholder="Reply to the client (optional)"><a class="btn" href="https://wa.me/?text=${encodeURIComponent(`Hi Ye, our client asks for a lower price on the product "${p.name}" (orange row in the Product Quotes sheet). They sell it at $${Number(p.revision.competitorPrice).toFixed(2)} (competitor price); our price now is $${Number(p.supplierPrice ?? p.unitPrice ?? 0).toFixed(2)} per item. Can you check if you can lower it? If yes, please type the new Price per item in the sheet. Thank you!`)}" target="_blank" rel="noopener">${ic('chat')}Tell the supplier on WhatsApp</a><button type="button" class="btn" data-rev-keep-product="${p.id}">Keep the price</button></div></div>`:''}<div class="full">${p.photoIds.length?`<div class="qf-photos">${p.photoIds.map(id=>`<img class="qf-photo" src="/api/portal/products/${p.id}/photos/${id}" width="160" height="160" alt="Product photo" loading="lazy" title="Open full size">`).join('')}</div>`:''}<p><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a></p><p data-no-i18n>${esc(p.variant)}${p.expectedQuantity?' · '+p.expectedQuantity:''}</p>${p.competitorPrice?`<p><span>Competitor price (from the client):</span> <b data-no-i18n><bdi>${esc(p.competitorPrice)}</bdi></b></p>`:''}</div><label class="field"><span>Status</span><select name="status"><option value="approved"${p.status==='approved'?' selected':''}>Approved</option><option value="not_available"${p.status==='not_available'?' selected':''}>Not available</option></select></label><label class="field"><span>Client price per item (USD) <small>product only</small></span><input name="unitPrice" type="number" min="0" step="0.01" value="${p.unitPrice??''}"></label><label class="field"><span>Shipping per order (USD) <small>one parcel, optional</small></span><input name="shipping" type="number" min="0" step="0.01" value="${p.shipping??''}"></label>${p.priceOptions?`<div class="note full" style="margin:0"><p style="margin:0"><span>Several prices from the sheet (supplier → client):</span></p><ul class="price-options">${p.priceOptions.map(o=>`<li><span data-no-i18n>${esc(o.label)}</span> <b data-no-i18n dir="ltr">${money(o.supplierPrice)} → ${money(o.unitPrice)}</b></li>`).join('')}</ul><p style="margin:0"><span>Saving a price here replaces the options with one price.</span></p></div>`:p.supplierPrice!=null?`<p class="note full" style="margin:0"><span>Supplier price from the sheet:</span> <b data-no-i18n>${money(p.supplierPrice)}</b> <span>(the client price adds the client’s fee per order)</span></p>`:''}<label class="field full"><span>Note</span><textarea name="note" maxlength="1000">${esc(p.note)}</textarea></label><button type="submit" class="btn btn-primary">Save quote</button><p class="form-msg" data-quote-msg></p></form>`;}
-  function renderProducts(){const products=sortList(S.products,'admin-products',ADMIN_PRODUCT_SORTS);$('[data-tab-body]').innerHTML=`<section class="card card-pad list-head"><div><h3 class="sec-title">Products awaiting quote</h3><p>${products.filter(p=>p.status==='awaiting_quote').length}</p></div>${sortPick('admin-products',ADMIN_PRODUCT_SORTS)}</section>${products.map(p=>`<section class="card card-pad"><span>${p.status==='awaiting_quote'?'Awaiting quote':p.status==='approved'?'Approved':'Not available'}</span>${productQuoteForm(p)}</section>`).join('')}`;}
+  // ---------- client products ----------
+  // Erwin, 6 Nov 2026: Client products "took so much space, needs to scroll so far down". One short row per product
+  // (photo, name, client, status, price); a row opens to its quote form. Products that need us (no price yet, or a cost
+  // revision waiting) open by themselves; a row the admin opens or closes stays that way until its quote is saved (S.pqOpen).
+  const PQ_TODO = p => p.status === 'awaiting_quote' || !!(p.revision && ['open', 'offered'].includes(p.revision.status));
+  const PQ_ST = { awaiting_quote: ['Awaiting quote', 'pending'], approved: ['Approved', 'delivered'], not_available: ['Not available', 'na'] };
+  const PQ_FILTERS = [['all', 'All', () => true], ['todo', 'Needs you', PQ_TODO], ['approved', 'Approved', p => p.status === 'approved'], ['not_available', 'Not available', p => p.status === 'not_available']];
+  function productQuoteForm(p) {
+    const rev = p.revision && ['open', 'offered'].includes(p.revision.status) ? `<div class="rev-admin-p" data-rev-product><p><b>Cost revision requested</b> · <span>Client’s competitor price</span>: <b data-no-i18n>${money(p.revision.competitorPrice)}</b>${p.revision.note ? ` · <span data-no-i18n>${esc(p.revision.note)}</span>` : ''}</p><p class="note">Save a lower price below (or the supplier changes it in the sheet): it’s used for this product’s next orders. Or keep the price:</p><div class="rev-keep-row"><input name="revReply" maxlength="1000" aria-label="Reply to the client" placeholder="Reply to the client (optional)"><a class="btn" href="https://wa.me/?text=${encodeURIComponent(`Hi Ye, our client asks for a lower price on the product "${p.name}" (orange row in the Product Quotes sheet). They sell it at $${Number(p.revision.competitorPrice).toFixed(2)} (competitor price); our price now is $${Number(p.supplierPrice ?? p.unitPrice ?? 0).toFixed(2)} per item. Can you check if you can lower it? If yes, please type the new Price per item in the sheet. Thank you!`)}" target="_blank" rel="noopener">${ic('chat')}Tell the supplier on WhatsApp</a><button type="button" class="btn" data-rev-keep-product="${p.id}">Keep the price</button></div></div>` : '';
+    const side = `<div class="pq-side">${p.photoIds.length ? `<div class="qf-photos">${p.photoIds.map(id => `<img class="qf-photo" src="/api/portal/products/${p.id}/photos/${id}" width="88" height="88" alt="Product photo" loading="lazy" title="Open full size">`).join('')}</div>` : ''}<p><a href="${esc(p.link)}" target="_blank" rel="noopener">Product link</a></p>${p.variant || p.expectedQuantity ? `<p data-no-i18n>${esc(p.variant)}${p.expectedQuantity ? ' · ' + p.expectedQuantity : ''}</p>` : ''}${p.competitorPrice ? `<p><span>Competitor price (from the client):</span> <b data-no-i18n><bdi>${esc(p.competitorPrice)}</bdi></b></p>` : ''}</div>`;
+    const from = p.priceOptions ? `<div class="note full" style="margin:0"><p style="margin:0"><span>Several prices from the sheet (supplier → client):</span></p><ul class="price-options">${p.priceOptions.map(o => `<li><span data-no-i18n>${esc(o.label)}</span> <b data-no-i18n dir="ltr">${money(o.supplierPrice)} → ${money(o.unitPrice)}</b></li>`).join('')}</ul><p style="margin:0"><span>Saving a price here replaces the options with one price.</span></p></div>`
+      : p.supplierPrice != null ? `<p class="note full" style="margin:0"><span>Supplier price from the sheet:</span> <b data-no-i18n>${money(p.supplierPrice)}</b> <span>(the client price adds the client’s fee per order)</span></p>` : '';
+    return `<form class="pq-form" data-product-quote="${p.id}">${rev}${side}<div class="form-grid pq-fields">
+      <label class="field"><span>Status</span><select name="status"><option value="approved"${p.status === 'approved' ? ' selected' : ''}>Approved</option><option value="not_available"${p.status === 'not_available' ? ' selected' : ''}>Not available</option></select></label>
+      <label class="field"><span>Client price per item (USD) <small>product only</small></span><input name="unitPrice" type="number" min="0" step="0.01" value="${p.unitPrice ?? ''}"></label>
+      <label class="field"><span>Shipping per order (USD) <small>one parcel, optional</small></span><input name="shipping" type="number" min="0" step="0.01" value="${p.shipping ?? ''}"></label>
+      ${from}<label class="field full"><span>Note</span><textarea name="note" rows="2" maxlength="1000">${esc(p.note)}</textarea></label>
+      <div class="full pq-actions"><button type="submit" class="btn btn-primary">Save quote</button><p class="form-msg" data-quote-msg></p></div></div></form>`;
+  }
+  function productRow(p) {
+    const [label, tone] = PQ_ST[p.status] || [p.status, 'na'], open = S.pqOpen[p.id] ?? PQ_TODO(p), ph = p.photoIds[0];
+    const price = p.priceOptions ? '<span class="pq-price">Several prices</span>' : p.unitPrice != null ? `<span class="pq-price"><b data-no-i18n>${money(p.unitPrice)}</b> <small>per item</small></span>` : '';
+    return `<details class="card pq${PQ_TODO(p) ? ' pq-todo' : ''}" data-pq="${p.id}"${open ? ' open' : ''}><summary class="pq-sum">
+      <span class="pq-thumb">${ph ? `<img src="/api/portal/products/${p.id}/photos/${ph}" width="48" height="48" alt="" loading="lazy">` : ic('doc')}</span>
+      <span class="pq-name"><b data-no-i18n>${esc(p.name)}</b><small data-no-i18n>${esc(p.clientName)}${p.variant ? ' · ' + esc(p.variant) : ''}</small></span>
+      <span class="pq-meta">${UI.revTag(p)}<span class="st st-${tone}">${label}</span>${price}</span>
+      <span class="pq-chev" aria-hidden="true">${UI.svg('<path d="m6 9 6 6 6-6"/>')}</span></summary>
+      <div class="pq-body">${productQuoteForm(p)}</div></details>`;
+  }
+  function renderProducts() {
+    const f = PQ_FILTERS.find(x => x[0] === S.pqFilter) || PQ_FILTERS[0];
+    const products = sortList(S.products.filter(f[2]), 'admin-products', ADMIN_PRODUCT_SORTS);
+    $('[data-tab-body]').innerHTML = `<div class="pq-bar"><div class="chips" role="group" aria-label="Show products">${PQ_FILTERS.map(([k, l, t]) => `<button class="chip${f[0] === k ? ' on' : ''}" type="button" data-pq-filter="${k}" aria-pressed="${f[0] === k}">${l} <span data-no-i18n>${S.products.filter(t).length}</span></button>`).join('')}</div>${S.products.length > 1 ? sortPick('admin-products', ADMIN_PRODUCT_SORTS) : ''}</div>
+      ${products.map(productRow).join('') || `<p class="muted">${S.products.length ? 'No products here.' : 'No products yet.'}</p>`}`;
+  }
   // ---------- clients tab ----------
   function archivedHTML() {
     const a = S.ov.archived || [];
@@ -585,11 +618,14 @@
   // All clients' cancelled orders (Erwin, 27 Oct 2026): fees, refunds and credit. Under the clients table since 5 Nov 2026
   // (it is billing), not on the Overview.
   function cancelledBoxHTML() {
-    const cx = S.ov.cancelled;
+    const cx = S.ov.cancelled, PO = window.DLPayOrders;
+    // Credit already taken off later bills and fees already paid clear (6 Nov 2026), per client as in their panel.
+    const rows = (cx?.clients || []).map(r => { const c = clientOf(r.clientId); return { ...r, st: c ? PO.cxSettle(r, creditLeftC(c, r.feesOwed), c.outstanding) : PO.cxSettle(r) }; });
+    const leftC = rows.reduce((n, r) => n + r.st.leftC, 0), usedC = rows.reduce((n, r) => n + r.st.usedC, 0), feesOpen = rows.some(r => r.st.feesOpen), settled = cx?.fees > 0 && !feesOpen;
     const cxStat = (k, v, note, cls = '') => `<div class="cx-stat ${cls}"><small>${k}</small><b data-no-i18n>${v}</b>${note ? `<em>${note}</em>` : ''}</div>`;
     const cxBox = cx && (cx.count || cx.refunded) ? `<section class="card card-pad cx-box ovw-cx" data-cancelled-all><div class="mc-head"><h3 class="sec-title">Cancelled orders, all clients</h3><span class="muted">${cx.clients.length === 1 ? '1 client' : cx.clients.length + ' clients'}</span></div>
-      <div class="cx-stats">${cxStat('Cancelled orders', String(cx.count), cx.paidCount ? `${cx.paidCount} already paid` : '')}${cxStat('Paid for them', money(cx.paid))}${cxStat('Cancellation fees', money(cx.fees), '', cx.fees ? 'neg' : '')}${cxStat('Due back to clients', money(cx.dueBack), 'Paid minus all fees')}${cxStat('Refunded', money(cx.refunded))}${cxStat('Kept as credit', money(cx.credit), 'Counts toward their next orders', cx.credit > 0 ? 'pos' : '')}</div>
-      <div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Cancelled</th><th class="num">Fees</th><th class="num">Due back</th><th class="num">Refunded</th><th class="num">Credit</th></tr></thead><tbody>${cx.clients.map(c => `<tr class="click" data-open-client="${c.clientId}" data-client-tab="payments" tabindex="0" title="Open this client's payments"><td class="wide"><b>${esc(c.name)}</b></td><td data-label="Cancelled" class="num">${c.count}</td><td data-label="Fees" class="num">${money(c.fees)}</td><td data-label="Due back" class="num">${money(c.dueBack)}</td><td data-label="Refunded" class="num">${money(c.refunded)}</td><td data-label="Credit" class="num ${c.credit > 0 ? 'pos' : ''}">${money(c.credit)}</td></tr>`).join('')}</tbody></table></div></section>` : '';
+      <div class="cx-stats">${cxStat('Cancelled orders', String(cx.count), cx.paidCount ? `${cx.paidCount} already paid` : '')}${cxStat('Paid for them', money(cx.paid))}${cxStat('Cancellation fees', money(cx.fees), settled ? 'Settled' : '', feesOpen ? 'neg' : '')}${cxStat('Due back to clients', money(cx.dueBack), 'Paid minus all fees')}${cxStat('Refunded', money(cx.refunded))}${cxStat('Credit left', money(leftC / 100), usedC ? `${money(usedC / 100)} used on their bills` : leftC ? 'Counts toward their next orders' : '', leftC > 0 ? 'pos' : '')}</div>
+      <div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Cancelled</th><th class="num">Fees</th><th class="num">Due back</th><th class="num">Refunded</th><th class="num">Credit left</th></tr></thead><tbody>${rows.map(c => `<tr class="click" data-open-client="${c.clientId}" data-client-tab="payments" tabindex="0" title="Open this client's payments"><td class="wide"><b>${esc(c.name)}</b></td><td data-label="Cancelled" class="num">${c.count}</td><td data-label="Fees" class="num">${money(c.fees)}</td><td data-label="Due back" class="num">${money(c.dueBack)}</td><td data-label="Refunded" class="num">${money(c.refunded)}</td><td data-label="Credit left" class="num ${c.st.leftC > 0 ? 'pos' : ''}">${money(c.st.leftC / 100)}${c.st.usedC ? `<small class="cx-used">${money(c.st.usedC / 100)} used</small>` : ''}</td></tr>`).join('')}</tbody></table></div></section>` : '';
     return cxBox;
   }
   function renderClients() {
@@ -615,9 +651,20 @@
   }
   const BANK_UI = [['bank_currency', 'Currency'], ['bank_holder', 'Account holder name'], ['bank_account', 'Account number'], ['bank_ach', 'ACH routing number'],
     ['bank_wire', 'Wire routing number'], ['bank_swift', 'SWIFT/BIC'], ['bank_name', 'Bank name'], ['bank_address', 'Bank address'], ['bank_reference', 'Payment reference note']];
+  // Erwin, 6 Nov 2026: Fees & settings "took so much space, needs to scroll so far down". The page is in sections with a
+  // tab bar (same pattern as the client Payments page): only one section shows. All sections stay in the page (hidden), so
+  // every form keeps what was typed when the admin switches. The last section is remembered in this browser.
+  const SET_TABS = [['fees', 'Fees'], ['bank', 'Bank details'], ['supplier', 'Supplier'], ['terms', 'Terms'], ['team', 'Team & tools']];
+  const SET_KEY = 'dl-admin-settings-tab';
+  function setTab() {
+    let t = S.setTab; if (!t) try { t = localStorage.getItem(SET_KEY); } catch { t = null; }
+    return SET_TABS.some(([k]) => k === t) ? t : 'fees';
+  }
   function settingsHTML() {
-    const s = S.ov.settings, rated = COUNTRIES.filter(([c]) => RATES[c]);
-    return `<div class="settings-grid">
+    const s = S.ov.settings, rated = COUNTRIES.filter(([c]) => RATES[c]), on = setTab();
+    const tabs = `<nav class="set-tabs" role="tablist" aria-label="Settings sections">${SET_TABS.map(([k, l]) => `<button type="button" class="set-tab${k === on ? ' on' : ''}" role="tab" id="set-tab-${k}" aria-controls="set-panel-${k}" aria-selected="${k === on}" tabindex="${k === on ? 0 : -1}" data-set-tab="${k}">${l}${k === 'bank' && !String(s.bank_account || '').trim() ? '<span class="set-tab-dot" role="img" aria-label="Missing"></span>' : ''}</button>`).join('')}</nav>`;
+    const panel = (k, cls, body) => `<div class="settings-grid${cls}" role="tabpanel" id="set-panel-${k}" aria-labelledby="set-tab-${k}" data-set-panel="${k}"${k === on ? '' : ' hidden'}>${body}</div>`;
+    return tabs + panel('fees', '', `
       <section class="card card-pad"><h3 class="form-sec">Fee per order</h3>
         <form class="form-grid" id="settings-form" novalidate>
           <label class="field"><span>Fee per order (USD)</span><span class="money"><input name="commission_per_order" type="number" min="0" step="0.01" value="${esc(s.commission_per_order)}"></span></label>
@@ -625,31 +672,10 @@
           <div class="full split" data-split></div>
           <label class="field"><span>Client subscription <small>₪ / month, after the free month</small></span><input name="subscription_price" type="number" min="0" step="0.01" value="${esc(s.subscription_price ?? 29)}"></label>
           <label class="field"><span>Size-to-weight divisor <small>cm³ per kg</small></span><input name="volumetric_divisor" type="number" min="1000" max="10000" step="1" value="${esc(s.volumetric_divisor)}"></label>
-          <div class="field" style="align-content:end"><button class="btn btn-primary" type="submit">Save settings</button></div>
-          <p class="form-msg full" data-settings-msg></p>
+          <div class="full set-actions"><button class="btn btn-primary" type="submit">Save settings</button><p class="form-msg" data-settings-msg></p></div>
         </form>
-        <p class="note" style="margin-top:6px">The fee is already inside the product cost the client pays, so clients don’t see it. Changes apply to new orders only. Size-based weight = L × W × H ÷ divisor (6000 until the supplier confirms).</p>
+        <p class="note set-note">The fee is already inside the product cost the client pays, so clients don’t see it. Changes apply to new orders only. Size-based weight = L × W × H ÷ divisor (6000 until the supplier confirms).</p>
       </section>
-      <section class="card card-pad"><h3 class="form-sec">Couriers</h3>
-        <form class="form-grid" id="couriers-form" novalidate>
-          <label class="field full"><span>Couriers the supplier can pick <small>one per line</small></span><textarea name="couriers" rows="4" maxlength="1000" data-no-i18n>${esc(String(s.couriers || ''))}</textarea></label>
-          <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save couriers</button><p class="form-msg" data-couriers-msg style="margin:0"></p></div>
-        </form>
-        <p class="note" style="margin-top:6px">These show as a dropdown in the Courier column of the supplier sheet. The supplier can also type a name that isn’t listed. Clients see the courier next to the tracking number.</p>
-      </section>
-      <section class="card card-pad"><h3 class="form-sec">How clients pay (bank details)</h3>
-        <form class="form-grid" id="bank-form" novalidate>
-          ${BANK_UI.map(([k, label]) => `<label class="field${k === 'bank_address' || k === 'bank_reference' ? ' full' : ''}"><span>${label}</span><input name="${k}" type="text" maxlength="200" value="${esc(s[k] ?? '')}"></label>`).join('')}
-          <div class="field" style="align-content:end"><button class="btn btn-primary" type="submit">Save bank details</button></div>
-          <p class="form-msg full" data-bank-msg></p>
-        </form>
-        <p class="note" style="margin-top:6px">Clients see these on their Payments page under “How to pay”, each with a Copy button. Leave a field empty to hide it.</p>
-      </section>
-      <section class="card card-pad"><h3 class="form-sec">Terms of Service</h3><p class="note">Publishing a new version requires every client to accept again. Previous versions and acceptance records are preserved.</p>
-        <form id="terms-publish" class="form-grid"><label class="field full"><span>New version number</span><input name="version" type="number" min="${S.ov.termsPolicy.version + 1}" value="${S.ov.termsPolicy.version + 1}" required></label>
-          <label class="field full"><span>English policy text</span><textarea name="english" rows="10" maxlength="18000" required>${esc(S.ov.termsPolicy.english)}</textarea></label>
-          <label class="field full"><span>Hebrew policy text</span><textarea name="hebrew" rows="10" maxlength="18000" dir="rtl" required>${esc(S.ov.termsPolicy.hebrew)}</textarea></label>
-          <div class="field full"><button type="submit" class="btn btn-primary">Publish new terms version</button></div><p class="form-msg full" data-terms-msg role="status"></p></form></section>
       <section class="card card-pad"><h3 class="form-sec">Shipping calculator</h3>
         <form class="form-grid" data-calc onsubmit="return false">
           <label class="field"><span>Destination</span><select name="country">${rated.map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('')}</select></label>
@@ -658,18 +684,52 @@
           <div class="field"><span>Size L × W × H (cm)</span><div class="dims"><input name="l" type="number" min="0" placeholder="L" aria-label="Length"><input name="w" type="number" min="0" placeholder="W" aria-label="Width"><input name="h" type="number" min="0" placeholder="H" aria-label="Height"></div></div>
         </form>
         <div class="calc-out" data-calc-out><small>Shipping fee</small><strong>—</strong><div class="bd">Enter a weight.</div></div>
-      </section>
-      <section class="card card-pad"><h3 class="form-sec">Team accounts</h3><div class="acc-list" data-admins>${adminsHTML()}</div>
-        <button type="button" class="btn" style="margin-top:12px" data-add-account="admin">${ic('plus')}Add admin</button></section>
+      </section>`) + panel('bank', ' one', `
+      <section class="card card-pad"><h3 class="form-sec">How clients pay (bank details)</h3>
+        <form class="form-grid set-bank" id="bank-form" novalidate>
+          ${BANK_UI.map(([k, label]) => `<label class="field${k === 'bank_address' || k === 'bank_reference' ? ' wide' : ''}"><span>${label}</span><input name="${k}" type="text" maxlength="200" value="${esc(s[k] ?? '')}"></label>`).join('')}
+          <div class="full set-actions"><button class="btn btn-primary" type="submit">Save bank details</button><p class="form-msg" data-bank-msg></p></div>
+        </form>
+        <p class="note set-note">Clients see these on their Payments page under “How to pay”, each with a Copy button. Leave a field empty to hide it.</p>
+      </section>`) + panel('supplier', '', `
       <section class="card card-pad"><h3 class="form-sec">Supplier sheet</h3><div data-supplier-sheet><p class="muted" style="margin:0">Loading…</p></div>
         <div class="row-actions" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-supplier-setup>Set up supplier sheet</button><button type="button" class="btn btn-sm" data-supplier-check hidden>Check sheet now</button></div>
         <p class="form-msg" data-supplier-msg role="status"></p></section>
-      <section class="card card-pad"><h3 class="form-sec">Storage &amp; backups</h3><div data-storage><p class="muted" style="margin:0">Loading…</p></div>
-        <div class="row-actions" data-storage-actions hidden style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-backup-now>Back up now</button><button type="button" class="btn btn-sm" data-copy-files>Copy files now</button></div>
-        <p class="form-msg" data-storage-msg role="status"></p></section>
+      <section class="card card-pad"><h3 class="form-sec">Couriers</h3>
+        <form class="form-grid" id="couriers-form" novalidate>
+          <label class="field full"><span>Couriers the supplier can pick <small>one per line</small></span><textarea name="couriers" rows="4" maxlength="1000" data-no-i18n>${esc(String(s.couriers || ''))}</textarea></label>
+          <div class="full set-actions"><button class="btn btn-primary" type="submit">Save couriers</button><p class="form-msg" data-couriers-msg></p></div>
+        </form>
+        <p class="note set-note">These show as a dropdown in the Courier column of the supplier sheet. The supplier can also type a name that isn’t listed. Clients see the courier next to the tracking number.</p>
+      </section>`) + panel('terms', ' one', `
+      <section class="card card-pad"><h3 class="form-sec">Terms of Service</h3><p class="note">Publishing a new version requires every client to accept again. Previous versions and acceptance records are preserved.</p>
+        <form id="terms-publish" class="form-grid"><label class="field set-ver"><span>New version number</span><input name="version" type="number" min="${S.ov.termsPolicy.version + 1}" value="${S.ov.termsPolicy.version + 1}" required></label>
+          <label class="field full-sm"><span>English policy text</span><textarea name="english" rows="12" maxlength="18000" required>${esc(S.ov.termsPolicy.english)}</textarea></label>
+          <label class="field full-sm"><span>Hebrew policy text</span><textarea name="hebrew" rows="12" maxlength="18000" dir="rtl" required>${esc(S.ov.termsPolicy.hebrew)}</textarea></label>
+          <div class="field full"><button type="submit" class="btn btn-primary">Publish new terms version</button></div><p class="form-msg full" data-terms-msg role="status"></p></form></section>`) + panel('team', '', `
+      <section class="card card-pad"><h3 class="form-sec">Team accounts</h3><div class="acc-list" data-admins>${adminsHTML()}</div>
+        <button type="button" class="btn" style="margin-top:12px" data-add-account="admin">${ic('plus')}Add admin</button></section>
       <section class="card card-pad"><h3 class="form-sec">Client portal link</h3><p class="muted" style="margin:0 0 10px;font-size:14px">Clients sign in here with the username and password you give them.</p>
         <div class="copy-line"><span style="flex:1">${esc(location.origin)}/portal/</span><button type="button" class="btn btn-sm" data-copy="${esc(location.origin)}/portal/">${ic('copy')}Copy</button></div></section>
-    </div>`;
+      <section class="card card-pad"><h3 class="form-sec">Storage &amp; backups</h3><div data-storage><p class="muted" style="margin:0">Loading…</p></div>
+        <div class="row-actions" data-storage-actions hidden style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-backup-now>Back up now</button><button type="button" class="btn btn-sm" data-copy-files>Copy files now</button></div>
+        <p class="form-msg" data-storage-msg role="status"></p></section>`);
+  }
+  function bindSetTabs() {
+    const tabs = $$('[data-set-tab]');
+    const show = (k, focus) => {
+      S.setTab = k; try { localStorage.setItem(SET_KEY, k); } catch { /* private window: the choice lasts for this visit */ }
+      tabs.forEach(b => { const on = b.dataset.setTab === k; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; if (on && focus) b.focus(); });
+      $$('[data-set-panel]').forEach(p => { p.hidden = p.dataset.setPanel !== k; });
+    };
+    tabs.forEach((b, i) => {
+      b.addEventListener('click', () => show(b.dataset.setTab));
+      b.addEventListener('keydown', e => {
+        const rtl = document.documentElement.dir === 'rtl', step = { ArrowRight: rtl ? -1 : 1, ArrowLeft: rtl ? 1 : -1 }[e.key];
+        const to = step ? (i + step + tabs.length) % tabs.length : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
+        if (to < 0) return; e.preventDefault(); show(tabs[to].dataset.setTab, true);
+      });
+    });
   }
   const kb = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
   function storageHTML(d) {
@@ -725,6 +785,7 @@
     run('[data-supplier-check]', '/admin/supplier-sheet/check', r => r.ok ? `${r.changed.length} orders updated from the sheet.` : r.error);
   }
   function bindSettings() {
+    bindSetTabs();
     bindStorage();
     bindSupplierSheet();
     const tf = $('#terms-publish');
@@ -737,8 +798,8 @@
     if (bf) bf.addEventListener('submit', async e => {
       e.preventDefault();
       const m = $('[data-bank-msg]');
-      try { await api('/admin/settings', { method: 'POST', body: Object.fromEntries(BANK_UI.map(([k]) => [k, bf[k].value])) }); m.textContent = 'Saved. Clients see the new details right away.'; m.className = 'form-msg full ok'; await loadAll(); }
-      catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
+      try { await api('/admin/settings', { method: 'POST', body: Object.fromEntries(BANK_UI.map(([k]) => [k, bf[k].value])) }); m.textContent = 'Saved. Clients see the new details right away.'; m.className = 'form-msg ok'; await loadAll(); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
     });
     const cf = $('#couriers-form');
     cf?.addEventListener('submit', async e => {
@@ -757,8 +818,8 @@
     f.addEventListener('submit', async e => {
       e.preventDefault();
       const m = $('[data-settings-msg]');
-      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_bonus_per_order: f.supplier_bonus_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg full ok'; await loadAll(); }
-      catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
+      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_bonus_per_order: f.supplier_bonus_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg ok'; await loadAll(); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
     });
     const c = $('[data-calc]'), out = $('[data-calc-out]');
     const upd = () => {
@@ -1035,6 +1096,9 @@
   // Orders a payment can be for: billed and not paid yet (plus the ones already on this payment), oldest first.
   const payableOrders = (clientId, paymentId = null) => S.orders.filter(o => o.clientId === clientId && !o.archived && (paymentId && o.paymentId === paymentId || !o.paymentId && PO.dueCents(o, balanceAdjustments) > 0)).sort(oldestFirst);
   // A new payment: the client's credit (balance lower than their unpaid orders) is taken off, as in the client's pay box.
+  // Credit still on the account for the Cancelled orders box, worked out like the client's pay box: unpaid orders plus the
+  // cancellation fees nobody paid yet (fees the credit already took are paid), minus the balance (6 Nov 2026).
+  const creditLeftC = (c, feesOwed = 0) => PO.creditCents(S.orders.filter(o => o.clientId === c.id && !o.archived && o.status !== 'cancelled' && PO.state(o, []) === 'unpaid').reduce((n, o) => n + PO.dueCents(o, []), 0) + Math.round((Number(feesOwed) || 0) * 100), c.outstanding || 0);
   const clientCredit = c => PO.creditCents(payableOrders(c.id).reduce((n, o) => n + PO.dueCents(o, balanceAdjustments), 0), c.outstanding || 0);
   function poList(clientId, { paymentId = null, checked = [], amount = 0, compare = true, all = false, credit = 0 } = {}) {
     const orders = all ? S.orders.filter(o => o.clientId === clientId && !o.archived && o.status !== 'cancelled').sort(oldestFirst) : payableOrders(clientId, paymentId);
@@ -1134,7 +1198,7 @@
   }
   function paymentsPane(c, iso) {
     const adding = S.drawer.payNew || pendingTransfer(), other = invoiceFiles.filter(f => !f.paymentId || !payments.some(p => p.id === f.paymentId));
-    return `${paySummary(c)}${PO.cancelledBox(cancelledMoney, { admin: true })}${transferProofHTML()}
+    return `${paySummary(c)}${PO.cancelledBox(cancelledMoney, { admin: true, creditLeft: creditLeftC(c, cancelledMoney?.feesOwed), balance: c.outstanding })}${transferProofHTML()}
       ${adding ? `<section class="card card-pad" data-pay-card><h3 class="sec-title">Record a payment</h3>${recordForm(c, iso)}</section>` : ''}
       <section class="pay-cards"><div class="pay-cards-head"><h3 class="sec-title">Payments <small>${payments.length}</small></h3>${payments.length > 1 ? sortPick('client-payments', window.DL.LIST_SORTS.payments) : ''}${adding ? '' : `<button type="button" class="btn btn-primary btn-sm" data-pay-new>${ic('plus')}Record a payment</button>`}</div>
         ${payments.length ? sortList(payments, 'client-payments', window.DL.LIST_SORTS.payments).map(p => paymentCard(c, p)).join('') : `<div class="card">${empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</div>`}</section>
@@ -1414,6 +1478,7 @@
     if (cardWindowClick(t)) return;
     const st=t.closest('[data-admin-select-store]');if(st&&S.drawer?.kind==='client'){S.drawer.storeId=Number(st.dataset.adminSelectStore);fillClient(clientOf(S.drawer.id));return;}
     const cf=t.closest('[data-claim-filter]');if(cf){S.claimFilter=cf.dataset.claimFilter;renderClaims();return;}
+    const pf=t.closest('[data-pq-filter]');if(pf){S.pqFilter=pf.dataset.pqFilter;renderProducts();return;}
     const tab = t.closest('[data-tab]'); if (tab) { S.tab = tab.dataset.tab; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
     const gt = t.closest('[data-go-tab]'); if (gt) { S.tab = gt.dataset.goTab; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
     const gf = t.closest('[data-go-filter]'); if (gf) { S.filter = gf.dataset.goFilter; S.tab = 'orders'; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
@@ -1461,6 +1526,8 @@
     if (e.target.matches('[data-pick]')) { const id = Number(e.target.dataset.pick); if (e.target.checked) S.picked.add(id); else S.picked.delete(id); renderOrders(); }
     if (e.target.matches('[data-pick-all]')) { $$('[data-pick]').forEach(c => { const id = Number(c.dataset.pick); if (e.target.checked) S.picked.add(id); else S.picked.delete(id); }); renderOrders(); }
   }
+  // Client products rows: keep what the admin opened or closed (toggle doesn't bubble, so listen in the capture phase).
+  document.addEventListener('toggle', e => { const d = e.target; if (d.matches?.('[data-pq]')) S.pqOpen[d.dataset.pq] = d.open; }, true);
   document.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
     const row = e.target.closest?.('tr[data-open-order], tr[data-open-client]');
@@ -1657,7 +1724,7 @@
     }
     const storeForm=e.target.closest('[data-client-store-form]');if(storeForm){e.preventDefault();const sf=storeForm,b=$('[type=submit]',sf),m=$('[data-store-msg]',sf);b.disabled=true;try{await api('/admin/client-stores'+(sf.dataset.clientStoreForm?'/'+sf.dataset.clientStoreForm:''),{method:'POST',body:{clientId:Number(sf.dataset.clientId),name:sf.storeName.value,platform:sf.platform.value,link:sf.link.value,color:sf.dataset.clientStoreForm||sf.dataset.colourEdited?sf.color.value:undefined,archived:!!sf.archived?.checked,status:sf.status?.value||'active'}});document.activeElement?.blur();await loadAll();refreshDrawer();toast('Store saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     const cd=e.target.closest('[data-claim-decision]');if(cd){e.preventDefault();const b=$('[type=submit]',cd),m=$('[data-claim-msg]',cd);b.disabled=true;try{await api('/admin/claims/'+cd.dataset.claimDecision,{method:'POST',body:{status:cd.status.value,reply:cd.reply.value}});document.activeElement?.blur();await loadAll();if(S.tab==='claims')renderClaims();else refreshDrawer();toast('Claim decision saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
-    const pq=e.target.closest('[data-product-quote]');if(pq){e.preventDefault();const b=$('[type=submit]',pq),m=$('[data-quote-msg]',pq);b.disabled=true;try{await api('/admin/products/'+pq.dataset.productQuote,{method:'POST',body:{status:pq.status.value,unitPrice:pq.unitPrice.value,shipping:pq.shipping.value,note:pq.note.value}});document.activeElement?.blur();await loadAll();if(S.tab==='products')renderProducts();else refreshDrawer();toast('Quote saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
+    const pq=e.target.closest('[data-product-quote]');if(pq){e.preventDefault();const b=$('[type=submit]',pq),m=$('[data-quote-msg]',pq);b.disabled=true;try{await api('/admin/products/'+pq.dataset.productQuote,{method:'POST',body:{status:pq.status.value,unitPrice:pq.unitPrice.value,shipping:pq.shipping.value,note:pq.note.value}});document.activeElement?.blur();delete S.pqOpen[pq.dataset.productQuote];await loadAll();if(S.tab==='products')renderProducts();else refreshDrawer();toast('Quote saved.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     const inf=e.target.closest('[data-invoice-form]');
     if(inf){e.preventDefault();const b=$('[type=submit]',inf),m=$('[data-invoice-msg]',inf);b.disabled=true;try{const file=await invoiceFile(inf);if(!file)throw new Error('Choose the receipt file.');await api('/admin/invoices',{method:'POST',body:{clientId:Number(inf.dataset.invoiceForm),orderIds:inf.dataset.orderId?[Number(inf.dataset.orderId)]:PO.picked(inf),paymentId:inf.invoicePayment?.value||null,date:inf.invoiceDate.value,file}});document.activeElement?.blur();inf.reset();invoiceFiles=(await api('/admin/invoices?clientId='+inf.dataset.invoiceForm)).invoices;refreshDrawer();toast('Receipt saved. The client can download it now.');}catch(ex){m.textContent=ex.message;b.disabled=false;}return;}
     // Attach a receipt to a payment: saved with the payment and its orders; the client is notified and can download it.

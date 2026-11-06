@@ -76,7 +76,9 @@ try {
     await viewerOpen(ui, page, tag, 'admin-order', '3 / 3');
     await ui.locator('.pv [data-pv-close]').click(); await page.waitForTimeout(200);
     await ui.locator('.drawer.open .drawer-head button, .drawer.open [data-d-close], .drawer.open .d-close').first().click().catch(() => page.keyboard.press('Escape'));
-    await ui.locator('[data-tab=products]').click(); await ui.waitForSelector(`[data-product-quote="${prod.id}"] img`);
+    await ui.locator('[data-tab=products]').click(); await ui.waitForSelector(`[data-pq="${prod.id}"]`);
+    await ui.locator(`[data-pq="${prod.id}"]`).evaluate(d => { d.open = true; }); // product rows open on a click (6 Nov 2026)
+    await ui.waitForSelector(`[data-product-quote="${prod.id}"] img`);
     await ui.locator(`[data-product-quote="${prod.id}"] img`).first().click();
     await viewerOpen(ui, page, tag, 'admin-products', '1 / 3');
     assert.equal(tabs, 0, 'no new tab'); assert.deepEqual(errors, [], tag); await ctx.close(); console.log('PASS', tag);

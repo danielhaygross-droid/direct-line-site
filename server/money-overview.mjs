@@ -7,7 +7,7 @@ const r2 = n => Math.round(Number(n || 0) * 100) / 100;
 
 // Cancelled orders summed over the clients, plus each client's own line (only clients with cancelled money).
 export async function cancelledTotals(DB, clients) {
-  const keys = ['count', 'paidCount', 'paid', 'fees', 'dueBack', 'refunded', 'credit'];
+  const keys = ['count', 'paidCount', 'paid', 'fees', 'dueBack', 'refunded', 'credit', 'feesOwed'];
   const total = Object.fromEntries(keys.map(k => [k, 0])), byClient = [];
   for (const c of clients) {
     const s = await cancelledSummary(DB, c.id);

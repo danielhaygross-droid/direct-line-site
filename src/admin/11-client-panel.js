@@ -113,6 +113,9 @@
   // Orders a payment can be for: billed and not paid yet (plus the ones already on this payment), oldest first.
   const payableOrders = (clientId, paymentId = null) => S.orders.filter(o => o.clientId === clientId && !o.archived && (paymentId && o.paymentId === paymentId || !o.paymentId && PO.dueCents(o, balanceAdjustments) > 0)).sort(oldestFirst);
   // A new payment: the client's credit (balance lower than their unpaid orders) is taken off, as in the client's pay box.
+  // Credit still on the account for the Cancelled orders box, worked out like the client's pay box: unpaid orders plus the
+  // cancellation fees nobody paid yet (fees the credit already took are paid), minus the balance (6 Nov 2026).
+  const creditLeftC = (c, feesOwed = 0) => PO.creditCents(S.orders.filter(o => o.clientId === c.id && !o.archived && o.status !== 'cancelled' && PO.state(o, []) === 'unpaid').reduce((n, o) => n + PO.dueCents(o, []), 0) + Math.round((Number(feesOwed) || 0) * 100), c.outstanding || 0);
   const clientCredit = c => PO.creditCents(payableOrders(c.id).reduce((n, o) => n + PO.dueCents(o, balanceAdjustments), 0), c.outstanding || 0);
   function poList(clientId, { paymentId = null, checked = [], amount = 0, compare = true, all = false, credit = 0 } = {}) {
     const orders = all ? S.orders.filter(o => o.clientId === clientId && !o.archived && o.status !== 'cancelled').sort(oldestFirst) : payableOrders(clientId, paymentId);
@@ -212,7 +215,7 @@
   }
   function paymentsPane(c, iso) {
     const adding = S.drawer.payNew || pendingTransfer(), other = invoiceFiles.filter(f => !f.paymentId || !payments.some(p => p.id === f.paymentId));
-    return `${paySummary(c)}${PO.cancelledBox(cancelledMoney, { admin: true })}${transferProofHTML()}
+    return `${paySummary(c)}${PO.cancelledBox(cancelledMoney, { admin: true, creditLeft: creditLeftC(c, cancelledMoney?.feesOwed), balance: c.outstanding })}${transferProofHTML()}
       ${adding ? `<section class="card card-pad" data-pay-card><h3 class="sec-title">Record a payment</h3>${recordForm(c, iso)}</section>` : ''}
       <section class="pay-cards"><div class="pay-cards-head"><h3 class="sec-title">Payments <small>${payments.length}</small></h3>${payments.length > 1 ? sortPick('client-payments', window.DL.LIST_SORTS.payments) : ''}${adding ? '' : `<button type="button" class="btn btn-primary btn-sm" data-pay-new>${ic('plus')}Record a payment</button>`}</div>
         ${payments.length ? sortList(payments, 'client-payments', window.DL.LIST_SORTS.payments).map(p => paymentCard(c, p)).join('') : `<div class="card">${empty('No payments yet', 'Payments you record show up here and lower what the client owes.')}</div>`}</section>

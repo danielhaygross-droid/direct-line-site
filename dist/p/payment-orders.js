@@ -111,26 +111,37 @@
   }
   // Money on cancelled orders (Erwin, 27 Oct 2026): the same box for the admin (client panel > Money) and the client
   // (Payments). c = server cancelledSummary. admin: adds "Record refund" and Undo on refunds.
+  // Settled money clears (Erwin, 6 Nov 2026: "cancellation fees to be cleared and the credits when they are all settled").
+  // creditLeft (cents) = the credit still on the account (creditCents: unpaid orders minus the balance, as in the pay box);
+  // what the cancelled orders left as credit beyond that was already taken off later bills ("used on … bills").
+  // balance = the client's balance due: fees not taken from paid money are on the bill, so they are settled once it's paid.
+  function cxSettle(c, creditLeft, balance) {
+    const creditC = Math.max(0, cents(c.credit)), known = Number.isFinite(creditLeft);
+    const leftC = known ? Math.min(creditC, Math.max(0, Math.round(creditLeft))) : creditC;
+    const feesOpen = cents(c.fees) > 0 && cents(c.feesOwed ?? c.fees) > 0 && !(Number.isFinite(balance) && cents(balance) <= 0);
+    return { known, leftC, usedC: creditC - leftC, feesOpen, feesSettled: cents(c.fees) > 0 && !feesOpen };
+  }
   const esc = s => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
   const usd = n => fmt(cents(n));
-  function cancelledBox(c, { admin = false } = {}) {
+  function cancelledBox(c, { admin = false, creditLeft, balance } = {}) {
     if (!c || (!c.count && !c.refunds?.length)) return '';
+    const st = cxSettle(c, creditLeft, balance), left = st.leftC / 100;
     const stat = (label, value, note, cls = '') => `<div class="cx-stat ${cls}"><small>${label}</small><b data-no-i18n>${value}</b>${note ? `<em>${note}</em>` : ''}</div>`;
     const FOLD = 5, more = n => he() ? `הצגת כל ${n} ההזמנות שבוטלו` : `Show all ${n} cancelled orders`, less = () => he() ? 'הצגת פחות' : 'Show fewer';
     const rows = c.orders.map((o, i) => `<tr${i >= FOLD ? ' class="cx-more"' : ''}><td><button type="button" class="link-btn" data-open-order="${o.id}"><bdi data-no-i18n>${esc(o.orderRef || '#' + o.id)}</bdi></button>${o.store ? `<small data-no-i18n>${esc(o.store)}</small>` : ''}</td>`
       + `<td class="num" data-no-i18n>${o.paid ? usd(o.paid) : '—'}</td><td class="num" data-no-i18n>${o.fee ? usd(o.fee) : '—'}</td><td class="num" data-no-i18n><b><bdi dir="ltr">${o.paid || o.fromCredit ? usd(o.back) : '—'}</bdi></b>${o.fromCredit ? `<small class="cx-from-credit">${he() ? 'מהזיכוי' : 'From credit'}</small>` : ''}</td></tr>`).join('');
     const refunds = (c.refunds || []).map(r => `<div class="cx-refund"><span data-no-i18n>${day(r.refundedAt)}</span><b data-no-i18n>${usd(r.amount)}</b><span data-no-i18n>${esc([r.method, r.note].filter(Boolean).join(' · '))}</span>${admin ? `<button type="button" class="btn btn-sm btn-ghost" data-refund-undo="${r.id}">Undo</button>` : ''}</div>`).join('');
     return `<section class="card card-pad cx-box" data-cancelled-box><h3 class="sec-title">Cancelled orders</h3>
-      <div class="cx-stats">${stat('Cancelled orders', String(c.count), c.paidCount ? `${c.paidCount} already paid` : '')}${stat('Paid for them', usd(c.paid))}${stat('Cancellation fees', usd(c.fees), admin && c.kept ? `Includes ${usd(c.kept)} of our fees kept` : '', c.fees ? 'neg' : '')}${stat(admin ? 'Due back to the client' : 'Due back to you', usd(c.dueBack), 'Paid minus all fees')}${stat('Refunded', usd(c.refunded))}${stat('Kept as credit', usd(c.credit), admin ? 'Counts toward their next orders' : 'Counts toward your next orders', c.credit > 0 ? 'pos' : '')}</div>
+      <div class="cx-stats">${stat('Cancelled orders', String(c.count), c.paidCount ? `${c.paidCount} already paid` : '')}${stat('Paid for them', usd(c.paid))}${stat('Cancellation fees', usd(c.fees), [st.feesSettled ? '<span>Settled</span>' : '', admin && c.kept ? `<span>Includes ${usd(c.kept)} of our fees kept</span>` : ''].filter(Boolean).join(' · '), st.feesOpen ? 'neg' : '')}${stat(admin ? 'Due back to the client' : 'Due back to you', usd(c.dueBack), 'Paid minus all fees')}${stat('Refunded', usd(c.refunded))}${st.known ? stat('Credit left', usd(left), st.usedC ? `${usd(st.usedC / 100)} used on ${admin ? 'their' : 'your'} bills` : left > 0 ? (admin ? 'Counts toward their next orders' : 'Counts toward your next orders') : '', left > 0 ? 'pos' : '') : stat('Kept as credit', usd(c.credit), admin ? 'Counts toward their next orders' : 'Counts toward your next orders', c.credit > 0 ? 'pos' : '')}</div>
       ${rows ? `<div class="table-wrap"><table class="tbl cx-table"><thead><tr><th>Order</th><th class="num">Paid</th><th class="num">Fee</th><th class="num">Back</th></tr></thead><tbody>${rows}</tbody></table></div>${c.orders.length > FOLD ? `<button type="button" class="btn btn-sm cx-more-btn" data-cx-more data-more="${esc(more(c.orders.length))}" data-less="${esc(less())}" aria-expanded="false">${esc(more(c.orders.length))}</button>` : ''}` : ''}
       ${refunds ? `<h4 class="cx-sub">Refunds</h4><div class="cx-refunds">${refunds}</div>` : ''}
       ${admin ? `<details class="cx-add"${c.credit > 0 ? '' : ''}><summary class="btn btn-sm">Record refund</summary><form class="form-grid" data-refund-form novalidate>
-        <label class="field"><span>Amount (USD)</span><span class="money"><input name="amount" type="number" min="0" step="0.01" inputmode="decimal" value="${c.credit > 0 ? c.credit.toFixed(2) : ''}"></span></label>
+        <label class="field"><span>Amount (USD)</span><span class="money"><input name="amount" type="number" min="0" step="0.01" inputmode="decimal" value="${left > 0 ? left.toFixed(2) : ''}"></span></label>
         <label class="field"><span>Date</span><input name="date" type="date" value="${new Date().toLocaleDateString('en-CA')}"></label>
         <label class="field"><span>Method <small>optional</small></span><input name="method" maxlength="60" placeholder="e.g. Bank transfer"></label>
         <label class="field"><span>Note <small>optional</small></span><input name="note" maxlength="300"></label>
         <div class="full form-actions"><button class="btn btn-primary" type="submit">Save refund</button><p class="form-msg" data-refund-msg></p></div></form></details>` : ''}
     </section>`;
   }
-  root.DLPayOrders = { cancelledBox, dueCents, state, tag, day, checklist, picked, linked, refresh, tickOldest, creditCents };
+  root.DLPayOrders = { cancelledBox, cxSettle, dueCents, state, tag, day, checklist, picked, linked, refresh, tickOldest, creditCents };
 })(typeof window !== 'undefined' ? window : globalThis);
