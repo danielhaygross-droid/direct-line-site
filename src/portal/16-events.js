@@ -4,6 +4,8 @@
     if (t.closest('[data-menu]')) { document.body.classList.toggle('menu-open'); return; }
     if (t.closest('[data-close-menu]')) { document.body.classList.remove('menu-open'); return; }
     if (t.closest('[data-logout]')) { logout(); return; }
+    const lm = t.closest('[data-list-more]');
+    if (lm) { const k = lm.dataset.listMore; S.shown[k].n += LIST_PAGE[k]; if (k === 'orders') renderOrdersList(); else $('[data-plist]').innerHTML = productListHTML(); return; }
     if (t.closest('[data-lang-toggle]')) { window.DLi18n?.setLang(window.DLi18n.lang === 'he' ? 'en' : 'he'); return; }
     if (t.closest('[data-theme-toggle]')) {
       const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';

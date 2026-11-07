@@ -13,13 +13,13 @@
     const [title, line, act] = HEADS[tab] || HEADS.overview;
     // English keeps the gold "&"; Hebrew gets the whole title as one phrase, so it is translated as one.
     const h1 = document.documentElement.lang !== 'he' && title.includes(' & ') ? title.split(' & ').map(esc).join(' <span>&amp;</span> ') : esc(title);
-    const btn = act === 'order' ? `<button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button>` : act === 'client' ? `<button type="button" class="btn btn-primary" data-add-account="client">${ic('users')}Add client</button>` : '';
+    // The month picker sits on the title line of Clients overview (7 Nov 2026: one row less); renderKpis fills it.
+    const btn = tab === 'overview' ? `<label class="kpi-month"><span>Show</span><select data-kpi-month aria-label="Month"></select></label>` : act === 'order' ? `<button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button>` : act === 'client' ? `<button type="button" class="btn btn-primary" data-add-account="client">${ic('users')}Add client</button>` : '';
     return `<div><p class="eyebrow">Direct Line clients</p><h1>${h1}</h1><p>${esc(line)}</p></div>${btn ? `<div class="adm-actions">${btn}</div>` : ''}`;
   }
   function shell() {
     $('#app').innerHTML = `
       <section class="adm-head" data-adm-head>${headHTML(S.tab)}</section>
-      <div class="kpi-bar"><label class="kpi-month"><span>Show</span><select data-kpi-month aria-label="Month"></select></label></div>
       <div class="kpi-wrap" data-kpi-wrap><section class="kpis" data-kpis></section></div>
       <div class="seg" role="tablist" data-main-tabs>${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['claims','Claims'], ['products','Products'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
       <section data-tab-body style="display:grid;gap:14px"></section>`;
@@ -54,9 +54,10 @@
   function renderTab() {
     $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === S.tab); b.setAttribute('aria-selected', String(b.dataset.tab === S.tab)); });
     // The summary cards (and their month picker) belong to Clients overview only (Erwin, 4 Nov 2026), not to every section.
-    for (const el of $$('.kpi-bar, [data-kpis]')) el.style.display = S.tab === 'overview' ? '' : 'none';
+    for (const el of $$('[data-kpis]')) el.style.display = S.tab === 'overview' ? '' : 'none';
     if (S.tab !== 'overview') closeCardWindow(false);
     const head = $('[data-adm-head]'); if (head) head.innerHTML = headHTML(S.tab);
+    if (S.tab === 'overview' && S.ov) renderKpis();
     if(S.tab==='claims'){renderClaims();return;}
     if(S.tab==='products'){renderProducts();return;}
     const body = $('[data-tab-body]');

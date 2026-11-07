@@ -71,7 +71,7 @@ try {
     // Admin: order panel photos and the Products tab.
     ctx = await session(admin, width); page = await ctx.newPage(); errors = []; tabs = 0; page.on('pageerror', e => errors.push(e.message)); ctx.on('page', () => tabs++);
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=orders]');
-    await ui.locator('[data-tab=orders]').click(); await ui.locator(`[data-open-order="${ord.id}"]`).first().click(); await ui.waitForSelector('.drawer.open .pm-photos a'); await page.waitForTimeout(300);
+    await ui.locator('[data-tab=orders]').click(); await ui.locator(`[data-open-order="${ord.id}"]`).first().click(); await ui.waitForSelector('[data-fold="op-media"]'); await ui.locator('[data-fold="op-media"]').evaluate(d => { d.open = true; }); await ui.waitForSelector('.drawer.open .pm-photos a'); await page.waitForTimeout(300);
     await ui.locator('.drawer.open .pm-photos a').nth(2).click();
     await viewerOpen(ui, page, tag, 'admin-order', '3 / 3');
     await ui.locator('.pv [data-pv-close]').click(); await page.waitForTimeout(200);

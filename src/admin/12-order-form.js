@@ -37,17 +37,17 @@
       <label class="field" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden"></label>
       <label class="field full"><span>Tax number <small>optional · e.g. Etsy’s IOSS number on the order</small></span><input name="taxNumber" maxlength="300" data-no-i18n value="${esc(order?.taxNumber)}"></label><label class="field full"><span>Gift message <small>optional</small></span><textarea name="giftMessage" maxlength="1000" rows="3" data-no-i18n>${esc(order?.giftMessage)}</textarea></label>
       </div></section>
-      <section class="af-sec"><h3 class="form-sec"><i>4</i>Shipping &amp; bill <small class="af-opt">can be added later with “Bill this order”</small></h3><div class="form-grid">
+      <details class="af-sec af-fold" data-af-fold="bill"${order && (order.trackingNumber || order.productCost != null || order.shippingFee != null || order.weightKg != null) ? ' open' : ''}><summary><h3 class="form-sec"><i>4</i>Shipping &amp; bill <small class="af-opt">optional · can be added later with “Bill this order”</small></h3></summary><div class="form-grid">
       <label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(order?.trackingNumber)}"></label>
       <label class="field"><span>Product type</span><select name="category">${categoryOptions(order?.category || 'general')}</select></label>
       <label class="field"><span>Weight (kg)</span><input name="weightKg" type="number" min="0" step="0.01" value="${order?.weightKg ?? ''}"></label>
       <label class="field"><span>Product cost <small>fee included</small></span><span class="money"><input name="productCost" type="number" min="0" step="0.01" value="${v2(order?.productCost)}"></span></label>
       <label class="field"><span>Shipping fee <small data-quote-hint></small></span><span class="money"><input name="price" type="number" min="0" step="0.01" value="${order ? (order.shippingFee != null ? v2(order.shippingFee) : order.productCost == null && Number(order.price) ? v2(order.price) : '') : ''}"></span></label>
       <div class="full money-rows" data-sum></div>
-      </div></section>
-      <section class="af-sec"><h3 class="form-sec"><i>5</i>Notes</h3>
+      </div></details>
+      <details class="af-sec af-fold" data-af-fold="notes"${order?.notes ? ' open' : ''}><summary><h3 class="form-sec"><i>5</i>Notes <small class="af-opt">optional · the client sees these</small></h3></summary>
       <label class="field"><span>Notes <small>the client sees these</small></span><textarea name="notes" maxlength="2000">${esc(order?.notes)}</textarea></label>
-      </section>
+      </details>
       </form>`;
     d.foot.innerHTML = `<button type="submit" form="order-form" class="btn btn-primary" data-submit>${order ? 'Save changes' : 'Add order'}</button><button type="button" class="btn btn-ghost" data-close-drawer>Cancel</button><p class="form-msg foot-msg" data-form-msg role="alert"></p>`;
     const f = $('#order-form'), dest = destinationPicker(f.destination, $('[data-other-country]', f));

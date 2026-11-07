@@ -14,6 +14,8 @@
     const gt = t.closest('[data-go-tab]'); if (gt) { S.tab = gt.dataset.goTab; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
     const gf = t.closest('[data-go-filter]'); if (gf) { S.filter = gf.dataset.goFilter; S.tab = 'orders'; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
     const f = t.closest('[data-filter]'); if (f) { S.filter = f.dataset.filter; renderOrders(); return; }
+    if (t.closest('[data-cx-all]')) { S.cxAll = true; renderClients(); return; }
+    const lm = t.closest('[data-list-more]'); if (lm) { const k = lm.dataset.listMore; S.shown[k].n += LIST_PAGE[k]; (k === 'orders' ? renderOrders : renderClients)(); return; }
     const ea=t.closest('[data-edit-admin]');
     if(ea){
       const x=S.ov.admins.find(a=>a.id===Number(ea.dataset.editAdmin)),row=ea.parentElement;if(!x)return;

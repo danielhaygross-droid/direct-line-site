@@ -84,6 +84,11 @@ html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 
 /* admin New / Edit order form */
 .af{display:grid}.af-sec{padding:4px 0 18px}.af-sec+.af-sec{padding-top:18px;border-top:1px solid var(--line)}
+/* Optional parts of the admin order form fold (7 Nov 2026: shorter screens) */
+.af-fold>summary{display:flex;align-items:flex-start;gap:12px;cursor:pointer;list-style:none}.af-fold>summary::-webkit-details-marker{display:none}
+.af-fold>summary .form-sec{flex:1;margin-bottom:0}.af-fold[open]>summary .form-sec{margin-bottom:12px}
+.af-fold>summary::after{content:'';width:8px;height:8px;margin-top:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);flex:none;transition:transform .15s}
+.af-fold[open]>summary::after{transform:rotate(225deg)}.af-fold:not([open]){padding-bottom:14px}
 .af .form-sec{flex-wrap:wrap;margin-bottom:12px;font-size:15px}.af-opt{flex-basis:100%;margin-top:-4px;color:var(--dim);font-size:12px;font-weight:500}
 .af .note{margin:0;color:var(--muted);font-size:13px}
 @media(max-width:560px){.af .form-grid{grid-template-columns:1fr}}
@@ -110,7 +115,7 @@ details.fold>summary .sec-title{margin:0}
 details.fold>summary::after{content:'';width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin-inline-start:auto;flex:none;transition:transform .15s}
 details.fold[open]>summary::after{transform:rotate(225deg)}
 details.fold[open]>summary{margin-bottom:14px}
-details.fold>summary small{margin-inline-start:auto}
+details.fold>summary small{margin-inline-start:auto}details.fold>summary:has(small)::after{margin-inline-start:0}
 .store-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;font-size:14px}
 .fold-row{border-top:1px solid var(--line);padding:10px 0}.fold-row:first-of-type{border-top:0}
 .fold-row>summary{cursor:pointer}
@@ -145,7 +150,7 @@ details.fold>summary small{margin-inline-start:auto}
 .subtabs button.on{border-color:var(--gold);color:var(--text);background:color-mix(in srgb,var(--gold) 12%,transparent)}
 .store-pick{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted)}.store-pick select{flex:1;max-width:320px;min-height:42px;padding:0 12px;border:1px solid var(--line-2);border-radius:11px;background:var(--surface);color:var(--text);font:inherit;font-size:14px}
 @media(max-width:560px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.gtabs button{font-size:13px}.store-pick select{max-width:none}}
-.kpi-bar{display:flex;justify-content:flex-end;margin:-6px 0 -4px}.kpi-month{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}.kpi-month select{min-height:38px;padding:0 10px;border:1px solid var(--line-2);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;font-size:14px}
+.kpi-month{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}.kpi-month select{min-height:38px;padding:0 10px;border:1px solid var(--line-2);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;font-size:14px}
 /* product photos in the price form: big enough to judge the product; click one for full size */
 .qf-photos{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px}.qf-photo{width:160px;height:160px;object-fit:contain;border:1px solid var(--line);border-radius:14px;background:var(--surface);cursor:zoom-in}
 @media(max-width:560px){.qf-photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.qf-photo{width:100%;height:auto;aspect-ratio:1}}

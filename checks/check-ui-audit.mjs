@@ -209,7 +209,7 @@ try {
     await ui.locator('[data-bulk="clear"]').click(); await settle();
     // Long names / address / link in the order panel, then its photo viewer.
     await ui.locator(`[data-open-order="${longId}"]`).first().click(); await ui.waitForSelector('.drawer.open'); await page.waitForTimeout(700); await run(ui, page, tag, 'admin-order-long');
-    await ui.locator('.drawer.open .pm-photos a').first().click(); await ui.waitForSelector('.pv.open img[src]'); await settle(); await run(ui, page, tag, 'admin-photo-viewer');
+    await ui.locator('[data-fold="op-media"]').evaluate(d => { d.open = true; }); await ui.locator('.drawer.open .pm-photos a').first().click(); await ui.waitForSelector('.pv.open img[src]'); await settle(); await run(ui, page, tag, 'admin-photo-viewer');
     await page.keyboard.press('Escape'); await settle(); await page.keyboard.press('Escape'); await settle();
     // The open claim, opened from the Claims tab.
     await ui.locator('[data-tab=claims]').click(); await settle(); await ui.locator('[data-claim-decision]').first().scrollIntoViewIfNeeded().catch(() => {}); await run(ui, page, tag, 'admin-claim-open');

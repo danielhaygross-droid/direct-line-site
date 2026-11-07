@@ -102,6 +102,7 @@ try {
     await ui.locator('[data-filter="all"]').click(); await ui.locator(`tr[data-open-order="${o.id}"]`).click(); await ui.waitForSelector('[data-set-status]');
     await ui.locator('[data-set-status="pending"]').click(); await page.waitForTimeout(900); assert.equal((await row(o)).status, 'pending', tag + ' back to pending');
     // Fee on this order.
+    await ui.locator('[data-fold="op-fee"]').evaluate(d => { d.open = true; }); // the fee box is folded since 7 Nov 2026
     await ui.locator('[data-fees-form] [name=commission]').fill('5');
     await ui.locator('[data-fees-form] [type=submit]').click(); await page.waitForTimeout(900);
     assert.equal(Number((await row(o)).commission), 5, tag + ' fee on this order');
