@@ -198,6 +198,7 @@ try {
     await f.locator('[name=address1]').fill('Apartment 4417, Building C, 1234 Extraordinarily Long Boulevard Northwest, Springfield, MA 01103, +1 555 123 4567');
     await f.locator('[name=destination]').selectOption('US').catch(() => {});
     await f.locator('[data-link]').first().fill('https://www.etsy.com/listing/1234567890/handmade-personalized-engraved-brass-key-hooks-wall-mounted').catch(() => {});
+    await f.locator('[data-af-fold=bill]').evaluate(d => { d.open = true; }).catch(() => {}); // folded since 7 Nov 2026
     await f.locator('[name=productCost]').fill('12.5').catch(() => {}); await settle();
     await run(ui, page, tag, 'admin-new-order-filled');
     // Add client: the form, then Create with nothing filled in (error message).
