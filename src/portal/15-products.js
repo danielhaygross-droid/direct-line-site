@@ -30,7 +30,8 @@
     const f=S.productFilter,q=(S.productQ||'').trim().toLowerCase();
     const shown=S.products.filter(p=>(f==='all'||p.status===f)&&(!q||[p.name,p.variant,p.link].join(' ').toLowerCase().includes(q)));
     const sorted=sortList(shown,'portal-products',PRODUCT_SORTS);
-    return sorted.length?sorted.map(productRow).join(''):empty('tag',S.products.length?'No products match':'No products yet',S.products.length?'Try another filter or search.':'Send a product for a quote and its price shows up here.');
+    const first=sorted.slice(0,listShown('products',[f,q].join('|')));
+    return sorted.length?first.map(productRow).join('')+listMore('products',first.length,sorted.length):empty('tag',S.products.length?'No products match':'No products yet',S.products.length?'Try another filter or search.':'Send a product for a quote and its price shows up here.');
   }
   function productChips(){const n=k=>k==='all'?S.products.length:S.products.filter(p=>p.status===k).length;return P_FILTERS.map(([k,l])=>`<button type="button" class="chip${S.productFilter===k?' on':''} ${P_TONE[k]||''}" data-pfilter="${k}" aria-pressed="${S.productFilter===k}">${k!=='all'?'<i class="dot"></i>':''}${l} <span>${n(k)}</span></button>`).join('');}
   function viewProducts(){

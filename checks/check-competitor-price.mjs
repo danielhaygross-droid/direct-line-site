@@ -80,7 +80,7 @@ try {
     ctx = await session(admin, width); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=orders]');
     await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter=all]').click(); await ui.locator(`tr[data-open-order="${oid}"]`).first().click();
-    await ui.waitForSelector('.drawer dd'); await page.waitForTimeout(400);
+    await ui.waitForSelector('[data-fold="op-details"]'); await ui.locator('[data-fold="op-details"]').evaluate(d => { d.open = true; }); await ui.waitForSelector('.drawer dd'); await page.waitForTimeout(400);
     assert.match(await ui.locator('.drawer').innerText(), /\$27\.50 on Amazon/, 'admin sees it on the order');
     await ui.locator('.drawer dd', { hasText: '$27.50 on Amazon' }).scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-admin-order.png`) });
     await page.keyboard.press('Escape'); await page.waitForTimeout(300);

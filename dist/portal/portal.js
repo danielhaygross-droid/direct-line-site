@@ -561,9 +561,15 @@
       <form data-bulk-form><div class="po-list">${shipped.map(o => `<label class="po-row"><input type="checkbox" name="id" value="${o.id}"><span class="po-main"><b data-no-i18n>${esc(orderName(o))}</b><small data-no-i18n>${esc(o.buyerName || '')}${o.trackingNumber ? ' · ' + esc(o.trackingNumber) : ''}</small></span></label>`).join('')}</div>
       <div class="form-actions"><button type="submit" class="btn btn-primary" data-bulk-go disabled>Mark as delivered</button><p class="form-msg" data-bulk-msg role="status"></p></div></form></details>`;
   }
+  // Long lists show the first rows, then "Show N more" (Erwin, 7 Nov 2026: shorter screens; 100+ orders made Orders
+  // 22,000 px long on a phone). Search, filters, counts and the Excel file still use every order. S.shown keeps how many
+  // rows a list shows until its filter, search or store changes.
+  const LIST_PAGE = { orders: 30, products: 20 };
+  const listShown = (k, sig) => { const sh = S.shown ||= {}; if (sh[k]?.sig !== sig) sh[k] = { sig, n: LIST_PAGE[k] }; return sh[k].n; };
+  const listMore = (k, shown, n) => n > shown ? `<div class="list-more" data-list-more-bar="${k}"><button type="button" class="btn btn-sm" data-list-more="${k}"><span>Show ${Math.min(LIST_PAGE[k], n - shown)} more</span></button><small class="dim">${shown} of ${n} shown</small></div>` : '';
   function renderOrdersList() {
-    const list = shownOrders();
-    $('[data-orders-list]').innerHTML = list.length ? `${bulkDelivered(list)}<div class="table-wrap">${ordersTable(list)}</div>`
+    const all = shownOrders(), list = all.slice(0, listShown('orders', [S.filter, S.q, S.storeId].join('|')));
+    $('[data-orders-list]').innerHTML = list.length ? `${bulkDelivered(all)}<div class="table-wrap">${ordersTable(list)}</div>${listMore('orders', list.length, all.length)}`
       : S.orders.length ? empty('search', 'No orders match', 'Try another search or status.') : empty('orders', 'No orders yet', 'Add your first order and we’ll take it from there.', '<a class="btn btn-primary" href="#/new">New order</a>');
   }
   function bindOrders() { renderChips(); renderOrdersList(); }
@@ -1216,7 +1222,8 @@
     const f=S.productFilter,q=(S.productQ||'').trim().toLowerCase();
     const shown=S.products.filter(p=>(f==='all'||p.status===f)&&(!q||[p.name,p.variant,p.link].join(' ').toLowerCase().includes(q)));
     const sorted=sortList(shown,'portal-products',PRODUCT_SORTS);
-    return sorted.length?sorted.map(productRow).join(''):empty('tag',S.products.length?'No products match':'No products yet',S.products.length?'Try another filter or search.':'Send a product for a quote and its price shows up here.');
+    const first=sorted.slice(0,listShown('products',[f,q].join('|')));
+    return sorted.length?first.map(productRow).join('')+listMore('products',first.length,sorted.length):empty('tag',S.products.length?'No products match':'No products yet',S.products.length?'Try another filter or search.':'Send a product for a quote and its price shows up here.');
   }
   function productChips(){const n=k=>k==='all'?S.products.length:S.products.filter(p=>p.status===k).length;return P_FILTERS.map(([k,l])=>`<button type="button" class="chip${S.productFilter===k?' on':''} ${P_TONE[k]||''}" data-pfilter="${k}" aria-pressed="${S.productFilter===k}">${k!=='all'?'<i class="dot"></i>':''}${l} <span>${n(k)}</span></button>`).join('');}
   function viewProducts(){
@@ -1290,6 +1297,8 @@
     if (t.closest('[data-menu]')) { document.body.classList.toggle('menu-open'); return; }
     if (t.closest('[data-close-menu]')) { document.body.classList.remove('menu-open'); return; }
     if (t.closest('[data-logout]')) { logout(); return; }
+    const lm = t.closest('[data-list-more]');
+    if (lm) { const k = lm.dataset.listMore; S.shown[k].n += LIST_PAGE[k]; if (k === 'orders') renderOrdersList(); else $('[data-plist]').innerHTML = productListHTML(); return; }
     if (t.closest('[data-lang-toggle]')) { window.DLi18n?.setLang(window.DLi18n.lang === 'he' ? 'en' : 'he'); return; }
     if (t.closest('[data-theme-toggle]')) {
       const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';

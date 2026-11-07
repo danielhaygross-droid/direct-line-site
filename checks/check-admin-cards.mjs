@@ -163,7 +163,7 @@ try {
     // Every other section: no cards and no month picker.
     for (const tab of ['orders', 'clients', 'claims', 'products', 'settings']) {
       await ui.locator(`[data-tab="${tab}"]`).click(); await ui.waitForFunction(t => document.querySelector(`[data-tab="${t}"]`)?.classList.contains('on'), tab);
-      assert.equal(await ui.locator('[data-kpis]').isVisible(), false, `${tag}: no cards on ${tab}`); assert.equal(await ui.locator('.kpi-bar').isVisible(), false, `${tag}: no month picker on ${tab}`);
+      assert.equal(await ui.locator('[data-kpis]').isVisible(), false, `${tag}: no cards on ${tab}`); assert.equal(await ui.locator('[data-kpi-month]').isVisible(), false, `${tag}: no month picker on ${tab}`);
       if (tab === 'orders') await page.screenshot({ path: path.join(out, `${tag}-orders.png`) });
     }
     await ui.locator('[data-tab="overview"]').click(); await ui.waitForSelector('[data-kpis] .stat', { state: 'visible' });

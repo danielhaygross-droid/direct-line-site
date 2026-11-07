@@ -367,13 +367,13 @@
     const [title, line, act] = HEADS[tab] || HEADS.overview;
     // English keeps the gold "&"; Hebrew gets the whole title as one phrase, so it is translated as one.
     const h1 = document.documentElement.lang !== 'he' && title.includes(' & ') ? title.split(' & ').map(esc).join(' <span>&amp;</span> ') : esc(title);
-    const btn = act === 'order' ? `<button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button>` : act === 'client' ? `<button type="button" class="btn btn-primary" data-add-account="client">${ic('users')}Add client</button>` : '';
+    // The month picker sits on the title line of Clients overview (7 Nov 2026: one row less); renderKpis fills it.
+    const btn = tab === 'overview' ? `<label class="kpi-month"><span>Show</span><select data-kpi-month aria-label="Month"></select></label>` : act === 'order' ? `<button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button>` : act === 'client' ? `<button type="button" class="btn btn-primary" data-add-account="client">${ic('users')}Add client</button>` : '';
     return `<div><p class="eyebrow">Direct Line clients</p><h1>${h1}</h1><p>${esc(line)}</p></div>${btn ? `<div class="adm-actions">${btn}</div>` : ''}`;
   }
   function shell() {
     $('#app').innerHTML = `
       <section class="adm-head" data-adm-head>${headHTML(S.tab)}</section>
-      <div class="kpi-bar"><label class="kpi-month"><span>Show</span><select data-kpi-month aria-label="Month"></select></label></div>
       <div class="kpi-wrap" data-kpi-wrap><section class="kpis" data-kpis></section></div>
       <div class="seg" role="tablist" data-main-tabs>${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['claims','Claims'], ['products','Products'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
       <section data-tab-body style="display:grid;gap:14px"></section>`;
@@ -408,9 +408,10 @@
   function renderTab() {
     $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === S.tab); b.setAttribute('aria-selected', String(b.dataset.tab === S.tab)); });
     // The summary cards (and their month picker) belong to Clients overview only (Erwin, 4 Nov 2026), not to every section.
-    for (const el of $$('.kpi-bar, [data-kpis]')) el.style.display = S.tab === 'overview' ? '' : 'none';
+    for (const el of $$('[data-kpis]')) el.style.display = S.tab === 'overview' ? '' : 'none';
     if (S.tab !== 'overview') closeCardWindow(false);
     const head = $('[data-adm-head]'); if (head) head.innerHTML = headHTML(S.tab);
+    if (S.tab === 'overview' && S.ov) renderKpis();
     if(S.tab==='claims'){renderClaims();return;}
     if(S.tab==='products'){renderProducts();return;}
     const body = $('[data-tab-body]');
@@ -526,6 +527,12 @@
   // Not billed yet: no product cost or shipping fee, and no fixed unit quote (quoted orders are billed from the quote).
   const needsCost = o => o.status !== 'cancelled' && o.productCost == null && o.shippingFee == null && o.quotedUnitPrice == null;
   const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'updates' ? newUpdates(o).length > 0 : f === 'followups' ? o.unreadMessages > 0 : f === 'needscost' ? needsCost(o) : f === 'revision' ? ['open', 'offered'].includes(o.revision?.status) : f === 'unpaid' ? window.DLPayOrders.state(o) === 'unpaid' : o.status === f));
+  // Long lists show the first rows, then "Show N more" (Erwin, 7 Nov 2026: shorter screens; 100+ orders made Client orders
+  // 12,000 px long, 38,000 px on a phone). Search, filters, counts and sorting still use every row. S.shown keeps how many
+  // rows a list shows until its filter, search or client changes.
+  const LIST_PAGE = { orders: 50, clients: 20 };
+  const listShown = (k, sig) => { const sh = S.shown ||= {}; if (sh[k]?.sig !== sig) sh[k] = { sig, n: LIST_PAGE[k] }; return sh[k].n; };
+  const listMore = (k, shown, n) => n > shown ? `<div class="panel-more" data-list-more-bar="${k}"><button type="button" class="btn btn-sm" data-list-more="${k}"><span>Show ${Math.min(LIST_PAGE[k], n - shown)} more</span></button><small class="dim">${shown} of ${n} shown</small></div>` : '';
   function renderOrders() {
     freshRead();
     const all = [...S.orders,...S.archivedOrders];
@@ -541,10 +548,11 @@
     const q = S.q.toLowerCase();
     const rows = sortList(inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId), o.itemTitle, o.sku, o.buyerName].join(' ').toLowerCase().includes(q))), 'admin-orders-2', ADMIN_ORDER_SORTS);
     // Bulk edit: only rows that are on screen can stay selected.
-    const shown = new Set(rows.map(o => o.id)); for (const id of [...S.picked]) if (!shown.has(id)) S.picked.delete(id);
-    const archivedView = S.filter === 'archived', allOn = rows.length > 0 && rows.every(o => S.picked.has(o.id));
+    const showN = listShown('orders', [S.filter, S.q, S.client].join('|')), seen = rows.slice(0, showN);
+    const shown = new Set(seen.map(o => o.id)); for (const id of [...S.picked]) if (!shown.has(id)) S.picked.delete(id);
+    const archivedView = S.filter === 'archived', allOn = seen.length > 0 && seen.every(o => S.picked.has(o.id));
     $('[data-list]').innerHTML = rows.length ? `${bulkBar(archivedView, allOn)}<div class="table-wrap"><table class="tbl stack"><thead><tr><th class="pick"></th><th>Client</th><th>Order</th><th>Destination</th><th class="num">Total</th><th>Status</th><th>Messages</th><th class="hide-sm"></th></tr></thead><tbody>
-      ${rows.map(o => `<tr class="click${o.unreadMessages || newUpdates(o).length ? ' is-new' : ''}${S.picked.has(o.id) ? ' picked' : ''}" data-open-order="${o.id}" tabindex="0">
+      ${seen.map(o => `<tr class="click${o.unreadMessages || newUpdates(o).length ? ' is-new' : ''}${S.picked.has(o.id) ? ' picked' : ''}" data-open-order="${o.id}" tabindex="0">
         <td class="pick"><input type="checkbox" data-pick="${o.id}" aria-label="Select ${esc(orderName(o))}"${S.picked.has(o.id) ? ' checked' : ''}></td>
         <td class="wide"><div class="who"><span class="ava">${esc(initials(clientName(o.clientId)))}</span><div><b>${esc(clientName(o.clientId))}</b><small>${esc(fullDate(o.createdAt))}</small></div></div></td>
         <td data-label="Order"><div class="ord-cell">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : '<span class="ord-thumb none" title="No photo">—</span>'}<span class="t-main"><b>${esc(orderName(o))}</b>${o.itemTitle ? `<small>${esc(o.itemTitle)}</small>` : ''}<small class="mono">${esc(o.trackingNumber) || 'No tracking yet'}</small>${updateTags(o)}</span></div></td>
@@ -553,7 +561,7 @@
         <td data-label="Status"><select data-status="${o.id}" aria-label="Status of ${esc(orderName(o))}">${[o.status,...ADMIN_STATUSES.filter(s=>s!==o.status)].map(s => `<option value="${s}"${s === o.status ? ' selected' : ''}>${UI.LABEL[s]}</option>`).join('')}</select>${UI.delayTag(o)}</td>
         <td data-label="Messages">${o.unreadMessages ? `<span class="unread-pill">${ic('chat')}${o.unreadMessages} new</span>` : o.messages ? `<span class="msgs">${ic('chat')}${o.messages}</span>` : '<span class="dim">—</span>'}</td>
         <td class="num hide-sm">${UI.svg(P.chev).replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:var(--dim);stroke-width:2"')}</td></tr>`).join('')}
-      </tbody></table></div>`
+      </tbody></table></div>${listMore('orders', seen.length, rows.length)}`
       : S.orders.length ? empty('No orders here', S.filter === 'followups' ? 'No unread follow-ups. You’re all caught up.' : S.filter === 'updates' ? 'No new updates. You’re all caught up.' : S.filter === 'archived' ? 'No archived orders match this search.' : 'Try another filter or search.')
         : empty('No client orders yet', 'They show up here as soon as a client adds one in their portal. You can also add one for a client.', '<button type="button" class="btn btn-primary" data-new-order>New order</button>');
   }
@@ -647,22 +655,23 @@
     const cxStat = (k, v, note, cls = '') => `<div class="cx-stat ${cls}"><small>${k}</small><b data-no-i18n>${v}</b>${note ? `<em>${note}</em>` : ''}</div>`;
     const cxBox = cx && (cx.count || cx.refunded) ? `<section class="card card-pad cx-box ovw-cx" data-cancelled-all><div class="mc-head"><h3 class="sec-title">Cancelled orders, all clients</h3><span class="muted">${cx.clients.length === 1 ? '1 client' : cx.clients.length + ' clients'}</span></div>
       <div class="cx-stats">${cxStat('Cancelled orders', String(cx.count), cx.paidCount ? `${cx.paidCount} already paid` : '')}${cxStat('Paid for them', money(cx.paid))}${cxStat('Cancellation fees', money(cx.fees), settled ? 'Settled' : '', feesOpen ? 'neg' : '')}${cxStat('Due back to clients', money(cx.dueBack), 'Paid minus all fees')}${cxStat('Refunded', money(cx.refunded))}${cxStat('Credit left', money(leftC / 100), usedC ? `${money(usedC / 100)} used on their bills` : leftC ? 'Counts toward their next orders' : '', leftC > 0 ? 'pos' : '')}</div>
-      <div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Cancelled</th><th class="num">Fees</th><th class="num">Due back</th><th class="num">Refunded</th><th class="num">Credit left</th></tr></thead><tbody>${rows.map(c => `<tr class="click" data-open-client="${c.clientId}" data-client-tab="payments" tabindex="0" title="Open this client's payments"><td class="wide"><b>${esc(c.name)}</b></td><td data-label="Cancelled" class="num">${c.count}</td><td data-label="Fees" class="num">${money(c.fees)}</td><td data-label="Due back" class="num">${money(c.dueBack)}</td><td data-label="Refunded" class="num">${money(c.refunded)}</td><td data-label="Credit left" class="num ${c.st.leftC > 0 ? 'pos' : ''}">${money(c.st.leftC / 100)}${c.st.usedC ? `<small class="cx-used">${money(c.st.usedC / 100)} used</small>` : ''}</td></tr>`).join('')}</tbody></table></div></section>` : '';
+      <div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Cancelled</th><th class="num">Fees</th><th class="num">Due back</th><th class="num">Refunded</th><th class="num">Credit left</th></tr></thead><tbody>${rows.map((c, i) => `<tr class="click" data-open-client="${c.clientId}" data-client-tab="payments"${i >= 5 && !S.cxAll ? ' hidden' : ''} tabindex="0" title="Open this client's payments"><td class="wide"><b>${esc(c.name)}</b></td><td data-label="Cancelled" class="num">${c.count}</td><td data-label="Fees" class="num">${money(c.fees)}</td><td data-label="Due back" class="num">${money(c.dueBack)}</td><td data-label="Refunded" class="num">${money(c.refunded)}</td><td data-label="Credit left" class="num ${c.st.leftC > 0 ? 'pos' : ''}">${money(c.st.leftC / 100)}${c.st.usedC ? `<small class="cx-used">${money(c.st.usedC / 100)} used</small>` : ''}</td></tr>`).join('')}</tbody></table></div>${rows.length > 5 && !S.cxAll ? `<div class="panel-more"><button type="button" class="btn btn-sm" data-cx-all><span>Show all (${rows.length})</span></button></div>` : ''}</section>` : '';
     return cxBox;
   }
   function renderClients() {
     const q = S.cq.toLowerCase(), def = Number(S.ov.settings.commission_per_order);
     const lateIds = lateClientIds(); // red only when an unpaid order is over 14 days old (5 Nov 2026)
-    const list = sortList(S.ov.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q)), 'admin-clients', CLIENT_SORTS);
+    const all = sortList(S.ov.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q)), 'admin-clients', CLIENT_SORTS);
+    const list = all.slice(0, listShown('clients', S.cq));
     $('[data-list]').innerHTML = list.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Orders</th><th class="num">Billed</th><th class="num" title="Billed minus our fee: the supplier's cost">Without our fee</th><th class="num">Paid</th><th class="num">Outstanding</th><th class="num">Our earnings</th><th class="num">Fee / order</th><th>Subscription</th><th>Status</th></tr></thead><tbody>
       ${list.map(c => `<tr class="click" data-open-client="${c.id}" tabindex="0">
         <td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small>${c.pendingTransfers ? `<small>${c.pendingTransfers} transfer confirmation${c.pendingTransfers === 1 ? '' : 's'} waiting</small>` : ''}</div></div></td>
-        <td data-label="Orders" class="num">${c.orders}</td><td data-label="Billed" class="num">${money(c.billed)}</td><td data-label="Without our fee" class="num dim">${money((c.billed || 0) - (c.ourShare || 0))}</td><td data-label="Paid" class="num">${money(c.paid)}</td>
+        <td data-label="Orders" class="num">${c.orders}</td><td data-label="Billed" class="num">${money(c.billed)}</td><td data-label="Without our fee" class="num dim hide-sm">${money((c.billed || 0) - (c.ourShare || 0))}</td><td data-label="Paid" class="num">${money(c.paid)}</td>
         <td data-label="Outstanding" class="num ${c.outstanding > 0 && lateIds.has(c.id) ? 'neg' : ''}"><b><bdi>${money(c.outstanding)}</bdi></b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
-        <td data-label="Fee / order" class="num">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="dim" style="font-size:12px">default</span>' : ''}</td>
+        <td data-label="Fee / order" class="num hide-sm">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="dim" style="font-size:12px">default</span>' : ''}</td>
         <td data-label="Subscription" class="sub-cell">${subPill(c.subscription)}</td>
-        <td data-label="Status">${c.active ? '<span class="st st-delivered">Active</span>' : '<span class="st st-cancelled">Disabled</span>'}</td></tr>`).join('')}
-      </tbody></table></div>${archivedHTML()}` : empty(S.ov.clients.length ? 'No clients match' : 'No clients yet', S.ov.clients.length ? 'Try another search.' : 'Add a client account, then share the username and password with them.', '<button type="button" class="btn btn-primary" data-add-account="client">Add client</button>') + (list.length ? '' : archivedHTML());
+        <td data-label="Status"${c.active ? ' class="hide-sm"' : ''}>${c.active ? '<span class="st st-delivered">Active</span>' : '<span class="st st-cancelled">Disabled</span>'}</td></tr>`).join('')}
+      </tbody></table></div>${listMore('clients', list.length, all.length)}${archivedHTML()}` : empty(S.ov.clients.length ? 'No clients match' : 'No clients yet', S.ov.clients.length ? 'Try another search.' : 'Add a client account, then share the username and password with them.', '<button type="button" class="btn btn-primary" data-add-account="client">Add client</button>') + (list.length ? '' : archivedHTML());
     const slot = $('[data-cancelled-slot]'); if (slot) slot.innerHTML = cancelledBoxHTML();
   }
 
@@ -860,6 +869,9 @@
     return 'https://wa.me/?text=' + encodeURIComponent(text);
   }
   // ---------- side panel: one order ----------
+  // Boxes used now and then fold to one line with a short summary (Erwin, 7 Nov 2026: shorter screens). Open or closed is
+  // remembered in this browser (foldOpen, 11-client-panel.js). Status, tracking, requests and Money stay open.
+  const foldCard = (k, title, sum, body, attrs = '') => `<details class="card card-pad fold" data-fold="${k}"${attrs}${foldOpen(k) ? ' open' : ''}><summary><h3 class="sec-title">${title}</h3><small class="dim">${sum}</small></summary>${body}</details>`;
   let chatCtl = null, events = [];
   function closeChat() { chatCtl?.destroy(); chatCtl = null; }
   function openOrder(id, focus, back) {
@@ -893,8 +905,8 @@
       return;
     }
     info.innerHTML = `
-      <section class="card card-pad">${UI.delayNote(o)}${UI.tracker(o, events)}</section>${UI.activity(events)}
-      <section class="card card-pad" data-d-media><h3 class="sec-title">Product photos &amp; link</h3>${productMedia(o, { removable: true, canAdd: (o.photos || []).length < 8 })}</section>
+      <section class="card card-pad">${UI.delayNote(o)}${UI.tracker(o, events)}</section>
+      ${foldCard('op-media', 'Product photos &amp; link', `${(o.photos || []).length ? `<span>${(o.photos || []).length === 1 ? '1 photo' : o.photos.length + ' photos'}</span>` : '<span>No photo yet</span>'}${o.etsyUrl ? ' · <span>link</span>' : ''}`, productMedia(o, { removable: true, canAdd: (o.photos || []).length < 8 }), ' data-d-media')}
       <section class="card card-pad"><h3 class="sec-title">Update status</h3>
         ${o.status==='cancelled' ? '<p class="note">This order is cancelled. Choose a status to reopen it; its cancellation fee is then removed.</p>' : ''}
         <div class="status-btns">${ADMIN_STATUSES.map(s => `<button type="button" class="t-${s}${s === o.status ? ' on' : ''}" data-set-status="${s}" data-id="${o.id}">${UI.LABEL[s]}</button>`).join('')}${o.status === 'cancellation_requested' ? '' : `<button type="button" class="t-cancelled${o.status === 'cancelled' ? ' on' : ''}"${o.status === 'cancelled' ? '' : ' data-cancel-open aria-expanded="false"'}>${UI.LABEL.cancelled}</button>`}</div>
@@ -902,13 +914,13 @@
           <div class="cancel-row"><label class="field"><span>Cancellation fee (USD) <small>optional</small></span><input name="directCancelFee" type="number" min="0" step="0.01" placeholder="0.00" value="${o.supplierCancelFee ?? ''}"></label><button type="button" class="btn" data-cancel-four-direct>$4</button><button type="button" class="btn btn-danger" data-cancel-direct="${o.id}">Cancel this order</button><button type="button" class="btn btn-ghost" data-cancel-close>Keep the order</button></div></div>`}
         <form class="track-form" data-track-form="${o.id}"><div class="track-fields"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(o.trackingNumber)}" placeholder="e.g. LX123456789CN"></label><label class="field"><span>Courier</span><input name="courier" maxlength="60" list="dl-couriers" value="${esc(o.courier)}" placeholder="e.g. Yanwen"></label><datalist id="dl-couriers">${String(S.ov.settings.couriers || '').split('\n').filter(Boolean).map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>${o.domesticTracking ? `<p class="dom-track"><span>Domestic tracking in China (from the supplier sheet)</span> <b data-no-i18n>${esc(o.domesticTracking)}</b></p>` : ''}<div class="form-actions"><button class="btn" type="submit">Save tracking</button><button type="button" class="btn" data-tracking-update="${o.id}">Tracking update received</button>${o.trackingNumber ? `<a class="btn btn-ghost" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track</a>` : ''}</div></form>
       </section>
-      <section class="card card-pad"><label class="field"><span>Store</span><select data-move-order="${o.id}">${S.stores.filter(s=>s.clientId===o.clientId&&(!s.archived||s.id===o.storeId)).map(s=>`<option value="${s.id}"${s.id===o.storeId?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label></section>
+      ${foldCard('op-store', 'Store', `<span data-no-i18n>${esc(S.stores.find(s => s.id === o.storeId)?.name || '')}</span>`, `<label class="field"><span>Move to another store</span><select data-move-order="${o.id}">${S.stores.filter(s=>s.clientId===o.clientId&&(!s.archived||s.id===o.storeId)).map(s=>`<option value="${s.id}"${s.id===o.storeId?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label>`)}
       ${adminClaimCard(S.claims.find(c=>c.orderId===o.id))}
       ${o.revision && ['open', 'offered'].includes(o.revision.status) ? (r => `<section class="card card-pad rev-admin" data-rev-admin><h3 class="sec-title">Cost revision requested</h3><div class="money-rows"><div><span>Client’s competitor price</span><span><b data-no-i18n>${r.items ? `<bdi dir="ltr">${esc(r.items)}</bdi>` : money(r.competitorPrice)}</b></span></div><div><span>Client pays now</span><span data-no-i18n>${money(o.price)}</span></div>${r.offeredCost != null ? `<div class="total"><span>Supplier’s new cost (sheet)</span><span><b data-no-i18n>${money(r.offeredCost)}</b> <small class="dim">→ <span>client pays</span> <span data-no-i18n>${money(r.offeredCost + (o.commission || 0))}</span></small></span></div>` : '<div><span>Supplier’s new cost</span><span class="dim">Waiting for the supplier in the sheet</span></div>'}</div>${r.offeredCost != null ? `<p class="note rev-why">${r.offeredCost + (o.commission || 0) >= o.price ? 'Not lower than what the client pays now, so it waits for you.' : 'More than half off: check it isn’t a typo before you approve.'}</p>` : '<p class="dim rev-why">A lower cost from the supplier is approved automatically. The supplier can type NO in the sheet if it can’t be lower.</p>'}${r.note ? `<p class="note" data-no-i18n>${esc(r.note)}</p>` : ''}<form class="form-grid rev-answer" data-rev-answer="${o.id}" novalidate><label class="field"><span>New supplier cost (USD) <small>our fee is added</small></span><span class="money"><input name="cost" type="number" min="0" step="0.01" inputmode="decimal" value="${r.offeredCost ?? ''}"></span></label><label class="field"><span>Reply to the client <small>optional</small></span><input name="reply" maxlength="1000"></label><div class="full form-actions"><a class="btn" href="${revisionWhatsApp(o, r)}" target="_blank" rel="noopener" data-rev-wa>${ic('chat')}Tell the supplier on WhatsApp</a><button type="button" class="btn" data-rev-keep="${o.id}">Keep the price</button><button type="submit" class="btn btn-primary">Approve new cost</button></div></form></section>`)(o.revision) : ''}
       ${o.status==='cancellation_requested' ? `<section class="card card-pad"><h3 class="sec-title">Cancellation request</h3><p data-no-i18n>${esc(o.cancellationReason)}</p>${o.supplierCancelFee != null ? `<p class="note cancel-sup"><span>Supplier's cancellation fee (from the sheet)</span>: <b data-no-i18n>${money(o.supplierCancelFee)}</b></p>` : '<p class="note cancel-sup">No cancellation fee from the supplier yet.</p>'}<div class="cancel-row"><label class="field"><span>Cancellation fee (USD)</span><input name="cancellationFee" type="number" min="0" step="0.01" placeholder="0.00" value="${o.supplierCancelFee ?? ''}"></label><button type="button" class="btn" data-cancel-four>$4</button><button type="button" class="btn btn-danger" data-cancel-decision="approve" data-id="${o.id}">Approve cancellation</button><button type="button" class="btn" data-cancel-decision="reject" data-id="${o.id}">Reject cancellation</button></div></section>` : ''}
-      <section class="card card-pad"><h3 class="sec-title">Receipts</h3>${adminInvoiceLinks(invoiceFiles.filter(f=>f.orderIds.includes(o.id)))}${invoiceForm(o.clientId,o.id)}</section>
+      ${(r => foldCard('op-receipts', 'Receipts', r.length ? `<span>${r.length === 1 ? '1 receipt' : r.length + ' receipts'}</span>` : '<span>None yet</span>', adminInvoiceLinks(r) + invoiceForm(o.clientId, o.id)))(invoiceFiles.filter(f => f.orderIds.includes(o.id)))}
       ${o.quotedUnitPrice!=null ? `<section class="card card-pad"><span>Fixed unit quote</span> <b>${money(o.quotedUnitPrice)}</b> × ${o.quantity} = <b>${money(o.price)}</b></section>` : billHTML(o)}
-      <section class="card card-pad"><h3 class="sec-title">Details</h3><dl class="kv">
+      ${foldCard('op-details', 'Details', `<span data-no-i18n>${esc(o.buyerName || '')}</span>${o.destination ? ` · <span>${esc(place(o.destination))}</span>` : ''}`, `<dl class="kv">
         <div><dt>Client</dt><dd><button type="button" class="back" style="margin:0" data-open-client="${o.clientId}">${esc(clientName(o.clientId))}</button></dd></div><div><dt>Order number</dt><dd>${esc(o.orderRef) || '—'}${o.source === 'etsy-csv' ? ' <span class="st" style="--tone:var(--blue);text-transform:none">From Etsy file</span>' : ''}</dd></div>
         <div><dt>Order date</dt><dd>${esc(o.orderDate) || fullDate(o.createdAt)}</dd></div><div><dt>Customer paid</dt><dd>${customerPaid(o)}</dd></div>
         ${o.itemTitle ? `<div class="full"><dt>Product</dt><dd>${esc(o.itemTitle)}</dd></div>` : ''}<div><dt>Quantity</dt><dd>${esc(o.quantity || 1)}</dd></div><div><dt>SKU / listing ID</dt><dd>${esc(o.sku) || '—'}</dd></div>
@@ -921,18 +933,19 @@
         <div><dt>Google Sheet</dt><dd>${o.sheetSyncStatus === 'synced' ? 'Synced' : o.sheetSyncStatus === 'error' ? 'Needs retry' : 'Waiting to sync'}</dd></div>
         ${o.sheetSyncError ? `<div class="full"><dt>Sheet sync note</dt><dd>${esc(o.sheetSyncError)}</dd></div>` : ''}
         ${o.taxNumber ? `<div class="full"><dt>Tax number</dt><dd data-no-i18n>${esc(o.taxNumber)}</dd></div>` : ''}${o.giftMessage ? `<div class="full"><dt>Gift message</dt><dd data-no-i18n style="white-space:pre-line">${esc(o.giftMessage)}</dd></div>` : ''}
-        ${o.notes ? `<div class="full"><dt>Client’s notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl></section>
-      <section class="card card-pad"><h3 class="sec-title">Fee on this order</h3><form class="form-grid" data-fees-form="${o.id}" novalidate>
+        ${o.notes ? `<div class="full"><dt>Client’s notes</dt><dd>${esc(o.notes)}</dd></div>` : ''}</dl>`)}
+      ${foldCard('op-fee', 'Fee on this order', `<span data-no-i18n>${money(o.commission)}</span>`, `<form class="form-grid" data-fees-form="${o.id}" novalidate>
         <label class="field"><span>Fee <small>kept in the client’s price</small></span><span class="money"><input name="commission" type="number" min="0" step="0.01" inputmode="decimal" value="${Number(o.commission||0).toFixed(2)}"></span></label>
         <p class="note full" style="margin:0">Changes only this order. The default fee in Fees &amp; settings and each client’s own fee apply to new orders.</p>
-        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save fee</button><p class="form-msg" data-fees-msg style="margin:0"></p></div></form></section>
+        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save fee</button><p class="form-msg" data-fees-msg style="margin:0"></p></div></form>`)}
       <section class="card card-pad"><h3 class="sec-title">Money</h3><div class="money-rows">
         ${o.supplierCost != null ? `<div><span>Supplier total <span class="dim">(from supplier sheet)</span></span><span>${money(o.supplierCost)}</span></div>` : ''}
         <div><span>Product cost <span class="dim">(fee included)</span></span><span>${money(o.productCost)}</span></div><div><span>Shipping fee</span><span>${money(o.shippingFee)}</span></div>
         <div class="total"><span>Client pays</span><span>${money(o.price)}</span></div>
         <div><span>Payment</span><span>${o.paymentId ? `<span class="pay-tag paid">Paid</span> <small class="dim" data-no-i18n>${esc(window.DLPayOrders.day(o.paidAt))}</small>` : window.DLPayOrders.state(o) === 'unpaid' ? '<span class="pay-tag unpaid">Not paid</span>' : '<span class="dim">No bill yet</span>'}</span></div>${o.priceSource === 'saved' ? '<p class="note" style="margin:6px 0 0">Priced automatically from an earlier order of this client (same store, product, variation, country and quantity). The supplier can change the total cost in the sheet.</p>' : ''}
         <div><span>Customer paid client</span><span>${customerPaid(o)}</span></div><div><span>Client’s profit</span><span class="${o.profit != null && o.profit > 0 ? 'pos' : o.profit != null && o.profit < 0 ? 'neg' : ''}">${needsCost(o) ? 'Pending costs' : o.profit == null ? ((o.currency || 'USD') !== 'USD' && o.earned != null ? '<span class="dim">Not in USD</span>' : '<span class="dim">Needs the Etsy earnings</span>') : money(o.profit)}</span></div></div>
-        <div class="split"><div><small>Fee on this order</small><b>${money(o.commission)}</b></div><div><small>We earn</small><b class="pos">${money(o.ourShare)}</b></div></div></section>`;
+        <div class="split"><div><small>Fee on this order</small><b>${money(o.commission)}</b></div><div><small>We earn</small><b class="pos">${money(o.ourShare)}</b></div></div></section>
+      ${UI.activity(events)}`; // history last: what needs doing comes first (Erwin, 7 Nov 2026)
     bindBill(o);
     d.foot.innerHTML = `<button type="button" class="btn" data-edit-order="${o.id}">${ic('edit')}Edit order</button><button type="button" class="btn" data-open-client="${o.clientId}">Open client</button><button type="button" class="btn btn-danger" data-archive-order="${o.id}">Archive order</button>`;
   }
@@ -960,7 +973,8 @@
   function billHTML(o) {
     const v2 = x => (x != null ? Number(x).toFixed(2) : '');
     const rated = !!RATES[o.destination];
-    return `<section class="card card-pad"><h3 class="sec-title">Bill this order</h3>
+    // Open while the order still needs a cost; once billed it folds to one line (7 Nov 2026: shorter order view).
+    const form = `
       <form class="form-grid bill-form" data-bill-form="${o.id}" novalidate>
         <label class="field"><span>Product type</span><select name="category">${categoryOptions(o.category || 'general')}</select></label>
         <label class="field"><span>Weight (kg)</span><input name="weightKg" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 0.25" value="${o.weightKg ?? ''}"></label>
@@ -970,7 +984,8 @@
         <div class="full calc-out bill-out" data-bill-out></div>
         <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save bill</button><p class="form-msg" data-bill-msg style="margin:0"></p></div>
         ${rated ? '' : `<p class="note full" style="margin:0">No shipping rate saved for ${esc(place(o.destination))} yet — type the shipping fee.</p>`}
-      </form></section>`;
+      </form>`;
+    return needsCost(o) ? `<section class="card card-pad"><h3 class="sec-title">Bill this order</h3>${form}</section>` : foldCard('op-bill', 'Bill this order', `<span>Billed</span> <span data-no-i18n>${money(o.price)}</span>`, form);
   }
   function bindBill(o) {
     const f = $(`[data-bill-form="${o.id}"]`); if (!f) return;
@@ -1335,17 +1350,17 @@
       <label class="field" data-other-country hidden><span>Country name</span><input name="otherCountry" maxlength="60" placeholder="e.g. Sweden"></label>
       <label class="field full"><span>Tax number <small>optional · e.g. Etsy’s IOSS number on the order</small></span><input name="taxNumber" maxlength="300" data-no-i18n value="${esc(order?.taxNumber)}"></label><label class="field full"><span>Gift message <small>optional</small></span><textarea name="giftMessage" maxlength="1000" rows="3" data-no-i18n>${esc(order?.giftMessage)}</textarea></label>
       </div></section>
-      <section class="af-sec"><h3 class="form-sec"><i>4</i>Shipping &amp; bill <small class="af-opt">can be added later with “Bill this order”</small></h3><div class="form-grid">
+      <details class="af-sec af-fold" data-af-fold="bill"${order && (order.trackingNumber || order.productCost != null || order.shippingFee != null || order.weightKg != null) ? ' open' : ''}><summary><h3 class="form-sec"><i>4</i>Shipping &amp; bill <small class="af-opt">optional · can be added later with “Bill this order”</small></h3></summary><div class="form-grid">
       <label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(order?.trackingNumber)}"></label>
       <label class="field"><span>Product type</span><select name="category">${categoryOptions(order?.category || 'general')}</select></label>
       <label class="field"><span>Weight (kg)</span><input name="weightKg" type="number" min="0" step="0.01" value="${order?.weightKg ?? ''}"></label>
       <label class="field"><span>Product cost <small>fee included</small></span><span class="money"><input name="productCost" type="number" min="0" step="0.01" value="${v2(order?.productCost)}"></span></label>
       <label class="field"><span>Shipping fee <small data-quote-hint></small></span><span class="money"><input name="price" type="number" min="0" step="0.01" value="${order ? (order.shippingFee != null ? v2(order.shippingFee) : order.productCost == null && Number(order.price) ? v2(order.price) : '') : ''}"></span></label>
       <div class="full money-rows" data-sum></div>
-      </div></section>
-      <section class="af-sec"><h3 class="form-sec"><i>5</i>Notes</h3>
+      </div></details>
+      <details class="af-sec af-fold" data-af-fold="notes"${order?.notes ? ' open' : ''}><summary><h3 class="form-sec"><i>5</i>Notes <small class="af-opt">optional · the client sees these</small></h3></summary>
       <label class="field"><span>Notes <small>the client sees these</small></span><textarea name="notes" maxlength="2000">${esc(order?.notes)}</textarea></label>
-      </section>
+      </details>
       </form>`;
     d.foot.innerHTML = `<button type="submit" form="order-form" class="btn btn-primary" data-submit>${order ? 'Save changes' : 'Add order'}</button><button type="button" class="btn btn-ghost" data-close-drawer>Cancel</button><p class="form-msg foot-msg" data-form-msg role="alert"></p>`;
     const f = $('#order-form'), dest = destinationPicker(f.destination, $('[data-other-country]', f));
@@ -1518,6 +1533,8 @@
     const gt = t.closest('[data-go-tab]'); if (gt) { S.tab = gt.dataset.goTab; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
     const gf = t.closest('[data-go-filter]'); if (gf) { S.filter = gf.dataset.goFilter; S.tab = 'orders'; renderTab(); tell({ type: 'dl-tab-changed', tab: S.tab }); return; }
     const f = t.closest('[data-filter]'); if (f) { S.filter = f.dataset.filter; renderOrders(); return; }
+    if (t.closest('[data-cx-all]')) { S.cxAll = true; renderClients(); return; }
+    const lm = t.closest('[data-list-more]'); if (lm) { const k = lm.dataset.listMore; S.shown[k].n += LIST_PAGE[k]; (k === 'orders' ? renderOrders : renderClients)(); return; }
     const ea=t.closest('[data-edit-admin]');
     if(ea){
       const x=S.ov.admins.find(a=>a.id===Number(ea.dataset.editAdmin)),row=ea.parentElement;if(!x)return;

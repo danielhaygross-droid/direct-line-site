@@ -198,6 +198,7 @@ try {
     await f.locator('[name=address1]').fill('Apartment 4417, Building C, 1234 Extraordinarily Long Boulevard Northwest, Springfield, MA 01103, +1 555 123 4567');
     await f.locator('[name=destination]').selectOption('US').catch(() => {});
     await f.locator('[data-link]').first().fill('https://www.etsy.com/listing/1234567890/handmade-personalized-engraved-brass-key-hooks-wall-mounted').catch(() => {});
+    await f.locator('[data-af-fold=bill]').evaluate(d => { d.open = true; }).catch(() => {}); // folded since 7 Nov 2026
     await f.locator('[name=productCost]').fill('12.5').catch(() => {}); await settle();
     await run(ui, page, tag, 'admin-new-order-filled');
     // Add client: the form, then Create with nothing filled in (error message).
@@ -209,7 +210,7 @@ try {
     await ui.locator('[data-bulk="clear"]').click(); await settle();
     // Long names / address / link in the order panel, then its photo viewer.
     await ui.locator(`[data-open-order="${longId}"]`).first().click(); await ui.waitForSelector('.drawer.open'); await page.waitForTimeout(700); await run(ui, page, tag, 'admin-order-long');
-    await ui.locator('.drawer.open .pm-photos a').first().click(); await ui.waitForSelector('.pv.open img[src]'); await settle(); await run(ui, page, tag, 'admin-photo-viewer');
+    await ui.locator('[data-fold="op-media"]').evaluate(d => { d.open = true; }); await ui.locator('.drawer.open .pm-photos a').first().click(); await ui.waitForSelector('.pv.open img[src]'); await settle(); await run(ui, page, tag, 'admin-photo-viewer');
     await page.keyboard.press('Escape'); await settle(); await page.keyboard.press('Escape'); await settle();
     // The open claim, opened from the Claims tab.
     await ui.locator('[data-tab=claims]').click(); await settle(); await ui.locator('[data-claim-decision]').first().scrollIntoViewIfNeeded().catch(() => {}); await run(ui, page, tag, 'admin-claim-open');
