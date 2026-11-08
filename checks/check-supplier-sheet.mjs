@@ -72,6 +72,8 @@ globalThis.fetch = (real => async (url, opt = {}) => {
       else if (kind === 'addSheet') { const p = a.properties; if (p.sheetId != null && byId(p.sheetId)) throw new Error('id in use'); const t = addTab(p.title, p.sheetId ?? nextId++); t.cols = p.gridProperties?.columnCount; replies.push({ addSheet: { properties: { sheetId: t.sheetId, title: p.title } } }); continue; }
       else if (kind === 'createDeveloperMetadata') meta.push({ metadataId: meta.length + 1, ...a.developerMetadata });
       else if (kind === 'updateDeveloperMetadata') { const l = a.dataFilters[0].developerMetadataLookup; for (const m of meta) if (m.metadataId === l.metadataId || m.metadataKey === l.metadataKey) m.metadataValue = a.developerMetadata.metadataValue; }
+      // A new row (8 Nov 2026): inserted inside the data rows, so rules, filter and protection simply grow.
+      else if (kind === 'insertDimension' && a.range.dimension === 'ROWS') { const [, s] = byId(a.range.sheetId); while (s.grid.length < a.range.startIndex) s.grid.push([]); s.grid.splice(a.range.startIndex, 0, ...Array.from({ length: a.range.endIndex - a.range.startIndex }, () => [])); }
       else if (kind === 'appendDimension') { const [, s] = byId(a.sheetId); s.cols = (s.cols ?? 35) + a.length; }
       else if (kind === 'deleteDimension') { const [, s] = byId(a.range.sheetId); if (a.range.dimension === 'ROWS') s.grid.splice(a.range.startIndex, a.range.endIndex - a.range.startIndex); }
       replies.push({});
@@ -350,7 +352,7 @@ await DB.prepare("UPDATE portal_settings SET value='13' WHERE key='supplier_shee
 const ids0 = allRows.map(r => Number(r[31])), st = new Map();
 for (const id of ids0) st.set(id, await order(id));
 later(); const sw = await cron(); assert.equal(sw.ok, true, JSON.stringify(sw));
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '20');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '21');
 for (const id of ids0) { const o = st.get(id), want = o.status === 'cancelled' ? CANCELLED_TAB : ['shipped', 'delivered'].includes(o.status) && o.tracking_number ? SHIPPED_TAB : main(); assert.equal(where(id)?.[0], want, 'order ' + id + ' in ' + want); assert.equal(count(id), 1); }
 for (const t of TABS()) { const order0 = Object.entries(idsIn(t)).sort((a, b) => a[1] - b[1]).map(([id]) => st.get(Number(id))); assert.deepEqual(order0.map(o => o.id), [...order0].sort((a, b) => b.created_at - a.created_at || b.id - a.id).map(o => o.id), t + ': newest on top'); }
 assert.ok(sheets.get(main()).grid.some(r => r?.[0] === '2026-10-11'), 'a row without an order id stays in the supplier tab');
@@ -368,7 +370,7 @@ const byOrder0 = Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t))
 for (const t of TABS()) { const s = sheets.get(t); s.grid = s.grid.map((r, i) => i === 3 ? r : to18(r)); assert.deepEqual(enRow(s.grid[4]), HEADERS_18); }
 await DB.prepare("UPDATE portal_settings SET value='18' WHERE key='supplier_sheet_layout'").run();
 const costs18 = JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results); later(); const sw19 = await cron(); assert.equal(sw19.ok, true, JSON.stringify(sw19));
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '20');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '21');
 for (const t of TABS()) {
   const g = sheets.get(t).grid; assert.deepEqual(enRow(g[4]), HEADERS, t + ': Cost per product in Q, next to Total cost');
   assert.equal(enRow(g[4])[16], 'Cost per product (USD)'); assert.equal(enRow(g[4])[22], 'Client paid', t + ': Client paid moved to W');
@@ -406,6 +408,29 @@ console.log('PASS layout 19: Cost per product moved next to Total cost on all ta
   // The checks below expect the rows the switch left waiting (they force full minute checks).
   for (const id of waiting0) await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=?").bind(id).run();
   console.log('PASS layout 20: AJ Status changed on all tabs, every row has its date, a status change updates it');
+}
+
+// ---------- layout 21 (8 Nov 2026): Google's append put moved rows on top with their cells shifted right ----------
+{
+  const before = (await DB.prepare('SELECT id, sheet_sync_status FROM client_orders').all()).results;
+  const ids0 = TABS().map(t => Object.keys(idsIn(t)).sort().join(','));
+  const g = sheets.get(main()).grid, real = g[FIRST_ROW - 1];
+  const shifted = n => [...Array(n).fill(''), ...real].slice(0, 36);
+  g.splice(FIRST_ROW - 1, 0, shifted(35), shifted(22)); // like live rows 6-7: the row from AJ on, and from W on
+  await DB.prepare("UPDATE portal_settings SET value='20' WHERE key='supplier_sheet_layout'").run();
+  await cron();
+  assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '21');
+  for (const t of TABS()) for (const r of sheets.get(t).grid.slice(FIRST_ROW - 1)) assert.ok(!r || r[0] || r[1] || !r.some(x => String(x ?? '').trim()), t + ': no row with A and B empty is left');
+  assert.deepEqual(TABS().map(t => Object.keys(idsIn(t)).sort().join(',')), ids0, 'every order still in its tab, once');
+  // A moving row is written from A: cancel an order and its row on top of Cancelled starts with the date and order.
+  const pick = Number(Object.keys(idsIn(main()))[0]);
+  assert.equal((await call('/orders/' + pick, 'PUT', { status: 'cancelled' }, admin)).status, 200); await settle();
+  const top = sheets.get(CANCELLED_TAB).grid[FIRST_ROW - 1];
+  assert.equal(Number(top[31]), pick, 'the cancelled order is on top of Cancelled'); assert.ok(top[0] && top[1], 'with its date (A) and order (B) in place');
+  assert.equal(idsIn(main())[pick], undefined, 'and gone from Orders');
+  assert.equal((await call('/orders/' + pick, 'PUT', { status: 'processing' }, admin)).status, 200); await settle();
+  for (const o of before) await DB.prepare('UPDATE client_orders SET sheet_sync_status=? WHERE id=?').bind(o.sheet_sync_status, o.id).run();
+  console.log('PASS layout 21: broken rows (A and B empty) removed, every order kept; a moved row is written from A');
 }
 
 // ---------- Billing tab (Ada, 1 Nov 2026): one list of all orders, paid apart from not paid, formulas only ----------

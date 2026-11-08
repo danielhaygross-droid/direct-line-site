@@ -35,7 +35,11 @@ async function fakeFetch(url, opts = {}) {
   if (path.startsWith(':batchUpdate')) {
     // Columns (layout 19): every row of that tab moves its cells, like Google does.
     for (const r of body.requests) if (r.moveDimension?.source.dimension === 'COLUMNS') { const { sheetId, startIndex: f, endIndex: e } = r.moveDimension.source, d = r.moveDimension.destinationIndex, t = sheetId === WQ_ID ? 'Work Queue' : [...new Set(['Work Queue', ...tabs.keys()])][sheetId - 100]; for (const row of grid(t)) if (row) { while (row.length < e) row.push(''); const cut = row.splice(f, e - f); row.splice(d > f ? d - cut.length : d, 0, ...cut); } }
-    for (const r of body.requests) if (r.insertDimension) {
+    for (const r of body.requests) if (r.insertDimension?.range.dimension === 'ROWS') { // a new supplier row (8 Nov 2026)
+      const { sheetId, startIndex, endIndex } = r.insertDimension.range, g = grid(sheetId === WQ_ID ? 'Work Queue' : [...new Set(['Work Queue', ...tabs.keys()])][sheetId - 100]);
+      while (g.length < startIndex) g.push([]); g.splice(startIndex, 0, ...Array.from({ length: endIndex - startIndex }, () => []));
+    }
+    for (const r of body.requests) if (r.insertDimension && r.insertDimension.range.dimension !== 'ROWS') {
       const { sheetId, startIndex, endIndex } = r.insertDimension.range, title = sheetId === WQ_ID ? 'Work Queue' : [...new Set(['Work Queue', ...tabs.keys()])][sheetId - 100];
       for (const row of grid(title)) if (row) row.splice(startIndex, 0, ...Array(endIndex - startIndex).fill(''));
       calls.push('insert ' + startIndex);
