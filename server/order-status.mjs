@@ -11,7 +11,12 @@ export const STATUS_SCHEMA = [
   // Our fee on a cancelled order (Erwin, 8 Nov 2026: choose per order in the cancel window): 'auto' = kept only if the
   // client paid the order (the rule since 29 Oct), 'yes' = charged even if not paid, 'no' = not charged even if paid.
   "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS keep_fee TEXT NOT NULL DEFAULT 'auto'",
+  // When the status last changed (Erwin, 8 Nov 2026: sort lists and the sheet by it). Older orders: their last status
+  // change in the history, else when they were added. Empty on a new order = its creation time (statusAt).
+  'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS status_changed_at INTEGER',
+  "UPDATE client_orders o SET status_changed_at=(SELECT MAX(e.created_at) FROM order_events e WHERE e.order_id=o.id AND e.kind='status') WHERE o.status_changed_at IS NULL AND EXISTS (SELECT 1 FROM order_events e WHERE e.order_id=o.id AND e.kind='status')",
 ];
+export const statusAt = o => Number(o.status_changed_at ?? o.created_at) || 0;
 export const KEEP_FEE = ['auto', 'yes', 'no'];
 export const ADMIN_STATUS_TARGETS=['pending','processing','shipped','delivered','cancelled'];
 // No fee typed by the admin: the supplier's cancellation fee from the sheet (AH), if any (Erwin, 26 Oct 2026).
@@ -68,7 +73,7 @@ export async function changeStatus(DB, order, action, body, admin, actorName) {
   // The fee is cast to NUMERIC: a bare ?>0 made Postgres read it as an integer, so fees with cents (6.50) failed.
   // Status, audit event and fee are one statement: retries/races cannot charge twice or lose the audit entry.
   const row=await DB.prepare(`WITH changed AS (
-    UPDATE client_orders SET status=?,cancellation_previous_status=?,cancellation_reason=?,
+    UPDATE client_orders SET status=?,cancellation_previous_status=?,cancellation_reason=?,status_changed_at=?,
       delivered_at=CASE WHEN ?='delivered' THEN COALESCE(delivered_at,?) WHEN ? IN ('pending','processing','shipped') THEN NULL ELSE delivered_at END,
       last_tracking_update_at=CASE WHEN ?='shipped' THEN ? ELSE last_tracking_update_at END,
       edit_locked=edit_locked OR ? IN ('processing','shipped','delivered','cancelled'),updated_at=? WHERE id=? AND status=? RETURNING *),
@@ -79,7 +84,7 @@ export async function changeStatus(DB, order, action, body, admin, actorName) {
     fee AS (INSERT INTO client_balance_adjustments(client_id,order_id,kind,amount,note,created_at)
       SELECT client_id,id,'cancellation_fee',?,'Cancellation fee',? FROM changed WHERE CAST(? AS NUMERIC)>0
       ON CONFLICT(order_id,kind) DO UPDATE SET amount=EXCLUDED.amount,created_at=EXCLUDED.created_at)
-    SELECT * FROM changed`).bind(change.status,change.previous,change.reason,change.status,t,change.status,change.status,t,change.status,t,order.id,order.status,
+    SELECT * FROM changed`).bind(change.status,change.previous,change.reason,t,change.status,t,change.status,change.status,t,change.status,t,order.id,order.status,
       actor,change.status,t,actor,decision,t,decision,change.fee,t,change.fee).first();
   if(!row)throw new Error('The order changed. Refresh and try again.');
   // Our fee: the admin's choice when cancelling; back to the usual rule when the order is reopened.

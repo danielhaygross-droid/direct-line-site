@@ -10,6 +10,7 @@
   const ORDER_SORTS = {
     updates: ['Updates first', (a, b) => lastNewNote(b) - lastNewNote(a) || bySort.newest(a, b)],
     newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
+    changed: ['Status changed: newest', bySort.changed], changed_old: ['Status changed: oldest', bySort.changedOld],
     total_desc: ['Total: high to low', bySort.num(o => o.price, true)], total_asc: ['Total: low to high', bySort.num(o => o.price)],
     status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
     revision: ['Cost revision first', bySort.revision],
@@ -507,7 +508,7 @@
     return seen.size ? `<span class="upd-tags">${[...seen].map(([label, y]) => `<span class="upd-tag t-${y.tone}">${esc(label)}${y.n > 1 ? `<span data-no-i18n> ×${y.n}</span>` : ''}</span>`).join('')}</span>` : '';
   }
   function ordersTable(list, compact) {
-    const fresh = unreadOrderIds();
+    const fresh = unreadOrderIds(), byChanged = window.DL.sortKey('portal-orders-2', ORDER_SORTS).startsWith('changed'); // date under the status
     return `<table class="tbl stack"><thead><tr><th>Order</th><th>Customer</th><th>Store</th>${compact ? '' : '<th>Destination</th><th>Tracking</th>'}<th class="num" title="What you earned on Etsy after Etsy’s fees">Earned</th><th class="num" title="What you pay Direct Line">Cost</th><th class="num" title="Earned minus cost">Profit</th><th>Status</th><th class="hide-sm"></th></tr></thead><tbody>
       ${list.map(o => `<tr class="click${fresh.has(o.id) ? ' is-new' : ''}" data-open-order="${o.id}" tabindex="0">
         <td class="wide" data-sort-value="${Number(o.createdAt) || 0}"><div class="ord-ref">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : `<span class="ord-ic t-${o.status}">${ic('orders')}</span>`}<span class="t-main"><b>${esc(orderName(o))}${fresh.has(o.id) ? '<span class="dot-new" title="Updated"></span>' : ''}</b><small title="${esc(window.DL.displayTime(o.createdAt))}">${esc(fullDate(o.createdAt))}</small>${updateTags(o)}</span></div></td>
@@ -517,7 +518,7 @@
         <td data-label="Earned" class="num${earnedOf(o) == null ? ' empty-sm' : ''}">${earnedCell(o)}</td>
         <td data-label="Cost" class="num">${o.status === 'cancelled' ? '<span class="dim">—</span>' : !o.priced ? '<span class="dim">Pending</span>' : `<b>${money(o.price)}</b>`}${window.DLPayOrders.tag(o, S.adjustments, true)}</td>
         <td data-label="Profit" class="num ${profitOf(o) > 0 ? 'pos' : profitOf(o) < 0 ? 'neg' : ''}${profitOf(o) == null ? ' empty-sm' : ''}">${profitCell(o)}</td>
-        <td data-label="Status" data-sort-value="${STATUSES.indexOf(o.status)} ${o.status}">${UI.pill(o.status)}${UI.delayTag(o)}${UI.revTag(o)}</td>
+        <td data-label="Status" data-sort-value="${STATUSES.indexOf(o.status)} ${o.status}">${UI.pill(o.status)}${byChanged ? `<small class="st-when" data-no-i18n>${window.DL.shortTime(o.statusChangedAt || o.createdAt)}</small>` : ''}${UI.delayTag(o)}${UI.revTag(o)}</td>
         <td class="num hide-sm">${o.messages ? `<span class="msg-count${o.unreadMessages ? ' unread' : ''}" title="Messages">${ic('chat')}${o.unreadMessages || o.messages}</span> ` : ''}${UI.svg(P.chev).replace('<svg', '<svg class="chev"')}</td>
       </tr>`).join('')}</tbody></table>`;
   }

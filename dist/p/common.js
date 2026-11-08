@@ -436,8 +436,12 @@
       newest: ['Newest first', (a, b) => (b.id || 0) - (a.id || 0)], oldest: ['Oldest first', (a, b) => (a.id || 0) - (b.id || 0)],
     },
   };
+  // Status changed (Erwin, 8 Nov 2026): when the order's status last changed (its creation if it never changed).
+  const statusAt = o => Number(o.statusChangedAt || o.createdAt) || 0;
   const bySort = {
     revision: (a, b) => revRank(a) - revRank(b) || bySort.newest(a, b),
+    changed: (a, b) => statusAt(b) - statusAt(a) || bySort.newest(a, b),
+    changedOld: (a, b) => statusAt(a) - statusAt(b) || bySort.oldest(a, b),
     newest: (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0) || (b.id || 0) - (a.id || 0),
     oldest: (a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0) || (a.id || 0) - (b.id || 0),
     num: (get, desc) => (a, b) => { const x = get(a), y = get(b), nx = x == null || x === '' || Number.isNaN(Number(x)), ny = y == null || y === '' || Number.isNaN(Number(y)); return nx !== ny ? (nx ? 1 : -1) : nx ? 0 : desc ? Number(y) - Number(x) : Number(x) - Number(y); },

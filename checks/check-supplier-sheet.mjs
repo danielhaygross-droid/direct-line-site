@@ -350,7 +350,7 @@ await DB.prepare("UPDATE portal_settings SET value='13' WHERE key='supplier_shee
 const ids0 = allRows.map(r => Number(r[31])), st = new Map();
 for (const id of ids0) st.set(id, await order(id));
 later(); const sw = await cron(); assert.equal(sw.ok, true, JSON.stringify(sw));
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '19');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '20');
 for (const id of ids0) { const o = st.get(id), want = o.status === 'cancelled' ? CANCELLED_TAB : ['shipped', 'delivered'].includes(o.status) && o.tracking_number ? SHIPPED_TAB : main(); assert.equal(where(id)?.[0], want, 'order ' + id + ' in ' + want); assert.equal(count(id), 1); }
 for (const t of TABS()) { const order0 = Object.entries(idsIn(t)).sort((a, b) => a[1] - b[1]).map(([id]) => st.get(Number(id))); assert.deepEqual(order0.map(o => o.id), [...order0].sort((a, b) => b.created_at - a.created_at || b.id - a.id).map(o => o.id), t + ': newest on top'); }
 assert.ok(sheets.get(main()).grid.some(r => r?.[0] === '2026-10-11'), 'a row without an order id stays in the supplier tab');
@@ -361,20 +361,20 @@ console.log('PASS one-time switch: three tabs, every order in exactly one, newes
 // ---------- layout 19 (Erwin, 30 Oct 2026): Cost per product moves from AI to Q, next to Total cost ----------
 // The sheet as it was on 30 Oct (layout 18): Cost per product in AI on all three tabs.
 const { HEADERS_18 } = await import('../server/supplier-sheet.mjs');
-const to18 = r => { if (!r) return r; const x = [...r]; while (x.length < 35) x.push(''); const [items] = x.splice(16, 1); x.splice(34, 0, items); return x; };
+const to18 = r => { if (!r) return r; const x = [...r]; while (x.length < 35) x.push(''); x.length = 35; const [items] = x.splice(16, 1); x.splice(34, 0, items); return x; };
 const multi = TABS().map(t => [t, Object.keys(idsIn(t))[0]]).find(([, id]) => id);
 sheets.get(multi[0]).grid[idsIn(multi[0])[multi[1]]][16] = '27.9, 21.9, 31.9';
-const byOrder0 = Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r])])));
+const byOrder0 = Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r]?.slice(0, 35))])));
 for (const t of TABS()) { const s = sheets.get(t); s.grid = s.grid.map((r, i) => i === 3 ? r : to18(r)); assert.deepEqual(enRow(s.grid[4]), HEADERS_18); }
 await DB.prepare("UPDATE portal_settings SET value='18' WHERE key='supplier_sheet_layout'").run();
 const costs18 = JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results); later(); const sw19 = await cron(); assert.equal(sw19.ok, true, JSON.stringify(sw19));
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '19');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '20');
 for (const t of TABS()) {
   const g = sheets.get(t).grid; assert.deepEqual(enRow(g[4]), HEADERS, t + ': Cost per product in Q, next to Total cost');
   assert.equal(enRow(g[4])[16], 'Cost per product (USD)'); assert.equal(enRow(g[4])[22], 'Client paid', t + ': Client paid moved to W');
   assert.match(String(g[3][22]), /COUNTIF\(INDIRECT\("W6:W"\),"Not paid"\)/, t + ': row 4 counts Client paid in W'); assert.match(String(g[3][20]), /INDIRECT\("U6:U"\)/, t + ': delayed count above Delayed? (U)');
 }
-const byOrder1 = Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r])])));
+const byOrder1 = Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r]?.slice(0, 35))])));
 assert.deepEqual(byOrder1, byOrder0, 'every row is exactly as before the switch (each cell moved with its column)');
 assert.equal(sheets.get(multi[0]).grid[idsIn(multi[0])[multi[1]]][16], '27.9, 21.9, 31.9', 'the supplier’s cost per product moved with it');
 assert.equal(JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results), costs18, 'no cost or tracking changed by the switch');
@@ -382,6 +382,31 @@ const again19 = await cron(); assert.equal(again19.ok, true); for (const t of TA
 assert.equal((await order(Number(multi[1]))).item_costs, '27.9, 21.9, 31.9', 'read from Q after the switch');
 for (const t of TABS()) assert.ok((sheets.get(t).rules || []).some(v => v.range.startColumnIndex === 16 && v.range.endColumnIndex === 17 && !v.rule), t + ': no number rule on Cost per product (Q)');
 console.log('PASS layout 19: Cost per product moved next to Total cost on all tabs, every row kept, no number rule on Q');
+
+// ---------- layout 20 (Erwin, 8 Nov 2026): AJ Status changed, written by the website on every row ----------
+{
+  const { statusDate } = await import('../server/supplier-sheet.mjs');
+  const waiting0 = ((await DB.prepare("SELECT id FROM client_orders WHERE sheet_sync_status<>'synced'").all()).results || []).map(r => Number(r.id));
+  // Rows are rewritten 4 at a time (RETRY_BATCH); run the retries until every row has its date.
+  for (let k = 0; k < 10 && (await DB.prepare("SELECT COUNT(*) AS n FROM client_orders WHERE sheet_sync_status<>'synced'").first()).n > 0; k++) {
+    await DB.prepare("DELETE FROM portal_settings WHERE key='sheet_retry_until'").run(); await DB.prepare('UPDATE client_orders SET sheet_next_try=0').run(); later(); await cron();
+  }
+  for (const t of TABS()) {
+    assert.equal(enRow(sheets.get(t).grid[4])[35], 'Status changed', t + ': AJ header');
+    for (const [id, r] of Object.entries(idsIn(t))) { const o = await order(Number(id)); assert.equal(sheets.get(t).grid[r][35], statusDate(o), t + ': AJ = when the status last changed'); assert.match(statusDate(o), /^20\d\d-\d\d-\d\d \d\d:\d\d$/); }
+  }
+  // A status change updates AJ (the time moves on).
+  const pick = Object.keys(idsIn(main()))[0], before = await order(Number(pick));
+  await DB.prepare('UPDATE client_orders SET status_changed_at=COALESCE(status_changed_at, created_at)-86400*3 WHERE id=?').bind(Number(pick)).run();
+  const old = statusDate(await order(Number(pick)));
+  const next = before.status === 'processing' ? 'pending' : 'processing';
+  assert.equal((await call('/orders/' + pick, 'PUT', { status: next }, admin)).status, 200); await settle();
+  const now = await order(Number(pick)), where = TABS().find(t => idsIn(t)[pick] != null);
+  assert.notEqual(statusDate(now), old, 'status_changed_at moved on'); assert.equal(sheets.get(where).grid[idsIn(where)[pick]][35], statusDate(now), 'AJ follows the change');
+  // The checks below expect the rows the switch left waiting (they force full minute checks).
+  for (const id of waiting0) await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE id=?").bind(id).run();
+  console.log('PASS layout 20: AJ Status changed on all tabs, every row has its date, a status change updates it');
+}
 
 // ---------- Billing tab (Ada, 1 Nov 2026): one list of all orders, paid apart from not paid, formulas only ----------
 const { BILLING_TAB, BILLING_HEADERS, billingCells } = await import('../server/supplier-sheet.mjs');
@@ -574,7 +599,7 @@ console.log('PASS cost revisions in the sheet: orange / purple / green, lower ap
   const n0 = (sheets.get(GUIDE_TAB).prot || []).length; later(); await cron(); assert.equal((sheets.get(GUIDE_TAB).prot || []).length, n0, 'done once');
 }
 console.log('PASS English + Chinese: headers, help, row 4, Billing, Product Quotes, Guide tab, 不能降价');
-for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 35, t + ': the filter covers A-AI');
+for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 36, t + ': the filter covers A-AJ');
 const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 22))])));
 const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);
 const before0 = supplierPart(), costs0 = await costs();

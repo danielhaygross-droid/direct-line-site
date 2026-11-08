@@ -10,6 +10,7 @@
   const rank = (list, k) => { const i = list.indexOf(k); return i < 0 ? list.length : i; };
   const ORDER_SORTS = {
     newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
+    changed: ['Status changed: newest', bySort.changed], changed_old: ['Status changed: oldest', bySort.changedOld],
     total_desc: ['Total: high to low', bySort.num(o => o.price, true)], total_asc: ['Total: low to high', bySort.num(o => o.price)],
     status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
     revision: ['Cost revision first', bySort.revision],

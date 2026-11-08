@@ -11,7 +11,7 @@ export const ZH = {
   'Tracking number': '运单号', 'Courier': '快递公司', 'Shipping status': '发货状态', 'Delayed?': '是否延迟？', 'Delay reason': '延迟原因',
   'Client paid': '客户付款', 'Photo 2': '图片 2', 'Photo 3': '图片 3', 'Photo 4': '图片 4', 'Photo 5': '图片 5', 'Photo 6': '图片 6',
   'Photo 7': '图片 7', 'Photo 8': '图片 8', 'More product links': '更多商品链接', 'Order ID': '订单 ID', 'Client ID': '客户 ID',
-  'Domestic Express Tracking Number': '国内快递单号', 'Cancellation fee (USD)': '取消费（美元）',
+  'Domestic Express Tracking Number': '国内快递单号', 'Cancellation fee (USD)': '取消费（美元）', 'Status changed': '状态更新时间',
   'Paid for it (USD)': '已付金额（美元）', 'Refund (USD)': '退款（美元）',
   'Requested': '询价日期', 'Request': '编号', 'Product name': '商品名称', 'Variation / notes': '款式 / 备注', 'Expected per month': '预计每月数量',
   'Price per item (USD)': '单价（美元）', 'Shipping per order (USD)': '每单运费（美元）', 'Available?': '有货吗？', 'Supplier note': '供应商备注',

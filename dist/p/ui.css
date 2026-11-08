@@ -268,6 +268,7 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 /* Customer data typed into forms (names, addresses, notes) can be English or Hebrew: lay out each line by its own text direction. */
 .field :is(input,textarea):is([name=buyerName],[name=address1],[name=variant],[name=notes],[name=sku],[name=orderRef],[name=otherCountry]){unicode-bidi:plaintext}
 
+.st-when{display:block;margin-top:4px;font-size:12px;color:var(--muted,#6b6b6b);white-space:nowrap}
 .list-more{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;padding:14px 16px}
 .act-more{margin-top:12px}.act-more>summary{cursor:pointer;color:var(--blue);font-size:13px;font-weight:600;min-height:32px;display:inline-flex;align-items:center}.act-more[open]>summary{margin-bottom:12px}
 .order-activity{list-style:none;padding:0;margin:0;display:grid;gap:12px}.order-activity li{display:grid;gap:3px;overflow-wrap:anywhere}.order-activity span,.order-activity time{font-size:12px;color:var(--muted)}.track-step small{overflow-wrap:anywhere}

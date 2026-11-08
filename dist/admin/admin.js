@@ -10,6 +10,7 @@
   const rank = (list, k) => { const i = list.indexOf(k); return i < 0 ? list.length : i; };
   const ORDER_SORTS = {
     newest: ['Newest first', bySort.newest], oldest: ['Oldest first', bySort.oldest],
+    changed: ['Status changed: newest', bySort.changed], changed_old: ['Status changed: oldest', bySort.changedOld],
     total_desc: ['Total: high to low', bySort.num(o => o.price, true)], total_asc: ['Total: low to high', bySort.num(o => o.price)],
     status: ['Status', (a, b) => rank(STATUSES, a.status) - rank(STATUSES, b.status) || bySort.newest(a, b)],
     revision: ['Cost revision first', bySort.revision],
@@ -629,7 +630,7 @@
     const sel = $('[data-client-filter]');
     sel.innerHTML = '<option value="">All clients</option>' + S.ov.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
     sel.value = S.client;
-    const q = S.q.toLowerCase();
+    const q = S.q.toLowerCase(), byChanged = window.DL.sortKey('admin-orders-2', ADMIN_ORDER_SORTS).startsWith('changed'); // date under the status
     const rows = sortList(inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId), o.itemTitle, o.sku, o.buyerName].join(' ').toLowerCase().includes(q))), 'admin-orders-2', ADMIN_ORDER_SORTS);
     // Bulk edit: only rows that are on screen can stay selected.
     const showN = listShown('orders', [S.filter, S.q, S.client].join('|')), seen = rows.slice(0, showN);
@@ -642,7 +643,7 @@
         <td data-label="Order"><div class="ord-cell">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : '<span class="ord-thumb none" title="No photo">—</span>'}<span class="t-main"><b>${esc(orderName(o))}</b>${o.itemTitle ? `<small>${esc(o.itemTitle)}</small>` : ''}<small class="mono">${esc(o.trackingNumber) || 'No tracking yet'}</small>${updateTags(o)}</span></div></td>
         <td data-label="Destination">${esc(place(o.destination))}</td>
         <td data-label="Total" class="num"><b>${money(o.price)}</b>${window.DLPayOrders.tag(o, [], true)}</td>
-        <td data-label="Status"><select data-status="${o.id}" aria-label="Status of ${esc(orderName(o))}">${[o.status,...ADMIN_STATUSES.filter(s=>s!==o.status)].map(s => `<option value="${s}"${s === o.status ? ' selected' : ''}>${UI.LABEL[s]}</option>`).join('')}</select>${UI.delayTag(o)}</td>
+        <td data-label="Status"><select data-status="${o.id}" aria-label="Status of ${esc(orderName(o))}">${[o.status,...ADMIN_STATUSES.filter(s=>s!==o.status)].map(s => `<option value="${s}"${s === o.status ? ' selected' : ''}>${UI.LABEL[s]}</option>`).join('')}</select>${byChanged ? `<small class="st-when" data-no-i18n>${window.DL.shortTime(o.statusChangedAt || o.createdAt)}</small>` : ''}${UI.delayTag(o)}</td>
         <td data-label="Messages">${o.unreadMessages ? `<span class="unread-pill">${ic('chat')}${o.unreadMessages} new</span>` : o.messages ? `<span class="msgs">${ic('chat')}${o.messages}</span>` : '<span class="dim">—</span>'}</td>
         <td class="num hide-sm">${UI.svg(P.chev).replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:var(--dim);stroke-width:2"')}</td></tr>`).join('')}
       </tbody></table></div>${listMore('orders', seen.length, rows.length)}`
