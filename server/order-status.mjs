@@ -36,6 +36,12 @@ export function statusChange(order, action, body, admin) {
     const fee=action==='approve-cancellation'?parseFee(feeOrSupplier(body.fee,order)):0;
     return {status:action==='approve-cancellation'?'cancelled':order.cancellation_previous_status||'pending',previous:order.cancellation_previous_status,reason:order.cancellation_reason,fee:action==='approve-cancellation'?fee:0};
   }
+  // Undo an approval (Erwin, 8 Nov 2026: approved by mistake): the order goes back to the client's request, as it was.
+  if(action==='undo-cancellation') {
+    if(!admin) throw Object.assign(new Error('Only admins can undo a cancellation.'),{status:403});
+    if(status!=='cancelled') throw new Error('This order is not cancelled.');
+    return {status:'cancellation_requested',previous:order.cancellation_previous_status||'pending',reason:order.cancellation_reason,fee:0};
+  }
   const next=action==='mark-delivered'?'delivered':body.status;
   if(next===status) return null;
   if(!admin&&!(next==='delivered'&&status==='shipped')) throw Object.assign(new Error('Only admins can set this status. Request cancellation instead.'),{status:403});
@@ -49,8 +55,15 @@ export function statusChange(order, action, body, admin) {
   return {status:next,previous:order.cancellation_previous_status,reason:order.cancellation_reason,fee:0};
 }
 // actorName: who is recorded in the activity log (an admin logged in as the client acts with client rights, recorded as admin).
+const DECISION={'reject-cancellation':'Cancellation rejected','approve-cancellation':'Cancellation approved','undo-cancellation':'Cancellation approval undone'};
 export async function changeStatus(DB, order, action, body, admin, actorName) {
   const change=statusChange(order,action,body,admin);if(!change)return order;
+  // Only an approved client request can be undone (an order the admin cancelled directly has no request to go back to).
+  // The approval must also be the last status change (not reopened and then cancelled directly since).
+  if(action==='undo-cancellation'){const last=await DB.prepare("SELECT detail,created_at FROM order_events WHERE order_id=? AND kind='cancellation' ORDER BY created_at DESC,id DESC LIMIT 1").bind(order.id).first();
+    const lastStatus=await DB.prepare("SELECT MAX(created_at) AS t FROM order_events WHERE order_id=? AND kind='status'").bind(order.id).first();
+    if(last?.detail!=='Cancellation approved'||Number(lastStatus?.t||0)>Number(last.created_at))throw new Error('This order was not cancelled from a client request, so there is no request to go back to.');}
+  const decision=action==='request-cancellation'?change.reason:DECISION[action]||'';
   const t=Math.floor(Date.now()/1000),actor=actorName||(admin?'admin':'client');
   // The fee is cast to NUMERIC: a bare ?>0 made Postgres read it as an integer, so fees with cents (6.50) failed.
   // Status, audit event and fee are one statement: retries/races cannot charge twice or lose the audit entry.
@@ -67,8 +80,7 @@ export async function changeStatus(DB, order, action, body, admin, actorName) {
       SELECT client_id,id,'cancellation_fee',?,'Cancellation fee',? FROM changed WHERE CAST(? AS NUMERIC)>0
       ON CONFLICT(order_id,kind) DO UPDATE SET amount=EXCLUDED.amount,created_at=EXCLUDED.created_at)
     SELECT * FROM changed`).bind(change.status,change.previous,change.reason,change.status,t,change.status,change.status,t,change.status,t,order.id,order.status,
-      actor,change.status,t,actor,action==='request-cancellation'?change.reason:action==='reject-cancellation'?'Cancellation rejected':action==='approve-cancellation'?'Cancellation approved':'',t,
-      action==='request-cancellation'?change.reason:action==='reject-cancellation'?'Cancellation rejected':action==='approve-cancellation'?'Cancellation approved':'',change.fee,t,change.fee).first();
+      actor,change.status,t,actor,decision,t,decision,change.fee,t,change.fee).first();
   if(!row)throw new Error('The order changed. Refresh and try again.');
   // Our fee: the admin's choice when cancelling; back to the usual rule when the order is reopened.
   const keep=row.status==='cancelled'?(admin&&KEEP_FEE.includes(body?.keepFee)?body.keepFee:null):order.status==='cancelled'?'auto':null;

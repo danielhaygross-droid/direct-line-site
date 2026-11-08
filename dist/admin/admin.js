@@ -436,7 +436,7 @@
     const couriers = String(S.ov.settings.couriers || '').split('\n').filter(Boolean);
     return `<div class="bulk-bar" data-bulk-bar>${all}<b>${n} selected</b>
       ${archivedView ? '<button type="button" class="btn btn-sm" data-bulk="restore">Restore</button>' : `
-      <label class="bulk-f"><span>Status</span><select data-bulk-status><option value="">Choose…</option>${ADMIN_STATUSES.map(s => `<option value="${s}">${UI.LABEL[s]}</option>`).join('')}<option value="cancelled">${UI.LABEL.cancelled}</option></select></label><button type="button" class="btn btn-sm" data-bulk="status">Set status</button>
+      <label class="bulk-f"><span>Status</span><select data-bulk-status><option value="">Choose…</option>${ADMIN_STATUSES.map(s => `<option value="${s}">${UI.LABEL[s]}</option>`).join('')}<option value="cancelled">${UI.LABEL.cancelled}</option><option value="undo-cancel">Undo cancellation approval</option></select></label><button type="button" class="btn btn-sm" data-bulk="status">Set status</button>
       <label class="bulk-f"><span>Courier</span><input data-bulk-courier list="dl-bulk-couriers" maxlength="60" placeholder="e.g. Yanwen"><datalist id="dl-bulk-couriers">${couriers.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label><button type="button" class="btn btn-sm" data-bulk="courier">Set courier</button>
       <label class="bulk-f"><span>Fee</span><span class="money"><input data-bulk-fee type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.50"></span></label><button type="button" class="btn btn-sm" data-bulk="fee">Set fee</button>
       <button type="button" class="btn btn-sm btn-danger" data-bulk="archive">Archive</button>`}
@@ -461,6 +461,8 @@
       msg.textContent = `Updating ${i + 1} of ${ids.length}…`;
       try {
         if (kind === 'archive' || kind === 'restore') await api('/admin/orders/' + id + '/archive', { method: 'POST', body: { archived: kind === 'archive' } });
+        // Approved by mistake (8 Nov 2026): back to the client's cancellation request, fee removed.
+        else if (body?.status === 'undo-cancel') await api('/orders/' + id + '/undo-cancellation', { method: 'POST', body: {} });
         else await api('/orders/' + id, { method: 'PUT', body });
       } catch (ex) { failedIds.push(id); failed.push(`${orderName(S.orders.find(o => o.id === id) || S.archivedOrders.find(o => o.id === id) || { id })}: ${ex.message}`); }
     }
@@ -991,6 +993,7 @@
       ${foldCard('op-media', 'Product photos &amp; link', `${(o.photos || []).length ? `<span>${(o.photos || []).length === 1 ? '1 photo' : o.photos.length + ' photos'}</span>` : '<span>No photo yet</span>'}${o.etsyUrl ? ' · <span>link</span>' : ''}`, productMedia(o, { removable: true, canAdd: (o.photos || []).length < 8 }), ' data-d-media')}
       <section class="card card-pad"><h3 class="sec-title">Update status</h3>
         ${o.status==='cancelled' ? '<p class="note">This order is cancelled. Choose a status to reopen it; its cancellation fee is then removed.</p>' : ''}
+        ${o.status==='cancelled' && (cx => cx?.detail === 'Cancellation approved' && !events.some(e => e.kind === 'status' && e.createdAt > cx.createdAt))(events.filter(e => e.kind === 'cancellation').at(-1)) ? `<div class="cancel-row undo-cx"><button type="button" class="btn" data-undo-cancel="${o.id}">Undo approval</button><small class="dim">Back to the client’s cancellation request, with no cancellation fee.</small></div>` : ''}
         <div class="status-btns">${ADMIN_STATUSES.map(s => `<button type="button" class="t-${s}${s === o.status ? ' on' : ''}" data-set-status="${s}" data-id="${o.id}">${UI.LABEL[s]}</button>`).join('')}${o.status === 'cancellation_requested' ? '' : `<button type="button" class="t-cancelled${o.status === 'cancelled' ? ' on' : ''}"${o.status === 'cancelled' ? '' : ` data-cancel-window="${o.id}" aria-haspopup="dialog"`}>${UI.LABEL.cancelled}</button>`}</div>
         <form class="track-form" data-track-form="${o.id}"><div class="track-fields"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(o.trackingNumber)}" placeholder="e.g. LX123456789CN"></label><label class="field"><span>Courier</span><input name="courier" maxlength="60" list="dl-couriers" value="${esc(o.courier)}" placeholder="e.g. Yanwen"></label><datalist id="dl-couriers">${String(S.ov.settings.couriers || '').split('\n').filter(Boolean).map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>${o.domesticTracking ? `<p class="dom-track"><span>Domestic tracking in China (from the supplier sheet)</span> <b data-no-i18n>${esc(o.domesticTracking)}</b></p>` : ''}<div class="form-actions"><button class="btn" type="submit">Save tracking</button><button type="button" class="btn" data-tracking-update="${o.id}">Tracking update received</button>${o.trackingNumber ? `<a class="btn btn-ghost" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track</a>` : ''}</div></form>
       </section>
@@ -1743,6 +1746,8 @@
     // Cost revision: keep the price (with the optional reply).
     const rkp=t.closest('[data-rev-keep-product]');if(rkp){const f=rkp.closest('form');rkp.disabled=true;try{await api('/admin/products/'+rkp.dataset.revKeepProduct+'/cost-revision',{method:'POST',body:{action:'keep',reply:f.revReply.value}});await loadAll();renderTab();toast('Price kept. The client was told.');}catch(ex){rkp.disabled=false;toast(ex.message);}return;}
     const rk=t.closest('[data-rev-keep]');if(rk){const f=rk.closest('form');rk.disabled=true;try{await api('/admin/orders/'+rk.dataset.revKeep+'/cost-revision',{method:'POST',body:{action:'keep',reply:f.reply.value}});await loadAll();renderList();refreshDrawer();toast('Price kept. The client was told.');}catch(ex){rk.disabled=false;toast(ex.message);}return;}
+    const uc=t.closest('[data-undo-cancel]');
+    if(uc){uc.disabled=true;try{await api('/orders/'+uc.dataset.undoCancel+'/undo-cancellation',{method:'POST',body:{}});await loadAll();renderList();refreshDrawer();toast('Back to the cancellation request.');}catch(ex){uc.disabled=false;toast(ex.message);}return;}
     const decision=t.closest('[data-cancel-decision]');
     if(decision){decision.disabled=true;try{await api('/orders/'+decision.dataset.id+'/'+decision.dataset.cancelDecision+'-cancellation',{method:'POST',body:{}});await loadAll();renderList();refreshDrawer();toast('Cancellation request updated.');}catch(ex){decision.disabled=false;toast(ex.message);}return;}
     const tracking=t.closest('[data-tracking-update]');if(tracking){tracking.disabled=true;try{await api('/admin/orders/'+tracking.dataset.trackingUpdate+'/tracking-update',{method:'POST',body:{}});await loadAll();refreshDrawer();toast('Tracking update recorded.');}catch(ex){tracking.disabled=false;toast(ex.message);}return;}

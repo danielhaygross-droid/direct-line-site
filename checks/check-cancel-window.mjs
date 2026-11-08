@@ -4,6 +4,8 @@
 // Real SQL on in-memory Postgres (PGlite) + the real admin screen in Chrome (EN/HE x 1440/390). No live data.
 // Each round: 4 cancellation requests (A, B, D paid; C not paid). In the window: B's fee 2 and our fee off, C's our fee on,
 // D left out. Then A, B, C are cancelled, D still waits; the money adds up to the window's total.
+// Undo (approved by mistake): A from its panel, B from the bulk bar go back to the request with no fees; an order the
+// admin cancelled directly (no request) can't be undone.
 import { createRequire } from 'node:module';
 import http from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
@@ -104,6 +106,27 @@ try {
     ok(await call('/orders/' + C, 'PUT', { status: 'processing' }, admin));
     assert.equal((await row(C)).keep_fee, 'auto', tag + ' reopened: back to the usual rule');
     ok(await call('/payments', 'GET', null, client)); assert.equal(await adj(C, 'kept_fee'), 0, tag + ' reopened: kept fee removed');
+    // Undo approval: A from its panel.
+    await page.keyboard.press('Escape'); await page.waitForTimeout(300); await ui.locator('[data-filter=cancelled]').click(); await ui.locator(`[data-open-order="${A}"]`).click();
+    const undo = ui.locator('aside.drawer [data-undo-cancel]'); await undo.waitFor();
+    await undo.scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-undo-panel.png`) });
+    await undo.click(); await ui.locator('aside.drawer [data-cancel-window]').first().waitFor();
+    // B from the bulk bar.
+    await page.keyboard.press('Escape'); await page.waitForTimeout(300); await ui.locator('[data-filter=cancelled]').click(); await ui.locator(`[data-pick="${B}"]`).check();
+    await ui.locator('[data-bulk-status]').selectOption('undo-cancel'); await ui.locator('[data-bulk="status"]').click();
+    await ui.locator(`[data-pick="${B}"]`).waitFor({ state: 'detached' });
+    for (const o of [A, B]) {
+      const x = await DB.prepare('SELECT status, keep_fee, cancellation_previous_status AS prev, cancellation_reason AS why FROM client_orders WHERE id=?').bind(o).first();
+      assert.deepEqual([x.status, x.keep_fee, x.prev, x.why], ['cancellation_requested', 'auto', 'pending', 'Store suspended'], tag + ' undo: back to the request as it was');
+    }
+    ok(await call('/payments', 'GET', null, client));
+    assert.deepEqual([await adj(A, 'cancellation_fee'), await adj(B, 'cancellation_fee'), await adj(A, 'kept_fee'), await adj(B, 'kept_fee')], [0, 0, 0, 0], tag + ' undo: no fees left');
+    assert.equal(Math.round(((ok(await call('/payments', 'GET', null, client)).cancelled?.fees || 0) - feesBefore) * 100), 0, tag + ' undo: client charged nothing');
+    // Cancelled directly by the admin (no request): nothing to go back to.
+    ok(await call('/orders/' + C, 'PUT', { status: 'cancelled', fee: '' }, admin));
+    const no = await call('/orders/' + C + '/undo-cancellation', 'POST', {}, admin);
+    assert.equal(no.status, 409, tag + ' no request, no undo'); assert.equal((await row(C)).status, 'cancelled', tag);
+    assert.equal((await call('/orders/' + A + '/undo-cancellation', 'POST', {}, client)).status, 403, tag + ' clients cannot undo');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
     assert.deepEqual(errors, [], tag); await ctx.close();
     console.log('PASS', tag, 'cancel window: fees per order, our fee choice, left-out order, totals add up');
