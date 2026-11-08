@@ -100,7 +100,7 @@ export const HEADERS_18 = [...HEAD_A_O, 'Total cost (USD)', 'Tracking number', '
 export const REFUNDED_SHIP = 'Refunded';
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', CANCELLED_SHIP = 'Cancelled', CANCEL_REQ_SHIP = 'Cancel requested', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'CANCELLED - do not ship' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '21';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '22';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 const markPaidDirtyDb = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
@@ -254,7 +254,8 @@ function deleteRowRequests(sheetId, rows) {
   return out;
 }
 const moveRow = (sheetId, from, to) => ({ moveDimension: { source: { sheetId, dimension: 'ROWS', startIndex: from - 1, endIndex: from }, destinationIndex: to - 1 } });
-export async function removeClientFromWorkQueue(DB, env, clientId, fetchImpl = fetch) {
+export const removeClientFromWorkQueue = (DB, env, clientId, fetchImpl = fetch) => withOrderLock(DB, ROWS_LOCK, () => removeClientNow(DB, env, clientId, fetchImpl));
+async function removeClientNow(DB, env, clientId, fetchImpl) {
   if (!await supplierSheetEnabled(DB)) return;
   if (!await ensureLayout(DB, env, fetchImpl)) throw new Error('The supplier sheet is being updated. Please try again in a minute.');
   const { wq } = await tabNames(DB), rows = (await idRows(env, fetchImpl, allTabs(wq))).filter(r => r.clientId === Number(clientId));
@@ -506,7 +507,8 @@ async function ensureColumns(env, sheetId, count, fetchImpl) {
   if (have && have < count) await batch(env, [{ appendDimension: { sheetId, dimension: 'COLUMNS', length: count - have } }], fetchImpl);
 }
 // Rewrites the Client paid column (W) from the website in one write (after payments change).
-export async function refreshPaidColumn(DB, env, fetchImpl = fetch) {
+export const refreshPaidColumn = (DB, env, fetchImpl = fetch) => withOrderLock(DB, ROWS_LOCK, () => refreshPaidNow(DB, env, fetchImpl));
+async function refreshPaidNow(DB, env, fetchImpl) {
   if (!googleSheetsConfigured(env) || !await supplierSheetEnabled(DB) || await getSetting(DB, LAYOUT) !== LAYOUT_NOW) return false;
   const { wq } = await tabNames(DB), rows = await idRows(env, fetchImpl, allTabs(wq));
   if (!rows.length) return true;
@@ -666,15 +668,17 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
       await batch(env, tabs.flatMap(([, id]) => [...statusDateFormat(id), fullFilter(id), { addProtectedRange: { protectedRange: { range: { sheetId: id, startColumnIndex: C.CHANGED, endColumnIndex: C.CHANGED + 1 }, description: 'Filled in by the Direct Line website', editors: { users: [email] } } } }]), fetchImpl);
       await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived").run();
     }
-    // 21) Clean-up after layout 20's first hour (8 Nov 2026): rows Google appended in the wrong columns have A and B
-    //     empty. They are copies (the website has every order), so they are deleted and every order is written again.
+    // 21-22) Clean-up after layout 20's first hour (8 Nov 2026): rows Google appended in the wrong columns, and rows left
+    //     blank by syncs that ran side by side, have A and B empty. They are deleted (the website has every order) and
+    //     every order is written again, so orders whose row was lost come back.
     for (const tab of allTabs(wq)) {
       const id = await workQueueSheetId(env, fetchImpl, true, tab);
       if (id == null) continue;
       const rows = (await sheetsRequest(env, '/values/' + encodeURIComponent(`${tab}!A${FIRST_ROW}:${L(C.END - 1)}`), {}, fetchImpl)).values || [];
-      const broken = rows.map((r, i) => (!norm(r?.[0]) && !norm(r?.[1]) && (r || []).some(x => norm(x)) ? FIRST_ROW + i : 0)).filter(Boolean);
-      if (broken.length) { await batch(env, deleteRowRequests(id, broken), fetchImpl); await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived").run(); }
+      const broken = rows.map((r, i) => (!norm(r?.[0]) && !norm(r?.[1]) ? FIRST_ROW + i : 0)).filter(Boolean);
+      if (broken.length) await batch(env, deleteRowRequests(id, broken), fetchImpl);
     }
+    if (Number(v) >= 20) await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived").run();
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested') OR revision_status <> '')").run();
     await putSetting(DB, LAYOUT, LAYOUT_NOW);
@@ -902,7 +906,12 @@ export async function withOrderLock(DB, orderId, run) {
 // when an order has two rows, the fuller one is the one that counts.
 const filled = cells => cells.filter(v => v !== '' && v != null && !/^(not shipped)$/i.test(String(v).trim())).length;
 // Called under withOrderLock (syncPortalOrderToGoogleSheet).
-export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch) {
+// One row write in the supplier tabs at a time (8 Nov 2026): rows are found by number, and a new row on top moves every
+// row down. Seventeen orders cancelled at once synced side by side, so one wrote into or deleted another order's row
+// (rows went missing, blank rows were left on top). A write that waits too long is retried automatically.
+const ROWS_LOCK = 'supplier-rows';
+export const syncWorkQueueRow = (DB, env, order, photos, fetchImpl = fetch) => withOrderLock(DB, ROWS_LOCK, () => syncRowNow(DB, env, order, photos, fetchImpl));
+async function syncRowNow(DB, env, order, photos, fetchImpl) {
   if (!await supplierSheetEnabled(DB)) return { enabled: false };
   if (!await ensureLayout(DB, env, fetchImpl)) throw new Error('The supplier sheet is being updated. This will be retried automatically.');
   const { wq } = await tabNames(DB), tabs = allTabs(wq);
@@ -1143,7 +1152,7 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
 const SEEN_KEY = 'dl-supplier-sheet-seen', FULL_EVERY = 3 * 3600;
 // Part of the fingerprint: changed when an update has one-time work in the sheet (e.g. the cost revision colours,
 // 3 Nov 2026), so the first minute after it is live runs a full check instead of waiting up to 3 hours.
-const SHEET_WORK = 'row-fix-1'; // layout 21 (broken appended rows removed, 8 Nov 2026)
+const SHEET_WORK = 'row-fix-2'; // layout 22 (blank / broken rows removed, every order rewritten, 8 Nov 2026)
 // What the website reads from each supplier tab: P-V, the order id, AH-AI and B (the row check).
 const supplierRanges = tab => [`${tab}!${L(C.COST)}${FIRST_ROW}:${L(C.REASON)}`, `${tab}!${L(C.ID)}${FIRST_ROW}:${L(C.ID)}`, `${tab}!${L(C.DOM)}${FIRST_ROW}:${L(C.FEE)}`, `${tab}!B${FIRST_ROW}:B`];
 export async function supplierSheetFingerprint(env, fetchImpl = fetch, tabs = [WQ_NEW]) {
