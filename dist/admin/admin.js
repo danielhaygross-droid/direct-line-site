@@ -159,9 +159,12 @@
     const owing = new Set(unpaid.map(o => o.clientId)).size, oldest = unpaid.map(o => M.dateKey(o)).filter(Boolean).sort()[0];
     // Our earnings (Erwin, 4 Nov 2026): our fee on every order of the period, plus the fee we keep on a cancelled order the
     // client had paid; split into collected (paid orders), not paid yet, and not billed yet (no cost yet), which add up.
-    const keptOn = inMonth.filter(o => o.status === 'cancelled' && o.paymentId && cents(o.commission) > 0);
+    // Since 8 Nov 2026 the admin picks it per order in the cancel window (keepFee: auto = only if paid, yes, no); a fee kept
+    // on an order that was not paid is owed (in "not paid yet"), not collected (same rule as syncKeptFees on the server).
+    const keptOn = inMonth.filter(o => o.status === 'cancelled' && cents(o.commission) > 0 && (o.keepFee === 'yes' || (o.keepFee !== 'no' && o.paymentId)));
     const keptC = keptOn.reduce((n, o) => n + feeC(o), 0), onOrdersC = os.reduce((n, o) => n + feeC(o), 0), feesC = onOrdersC + keptC;
-    const collectedC = os.filter(o => PO.state(o) === 'paid').reduce((n, o) => n + feeC(o), 0) + keptC;
+    const keptOwedC = keptOn.filter(o => !o.paymentId).reduce((n, o) => n + feeC(o), 0);
+    const collectedC = os.filter(o => PO.state(o) === 'paid').reduce((n, o) => n + feeC(o), 0) + keptC - keptOwedC;
     const noBillC = os.filter(o => PO.state(o) === 'unbilled').reduce((n, o) => n + feeC(o), 0);
     // Successful orders (Erwin/Shahar, 5 Nov 2026): not cancelled and paid by the client. The supplier pays us its own amount
     // for each of them ("two fees on all orders": the client's fee plus $1 from the supplier; Fees & settings sets it).
@@ -170,7 +173,7 @@
     // What clients owe right now: each client's balance (unpaid orders minus credit and payments not linked to orders), and
     // that amount without our fee (admin only): minus our fee on the unpaid orders (credit lowers the supplier's part).
     const balanceC = cl.reduce((n, c) => n + Math.max(0, cents(c.outstanding)), 0);
-    const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
+    const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0) + live.filter(o => o.status === 'cancelled' && !o.paymentId && o.keepFee === 'yes').reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const lateIds = lateClientIds(), late = balanceC > 0 && f_late(cl, lateIds, cents);
     return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, totalC, balanceC, feePartC, clientsN, lateIds, late };
@@ -445,10 +448,9 @@
     if (kind === 'clear') { S.picked.clear(); renderOrders(); return; }
     let body = null;
     if (kind === 'status') { const v = $('[data-bulk-status]', bar).value; if (!v) { msg.textContent = 'Choose a status first.'; return; } body = { status: v }; }
-    // Cancelled (Erwin, 26 Oct 2026): requests are approved, other orders cancelled; each uses the supplier's cancellation
-    // fee from the sheet (none = free). Two clicks, like Archive.
-    const cancelling = kind === 'status' && body?.status === 'cancelled';
-    if (cancelling && !btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = `Click again to cancel ${ids.length} (supplier fees)`; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Set status'; } }, 5000); return; }
+    // Cancelled: requests are approved, other orders cancelled. Since 8 Nov 2026 the cancel window opens first, to choose
+    // each order's cancellation fee (the supplier's from the sheet) and whether our fee is charged (03-cancel-window.js).
+    if (kind === 'status' && body?.status === 'cancelled') { openCancelWindow(ids, failedIds => { S.picked = new Set(failedIds); renderOrders(); }); return; }
     if (kind === 'courier') { const v = $('[data-bulk-courier]', bar).value.trim(); if (!v) { msg.textContent = 'Type or pick a courier first.'; return; } body = { courier: v }; }
     if (kind === 'addrflag') body = { clearAddressFlag: true };
     if (kind === 'fee') { const v = $('[data-bulk-fee]', bar).value; if (v === '' || !(Number(v) >= 0)) { msg.textContent = 'Enter the fee first.'; return; } body = { commission: v }; }
@@ -458,11 +460,7 @@
     for (const [i, id] of ids.entries()) {
       msg.textContent = `Updating ${i + 1} of ${ids.length}…`;
       try {
-        const o = S.orders.find(x => x.id === id), fee = o?.supplierCancelFee ?? '';
-        if (cancelling && o?.status === 'cancelled') continue;
-        if (cancelling && o?.status === 'cancellation_requested') await api('/orders/' + id + '/approve-cancellation', { method: 'POST', body: { fee } });
-        else if (cancelling) await api('/orders/' + id, { method: 'PUT', body: { status: 'cancelled', fee } });
-        else if (kind === 'archive' || kind === 'restore') await api('/admin/orders/' + id + '/archive', { method: 'POST', body: { archived: kind === 'archive' } });
+        if (kind === 'archive' || kind === 'restore') await api('/admin/orders/' + id + '/archive', { method: 'POST', body: { archived: kind === 'archive' } });
         else await api('/orders/' + id, { method: 'PUT', body });
       } catch (ex) { failedIds.push(id); failed.push(`${orderName(S.orders.find(o => o.id === id) || S.archivedOrders.find(o => o.id === id) || { id })}: ${ex.message}`); }
     }
@@ -480,6 +478,90 @@
     else { const a = $('[data-admins]'); if (a && !a.querySelector('[data-admin-form]')) a.innerHTML = adminsHTML(); }
   }
 
+  // ---------- cancel window: decide each order's fees before cancelling (Erwin, 8 Nov 2026) ----------
+  // "When I press Set status, a pop up asks me all relevant changes before proceeding with approval of cancellations:
+  // which orders should I still charge our fee and not." Opens from bulk Set status → Cancelled and from Approve
+  // cancellation / Cancelled in an order's panel. One row per order: in or out, the cancellation fee (the supplier's from
+  // the sheet, editable) and whether our fee is charged. Our fee starts ticked only on orders the client already paid
+  // (the rule since 29 Oct), so nothing changes unless Erwin changes it. Nothing is saved until the main button.
+  // keepFee sent to the server: 'auto' when the tick matches that rule, else 'yes' / 'no' (syncKeptFees).
+  // Admin only: clients see one "Cancellation fee" per order, our fee inside it.
+  let cxWin = null;
+  const cwCents = v => Math.round(Number(v || 0) * 100);
+  const cwAuto = o => !!o.paymentId && Number(o.commission) > 0;
+  function openCancelWindow(ids, onDone) {
+    const list = ids.map(id => S.orders.find(o => o.id === Number(id))).filter(o => o && o.status !== 'cancelled');
+    if (!list.length) { toast('These orders are already cancelled.'); return; }
+    cxWin?.remove();
+    const dlg = cxWin = document.createElement('dialog');
+    dlg.className = 'cxw'; dlg.setAttribute('aria-labelledby', 'cxw-h'); dlg.dataset.cancelWindow = '';
+    const fee = o => o.supplierCancelFee != null ? Number(o.supplierCancelFee).toFixed(2) : '';
+    const row = o => `<div class="cxw-row" data-cw-row="${o.id}">
+        <label class="cxw-in"><input type="checkbox" data-cw-in checked aria-label="Cancel ${esc(orderName(o))}"></label>
+        <div class="cxw-who"><b data-no-i18n>${esc(orderName(o))}</b><small><span data-no-i18n>${esc(clientName(o.clientId))}</span> · ${o.paymentId ? '<span class="pay-tag paid">Paid</span>' : '<span class="pay-tag unpaid">Not paid</span>'} <span data-no-i18n>${money(o.price)}</span></small>${o.status === 'cancellation_requested' ? `<small class="cxw-why"><span>Client asked to cancel</span>${o.cancellationReason ? `: <span data-no-i18n>${esc(o.cancellationReason)}</span>` : ''}</small>` : ''}</div>
+        <label class="field cxw-fee"><span>Cancellation fee</span><span class="money"><input type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" data-cw-fee value="${fee(o)}"></span><small class="dim">${o.supplierCancelFee != null ? 'From the supplier sheet' : 'None in the sheet'}</small></label>
+        <label class="cxw-keep${Number(o.commission) > 0 ? '' : ' off'}"><input type="checkbox" data-cw-keep${cwAuto(o) ? ' checked' : ''}${Number(o.commission) > 0 ? '' : ' disabled'}><span><span>Charge our fee</span> <b data-no-i18n>${money(o.commission)}</b></span></label>
+      </div>`;
+    dlg.innerHTML = `<form method="dialog" class="cxw-box" novalidate>
+      <div class="kw-head"><h3 id="cxw-h">${list.length === 1 ? 'Cancel this order' : `Cancel ${list.length} orders`}</h3><button type="button" class="kw-x" data-cw-close aria-label="Close">${UI.svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></div>
+      <p class="muted cxw-lead">Check each order before it is cancelled: the cancellation fee and whether our fee is still charged. Our fee is ticked on orders the client already paid.</p>
+      ${list.length > 1 ? `<div class="cxw-all"><b>Set for all</b><label class="field cxw-fee"><span>Cancellation fee</span><span class="money"><input type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" data-cw-all-fee></span></label><button type="button" class="btn btn-sm" data-cw-all-apply>Use for all</button>
+        <label class="field"><span>Charge our fee</span><select data-cw-all-keep><option value="">Choose…</option><option value="paid">Paid orders only</option><option value="all">All orders</option><option value="none">No orders</option></select></label></div>` : ''}
+      <div class="cxw-list">${list.map(row).join('')}</div>
+      <div class="cxw-sum" data-cw-sum aria-live="polite"></div>
+      <p class="form-msg" data-cw-msg role="alert"></p>
+      <div class="cxw-actions"><button type="button" class="btn btn-ghost" data-cw-close>Keep the orders</button><button type="submit" class="btn btn-danger" data-cw-go></button></div>
+    </form>`;
+    document.body.appendChild(dlg);
+    const rows = () => [...dlg.querySelectorAll('[data-cw-row]')].map(r => ({ r, o: list.find(x => x.id === Number(r.dataset.cwRow)), on: r.querySelector('[data-cw-in]').checked, feeIn: r.querySelector('[data-cw-fee]'), keep: r.querySelector('[data-cw-keep]').checked }));
+    // What each client is charged: cancellation fees + our fee, per client (the parts add up to the total).
+    const sum = () => {
+      const picked = rows().filter(x => x.on), by = new Map();
+      for (const x of picked) {
+        const k = x.o.clientId, s = by.get(k) || { n: 0, feeC: 0, oursC: 0 };
+        s.n++; s.feeC += cwCents(x.feeIn.value); s.oursC += x.keep ? cwCents(x.o.commission) : 0; by.set(k, s);
+      }
+      dlg.querySelector('[data-cw-sum]').innerHTML = picked.length ? [...by].map(([k, s]) => `<div class="kw-row tot"><span class="kw-op"></span><span class="kw-l"><span data-no-i18n>${esc(clientName(k))}</span> <small><span>${s.n === 1 ? '1 order' : s.n + ' orders'}</span> · <span>cancellation fees</span> <span data-no-i18n>${money(s.feeC / 100)}</span> + <span>our fee</span> <span data-no-i18n>${money(s.oursC / 100)}</span></small></span><b data-no-i18n>${money((s.feeC + s.oursC) / 100)}</b></div>`).join('') + '<p class="dim cxw-note">Charged to the client for these cancellations. On a paid order it comes off their credit.</p>' : '<p class="muted">No order picked.</p>';
+      const go = dlg.querySelector('[data-cw-go]'), n = picked.length;
+      go.textContent = n === 1 ? 'Cancel 1 order' : `Cancel ${n} orders`; go.disabled = !n;
+      for (const x of rows()) x.r.classList.toggle('out', !x.on);
+    };
+    dlg.addEventListener('input', sum); dlg.addEventListener('change', e => {
+      const k = e.target.closest('[data-cw-all-keep]');
+      if (k && k.value) { for (const x of rows()) { const b = x.r.querySelector('[data-cw-keep]'); if (!b.disabled) b.checked = k.value === 'all' || (k.value === 'paid' && cwAuto(x.o)); } k.value = ''; }
+      sum();
+    });
+    dlg.addEventListener('click', async e => {
+      if (e.target.closest('[data-cw-close]') || e.target === dlg) { dlg.close(); return; }
+      if (e.target.closest('[data-cw-all-apply]')) { const v = dlg.querySelector('[data-cw-all-fee]').value; for (const x of rows()) x.feeIn.value = v; sum(); }
+    });
+    dlg.addEventListener('close', () => { dlg.remove(); if (cxWin === dlg) cxWin = null; });
+    dlg.querySelector('form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const msg = dlg.querySelector('[data-cw-msg]'), picked = rows().filter(x => x.on);
+      const bad = picked.find(x => x.feeIn.value !== '' && !(Number(x.feeIn.value) >= 0));
+      if (bad) { msg.textContent = 'Enter each cancellation fee as an amount, or leave it empty for no fee.'; bad.feeIn.focus(); return; }
+      dlg.querySelectorAll('button, input, select').forEach(x => { x.disabled = true; });
+      const failed = [];
+      for (const [i, x] of picked.entries()) {
+        msg.className = 'form-msg'; msg.textContent = `Cancelling ${i + 1} of ${picked.length}…`;
+        const body = { fee: x.feeIn.value === '' ? 0 : x.feeIn.value, keepFee: x.keep === cwAuto(x.o) ? 'auto' : x.keep ? 'yes' : 'no' };
+        try {
+          if (x.o.status === 'cancellation_requested') await api('/orders/' + x.o.id + '/approve-cancellation', { method: 'POST', body });
+          else await api('/orders/' + x.o.id, { method: 'PUT', body: { status: 'cancelled', ...body } });
+        } catch (ex) { failed.push({ id: x.o.id, text: `${orderName(x.o)}: ${ex.message}` }); }
+      }
+      await loadAll(); renderList(); refreshDrawer();
+      onDone?.(failed.map(f => f.id));
+      const done = picked.length - failed.length;
+      if (!failed.length) { dlg.close(); toast(done === 1 ? 'Order cancelled. The client sees it right away.' : `${done} orders cancelled. The client sees them right away.`); return; }
+      msg.className = 'form-msg err'; msg.textContent = failed.map(f => f.text).slice(0, 3).join(' · ');
+      for (const x of rows()) if (!failed.some(f => f.id === x.o.id)) x.r.remove();
+      dlg.querySelectorAll('button, input, select').forEach(b => { b.disabled = false; }); sum();
+    });
+    sum(); dlg.showModal();
+    dlg.querySelector('[data-cw-fee]')?.focus();
+  }
   // ---------- overview tab: what needs doing for clients today ----------
   // "Needs your attention": the jobs waiting, most urgent first. key = the job, so a card's button never repeats one
   // (cardActions in 02-card-window.js). Money owed is not a row here: it is the "Not paid yet" card (Erwin, 5 Nov 2026).
@@ -909,15 +991,13 @@
       ${foldCard('op-media', 'Product photos &amp; link', `${(o.photos || []).length ? `<span>${(o.photos || []).length === 1 ? '1 photo' : o.photos.length + ' photos'}</span>` : '<span>No photo yet</span>'}${o.etsyUrl ? ' · <span>link</span>' : ''}`, productMedia(o, { removable: true, canAdd: (o.photos || []).length < 8 }), ' data-d-media')}
       <section class="card card-pad"><h3 class="sec-title">Update status</h3>
         ${o.status==='cancelled' ? '<p class="note">This order is cancelled. Choose a status to reopen it; its cancellation fee is then removed.</p>' : ''}
-        <div class="status-btns">${ADMIN_STATUSES.map(s => `<button type="button" class="t-${s}${s === o.status ? ' on' : ''}" data-set-status="${s}" data-id="${o.id}">${UI.LABEL[s]}</button>`).join('')}${o.status === 'cancellation_requested' ? '' : `<button type="button" class="t-cancelled${o.status === 'cancelled' ? ' on' : ''}"${o.status === 'cancelled' ? '' : ' data-cancel-open aria-expanded="false"'}>${UI.LABEL.cancelled}</button>`}</div>
-        ${['cancelled', 'cancellation_requested'].includes(o.status) ? '' : `<div class="cancel-box" data-cancel-box hidden><p>The client sees it as cancelled. Add a cancellation fee if one applies. You can reopen the order later.</p>${o.supplierCancelFee != null ? `<p class="note cancel-sup"><span>Supplier's cancellation fee (from the sheet)</span>: <b data-no-i18n>${money(o.supplierCancelFee)}</b></p>` : '<p class="note cancel-sup">No cancellation fee from the supplier yet.</p>'}
-          <div class="cancel-row"><label class="field"><span>Cancellation fee (USD) <small>optional</small></span><input name="directCancelFee" type="number" min="0" step="0.01" placeholder="0.00" value="${o.supplierCancelFee ?? ''}"></label><button type="button" class="btn" data-cancel-four-direct>$4</button><button type="button" class="btn btn-danger" data-cancel-direct="${o.id}">Cancel this order</button><button type="button" class="btn btn-ghost" data-cancel-close>Keep the order</button></div></div>`}
+        <div class="status-btns">${ADMIN_STATUSES.map(s => `<button type="button" class="t-${s}${s === o.status ? ' on' : ''}" data-set-status="${s}" data-id="${o.id}">${UI.LABEL[s]}</button>`).join('')}${o.status === 'cancellation_requested' ? '' : `<button type="button" class="t-cancelled${o.status === 'cancelled' ? ' on' : ''}"${o.status === 'cancelled' ? '' : ` data-cancel-window="${o.id}" aria-haspopup="dialog"`}>${UI.LABEL.cancelled}</button>`}</div>
         <form class="track-form" data-track-form="${o.id}"><div class="track-fields"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" value="${esc(o.trackingNumber)}" placeholder="e.g. LX123456789CN"></label><label class="field"><span>Courier</span><input name="courier" maxlength="60" list="dl-couriers" value="${esc(o.courier)}" placeholder="e.g. Yanwen"></label><datalist id="dl-couriers">${String(S.ov.settings.couriers || '').split('\n').filter(Boolean).map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>${o.domesticTracking ? `<p class="dom-track"><span>Domestic tracking in China (from the supplier sheet)</span> <b data-no-i18n>${esc(o.domesticTracking)}</b></p>` : ''}<div class="form-actions"><button class="btn" type="submit">Save tracking</button><button type="button" class="btn" data-tracking-update="${o.id}">Tracking update received</button>${o.trackingNumber ? `<a class="btn btn-ghost" href="${trackingUrl(o.trackingNumber)}" target="_blank" rel="noopener">${ic('ext')}Track</a>` : ''}</div></form>
       </section>
       ${foldCard('op-store', 'Store', `<span data-no-i18n>${esc(S.stores.find(s => s.id === o.storeId)?.name || '')}</span>`, `<label class="field"><span>Move to another store</span><select data-move-order="${o.id}">${S.stores.filter(s=>s.clientId===o.clientId&&(!s.archived||s.id===o.storeId)).map(s=>`<option value="${s.id}"${s.id===o.storeId?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label>`)}
       ${adminClaimCard(S.claims.find(c=>c.orderId===o.id))}
       ${o.revision && ['open', 'offered'].includes(o.revision.status) ? (r => `<section class="card card-pad rev-admin" data-rev-admin><h3 class="sec-title">Cost revision requested</h3><div class="money-rows"><div><span>Client’s competitor price</span><span><b data-no-i18n>${r.items ? `<bdi dir="ltr">${esc(r.items)}</bdi>` : money(r.competitorPrice)}</b></span></div><div><span>Client pays now</span><span data-no-i18n>${money(o.price)}</span></div>${r.offeredCost != null ? `<div class="total"><span>Supplier’s new cost (sheet)</span><span><b data-no-i18n>${money(r.offeredCost)}</b> <small class="dim">→ <span>client pays</span> <span data-no-i18n>${money(r.offeredCost + (o.commission || 0))}</span></small></span></div>` : '<div><span>Supplier’s new cost</span><span class="dim">Waiting for the supplier in the sheet</span></div>'}</div>${r.offeredCost != null ? `<p class="note rev-why">${r.offeredCost + (o.commission || 0) >= o.price ? 'Not lower than what the client pays now, so it waits for you.' : 'More than half off: check it isn’t a typo before you approve.'}</p>` : '<p class="dim rev-why">A lower cost from the supplier is approved automatically. The supplier can type NO in the sheet if it can’t be lower.</p>'}${r.note ? `<p class="note" data-no-i18n>${esc(r.note)}</p>` : ''}<form class="form-grid rev-answer" data-rev-answer="${o.id}" novalidate><label class="field"><span>New supplier cost (USD) <small>our fee is added</small></span><span class="money"><input name="cost" type="number" min="0" step="0.01" inputmode="decimal" value="${r.offeredCost ?? ''}"></span></label><label class="field"><span>Reply to the client <small>optional</small></span><input name="reply" maxlength="1000"></label><div class="full form-actions"><a class="btn" href="${revisionWhatsApp(o, r)}" target="_blank" rel="noopener" data-rev-wa>${ic('chat')}Tell the supplier on WhatsApp</a><button type="button" class="btn" data-rev-keep="${o.id}">Keep the price</button><button type="submit" class="btn btn-primary">Approve new cost</button></div></form></section>`)(o.revision) : ''}
-      ${o.status==='cancellation_requested' ? `<section class="card card-pad"><h3 class="sec-title">Cancellation request</h3><p data-no-i18n>${esc(o.cancellationReason)}</p>${o.supplierCancelFee != null ? `<p class="note cancel-sup"><span>Supplier's cancellation fee (from the sheet)</span>: <b data-no-i18n>${money(o.supplierCancelFee)}</b></p>` : '<p class="note cancel-sup">No cancellation fee from the supplier yet.</p>'}<div class="cancel-row"><label class="field"><span>Cancellation fee (USD)</span><input name="cancellationFee" type="number" min="0" step="0.01" placeholder="0.00" value="${o.supplierCancelFee ?? ''}"></label><button type="button" class="btn" data-cancel-four>$4</button><button type="button" class="btn btn-danger" data-cancel-decision="approve" data-id="${o.id}">Approve cancellation</button><button type="button" class="btn" data-cancel-decision="reject" data-id="${o.id}">Reject cancellation</button></div></section>` : ''}
+      ${o.status==='cancellation_requested' ? `<section class="card card-pad"><h3 class="sec-title">Cancellation request</h3><p data-no-i18n>${esc(o.cancellationReason)}</p>${o.supplierCancelFee != null ? `<p class="note cancel-sup"><span>Supplier's cancellation fee (from the sheet)</span>: <b data-no-i18n>${money(o.supplierCancelFee)}</b></p>` : '<p class="note cancel-sup">No cancellation fee from the supplier yet.</p>'}<div class="cancel-row"><button type="button" class="btn btn-danger" data-cancel-window="${o.id}" aria-haspopup="dialog">Approve cancellation…</button><button type="button" class="btn" data-cancel-decision="reject" data-id="${o.id}">Reject cancellation</button></div></section>` : ''}
       ${(r => foldCard('op-receipts', 'Receipts', r.length ? `<span>${r.length === 1 ? '1 receipt' : r.length + ' receipts'}</span>` : '<span>None yet</span>', adminInvoiceLinks(r) + invoiceForm(o.clientId, o.id)))(invoiceFiles.filter(f => f.orderIds.includes(o.id)))}
       ${o.quotedUnitPrice!=null ? `<section class="card card-pad"><span>Fixed unit quote</span> <b>${money(o.quotedUnitPrice)}</b> × ${o.quantity} = <b>${money(o.price)}</b></section>` : billHTML(o)}
       ${foldCard('op-details', 'Details', `<span data-no-i18n>${esc(o.buyerName || '')}</span>${o.destination ? ` · <span>${esc(place(o.destination))}</span>` : ''}`, `<dl class="kv">
@@ -1626,7 +1706,6 @@
       catch (ex) { pr.disabled = false; toast(ex.message); }
       return;
     }
-    if(t.closest('[data-cancel-four]')){$('[name=cancellationFee]').value='4';return;}
     // Money > Payments: which card is open (record / edit / attach a receipt) is kept on the drawer state.
     const pa = t.closest('[data-pay-new],[data-pay-cancel],[data-pay-edit],[data-pay-attach],[data-receipt-cancel],[data-scroll-pay]');
     if (pa && S.drawer?.kind === 'client') {
@@ -1659,22 +1738,13 @@
       catch (ex) { toast(ex.message); rr.disabled = false; }
       return;
     }
-    // "Cancelled" in the status row opens the cancel box under it (fee, $4, Cancel this order).
-    const co=t.closest('[data-cancel-open],[data-cancel-close]');if(co){const box=$('[data-cancel-box]'),open=co.hasAttribute('data-cancel-open')&&box.hidden;box.hidden=!open;$('[data-cancel-open]')?.classList.toggle('on',open);$('[data-cancel-open]')?.setAttribute('aria-expanded',String(open));if(open)$('[name=directCancelFee]').focus();return;}
-    if(t.closest('[data-cancel-four-direct]')){$('[name=directCancelFee]').value='4';return;}
-    const direct=t.closest('[data-cancel-direct]');
-    if(direct){
-      if(!direct.dataset.armed){direct.dataset.armed='1';direct.textContent='Click again to cancel';setTimeout(()=>{if(direct.isConnected){delete direct.dataset.armed;direct.textContent='Cancel this order';}},4000);return;}
-      if(direct.disabled)return;direct.disabled=true;
-      try{await api('/orders/'+direct.dataset.cancelDirect,{method:'PUT',body:{status:'cancelled',fee:$('[name=directCancelFee]').value}});await loadAll();renderList();refreshDrawer();toast('Order cancelled. The client sees it right away.');}
-      catch(ex){toast(ex.message);direct.disabled=false;}
-      return;
-    }
+    // "Cancelled" in the status row and "Approve cancellation…" open the cancel window (fees per order, 8 Nov 2026).
+    const cw=t.closest('[data-cancel-window]');if(cw){openCancelWindow([Number(cw.dataset.cancelWindow)]);return;}
     // Cost revision: keep the price (with the optional reply).
     const rkp=t.closest('[data-rev-keep-product]');if(rkp){const f=rkp.closest('form');rkp.disabled=true;try{await api('/admin/products/'+rkp.dataset.revKeepProduct+'/cost-revision',{method:'POST',body:{action:'keep',reply:f.revReply.value}});await loadAll();renderTab();toast('Price kept. The client was told.');}catch(ex){rkp.disabled=false;toast(ex.message);}return;}
     const rk=t.closest('[data-rev-keep]');if(rk){const f=rk.closest('form');rk.disabled=true;try{await api('/admin/orders/'+rk.dataset.revKeep+'/cost-revision',{method:'POST',body:{action:'keep',reply:f.reply.value}});await loadAll();renderList();refreshDrawer();toast('Price kept. The client was told.');}catch(ex){rk.disabled=false;toast(ex.message);}return;}
     const decision=t.closest('[data-cancel-decision]');
-    if(decision){decision.disabled=true;try{await api('/orders/'+decision.dataset.id+'/'+decision.dataset.cancelDecision+'-cancellation',{method:'POST',body:{fee:$('[name=cancellationFee]').value}});await loadAll();renderList();refreshDrawer();toast('Cancellation request updated.');}catch(ex){decision.disabled=false;toast(ex.message);}return;}
+    if(decision){decision.disabled=true;try{await api('/orders/'+decision.dataset.id+'/'+decision.dataset.cancelDecision+'-cancellation',{method:'POST',body:{}});await loadAll();renderList();refreshDrawer();toast('Cancellation request updated.');}catch(ex){decision.disabled=false;toast(ex.message);}return;}
     const tracking=t.closest('[data-tracking-update]');if(tracking){tracking.disabled=true;try{await api('/admin/orders/'+tracking.dataset.trackingUpdate+'/tracking-update',{method:'POST',body:{}});await loadAll();refreshDrawer();toast('Tracking update recorded.');}catch(ex){tracking.disabled=false;toast(ex.message);}return;}
     const ss = t.closest('[data-set-status]'); if (ss) { if (!ss.classList.contains('on')) setStatus(ss.dataset.id, ss.dataset.setStatus, ss); return; }
     const eo = t.closest('[data-edit-order]'); if (eo) { openOrderForm(S.orders.find(o => o.id === Number(eo.dataset.editOrder))); return; }

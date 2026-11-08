@@ -8,7 +8,11 @@ export const STATUS_SCHEMA = [
     kind TEXT NOT NULL, amount DOUBLE PRECISION NOT NULL, note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
     UNIQUE(order_id,kind))`,
   "UPDATE client_orders SET delivered_at=updated_at WHERE status='delivered' AND delivered_at IS NULL",
+  // Our fee on a cancelled order (Erwin, 8 Nov 2026: choose per order in the cancel window): 'auto' = kept only if the
+  // client paid the order (the rule since 29 Oct), 'yes' = charged even if not paid, 'no' = not charged even if paid.
+  "ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS keep_fee TEXT NOT NULL DEFAULT 'auto'",
 ];
+export const KEEP_FEE = ['auto', 'yes', 'no'];
 export const ADMIN_STATUS_TARGETS=['pending','processing','shipped','delivered','cancelled'];
 // No fee typed by the admin: the supplier's cancellation fee from the sheet (AH), if any (Erwin, 26 Oct 2026).
 const feeOrSupplier=(fee,order)=>fee==null||fee===''?order.supplier_cancel_fee??'':fee;
@@ -66,6 +70,9 @@ export async function changeStatus(DB, order, action, body, admin, actorName) {
       actor,change.status,t,actor,action==='request-cancellation'?change.reason:action==='reject-cancellation'?'Cancellation rejected':action==='approve-cancellation'?'Cancellation approved':'',t,
       action==='request-cancellation'?change.reason:action==='reject-cancellation'?'Cancellation rejected':action==='approve-cancellation'?'Cancellation approved':'',change.fee,t,change.fee).first();
   if(!row)throw new Error('The order changed. Refresh and try again.');
+  // Our fee: the admin's choice when cancelling; back to the usual rule when the order is reopened.
+  const keep=row.status==='cancelled'?(admin&&KEEP_FEE.includes(body?.keepFee)?body.keepFee:null):order.status==='cancelled'?'auto':null;
+  if(keep&&keep!==row.keep_fee){await DB.prepare('UPDATE client_orders SET keep_fee=? WHERE id=?').bind(keep,row.id).run();row.keep_fee=keep;}
   // Reopened after a cancellation: the cancellation fee no longer applies (the row stays for the record, at 0).
   if(admin&&order.status==='cancelled'&&row.status!=='cancelled') await DB.prepare("UPDATE client_balance_adjustments SET amount=0 WHERE order_id=? AND kind='cancellation_fee'").bind(order.id).run();
   // Cancelled: an open cost revision is closed (the sheet row turns red, not orange).

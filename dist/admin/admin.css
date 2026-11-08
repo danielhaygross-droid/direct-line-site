@@ -268,3 +268,19 @@ body.in-control [data-main-tabs]{display:none}
 .cx-fold[open]>summary{border-bottom-left-radius:0;border-bottom-right-radius:0;margin-bottom:-1px}.cx-fold[open]>summary svg{transform:rotate(180deg)}
 .cx-fold>summary:focus-visible{outline:2px solid var(--gold-2);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.cx-fold>summary svg{transition:none}}
+/* Cancel window (8 Nov 2026): choose each order's cancellation fee and our fee before cancelling */
+dialog.cxw{width:min(760px,calc(100vw - 24px));max-height:calc(100vh - 32px);overflow:auto;padding:0;border:1px solid color-mix(in srgb,var(--text) 18%,var(--line));border-radius:var(--radius);background:var(--surface);color:var(--text);box-shadow:0 24px 60px rgba(17,27,39,.28)}
+dialog.cxw::backdrop{background:rgba(17,27,39,.45)}
+.cxw-box{display:grid;gap:14px;padding:18px 20px 20px}.cxw-lead{margin:0;font-size:13.5px}
+.cxw-all{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 14px;padding:12px 14px;border-radius:10px;background:var(--surface-2,color-mix(in srgb,var(--text) 4%,transparent))}.cxw-all>b{flex-basis:100%;font-size:13px}
+.cxw-all .field{margin:0;min-width:150px}.cxw-all .field select{min-height:40px}
+.cxw-list{display:grid;border-top:1px solid var(--line)}
+.cxw-row{display:grid;grid-template-columns:28px minmax(0,1fr) 170px 170px;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.cxw-row.out{opacity:.5}.cxw-row.out .cxw-fee,.cxw-row.out .cxw-keep{pointer-events:none}
+.cxw-in input,.cxw-keep input{width:20px;height:20px;accent-color:var(--gold)}
+.cxw-who{display:grid;gap:3px;min-width:0}.cxw-who small{color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}.cxw-who .pay-tag{margin:0}.cxw-why{color:var(--orange)!important}
+.cxw-fee{margin:0}.cxw-fee small{font-size:11.5px}.cxw-fee input{min-height:40px}
+.cxw-keep{display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer}.cxw-keep.off{opacity:.55;cursor:default}.cxw-keep b{font-variant-numeric:tabular-nums}
+.cxw-sum{display:grid}.cxw-note{margin:6px 0 0;font-size:12.5px}
+.cxw-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+@media (max-width:640px){.cxw-box{padding:16px}.cxw-row{grid-template-columns:28px minmax(0,1fr);gap:10px}.cxw-fee,.cxw-keep{grid-column:2}.cxw-actions .btn{flex:1}}
