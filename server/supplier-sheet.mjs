@@ -326,10 +326,36 @@ const seenIn = (col, v) => DUP_TABS.map(t => `COUNTIF(INDIRECT("'${t}'!${col}:${
 const dupCount = () => { const b = all('B'), r = all(L(C.TRACK));
   return `SUMPRODUCT(((${b}<>"")*((${seenIn('B', b)})>1)+(${r}<>"")*((${seenIn(L(C.TRACK), r)})>1)>0)*1)`; };
 const revisionCounter = wq => { const rev = `COUNTIF(${all('O')},"${REVISION_FLAG}*")`, revText = `IF(${rev}=0,"","⚠ "&${rev}&" COST REVISION REQUEST(S) WAITING: see the orange rows, type the new Total cost or NO + reason  ·  "&${rev}&" 个降价请求等待回复：请看橙色行，填写新的总成本，或写 NO 和原因")`;
-  if (wq === CANCELLED_TAB) return { range: `${wq}!A4`, values: [[`=${revText}`]] };
+  if (wq === CANCELLED_TAB) return { range: `${wq}!A4`, values: [[`=TEXTJOIN(CHAR(10),TRUE,${newCancelText(true)},${revText})`]] };
   const dupText = `IF(${dupCount()}=0,"","⚠ "&${dupCount()}&" ROW(S) WITH A DUPLICATE ORDER OR TRACKING NUMBER: see the red rows  ·  "&${dupCount()}&" 行订单号或运单号重复：请看红色行")`;
   // One line each (3 Nov 2026): row 4 is two lines high.
-  return { range: `${wq}!A4`, values: [[`=TEXTJOIN(CHAR(10),TRUE,${revText},${dupText})`]] }; };
+  return { range: `${wq}!A4`, values: [[`=TEXTJOIN(CHAR(10),TRUE,${newCancelText(false)},${revText},${dupText})`]] }; };
+// New cancellations (Erwin, 8 Nov 2026: "more obvious", the supplier must not miss them): orders cancelled today or
+// yesterday (AJ Status changed on the Cancelled tab) are bright yellow rows there, and row 4 of Cancelled and Orders
+// says how many, in big red text on Cancelled.
+const NEW_CANCEL_F = () => `COUNTIF(INDIRECT("'${CANCELLED_TAB}'!${L(C.CHANGED)}${FIRST_ROW}:${L(C.CHANGED)}"),">="&(TODAY()-1))`;
+const newCancelText = here => `IF(${NEW_CANCEL_F()}=0,"","🛑 "&${NEW_CANCEL_F()}&" ORDER(S) CANCELLED TODAY OR YESTERDAY: ${here ? 'the YELLOW rows below' : 'see the Cancelled tab'}. Do NOT buy or ship them. If you already bought or shipped one, tell us now  ·  "&${NEW_CANCEL_F()}&" 个订单在今天或昨天被取消：${here ? '请看下面的黄色行' : '请看 Cancelled 标签页'}。不要购买或发货。如果已经购买或发货，请马上告诉我们")`;
+const newCancelRule = sheetId => ({ addConditionalFormatRule: { index: 0, rule: {
+  ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: C.END }],
+  booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=AND(ISNUMBER($${L(C.CHANGED)}${FIRST_ROW}),$${L(C.CHANGED)}${FIRST_ROW}>=TODAY()-1)` }] },
+    format: { backgroundColor: { red: 1, green: 0.92, blue: 0.2 }, textFormat: { bold: true, strikethrough: false, foregroundColor: { red: 0.55, green: 0.05, blue: 0.05 } } } } } } });
+const NEW_CANCEL_KEY = 'supplier_new_cancel', NEW_CANCEL_NOW = '1';
+// Added once (and again after the sheet is rebuilt); the Cancelled tab is checked first, so the rule is never added twice.
+export async function ensureNewCancelAlerts(DB, env, fetchImpl = fetch) {
+  if (await getSetting(DB, NEW_CANCEL_KEY) === NEW_CANCEL_NOW) return false;
+  const { wq } = await tabNames(DB);
+  const data = await sheetsRequest(env, '?fields=sheets(properties(sheetId,title),conditionalFormats)', {}, fetchImpl);
+  const tabs = (data?.sheets || []).filter(x => allTabs(wq).includes(x.properties?.title)), cancelled = tabs.find(x => x.properties.title === CANCELLED_TAB);
+  if (!cancelled) return false;
+  const id = cancelled.properties.sheetId, has = (cancelled.conditionalFormats || []).some(r => /TODAY\(\)-1/.test(String(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || '')));
+  await batch(env, [...(has ? [] : [newCancelRule(id)]),
+    { repeatCell: { range: { sheetId: id, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 14, foregroundColor: { red: 0.8, green: 0, blue: 0 } }, wrapStrategy: 'OVERFLOW_CELL', verticalAlignment: 'MIDDLE' } }, fields: 'userEnteredFormat(textFormat,wrapStrategy,verticalAlignment)' } },
+    ...tabs.map(x => rowHeight(x.properties.sheetId, 3, 60))], fetchImpl);
+  await batchValues(env, tabs.map(x => revisionCounter(x.properties.title)), fetchImpl);
+  await putSetting(DB, NEW_CANCEL_KEY, NEW_CANCEL_NOW);
+  return true;
+}
+const newCancelSafely = async (DB, env, fetchImpl) => { try { return await ensureNewCancelAlerts(DB, env, fetchImpl); } catch (e) { console.error('New cancellation alerts not added', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 // The whole row turns red; typing a tracking number already used shows a warning on the cell (it is still accepted:
 // one parcel can be meant for two orders).
 const dupRule = sheetId => ({ addConditionalFormatRule: { index: 0, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: C.END }], booleanRule: {
@@ -382,7 +408,7 @@ const revSafely = async (DB, env, fetchImpl) => { try { return await ensureRevis
 // headers (up to 3 lines). A Guide tab explains everything, one topic per row. Added once to the live sheet (and again
 // after a rebuild); the website never reads any of it.
 export const ORDERS_TITLE = 'Direct Line — Orders 订单';
-const headRows = sheetId => [rowHeight(sheetId, 3, 42), rowHeight(sheetId, 4, 50), rowHeight(sheetId, 5, 64)];
+const headRows = sheetId => [rowHeight(sheetId, 3, 60), rowHeight(sheetId, 4, 50), rowHeight(sheetId, 5, 64)];
 const billingHeadRows = sheetId => [rowHeight(sheetId, 2, 42), rowHeight(sheetId, 3, 42), rowHeight(sheetId, 4, 64),
   { repeatCell: { range: { sheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: BILLING_WIDTH }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE', horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment,horizontalAlignment)' } }];
 // Height of a Guide row: the longest of its three cells, wrapped at the column width (like rowPx).
@@ -682,7 +708,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested') OR revision_status <> '')").run();
     await putSetting(DB, LAYOUT, LAYOUT_NOW);
-    await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY).run(); // re-checked next time (tabs may be new)
+    await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY, NEW_CANCEL_KEY).run(); // re-checked next time (tabs may be new)
     return true;
   } catch (e) {
     await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(LAYOUT, 'migrating:' + t).run();
@@ -1207,6 +1233,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     result.billing = await billingSafely(DB, env, fetchImpl);
     result.rulesFixed = await rulesSafely(DB, env, fetchImpl);
     result.dupAlerts = await dupSafely(DB, env, fetchImpl);
+    result.newCancelAlerts = await newCancelSafely(DB, env, fetchImpl);
     result.revisionColours = await revSafely(DB, env, fetchImpl);
     result.bilingual = await zhSafely(DB, env, fetchImpl);
     const { wq } = await tabNames(DB);
@@ -1396,7 +1423,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   await splitSupplierTabs(DB, env, wq, sheetId, fetchImpl);
   await DB.prepare('DELETE FROM portal_settings WHERE key=?').bind(BILLING_KEY).run();
   // The rebuilt tabs get the duplicate and cost revision colours and warnings again (next check).
-  await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY).run();
+  await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY, NEW_CANCEL_KEY).run();
   await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(SETTING, '1').run();
   await putSetting(DB, LAYOUT, LAYOUT_NOW);
   return { ok: true, rows: rows.length, sheetId, backup: !!current };
