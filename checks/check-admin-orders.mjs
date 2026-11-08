@@ -106,44 +106,42 @@ try {
     await ui.locator('[data-fees-form] [name=commission]').fill('5');
     await ui.locator('[data-fees-form] [type=submit]').click(); await page.waitForTimeout(900);
     assert.equal(Number((await row(o)).commission), 5, tag + ' fee on this order');
-    // Cancel: "Cancelled" in the status row opens the cancel box; the first click on Cancel this order only asks.
-    assert.equal(await ui.locator('[data-cancel-box]').isVisible(), false, tag + ' cancel box closed at first');
-    await ui.locator('[data-cancel-open]').click(); await ui.waitForSelector('[data-cancel-box]:not([hidden])');
-    await ui.locator('[data-cancel-close]').click(); assert.equal(await ui.locator('[data-cancel-box]').isVisible(), false, tag + ' Keep the order closes it');
-    await ui.locator('[data-cancel-open]').click(); await ui.waitForSelector('[data-cancel-box]:not([hidden])');
-    await ui.locator('[data-cancel-four-direct]').click(); assert.equal(await ui.locator('[name=directCancelFee]').inputValue(), '4', tag + ' $4 fills the fee');
-    await ui.locator('[data-cancel-direct]').click(); await page.waitForTimeout(300);
-    assert.equal((await row(o)).status, 'pending', tag + ' first click does not cancel');
-    assert.match(await ui.locator('[data-cancel-direct]').innerText(), lang === 'en' ? /Click again to cancel/ : /לחצו שוב לביטול/);
-    await ui.locator('[data-cancel-box]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${lang}-${width}-cancel-box.png`) });
-    await ui.locator('[data-cancel-direct]').click(); await page.waitForTimeout(1200);
+    // Cancel: "Cancelled" in the status row opens the cancel window (8 Nov 2026); Keep the orders changes nothing.
+    const cw = ui.locator('dialog[data-cancel-window]');
+    await ui.locator('aside.drawer [data-cancel-window]').click(); await cw.waitFor();
+    await cw.locator('.cxw-actions [data-cw-close]').click(); await cw.waitFor({ state: 'detached' });
+    assert.equal((await row(o)).status, 'pending', tag + ' Keep the orders does not cancel');
+    await ui.locator('aside.drawer [data-cancel-window]').click(); await cw.waitFor();
+    await cw.locator('[data-cw-fee]').fill('4'); await page.screenshot({ path: path.join(out, `${lang}-${width}-cancel-window.png`) });
+    await cw.locator('[data-cw-go]').click(); await cw.waitFor({ state: 'detached', timeout: 15000 }); await page.waitForTimeout(600);
     assert.equal((await row(o)).status, 'cancelled', tag + ' cancelled');
     assert.equal(Number((await DB.prepare("SELECT amount FROM client_balance_adjustments WHERE order_id=? AND kind='cancellation_fee'").bind(o.id).first()).amount), 4);
     assert.match(await ui.locator('[data-d-info]').innerText(), lang === 'en' ? /This order is cancelled\. Choose a status to reopen it/ : /ההזמנה מבוטלת/, tag + ' reopen hint');
-    assert.equal(await ui.locator('[data-cancel-direct]').count(), 0, tag + ' no cancel card on a cancelled order');
+    assert.equal(await ui.locator('aside.drawer [data-cancel-window]').count(), 0, tag + ' no cancel button on a cancelled order');
     await ui.locator('[data-set-status="processing"]').click(); await page.waitForTimeout(1000);
     assert.equal((await row(o)).status, 'processing', tag + ' reopened');
     assert.equal(Number((await DB.prepare("SELECT amount FROM client_balance_adjustments WHERE order_id=? AND kind='cancellation_fee'").bind(o.id).first()).amount), 0, tag + ' fee removed');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
     // Bulk "Cancelled" (Erwin, 26 Oct 2026, KumoBags): requests are approved and others cancelled, each with the supplier's
-    // cancellation fee from the sheet (none = free); two clicks. The request card shows the supplier's fee, pre-filled.
+    // cancellation fee from the sheet (none = free), checked in the cancel window first (8 Nov 2026).
     const rq = await mk(`BULK-REQ-${lang}-${width}`), pd = await mk(`BULK-PEND-${lang}-${width}`);
     ok(await call('/orders/' + rq.id + '/request-cancellation', 'POST', { reason: 'Store suspended' }, client));
     await DB.prepare('UPDATE client_orders SET supplier_cancel_fee=6.5 WHERE id=?').bind(rq.id).run();
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const u = page.frame({ name: 'admin' }); await u.waitForSelector('[data-tab=orders]'); await u.locator('[data-tab=orders]').click(); await u.locator('[data-filter="all"]').click();
     await u.locator(`tr[data-open-order="${rq.id}"]`).click(); await u.waitForSelector('.cancel-sup');
-    assert.equal(await u.locator('[name=cancellationFee]').inputValue(), '6.5', tag + ' request card pre-filled with the supplier fee');
+    assert.match(await u.locator('.cancel-sup').innerText(), /6\.50/, tag + ' request card shows the supplier fee');
     await u.locator('.cancel-sup').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${lang}-${width}-request-supplier-fee.png`) });
     await page.keyboard.press('Escape'); await page.waitForTimeout(300);
     await u.locator(`[data-pick="${rq.id}"]`).check(); await u.locator(`[data-pick="${pd.id}"]`).check();
-    await u.locator('[data-bulk-status]').selectOption('cancelled'); await u.locator('[data-bulk="status"]').click(); await page.waitForTimeout(300);
-    assert.equal((await row(rq)).status, 'cancellation_requested', tag + ' bulk: first click only asks');
+    await u.locator('[data-bulk-status]').selectOption('cancelled'); await u.locator('[data-bulk="status"]').click();
+    const bw = u.locator('dialog[data-cancel-window]'); await bw.waitFor();
+    assert.equal((await row(rq)).status, 'cancellation_requested', tag + ' bulk: the window only asks');
     await page.screenshot({ path: path.join(out, `${lang}-${width}-bulk-cancel.png`) });
-    await u.locator('[data-bulk="status"]').click(); await page.waitForTimeout(2500);
+    await bw.locator('[data-cw-go]').click(); await bw.waitFor({ state: 'detached', timeout: 15000 }); await page.waitForTimeout(600);
     assert.deepEqual([(await row(rq)).status, (await row(pd)).status], ['cancelled', 'cancelled'], tag + ' bulk cancelled both');
     const feeOf = async x => Number((await DB.prepare("SELECT amount FROM client_balance_adjustments WHERE order_id=? AND kind='cancellation_fee'").bind(x.id).first())?.amount || 0);
     assert.deepEqual([await feeOf(rq), await feeOf(pd)], [6.5, 0], tag + ' each with its supplier fee');
-    assert.deepEqual(errors, [], tag); console.log(`PASS ${tag}: all statuses, back to pending, fee on order (+ error), two-click cancel with fee, reopen`);
+    assert.deepEqual(errors, [], tag); console.log(`PASS ${tag}: all statuses, back to pending, fee on order (+ error), cancel window with fee, reopen`);
     await ctx.close();
   }
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }

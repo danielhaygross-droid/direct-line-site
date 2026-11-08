@@ -107,7 +107,6 @@
       catch (ex) { pr.disabled = false; toast(ex.message); }
       return;
     }
-    if(t.closest('[data-cancel-four]')){$('[name=cancellationFee]').value='4';return;}
     // Money > Payments: which card is open (record / edit / attach a receipt) is kept on the drawer state.
     const pa = t.closest('[data-pay-new],[data-pay-cancel],[data-pay-edit],[data-pay-attach],[data-receipt-cancel],[data-scroll-pay]');
     if (pa && S.drawer?.kind === 'client') {
@@ -140,22 +139,13 @@
       catch (ex) { toast(ex.message); rr.disabled = false; }
       return;
     }
-    // "Cancelled" in the status row opens the cancel box under it (fee, $4, Cancel this order).
-    const co=t.closest('[data-cancel-open],[data-cancel-close]');if(co){const box=$('[data-cancel-box]'),open=co.hasAttribute('data-cancel-open')&&box.hidden;box.hidden=!open;$('[data-cancel-open]')?.classList.toggle('on',open);$('[data-cancel-open]')?.setAttribute('aria-expanded',String(open));if(open)$('[name=directCancelFee]').focus();return;}
-    if(t.closest('[data-cancel-four-direct]')){$('[name=directCancelFee]').value='4';return;}
-    const direct=t.closest('[data-cancel-direct]');
-    if(direct){
-      if(!direct.dataset.armed){direct.dataset.armed='1';direct.textContent='Click again to cancel';setTimeout(()=>{if(direct.isConnected){delete direct.dataset.armed;direct.textContent='Cancel this order';}},4000);return;}
-      if(direct.disabled)return;direct.disabled=true;
-      try{await api('/orders/'+direct.dataset.cancelDirect,{method:'PUT',body:{status:'cancelled',fee:$('[name=directCancelFee]').value}});await loadAll();renderList();refreshDrawer();toast('Order cancelled. The client sees it right away.');}
-      catch(ex){toast(ex.message);direct.disabled=false;}
-      return;
-    }
+    // "Cancelled" in the status row and "Approve cancellation…" open the cancel window (fees per order, 8 Nov 2026).
+    const cw=t.closest('[data-cancel-window]');if(cw){openCancelWindow([Number(cw.dataset.cancelWindow)]);return;}
     // Cost revision: keep the price (with the optional reply).
     const rkp=t.closest('[data-rev-keep-product]');if(rkp){const f=rkp.closest('form');rkp.disabled=true;try{await api('/admin/products/'+rkp.dataset.revKeepProduct+'/cost-revision',{method:'POST',body:{action:'keep',reply:f.revReply.value}});await loadAll();renderTab();toast('Price kept. The client was told.');}catch(ex){rkp.disabled=false;toast(ex.message);}return;}
     const rk=t.closest('[data-rev-keep]');if(rk){const f=rk.closest('form');rk.disabled=true;try{await api('/admin/orders/'+rk.dataset.revKeep+'/cost-revision',{method:'POST',body:{action:'keep',reply:f.reply.value}});await loadAll();renderList();refreshDrawer();toast('Price kept. The client was told.');}catch(ex){rk.disabled=false;toast(ex.message);}return;}
     const decision=t.closest('[data-cancel-decision]');
-    if(decision){decision.disabled=true;try{await api('/orders/'+decision.dataset.id+'/'+decision.dataset.cancelDecision+'-cancellation',{method:'POST',body:{fee:$('[name=cancellationFee]').value}});await loadAll();renderList();refreshDrawer();toast('Cancellation request updated.');}catch(ex){decision.disabled=false;toast(ex.message);}return;}
+    if(decision){decision.disabled=true;try{await api('/orders/'+decision.dataset.id+'/'+decision.dataset.cancelDecision+'-cancellation',{method:'POST',body:{}});await loadAll();renderList();refreshDrawer();toast('Cancellation request updated.');}catch(ex){decision.disabled=false;toast(ex.message);}return;}
     const tracking=t.closest('[data-tracking-update]');if(tracking){tracking.disabled=true;try{await api('/admin/orders/'+tracking.dataset.trackingUpdate+'/tracking-update',{method:'POST',body:{}});await loadAll();refreshDrawer();toast('Tracking update recorded.');}catch(ex){tracking.disabled=false;toast(ex.message);}return;}
     const ss = t.closest('[data-set-status]'); if (ss) { if (!ss.classList.contains('on')) setStatus(ss.dataset.id, ss.dataset.setStatus, ss); return; }
     const eo = t.closest('[data-edit-order]'); if (eo) { openOrderForm(S.orders.find(o => o.id === Number(eo.dataset.editOrder))); return; }

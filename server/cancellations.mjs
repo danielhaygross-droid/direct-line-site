@@ -77,13 +77,15 @@ export function clientAdjustments(list) {
   return out;
 }
 export async function syncKeptFees(DB, clientId, t = Math.floor(Date.now() / 1000)) {
-  const rows = (await DB.prepare(`SELECT o.id, o.status, o.archived, o.commission, k.amount AS kept FROM client_orders o
+  const rows = (await DB.prepare(`SELECT o.id, o.status, o.archived, o.commission, o.keep_fee, k.amount AS kept FROM client_orders o
     LEFT JOIN client_balance_adjustments k ON k.order_id = o.id AND k.kind = '${KEPT_FEE}'
     WHERE o.client_id = ? AND (o.status = 'cancelled' OR k.amount <> 0)`).bind(clientId).all()).results || [];
   if (!rows.length) return;
   const paid = await paidOrders(DB, clientId);
   for (const r of rows) {
-    const want = r.status === 'cancelled' && !r.archived && paid.has(Number(r.id)) && Number(r.commission) > 0 ? r2(r.commission) : 0;
+    // keep_fee (8 Nov 2026): 'yes' charges our fee even if the order was not paid, 'no' never, 'auto' only if paid.
+    const keep = r.keep_fee === 'yes' || (r.keep_fee !== 'no' && paid.has(Number(r.id)));
+    const want = r.status === 'cancelled' && !r.archived && keep && Number(r.commission) > 0 ? r2(r.commission) : 0;
     if (want === r2(r.kept || 0) && (r.kept != null || !want)) continue;
     await DB.prepare(`INSERT INTO client_balance_adjustments (client_id, order_id, kind, amount, note, created_at) VALUES (?,?,'${KEPT_FEE}',?,'Cancellation fee',?)
       ON CONFLICT (order_id, kind) DO UPDATE SET amount = EXCLUDED.amount`).bind(clientId, r.id, want, t).run();

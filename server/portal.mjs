@@ -414,14 +414,14 @@ function orderOut(r) {
     sheetSyncError: r.sheet_sync_error || '',
     // Supplier's total for the whole order (product + shipping), from the supplier Work Queue. Admin only.
     supplierCost: r.supplier_cost == null ? null : Number(r.supplier_cost),
-    supplierCancelFee: r.supplier_cancel_fee == null ? null : Number(r.supplier_cancel_fee),
+    supplierCancelFee: r.supplier_cancel_fee == null ? null : Number(r.supplier_cancel_fee), keepFee: r.keep_fee || 'auto',
     // Cost per product: the supplier's (admin only) and each product's share of the price (client and admin).
     itemCosts: r.item_costs ? itemCostList(r.item_costs) : null, itemPrices: r.status === 'cancelled' ? null : itemPrices(r),
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   };
 }
 // What a client may see of an order: total only, never the product vs shipping breakdown (item #6).
-const CLIENT_HIDDEN = ['addressChangedAt', 'itemCosts', 'commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost', 'priceSource', 'supplierCancelFee'];
+const CLIENT_HIDDEN = ['addressChangedAt', 'itemCosts', 'commission', 'supplierShare', 'ourShare', 'sheetSyncStatus', 'sheetSyncedAt', 'sheetSyncError', 'productCost', 'shippingFee', 'supplierCost', 'priceSource', 'supplierCancelFee', 'keepFee'];
 function clientOrder(o) {
   const out = { ...o, priced: o.productCost != null || o.shippingFee != null || o.quotedUnitPrice != null };
   for (const k of CLIENT_HIDDEN) delete out[k];
@@ -936,7 +936,7 @@ async function routePortal(request, url, ctx, meta) {
       return json({ ok: true, order: out });
     }
     if (body.status !== undefined) {
-      if (Object.keys(body).some(k=>!['status','fee','reason'].includes(k))) return json({ok:false,error:'Change status separately from order details.'},400);
+      if (Object.keys(body).some(k=>!['status','fee','reason','keepFee'].includes(k))) return json({ok:false,error:'Change status separately from order details.'},400);
       try { const row=await changeStatus(DB,existing,'status',body,who.admin,actorOf(who));const out=orderOut(row);const sync=syncPortalOrderToGoogleSheet(DB,env,row.id).catch(()=>{});if(waitUntil)waitUntil(sync);return json({ok:true,order:who.admin?out:clientOrder(out)}); }
       catch(e){return json({ok:false,error:e.message},e.status||409);}
     }
