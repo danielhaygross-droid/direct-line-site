@@ -827,8 +827,9 @@ export async function ensureBillingTab(DB, env, fetchImpl = fetch, { force = fal
 // rows, Paid / Not paid and delay colours were missing on rows 6-43. Every sheet check puts any slid rule of Orders and
 // Shipped back to start at the first order row (one read; a write only when a rule slid).
 export async function fixRuleRanges(DB, env, fetchImpl = fetch) {
-  // Not Cancelled (Erwin): cancelled orders get no cost revisions.
-  const { wq } = await tabNames(DB), tabs = [wq, SHIPPED_TAB], top = FIRST_ROW - 1;
+  // Cancelled too (8 Nov 2026): deleting the broken rows on top slid its red "cancelled" rules to row 18, so the
+  // newest cancelled orders (rows 6-17) were not red.
+  const { wq } = await tabNames(DB), tabs = allTabs(wq), top = FIRST_ROW - 1;
   const data = await sheetsRequest(env, '?fields=sheets(properties(sheetId,title),conditionalFormats)', {}, fetchImpl);
   const requests = [];
   for (const s of data?.sheets || []) {

@@ -502,6 +502,10 @@ console.log('PASS Billing refunds: cancelled orders, paid minus cancellation fee
 // rows 6-43 lost the orange cost revision rows. Every sheet check puts them back to row 6.
 {
   const cf = () => sheets.get(SHIPPED_TAB).cf || [], starts = () => cf().flatMap(r => r.ranges.map(x => x.startRowIndex));
+  // Cancelled (8 Nov 2026): its red rules slid to row 18 after the broken rows on top were deleted.
+  const ccf = () => sheets.get(CANCELLED_TAB).cf || [];
+  assert.ok(ccf().some(r => /CANCELLED/.test(JSON.stringify(r.booleanRule.condition))), 'Cancelled has the red cancelled rule');
+  for (const r of ccf()) { for (const x of r.ranges) x.startRowIndex += 12; const c = r.booleanRule.condition; if (c.type === 'CUSTOM_FORMULA') c.values = c.values.map(v => ({ userEnteredValue: v.userEnteredValue.replace(/(\$?[A-Z]{1,3})(\d+)/g, (m, col, row) => col + (Number(row) + 12)) })); }
   const revRule = () => cf().find(r => r.booleanRule.condition.type === 'CUSTOM_FORMULA' && /COST REVISION/.test(r.booleanRule.condition.values[0].userEnteredValue));
   assert.ok(revRule(), 'Shipped has the orange cost revision row rule');
   for (const r of cf()) { for (const x of r.ranges) x.startRowIndex += 38; const c = r.booleanRule.condition; if (c.type === 'CUSTOM_FORMULA') c.values = c.values.map(v => ({ userEnteredValue: v.userEnteredValue.replace(/(\$?[A-Z]{1,3})(\d+)/g, (m, col, row) => col + (Number(row) + 38)) })); }
@@ -510,9 +514,10 @@ console.log('PASS Billing refunds: cancelled orders, paid minus cancellation fee
   assert.ok(starts().every(s => s === FIRST_ROW - 1), 'every Shipped rule starts at row 6 again: ' + starts());
   assert.match(revRule().booleanRule.condition.values[0].userEnteredValue, /^=LEFT\(\$O6,23\)=/, 'and looks at its own row');
   const before = requests.length; later(); await cron(); assert.ok(!requests.slice(before).some(r => /batchUpdate/.test(r) && false), 'nothing to fix: no write');
-  assert.ok([main(), SHIPPED_TAB].every(t => (sheets.get(t).cf || []).every(r => r.ranges.every(x => x.startRowIndex === FIRST_ROW - 1))), 'Orders and Shipped at row 6 (Cancelled left alone: no cost revisions there)');
+  assert.ok(TABS().every(t => (sheets.get(t).cf || []).every(r => r.ranges.every(x => x.startRowIndex === FIRST_ROW - 1))), 'Orders, Shipped and Cancelled rules at row 6');
+  assert.ok(ccf().filter(r => r.booleanRule.condition.type === 'CUSTOM_FORMULA').every(r => /\$[A-Z]{1,3}6\b/.test(r.booleanRule.condition.values[0].userEnteredValue)), 'Cancelled rules look at their own row');
 }
-console.log('PASS colour rules that slid down (rows moved to the top) go back to row 6 on the next check');
+console.log('PASS colour rules that slid down (rows moved to the top) go back to row 6 on the next check, Cancelled too');
 
 // ---------- sorting in the sheet (29 Oct 2026 incident) ----------
 // The supplier sorts with the filter arrows: Google moves only the filter's columns. The filter used to stop at AD, so the
