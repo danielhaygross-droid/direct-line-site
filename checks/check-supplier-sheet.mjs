@@ -449,6 +449,27 @@ console.log('PASS layout 19: Cost per product moved next to Total cost on all ta
   console.log('PASS layout 21: broken rows (A and B empty) removed, every order kept; a moved row is written from A; 3 cancels at once all land, no row lost');
 }
 
+// New cancellations (Erwin, 8 Nov 2026: "more obvious"): yellow rows on Cancelled for today / yesterday, and a count
+// in row 4 of Cancelled and Orders. Added once.
+{
+  later(); await cron();
+  const newRules = () => (sheets.get(CANCELLED_TAB).cf || []).filter(r => /TODAY\(\)-1/.test(r.booleanRule.condition.values?.[0]?.userEnteredValue || ''));
+  assert.equal(newRules().length, 1, 'one yellow "new cancellation" rule on Cancelled');
+  const rule = newRules()[0];
+  assert.equal(sheets.get(CANCELLED_TAB).cf[0], rule, 'first, so it wins over the pink cancelled rows');
+  const r0 = rule.ranges[0].startRowIndex + 1; // moving a row to the top slides rules down, as on the live sheet (fixed by the next check)
+  assert.equal(rule.booleanRule.condition.values[0].userEnteredValue, `=AND(ISNUMBER($AJ${r0}),$AJ${r0}>=TODAY()-1)`);
+  assert.deepEqual(rule.ranges.map(x => [x.startColumnIndex, x.endColumnIndex]), [[0, 36]], 'the whole row A-AJ');
+  const a4 = t => String(sheets.get(t).grid[3]?.[0] || '');
+  assert.match(a4(CANCELLED_TAB), /CANCELLED TODAY OR YESTERDAY: the YELLOW rows below/);
+  assert.match(a4(CANCELLED_TAB), /COUNTIF\(INDIRECT\("'Cancelled'!AJ6:AJ"\),">="&\(TODAY\(\)-1\)\)/);
+  assert.match(a4(main()), /CANCELLED TODAY OR YESTERDAY: see the Cancelled tab/);
+  assert.match(a4(main()), /COST REVISION/, 'the other Orders warnings stay');
+  await DB.prepare("DELETE FROM portal_settings WHERE key='supplier_new_cancel'").run(); later(); await cron();
+  assert.equal(newRules().length, 1, 'checked again: still one rule');
+  console.log('PASS new cancellations: yellow rows (today / yesterday) on Cancelled, count on Cancelled and Orders row 4, added once');
+}
+
 // ---------- Billing tab (Ada, 1 Nov 2026): one list of all orders, paid apart from not paid, formulas only ----------
 const { BILLING_TAB, BILLING_HEADERS, billingCells } = await import('../server/supplier-sheet.mjs');
 assert.ok(sheets.has(BILLING_TAB), 'the Billing tab is added by the full check');
