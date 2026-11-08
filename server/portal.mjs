@@ -909,7 +909,7 @@ async function routePortal(request, url, ctx, meta) {
     const sync = (kind === 'order' ? syncPortalOrderToGoogleSheet(DB, env, id) : syncQuoteRow(DB, env, id)).catch(e => console.error('Cost revision sheet sync failed', e)); if (waitUntil) waitUntil(sync); else await sync;
     return json({ ok: true });
   }
-  const statusAction = /^\/orders\/(\d+)\/(request-cancellation|approve-cancellation|reject-cancellation|mark-delivered)$/.exec(path);
+  const statusAction = /^\/orders\/(\d+)\/(request-cancellation|approve-cancellation|reject-cancellation|undo-cancellation|mark-delivered)$/.exec(path);
   if (statusAction && method === 'POST') {
     const existing = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(Number(statusAction[1])).first();
     if (!existing || !who.admin && Number(existing.client_id)!==Number(who.clientId)) return json({ok:false,error:'Not found'},404);

@@ -203,7 +203,7 @@ button.kw-item:hover .kw-l b,button.kw-item:focus-visible .kw-l b{text-decoratio
 /* Order panel: "Cancelled" in the status row opens this box (23 Oct 2026). */
 .cancel-box{margin-top:12px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--red) 35%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--red) 6%,var(--surface))}.cancel-box[hidden]{display:none}
 .cancel-box>p{margin:0 0 10px;font-size:13.5px;color:var(--muted)}
-.cancel-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}.cancel-row .field{flex:0 1 190px;margin:0;min-width:140px}.cancel-row .btn{min-height:42px}
+.cancel-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}.cancel-row .field{flex:0 1 190px;margin:0;min-width:140px}.cancel-row .btn{min-height:42px}.undo-cx{align-items:center;column-gap:12px;margin:0 0 14px}.undo-cx small{flex:1 1 220px}
 @media(max-width:480px){.cancel-row .field{flex:1 1 100%}.cancel-row .btn{flex:1 1 auto}}
 /* Design QA (23 Oct 2026): inside the Control page its sidebar is the navigation; order rows in fixed columns. */
 body.in-control [data-main-tabs]{display:none}

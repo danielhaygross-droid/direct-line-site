@@ -5,7 +5,7 @@
     const couriers = String(S.ov.settings.couriers || '').split('\n').filter(Boolean);
     return `<div class="bulk-bar" data-bulk-bar>${all}<b>${n} selected</b>
       ${archivedView ? '<button type="button" class="btn btn-sm" data-bulk="restore">Restore</button>' : `
-      <label class="bulk-f"><span>Status</span><select data-bulk-status><option value="">Choose…</option>${ADMIN_STATUSES.map(s => `<option value="${s}">${UI.LABEL[s]}</option>`).join('')}<option value="cancelled">${UI.LABEL.cancelled}</option></select></label><button type="button" class="btn btn-sm" data-bulk="status">Set status</button>
+      <label class="bulk-f"><span>Status</span><select data-bulk-status><option value="">Choose…</option>${ADMIN_STATUSES.map(s => `<option value="${s}">${UI.LABEL[s]}</option>`).join('')}<option value="cancelled">${UI.LABEL.cancelled}</option><option value="undo-cancel">Undo cancellation approval</option></select></label><button type="button" class="btn btn-sm" data-bulk="status">Set status</button>
       <label class="bulk-f"><span>Courier</span><input data-bulk-courier list="dl-bulk-couriers" maxlength="60" placeholder="e.g. Yanwen"><datalist id="dl-bulk-couriers">${couriers.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label><button type="button" class="btn btn-sm" data-bulk="courier">Set courier</button>
       <label class="bulk-f"><span>Fee</span><span class="money"><input data-bulk-fee type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.50"></span></label><button type="button" class="btn btn-sm" data-bulk="fee">Set fee</button>
       <button type="button" class="btn btn-sm btn-danger" data-bulk="archive">Archive</button>`}
@@ -30,6 +30,8 @@
       msg.textContent = `Updating ${i + 1} of ${ids.length}…`;
       try {
         if (kind === 'archive' || kind === 'restore') await api('/admin/orders/' + id + '/archive', { method: 'POST', body: { archived: kind === 'archive' } });
+        // Approved by mistake (8 Nov 2026): back to the client's cancellation request, fee removed.
+        else if (body?.status === 'undo-cancel') await api('/orders/' + id + '/undo-cancellation', { method: 'POST', body: {} });
         else await api('/orders/' + id, { method: 'PUT', body });
       } catch (ex) { failedIds.push(id); failed.push(`${orderName(S.orders.find(o => o.id === id) || S.archivedOrders.find(o => o.id === id) || { id })}: ${ex.message}`); }
     }
