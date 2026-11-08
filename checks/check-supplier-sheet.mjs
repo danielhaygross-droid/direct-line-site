@@ -42,6 +42,7 @@ globalThis.fetch = (real => async (url, opt = {}) => {
   if (!url.includes('sheets.googleapis.com')) return real(url, opt);
   const path = url.split('/spreadsheets/sheet-id')[1], body = opt.body ? JSON.parse(opt.body) : null, method = opt.method || 'GET';
   requests.push(method + ' ' + decodeURIComponent(path).slice(0, 80));
+  if (globalThis.slowSheet) await new Promise(r => setTimeout(r, 5 + Math.random() * 30)); // like Google: syncs side by side interleave
   if (path.startsWith('?fields=developerMetadata')) return Response.json({ developerMetadata: meta, sheets: [...sheets.keys()].map(title => ({ properties: { title } })) });
   if (path.startsWith('?fields=sheets(properties(sheetId),protectedRanges')) return Response.json({ sheets: [...sheets.values()].map(s => ({ properties: { sheetId: s.sheetId }, protectedRanges: s.prot.map((p, i) => ({ protectedRangeId: i + 1 })) })) });
   if (path.startsWith('?fields=sheets(properties(sheetId,title),conditionalFormats)')) return Response.json({ sheets: [...sheets].map(([title, s]) => ({ properties: { title, sheetId: s.sheetId }, conditionalFormats: s.cf || [] })) });
@@ -352,7 +353,7 @@ await DB.prepare("UPDATE portal_settings SET value='13' WHERE key='supplier_shee
 const ids0 = allRows.map(r => Number(r[31])), st = new Map();
 for (const id of ids0) st.set(id, await order(id));
 later(); const sw = await cron(); assert.equal(sw.ok, true, JSON.stringify(sw));
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '21');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '22');
 for (const id of ids0) { const o = st.get(id), want = o.status === 'cancelled' ? CANCELLED_TAB : ['shipped', 'delivered'].includes(o.status) && o.tracking_number ? SHIPPED_TAB : main(); assert.equal(where(id)?.[0], want, 'order ' + id + ' in ' + want); assert.equal(count(id), 1); }
 for (const t of TABS()) { const order0 = Object.entries(idsIn(t)).sort((a, b) => a[1] - b[1]).map(([id]) => st.get(Number(id))); assert.deepEqual(order0.map(o => o.id), [...order0].sort((a, b) => b.created_at - a.created_at || b.id - a.id).map(o => o.id), t + ': newest on top'); }
 assert.ok(sheets.get(main()).grid.some(r => r?.[0] === '2026-10-11'), 'a row without an order id stays in the supplier tab');
@@ -370,7 +371,7 @@ const byOrder0 = Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t))
 for (const t of TABS()) { const s = sheets.get(t); s.grid = s.grid.map((r, i) => i === 3 ? r : to18(r)); assert.deepEqual(enRow(s.grid[4]), HEADERS_18); }
 await DB.prepare("UPDATE portal_settings SET value='18' WHERE key='supplier_sheet_layout'").run();
 const costs18 = JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results); later(); const sw19 = await cron(); assert.equal(sw19.ok, true, JSON.stringify(sw19));
-assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '21');
+assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '22');
 for (const t of TABS()) {
   const g = sheets.get(t).grid; assert.deepEqual(enRow(g[4]), HEADERS, t + ': Cost per product in Q, next to Total cost');
   assert.equal(enRow(g[4])[16], 'Cost per product (USD)'); assert.equal(enRow(g[4])[22], 'Client paid', t + ': Client paid moved to W');
@@ -416,11 +417,14 @@ console.log('PASS layout 19: Cost per product moved next to Total cost on all ta
   const ids0 = TABS().map(t => Object.keys(idsIn(t)).sort().join(','));
   const g = sheets.get(main()).grid, real = g[FIRST_ROW - 1];
   const shifted = n => [...Array(n).fill(''), ...real].slice(0, 36);
-  g.splice(FIRST_ROW - 1, 0, shifted(35), shifted(22)); // like live rows 6-7: the row from AJ on, and from W on
+  g.splice(FIRST_ROW - 1, 0, shifted(35), shifted(22), []); // like live rows 6-7: the row from AJ on, from W on, and a blank row
+  const lost = Number(Object.keys(idsIn(main())).at(-1)), lostRow = idsIn(main())[lost]; g.splice(lostRow, 1); // a row lost by side-by-side syncs
   await DB.prepare("UPDATE portal_settings SET value='20' WHERE key='supplier_sheet_layout'").run();
   await cron();
-  assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '21');
+  assert.equal((await DB.prepare("SELECT value FROM portal_settings WHERE key='supplier_sheet_layout'").first()).value, '22');
   for (const t of TABS()) for (const r of sheets.get(t).grid.slice(FIRST_ROW - 1)) assert.ok(!r || r[0] || r[1] || !r.some(x => String(x ?? '').trim()), t + ': no row with A and B empty is left');
+  for (let i = 0; i < 40 && idsIn(main())[lost] == null; i++) { await DB.prepare("DELETE FROM portal_settings WHERE key='sheet_retry_until'").run(); await DB.prepare('UPDATE client_orders SET sheet_next_try=0').run(); later(); await cron(); }
+  assert.notEqual(idsIn(main())[lost], undefined, 'the lost order is written again');
   assert.deepEqual(TABS().map(t => Object.keys(idsIn(t)).sort().join(',')), ids0, 'every order still in its tab, once');
   // A moving row is written from A: cancel an order and its row on top of Cancelled starts with the date and order.
   const pick = Number(Object.keys(idsIn(main()))[0]);
@@ -429,8 +433,20 @@ console.log('PASS layout 19: Cost per product moved next to Total cost on all ta
   assert.equal(Number(top[31]), pick, 'the cancelled order is on top of Cancelled'); assert.ok(top[0] && top[1], 'with its date (A) and order (B) in place');
   assert.equal(idsIn(main())[pick], undefined, 'and gone from Orders');
   assert.equal((await call('/orders/' + pick, 'PUT', { status: 'processing' }, admin)).status, 200); await settle();
+  // Several orders cancelled at the same moment (Erwin's 17, 8 Nov 2026): each lands on Cancelled once, no row is lost.
+  const all0 = TABS().flatMap(t => Object.keys(idsIn(t))).sort().join(','), three = Object.keys(idsIn(main())).slice(0, 3).map(Number);
+  globalThis.slowSheet = true;
+  const res = await Promise.all(three.map(id => call('/orders/' + id, 'PUT', { status: 'cancelled' }, admin)));
+  for (let i = 0; i < 100 && !three.every(id => idsIn(CANCELLED_TAB)[id] != null && idsIn(main())[id] == null); i++) await settle();
+  await settle(); globalThis.slowSheet = false;
+  assert.deepEqual(res.map(r => r.status), [200, 200, 200]);
+  for (const id of three) { assert.notEqual(idsIn(CANCELLED_TAB)[id], undefined, id + ' on Cancelled'); assert.equal(idsIn(main())[id], undefined, id + ' gone from Orders'); }
+  assert.equal(TABS().flatMap(t => Object.keys(idsIn(t))).sort().join(','), all0, 'every order still in the sheet exactly once');
+  for (const t of TABS()) for (const [id, r] of Object.entries(idsIn(t))) assert.ok(sheets.get(t).grid[r][1], t + ' row of ' + id + ' has its order (B)');
+  for (const id of three) assert.equal((await call('/orders/' + id, 'PUT', { status: 'processing' }, admin)).status, 200);
+  await settle();
   for (const o of before) await DB.prepare('UPDATE client_orders SET sheet_sync_status=? WHERE id=?').bind(o.sheet_sync_status, o.id).run();
-  console.log('PASS layout 21: broken rows (A and B empty) removed, every order kept; a moved row is written from A');
+  console.log('PASS layout 21: broken rows (A and B empty) removed, every order kept; a moved row is written from A; 3 cancels at once all land, no row lost');
 }
 
 // ---------- Billing tab (Ada, 1 Nov 2026): one list of all orders, paid apart from not paid, formulas only ----------
