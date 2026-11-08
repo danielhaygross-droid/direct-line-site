@@ -92,6 +92,19 @@ try {
     assert.equal(Math.round((cx.fees - feesBefore) * 100), 800, tag + ' cancellation costs = the window total');
     assert.deepEqual([await adj(A, 'kept_fee'), await adj(B, 'kept_fee'), await adj(C, 'kept_fee')], [1, 0, 1], tag + ' our fee kept on A and C');
     assert.deepEqual([await adj(A, 'cancellation_fee'), await adj(B, 'cancellation_fee'), await adj(C, 'cancellation_fee')], [4, 2, 0], tag + ' cancellation fees');
+    // Status changed sort (8 Nov 2026): the orders just cancelled come first, each with the time under its status.
+    await DB.prepare('UPDATE client_orders SET status_changed_at=status_changed_at-60 WHERE id=?').bind(A).run();
+    await ui.locator('[data-filter=cancelled]').click(); await ui.locator('[data-sort="admin-orders-2"]').selectOption('changed');
+    const order1 = await ui.locator('[data-pick]').evaluateAll(els => els.map(e => Number(e.dataset.pick)));
+    assert.ok(order1.indexOf(A) > order1.indexOf(B) && order1.indexOf(A) > order1.indexOf(C), tag + ' A (changed a minute earlier) after B and C: ' + order1);
+    assert.ok(await ui.locator('.st-when').count() >= 3, tag + ' the time shows under the status');
+    await page.screenshot({ path: path.join(out, `${tag}-sort-changed.png`) });
+    await ui.locator('[data-sort="admin-orders-2"]').selectOption('changed_old');
+    const order2 = await ui.locator('[data-pick]').evaluateAll(els => els.map(e => Number(e.dataset.pick)));
+    assert.ok(order2.indexOf(A) < order2.indexOf(B) && order2.indexOf(A) < order2.indexOf(C), tag + ' oldest change first: A first');
+    await ui.locator('[data-sort="admin-orders-2"]').selectOption('newest'); assert.equal(await ui.locator('.st-when').count(), 0, tag + ' no time under the status in other sorts');
+    const cOut = ok(await call('/orders', 'GET', null, client)).orders.find(o => o.id === A);
+    assert.ok(cOut.statusChangedAt > 0, tag + ' clients get statusChangedAt (for their own sort)');
     const mine = ok(await call('/payments', 'GET', null, client));
     assert.ok(!JSON.stringify(mine).includes('keepFee') && !JSON.stringify(mine.cancelled).includes('"kept"'), tag + ' the client never sees our fee');
     // One order from its panel: "Approve cancellation…" opens the window with one row; Keep the orders changes nothing.

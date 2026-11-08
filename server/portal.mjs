@@ -20,7 +20,7 @@ import { itemCostList, itemPrices } from './item-costs.mjs';
 import { REVISION_SCHEMA, withRevisions, requestRevision, answerOrder, productRequoted, keepProduct } from './cost-revisions.mjs';
 import { PAYMENT_ORDER_SCHEMA, orderIdList, checkOrders, setPaymentOrders, paymentOrderIds, withPaid, dropTakenOrders } from './payment-orders.mjs';
 
-import { STATUS_SCHEMA, changeStatus, balanceAdjustments } from './order-status.mjs';
+import { STATUS_SCHEMA, changeStatus, balanceAdjustments, statusAt } from './order-status.mjs';
 
 import { INVOICE_SCHEMA, invoices, saveInvoice, monthlyInvoices } from './invoices.mjs';
 
@@ -417,7 +417,7 @@ function orderOut(r) {
     supplierCancelFee: r.supplier_cancel_fee == null ? null : Number(r.supplier_cancel_fee), keepFee: r.keep_fee || 'auto',
     // Cost per product: the supplier's (admin only) and each product's share of the price (client and admin).
     itemCosts: r.item_costs ? itemCostList(r.item_costs) : null, itemPrices: r.status === 'cancelled' ? null : itemPrices(r),
-    createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+    createdAt: Number(r.created_at), updatedAt: Number(r.updated_at), statusChangedAt: statusAt(r),
   };
 }
 // What a client may see of an order: total only, never the product vs shipping breakdown (item #6).
