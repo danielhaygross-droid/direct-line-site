@@ -100,7 +100,7 @@ export const HEADERS_18 = [...HEAD_A_O, 'Total cost (USD)', 'Tracking number', '
 export const REFUNDED_SHIP = 'Refunded';
 export const SHIPPED = 'Shipped', NOT_SHIPPED = 'Not shipped', CANCELLED_SHIP = 'Cancelled', CANCEL_REQ_SHIP = 'Cancel requested', DELAYED = 'Possibly delayed', ON_TIME = 'On time';
 const STATUS = { pending: 'Pending', processing: 'In Progress', shipped: 'Shipped', delivered: 'Delivered', cancellation_requested: 'Cancellation requested', cancelled: 'CANCELLED - do not ship' };
-const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '20';
+const SETTING = 'supplier_sheet', LAST = 'supplier_sheet_last', LAYOUT = 'supplier_sheet_layout', LAYOUT_NOW = '21';
 // Set when a payment changes; the next poll rewrites the Client paid column (V) in one write.
 const PAID_DIRTY = 'supplier_sheet_paid_dirty';
 const markPaidDirtyDb = DB => DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PAID_DIRTY, String(Date.now())).run();
@@ -666,6 +666,15 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
       await batch(env, tabs.flatMap(([, id]) => [...statusDateFormat(id), fullFilter(id), { addProtectedRange: { protectedRange: { range: { sheetId: id, startColumnIndex: C.CHANGED, endColumnIndex: C.CHANGED + 1 }, description: 'Filled in by the Direct Line website', editors: { users: [email] } } } }]), fetchImpl);
       await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived").run();
     }
+    // 21) Clean-up after layout 20's first hour (8 Nov 2026): rows Google appended in the wrong columns have A and B
+    //     empty. They are copies (the website has every order), so they are deleted and every order is written again.
+    for (const tab of allTabs(wq)) {
+      const id = await workQueueSheetId(env, fetchImpl, true, tab);
+      if (id == null) continue;
+      const rows = (await sheetsRequest(env, '/values/' + encodeURIComponent(`${tab}!A${FIRST_ROW}:${L(C.END - 1)}`), {}, fetchImpl)).values || [];
+      const broken = rows.map((r, i) => (!norm(r?.[0]) && !norm(r?.[1]) && (r || []).some(x => norm(x)) ? FIRST_ROW + i : 0)).filter(Boolean);
+      if (broken.length) { await batch(env, deleteRowRequests(id, broken), fetchImpl); await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived").run(); }
+    }
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested') OR revision_status <> '')").run();
     await putSetting(DB, LAYOUT, LAYOUT_NOW);
@@ -936,17 +945,18 @@ export async function syncWorkQueueRow(DB, env, order, photos, fetchImpl = fetch
     supplier = SUP.map((_, i) => keep(v[i] ?? '')); extra = [keep(v[C.DOM - C.COST] ?? ''), keep(v[C.FEE - C.COST] ?? ''), statusDate(order)];
     for (const [i, val] of changes) supplier[i] = val;
   } else { supplier = supplierCells(order); extra = extraCells(order); }
-  const res = await sheetsRequest(env, '/values/' + encodeURIComponent(`${tab}!A${FIRST_ROW}:${L(C.END - 1)}`) + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
-    method: 'POST', body: JSON.stringify({ majorDimension: 'ROWS', values: [[...am, ...supplier, ...qz, ...extra]] }),
-  }, fetchImpl);
+  // A blank row is inserted at row 7 (inside the data rows, so the tab's rules, filter and protection grow with it), filled
+  // from A, then moved to row 6. Not values:append (8 Nov 2026): Google guesses where the "table" is, and once AJ was added
+  // it put new rows on top with their cells shifted right (from W or AJ on), A-V empty.
+  const sheetId = await workQueueSheetId(env, fetchImpl, false, tab);
+  if (sheetId == null) throw new Error(`Supplier sheet tab ${tab} not found`);
+  await batch(env, [{ insertDimension: { range: { sheetId, dimension: 'ROWS', startIndex: FIRST_ROW, endIndex: FIRST_ROW + 1 }, inheritFromBefore: true } }], fetchImpl);
+  await batchValues(env, [{ range: `${tab}!A${FIRST_ROW + 1}:${L(C.END - 1)}${FIRST_ROW + 1}`, values: [[...am, ...supplier, ...qz, ...extra]] }], fetchImpl);
   if (from) await saveSheetCells(DB, order, changes); else await rememberSupplierCells(DB, order, supplier);
   await saveRef(DB, order);
-  const row = Number(/![A-Z]+(\d+)/.exec(res?.updates?.updatedRange || '')?.[1]);
-  const sheetId = await workQueueSheetId(env, fetchImpl, false, tab);
-  if (row && sheetId != null) await batch(env, [...(row > FIRST_ROW ? [moveRow(sheetId, row, FIRST_ROW)] : []), rowHeight(sheetId, FIRST_ROW, rowPx(am))], fetchImpl);
-  // Moving the new row to the top pushed the old copies in this tab one row down.
-  const pushed = row > FIRST_ROW && sheetId != null;
-  await drop(found.map(r => (pushed && r.tab === tab && r.row >= FIRST_ROW ? { ...r, row: r.row + 1 } : r)));
+  await batch(env, [moveRow(sheetId, FIRST_ROW + 1, FIRST_ROW), rowHeight(sheetId, FIRST_ROW, rowPx(am))], fetchImpl);
+  // The new row pushed every old row of this tab one row down.
+  await drop(found.map(r => (r.tab === tab && r.row >= FIRST_ROW ? { ...r, row: r.row + 1 } : r)));
   return { enabled: true, row: FIRST_ROW, tab, ...(from ? { moved: from.tab } : { added: true }) };
 }
 
@@ -1133,7 +1143,7 @@ export async function applySupplierRow(DB, order, cells, t = Math.floor(Date.now
 const SEEN_KEY = 'dl-supplier-sheet-seen', FULL_EVERY = 3 * 3600;
 // Part of the fingerprint: changed when an update has one-time work in the sheet (e.g. the cost revision colours,
 // 3 Nov 2026), so the first minute after it is live runs a full check instead of waiting up to 3 hours.
-const SHEET_WORK = 'status-date-1'; // layout 20 (AJ Status changed, 8 Nov 2026)
+const SHEET_WORK = 'row-fix-1'; // layout 21 (broken appended rows removed, 8 Nov 2026)
 // What the website reads from each supplier tab: P-V, the order id, AH-AI and B (the row check).
 const supplierRanges = tab => [`${tab}!${L(C.COST)}${FIRST_ROW}:${L(C.REASON)}`, `${tab}!${L(C.ID)}${FIRST_ROW}:${L(C.ID)}`, `${tab}!${L(C.DOM)}${FIRST_ROW}:${L(C.FEE)}`, `${tab}!B${FIRST_ROW}:B`];
 export async function supplierSheetFingerprint(env, fetchImpl = fetch, tabs = [WQ_NEW]) {
