@@ -78,7 +78,7 @@ globalThis.fetch = (real => async (url, opt = {}) => {
       // Like Google: whole rows sorted by one column, stable, blank cells last.
       else if (kind === 'sortRange') { const [, s] = byId(a.range.sheetId), k = a.sortSpecs[0].dimensionIndex, down = a.sortSpecs[0].sortOrder === 'DESCENDING', st = a.range.startRowIndex; const rows = s.grid.slice(st), v = r => String(r?.[k] ?? ''); const full = rows.filter(r => v(r) !== ''), empty = rows.filter(r => v(r) === ''); full.sort((x, y) => (v(x) < v(y) ? -1 : v(x) > v(y) ? 1 : 0) * (down ? -1 : 1)); s.grid.splice(st, rows.length, ...full, ...empty); }
       // Cell fills (9 Nov 2026): the latest repeatCell covering a cell wins; no colour = cleared.
-      else if (kind === 'repeatCell' && a.fields === 'userEnteredFormat.backgroundColor') { const [, s] = byId(a.range.sheetId); (s.fills ||= []).push({ r0: a.range.startRowIndex, r1: a.range.endRowIndex ?? Infinity, c0: a.range.startColumnIndex, c1: a.range.endColumnIndex, rgb: a.cell?.userEnteredFormat?.backgroundColor ?? null }); }
+      else if (kind === 'repeatCell' && a.fields === 'userEnteredFormat.backgroundColor') { const [, s] = byId(a.range.sheetId); (s.fills ||= []).push({ r0: a.range.startRowIndex, r1: a.range.endRowIndex ?? Infinity, c0: a.range.startColumnIndex, c1: a.range.endColumnIndex ?? Infinity, rgb: a.cell?.userEnteredFormat?.backgroundColor ?? null }); }
       else if (kind === 'deleteConditionalFormatRule') byId(a.sheetId)[1].cf.splice(a.index, 1);
       else if (kind === 'appendDimension') { const [, s] = byId(a.sheetId); s.cols = (s.cols ?? 35) + a.length; }
       else if (kind === 'deleteDimension') { const [, s] = byId(a.range.sheetId); if (a.range.dimension === 'ROWS') s.grid.splice(a.range.startIndex, a.range.endIndex - a.range.startIndex); }
@@ -489,18 +489,18 @@ console.log('PASS layout 19: Cost per product moved next to Total cost on all ta
   const grey = { red: 0.93, green: 0.93, blue: 0.93 }, blueFill = { red: 0.85, green: 0.92, blue: 1 }, yellowFill = { red: 1, green: 0.95, blue: 0.7 };
   const fillAt = (tab, row, c) => { let rgb = null; for (const f of sheets.get(tab).fills || []) if (row - 1 >= f.r0 && row - 1 < f.r1 && c >= f.c0 && c < f.c1) rgb = f.rgb; return rgb; };
   const look = (tab, row) => {
-    for (const c of [col('A'), col('N'), col('W'), col('AG'), col('AJ')]) assert.equal(fillAt(tab, row, c), null, `${tab} row ${row} column ${c}: no fill`);
+    for (const c of [col('A'), col('N'), col('W'), col('AG'), col('AJ'), col('AK'), col('AS'), col('BZ')]) assert.equal(fillAt(tab, row, c), null, `${tab} row ${row} column ${c}: no fill (nothing right of AJ either)`);
     assert.deepEqual(fillAt(tab, row, col('O')), blueFill, `${tab} row ${row}: Competitor price is light blue`);
     for (const c of [col('P'), col('Q'), col('V'), col('AH'), col('AI')]) assert.deepEqual(fillAt(tab, row, c), yellowFill, `${tab} row ${row} column ${c}: supplier yellow`);
   };
-  for (const t of TABS()) (sheets.get(t).fills ||= []).push({ r0: 5, r1: Infinity, c0: 0, c1: 36, rgb: grey }); // the header look all over the data rows
+  for (const t of TABS()) (sheets.get(t).fills ||= []).push({ r0: 5, r1: Infinity, c0: 0, c1: Infinity, rgb: grey }); // the header look all over the data rows, and all the way to the right
   await DB.prepare("DELETE FROM portal_settings WHERE key='supplier_fills_clean'").run(); later(); await cron();
   for (const t of TABS()) for (const row of [FIRST_ROW, FIRST_ROW + 3, 40]) look(t, row);
   for (const t of TABS()) sheets.get(t).fills.push({ r0: 5, r1: Infinity, c0: 0, c1: 1, rgb: grey }); later(); await cron();
   assert.deepEqual(fillAt(main(), FIRST_ROW, 0), grey, 'cleaned once, not at every check');
   const F = await mk('F-FILL'); await settle();
   const [ft, fr] = where(F.id); look(ft, fr + 1);
-  console.log('PASS fills: one look on every data row (O blue, P-V and AH-AI yellow, nothing else), cleaned once, a new row is painted on its own');
+  console.log('PASS fills: one look on every data row (O blue, P-V and AH-AI yellow, nothing else, nothing right of AJ), cleaned once, a new row is painted on its own');
 }
 
 // ---------- Billing tab (Ada, 1 Nov 2026): one list of all orders, paid apart from not paid, formulas only ----------
@@ -570,6 +570,14 @@ console.log('PASS Billing refunds: cancelled orders, paid minus cancellation fee
   const before = requests.length; later(); await cron(); assert.ok(!requests.slice(before).some(r => /batchUpdate/.test(r) && false), 'nothing to fix: no write');
   assert.ok(TABS().every(t => (sheets.get(t).cf || []).every(r => r.ranges.every(x => x.startRowIndex === FIRST_ROW - 1))), 'Orders, Shipped and Cancelled rules at row 6');
   assert.ok(ccf().filter(r => r.booleanRule.condition.type === 'CUSTOM_FORMULA').every(r => /\$[A-Z]{1,3}6\b/.test(r.booleanRule.condition.values[0].userEnteredValue)), 'Cancelled rules look at their own row');
+}
+// The cancelled / cancel-requested row colours in ONE range (9 Nov 2026): the live sheet had A-P and R-AE, so Q stayed yellow on pink rows.
+{
+  const rowRules = t => (sheets.get(t).cf || []).filter(r => r.booleanRule.condition.type === 'CUSTOM_FORMULA' && /"(CANCELLED - do not ship|Cancellation requested)"/.test(r.booleanRule.condition.values[0].userEnteredValue) && r.ranges.some(x => x.endColumnIndex - x.startColumnIndex > 1));
+  for (const t of TABS()) { assert.equal(rowRules(t).length, 2, t + ': the cancelled and the cancel-requested row rules'); for (const r of rowRules(t)) r.ranges = [{ ...r.ranges[0], startColumnIndex: 0, endColumnIndex: 16 }, { ...r.ranges[0], startColumnIndex: 17, endColumnIndex: 31 }]; } // like the live sheet: nothing on Q
+  await cron();
+  for (const t of TABS()) for (const r of rowRules(t)) assert.deepEqual(r.ranges.map(x => [x.startColumnIndex, x.endColumnIndex]), [[0, 31]], t + ': one range A-AE again, Q included');
+  const w0 = requests.length; await cron(); assert.ok(!requests.slice(w0).some(r => /batchUpdate/.test(r) && /updateConditionalFormatRule/.test(r)), 'nothing left to merge');
 }
 console.log('PASS colour rules that slid down (rows moved to the top) go back to row 6 on the next check, Cancelled too');
 
