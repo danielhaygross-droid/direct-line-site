@@ -126,13 +126,47 @@
   function cancelledBox(c, { admin = false, creditLeft, balance } = {}) {
     if (!c || (!c.count && !c.refunds?.length)) return '';
     const st = cxSettle(c, creditLeft, balance), left = st.leftC / 100;
-    const stat = (label, value, note, cls = '') => `<div class="cx-stat ${cls}"><small>${label}</small><b data-no-i18n>${value}</b>${note ? `<em>${note}</em>` : ''}</div>`;
     const FOLD = 5, more = n => he() ? `הצגת כל ${n} ההזמנות שבוטלו` : `Show all ${n} cancelled orders`, less = () => he() ? 'הצגת פחות' : 'Show fewer';
     const rows = c.orders.map((o, i) => `<tr${i >= FOLD ? ' class="cx-more"' : ''}><td><button type="button" class="link-btn" data-open-order="${o.id}"><bdi data-no-i18n>${esc(o.orderRef || '#' + o.id)}</bdi></button>${o.store ? `<small data-no-i18n>${esc(o.store)}</small>` : ''}</td>`
       + `<td class="num" data-no-i18n>${o.paid ? usd(o.paid) : '—'}</td><td class="num" data-no-i18n>${o.fee ? usd(o.fee) : '—'}</td><td class="num" data-no-i18n><b><bdi dir="ltr">${o.paid || o.fromCredit ? usd(o.back) : '—'}</bdi></b>${o.fromCredit ? `<small class="cx-from-credit">${he() ? 'מהזיכוי' : 'From credit'}</small>` : ''}</td></tr>`).join('');
+    // Read as one calculation, top to bottom (Erwin, 9 Nov 2026: "I can't understand any of it" about six boxes side by
+    // side). Every line is a real number of this box and the lines add up: paid - fees taken from it = due back;
+    // due back - refunded - used on later bills = credit left. Fees not taken from paid money stay on the bill.
+    const t2 = (en, hb) => (he() ? hb : en), sumC = (list, f) => list.reduce((n, o) => n + cents(f(o)), 0);
+    const feesOwedC = Math.max(0, cents(c.feesOwed)), feesTakenC = cents(c.paid) - cents(c.dueBack);
+    const calcLine = (label, amountC, note = '', cls = '') => `<div class="cx-line ${cls}"><span>${label}${note ? `<small>${note}</small>` : ''}</span><b><bdi dir="ltr">${fmt(amountC)}</bdi></b></div>`;
+    const calc = `<p class="cx-count" data-no-i18n>${t2(`${c.count} cancelled ${c.count === 1 ? 'order' : 'orders'}${c.paidCount ? ` · ${c.paidCount} of them were already paid` : ''}`, `${c.count === 1 ? 'הזמנה אחת בוטלה' : `${c.count} הזמנות בוטלו`}${c.paidCount ? ` · ${c.paidCount} מהן כבר שולמו` : ''}`)}</p>`
+      + `<div class="cx-calc" data-no-i18n>`
+      + calcLine(t2('Paid for the cancelled orders', 'שולם על ההזמנות שבוטלו'), cents(c.paid))
+      + calcLine(t2('− Cancellation fees', '− עמלות ביטול'), -feesTakenC, admin && c.kept ? t2(`includes ${usd(c.kept)} of our fee`, `כולל ${usd(c.kept)} מהעמלה שלנו`) : '')
+      + calcLine(admin ? t2('= Due back to the client', '= מגיע ללקוח בחזרה') : t2('= Due back to you', '= מגיע לך בחזרה'), cents(c.dueBack), '', 'cx-total')
+      + (cents(c.refunded) ? calcLine(admin ? t2('− Refunded to the client', '− הוחזר ללקוח') : t2('− Refunded to you', '− הוחזר לך'), -cents(c.refunded)) : '')
+      + (st.known ? (st.usedC ? calcLine(admin ? t2('− Already used on their later bills', '− כבר נוצל בחשבונות הבאים שלו') : t2('− Already used on your later bills', '− כבר נוצל בחשבונות הבאים שלך'), -st.usedC) : '')
+        + calcLine(t2('= Credit left', '= זיכוי שנשאר'), st.leftC, st.leftC > 0 ? (admin ? t2('counts toward their next orders', 'נספר להזמנות הבאות שלו') : t2('counts toward your next orders', 'נספר להזמנות הבאות שלך')) : '', 'cx-total cx-left')
+        : calcLine(t2('= Kept as credit', '= נשאר כזיכוי'), cents(c.credit), '', 'cx-total cx-left'))
+      + (feesOwedC ? calcLine(t2('Fees still to pay (on the bill)', 'עמלות שעוד צריך לשלם (בחשבון)'), feesOwedC, '', 'cx-owed') : '')
+      + `</div>`;
+    // One short block per cancel date, newest first (Erwin, 9 Nov 2026: "accurately show both"): the day the orders were
+    // cancelled (China / Manila time, like the sheet's Status changed). The admin also sees it without our fee, which is
+    // what the supplier sheet's Billing tab shows.
+    const groups = new Map(); for (const o of c.orders) { const k = o.day || ''; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(o); }
+    const days = [...groups].sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
+    const dayCard = ([k, list]) => {
+      const paidL = list.filter(o => o.paid > 0), openL = list.filter(o => !(o.paid > 0) && o.fee > 0);
+      const pPaid = sumC(paidL, o => o.paid), pFee = sumC(paidL, o => o.fee), sPaid = sumC(paidL, o => o.supPaid), sFee = sumC(paidL, o => o.supFee), openFee = sumC(openL, o => o.fee), fromCr = sumC(openL.filter(o => o.fromCredit), o => o.fee);
+      const head = t2(`${list.length} cancelled${paidL.length ? `, ${paidL.length} were paid` : ''}`, `${list.length} בוטלו${paidL.length ? `, ${paidL.length} שולמו` : ''}`);
+      const ours = admin && paidL.length && paidL.every(o => o.supPaid > 0) && (pPaid !== sPaid || pFee !== sFee) ? t2(`Without our fee (as in the supplier sheet): paid ${fmt(sPaid)} · fees ${fmt(sFee)} · refund ${fmt(sPaid - sFee)}`, `בלי העמלה שלנו (כמו בגיליון הספק): שולם ${fmt(sPaid)} · עמלות ${fmt(sFee)} · החזר ${fmt(sPaid - sFee)}`) : '';
+      const lines = [
+        paidL.length ? t2(`Paid ${fmt(pPaid)} · fees ${fmt(pFee)} · back ${fmt(pPaid - pFee)}`, `שולם ${fmt(pPaid)} · עמלות ${fmt(pFee)} · חוזר ${fmt(pPaid - pFee)}`) : '',
+        openL.length ? t2(`${openL.length} not paid: fees ${fmt(openFee)}${fromCr === openFee ? ' (taken from credit)' : fromCr ? ` (${fmt(fromCr)} taken from credit)` : ' (on the bill)'}`, `${openL.length} לא שולמו: עמלות ${fmt(openFee)}${fromCr === openFee ? ' (נלקח מהזיכוי)' : fromCr ? ` (${fmt(fromCr)} נלקח מהזיכוי)` : ' (בחשבון)'}`) : '',
+      ].filter(Boolean);
+      return `<div class="cx-date" data-cx-date="${esc(k)}" data-no-i18n><b>${k ? day(k) : '—'}</b><span class="cx-date-head">${head}</span>${lines.map(l => `<small>${esc(l)}</small>`).join('')}${ours ? `<small class="cx-ours">${esc(ours)}</small>` : ''}</div>`;
+    };
+    const byDate = days.length ? `<h4 class="cx-sub" data-no-i18n>${t2('By cancel date', 'לפי תאריך ביטול')}</h4><div class="cx-dates">${days.map(dayCard).join('')}</div>` : '';
     const refunds = (c.refunds || []).map(r => `<div class="cx-refund"><span data-no-i18n>${day(r.refundedAt)}</span><b data-no-i18n>${usd(r.amount)}</b><span data-no-i18n>${esc([r.method, r.note].filter(Boolean).join(' · '))}</span>${admin ? `<button type="button" class="btn btn-sm btn-ghost" data-refund-undo="${r.id}">Undo</button>` : ''}</div>`).join('');
     return `<section class="card card-pad cx-box" data-cancelled-box><h3 class="sec-title">Cancelled orders</h3>
-      <div class="cx-stats">${stat('Cancelled orders', String(c.count), c.paidCount ? `${c.paidCount} already paid` : '')}${stat('Paid for them', usd(c.paid))}${stat('Cancellation fees', usd(c.fees), [st.feesSettled ? '<span>Settled</span>' : '', admin && c.kept ? `<span>Includes ${usd(c.kept)} of our fees kept</span>` : ''].filter(Boolean).join(' · '), st.feesOpen ? 'neg' : '')}${stat(admin ? 'Due back to the client' : 'Due back to you', usd(c.dueBack), 'Paid minus all fees')}${stat('Refunded', usd(c.refunded))}${st.known ? stat('Credit left', usd(left), st.usedC ? `${usd(st.usedC / 100)} used on ${admin ? 'their' : 'your'} bills` : left > 0 ? (admin ? 'Counts toward their next orders' : 'Counts toward your next orders') : '', left > 0 ? 'pos' : '') : stat('Kept as credit', usd(c.credit), admin ? 'Counts toward their next orders' : 'Counts toward your next orders', c.credit > 0 ? 'pos' : '')}</div>
+      ${calc}
+      ${byDate}
       ${rows ? `<div class="table-wrap"><table class="tbl cx-table"><thead><tr><th>Order</th><th class="num">Paid</th><th class="num">Fee</th><th class="num">Back</th></tr></thead><tbody>${rows}</tbody></table></div>${c.orders.length > FOLD ? `<button type="button" class="btn btn-sm cx-more-btn" data-cx-more data-more="${esc(more(c.orders.length))}" data-less="${esc(less())}" aria-expanded="false">${esc(more(c.orders.length))}</button>` : ''}` : ''}
       ${refunds ? `<h4 class="cx-sub">Refunds</h4><div class="cx-refunds">${refunds}</div>` : ''}
       ${admin ? `<details class="cx-add"${c.credit > 0 ? '' : ''}><summary class="btn btn-sm">Record refund</summary><form class="form-grid" data-refund-form novalidate>

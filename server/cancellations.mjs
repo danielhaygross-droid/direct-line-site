@@ -26,9 +26,10 @@ export async function refundedTotal(DB, clientId) {
 // Erwin, 28 Oct 2026 ("deduct the 100 … automatically"): the fee of a cancelled order that was never paid is taken from
 // that credit (oldest cancellation first, while the credit covers it), so the order counts as paid (fromCredit) and
 // the box shows one number. A fee the credit can't cover stays owed as before.
+const cancelDay = o => { const t = Number(o.status_changed_at ?? o.created_at) || 0; return t > 0 ? new Date((t + 8 * 3600) * 1000).toISOString().slice(0, 10) : ''; };
 export async function cancelledSummary(DB, clientId) {
   await syncKeptFees(DB, clientId);
-  const rows = (await DB.prepare(`SELECT o.id, o.order_ref, o.price, o.updated_at, s.name AS store, COALESCE(a.amount, 0) AS fee, COALESCE(k.amount, 0) AS kept
+  const rows = (await DB.prepare(`SELECT o.id, o.order_ref, o.price, o.updated_at, o.status_changed_at, o.created_at, o.supplier_cost, s.name AS store, COALESCE(a.amount, 0) AS fee, COALESCE(k.amount, 0) AS kept
     FROM client_orders o LEFT JOIN client_stores s ON s.id = o.store_id
     LEFT JOIN client_balance_adjustments a ON a.order_id = o.id AND a.kind = 'cancellation_fee'
     LEFT JOIN client_balance_adjustments k ON k.order_id = o.id AND k.kind = '${KEPT_FEE}'
@@ -36,7 +37,10 @@ export async function cancelledSummary(DB, clientId) {
   const orders = (await withPaid(DB, rows.map(r => ({ ...r, id: Number(r.id) })), clientId)).map(o => {
     // fee = everything the cancellation costs the client: the supplier's fee plus our own fee kept on a paid order.
     const price = r2(o.price), kept = r2(o.kept), fee = r2(Number(o.fee) + kept), paid = o.paymentId ? price : 0;
-    return { id: o.id, orderRef: o.order_ref || '', store: o.store || '', cancelledAt: Number(o.updated_at || 0), price, paid, fee, kept, back: o.paymentId ? r2(paid - fee) : 0 };
+    // day: the day it was cancelled, China / Manila time like the sheet's Status changed (totals per cancel date).
+    // supPaid / supFee (admin only, taken off for clients): what was paid and the fee without our fee, as in the sheet.
+    return { id: o.id, orderRef: o.order_ref || '', store: o.store || '', cancelledAt: Number(o.updated_at || 0), day: cancelDay(o), price, paid, fee, kept,
+      supPaid: o.paymentId ? r2(o.supplier_cost) : 0, supFee: r2(o.fee), back: o.paymentId ? r2(paid - fee) : 0 };
   });
   const refunds = ((await DB.prepare('SELECT * FROM client_refunds WHERE client_id = ? AND NOT archived ORDER BY refunded_at DESC, id DESC').bind(clientId).all()).results || [])
     .map(r => ({ id: Number(r.id), amount: r2(r.amount), refundedAt: Number(r.refunded_at), method: r.method || '', note: r.note || '' }));
@@ -63,7 +67,7 @@ export const KEPT_FEE = 'kept_fee';
 export function clientCancelled(c) {
   if (!c) return c;
   const { kept, ...rest } = c;
-  return { ...rest, orders: c.orders.map(({ kept: _, ...o }) => o) };
+  return { ...rest, orders: c.orders.map(({ kept: _, supPaid: _p, supFee: _f, ...o }) => o) };
 }
 export function clientAdjustments(list) {
   const out = [], fee = new Map();

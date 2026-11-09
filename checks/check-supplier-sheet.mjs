@@ -526,13 +526,22 @@ assert.equal(be.ok, true, 'the sync still runs when the Billing tab fails ' + JS
 failBilling = false; later(); await cron(); assert.ok(sheets.has(BILLING_TAB), 'added on the next check');
 assert.deepEqual(billingCells('Work Queue')[3].values[0][0].match(/INDIRECT\("'Work Queue'!A6:W"\)/)?.[0], `INDIRECT("'Work Queue'!A6:W")`, 'tab names with spaces are quoted');
 assert.ok(!readTabs.has(BILLING_TAB));
-console.log('PASS Billing tab: all orders, paid apart from not paid, formulas only, protected, never read, safe if it fails');
+// Totals per cancel date (9 Nov 2026): right of the refund part, from the Cancelled tab's AJ (China time), newest first.
+{ const row = r => bill()[r - 1] || [], at = BILLING_HEADERS.indexOf('Cancelled on');
+  assert.ok(at > BILLING_HEADERS.indexOf('Refund (USD)'), 'per date: right of the refund part');
+  assert.deepEqual(BILLING_HEADERS.slice(at), ['Cancelled on', 'Cancelled', 'Paid orders', 'Paid for them (USD)', 'Fees on paid (USD)', 'Refund (USD)', 'Not paid', 'Fees not paid (USD)']);
+  assert.match(String(row(3)[at]), /^BY CANCEL DATE .*\n按取消日期/, 'title in English and Chinese');
+  const f = String(row(5)[at]);
+  assert.match(f, /INDIRECT\("'Cancelled'!A6:AJ"\)/, 'reads the Cancelled tab to AJ');
+  assert.match(f, /INT\(INDEX\(f,,36\)\)/, 'the day of AJ Status changed'); assert.match(f, /INDEX\(f,,23\)="Paid"/, 'W Client paid');
+  assert.match(f, /INDEX\(f,,16\)/, 'P Total cost'); assert.match(f, /INDEX\(f,,35\)/, 'AI Cancellation fee'); assert.match(f, /SORT\(UNIQUE\(FILTER\(dy,dy>0\)\),1,FALSE\)/, 'newest day first'); }
+console.log('PASS Billing tab: all orders, paid apart from not paid, formulas only, protected, never read, safe if it fails; totals per cancel date');
 // Refunds (Erwin, 3 Nov 2026): far right, every cancelled order (paid first) with paid, fee and refund, a TOTAL row,
 // and row 3 with the whole sum: paid by our clients minus the cancellation fees.
 {
   const g = bill(), u3 = String(g[2][20]), u5 = String(g[4][20]);
-  assert.equal(sheets.get(BILLING_TAB).cols, 29, 'the tab is A to AC');
-  assert.deepEqual(BILLING_HEADERS.slice(20), ['Date', 'Order', 'Shop', 'Product / variation', 'Client paid', 'Total cost (USD)', 'Paid for it (USD)', 'Cancellation fee (USD)', 'Refund (USD)']);
+  assert.equal(sheets.get(BILLING_TAB).cols, 38, 'the tab is A to AL (refunds to AC, per cancel date AE-AL)');
+  assert.deepEqual(BILLING_HEADERS.slice(20, 29), ['Date', 'Order', 'Shop', 'Product / variation', 'Client paid', 'Total cost (USD)', 'Paid for it (USD)', 'Cancellation fee (USD)', 'Refund (USD)']);
   assert.match(u3, /^="CANCELLED: REFUND DUE "&TEXT\(SUMIF\(INDIRECT\("'Cancelled'!W6:W"\),"Paid",INDIRECT\("'Cancelled'!P6:P"\)\)-SUM\(INDIRECT\("'Cancelled'!AI6:AI"\)\)/, 'row 3: paid by our clients minus the fees');
   assert.match(u5, /INDIRECT\("'Cancelled'!A6:AI"\)/, 'reads the Cancelled tab, A to Cancellation fee');
   const cols = /CHOOSECOLS\(f,([\d,]+)\)/.exec(u5)[1].split(',').map(n => HEADERS[Number(n) - 1]);
@@ -546,9 +555,14 @@ console.log('PASS Billing tab: all orders, paid apart from not paid, formulas on
   const tb = sheets.get(BILLING_TAB); tb.cols = 19; tb.cf = []; tb.grid = [];
   await DB.prepare("UPDATE portal_settings SET value = '1|' || split_part(value, '|', 2) WHERE key = 'supplier_billing_tab'").run();
   later(); await cron();
-  assert.equal(tb.cols, 29, 'old tab widened to AC'); assert.match(String(tb.grid[4]?.[20]), /'Cancelled'!A6:AI/, 'refund list written');
+  assert.equal(tb.cols, 38, 'old tab widened to AL'); assert.match(String(tb.grid[4]?.[20]), /'Cancelled'!A6:AI/, 'refund list written');
   assert.equal(tb.cf.filter(r => /"TOTAL"/.test(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || '')).length, 1);
   later(); await cron(); assert.equal(tb.cf.length, 1, 'not added again');
+  // The live tab (9 Nov 2026): version 2, A to AC with the refund part. Widened to AL, the TOTAL rule stays one.
+  tb.cols = 29; await DB.prepare("UPDATE portal_settings SET value = '2|' || split_part(value, '|', 2) WHERE key = 'supplier_billing_tab'").run();
+  later(); await cron();
+  assert.equal(tb.cols, 38, 'A to AL'); assert.match(String(tb.grid[4]?.[30]), /^=ARRAYFORMULA\(IFERROR\(LET\(d,INDIRECT\("'Cancelled'!A6:AJ"\)/, 'per cancel date written');
+  assert.equal(tb.cf.length, 1, 'the TOTAL rule is not added twice');
 }
 console.log('PASS Billing refunds: cancelled orders, paid minus cancellation fees, TOTAL row, old tab widened once');
 
