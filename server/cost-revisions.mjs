@@ -34,8 +34,8 @@ const fail = (message, status = 400) => Object.assign(new Error(message), { stat
 const usd = n => '$' + Number(n).toFixed(2);
 import { productLinkList } from './item-costs.mjs';
 // What the supplier reads in the Competitor price column (Erwin, 3 Nov 2026: in the sheet you can see where each request
-// stands): orange while it waits for the supplier, purple once the supplier gave a new cost that waits for us, green
-// when it is done. The sheet's colour rules read the start of the text.
+// stands): orange while it waits for the supplier, purple once the supplier gave a new cost that waits for us, no
+// colour when it is done (the green was taken off on 9 Nov 2026). The sheet's colour rules read the start of the text.
 export const REVISION_FLAG = 'COST REVISION REQUESTED', REVISION_SENT = 'NEW COST SENT', REVISION_DONE = '✓ REVISION DONE';
 // The second line says it in Chinese (3 Nov 2026); the rules and counters only read the English start.
 const doneZh = done => done.replace(/^new cost /, '新成本 ').replace(/^cost kept(: )?/, (m, why) => '成本不变' + (why ? '：' : ''));
@@ -122,7 +122,7 @@ export async function offerFromSheet(DB, order, cost, t = now()) {
 }
 // The supplier typed NO and the reason (the cost can't be lower): the price is kept and the client gets the reason as
 // the answer, like an admin's Keep the price with a reply. The cost before the request goes back into the sheet (see
-// websiteSupplierCells in supplier-sheet.mjs) and the reason shows in the green Competitor price cell.
+// websiteSupplierCells in supplier-sheet.mjs) and the reason shows in the Competitor price cell.
 export async function supplierKeeps(DB, order, reason = '', t = now()) {
   const was = order.revision_status === 'offered' && order.quoted_unit_price == null ? r2(Number(order.price) - Number(order.commission || 0)) : order.supplier_cost == null ? null : r2(order.supplier_cost);
   if (was != null) await DB.prepare('UPDATE client_orders SET supplier_cost=? WHERE id=?').bind(was, order.id).run();

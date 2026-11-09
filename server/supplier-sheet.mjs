@@ -401,11 +401,11 @@ const dupCheck = sheetId => ({ setDataValidation: { range: { sheetId, startRowIn
   inputMessage: 'This tracking number is already used on another order. Check it is the right parcel.\n这个运单号已经用在另一个订单上，请确认是否正确。', strict: false } } });
 // Where each cost revision stands (Erwin, 3 Nov 2026: "in the spreadsheet I can't know which ones they finished"): the
 // Competitor price cell turns purple once the supplier sent a new cost that waits for us (and the row light purple), and
-// green when it is done. The open ones stay orange (revisionFormat / revisionAlerts).
+// no colour when it is done (the green was taken off on 9 Nov 2026, see removeGreenDoneOnce; the note stays in the cell).
+// The open ones stay orange (revisionFormat / revisionAlerts).
 const startsWith = (sheetId, word, format) => ({ addConditionalFormatRule: { index: 0, rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: COMP, endColumnIndex: COMP + 1 }], booleanRule: { condition: { type: 'TEXT_STARTS_WITH', values: [{ userEnteredValue: word }] }, format } } } });
 const revisionStates = (sheetId, c = C) => [
   startsWith(sheetId, REVISION_SENT, { backgroundColor: { red: 0.76, green: 0.65, blue: 0.96 }, textFormat: { bold: true } }),
-  startsWith(sheetId, REVISION_DONE, { backgroundColor: { red: 0.74, green: 0.9, blue: 0.74 }, textFormat: { bold: true, foregroundColor: { red: 0.08, green: 0.4, blue: 0.16 } } }),
   { addConditionalFormatRule: { rule: { ranges: [{ sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: c.END }], booleanRule: { condition: { type: 'CUSTOM_FORMULA', values: [{ userEnteredValue: `=LEFT($O${FIRST_ROW},${REVISION_SENT.length})="${REVISION_SENT}"` }] }, format: { backgroundColor: { red: 0.93, green: 0.89, blue: 1 } } } } } },
 ];
 // Total cost (P): a number, or NO and the reason on a cost revision ("the cost can't be lower": a reason is required).
@@ -437,6 +437,25 @@ export async function ensureRevisionStates(DB, env, fetchImpl = fetch, t = Math.
   return true;
 }
 const revSafely = async (DB, env, fetchImpl) => { try { return await ensureRevisionStates(DB, env, fetchImpl); } catch (e) { console.error('Cost revision colours not added', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
+// The green "✓ REVISION DONE" fill is taken off (Erwin, 9 Nov 2026: "yes, no colour"): a finished revision kept its green for
+// ever, long after it was updated. The note stays in the cell. Once; the Guide is written again so its row about column O
+// matches. Rules are deleted from the highest index down, so the indexes of the rest do not shift.
+const NO_GREEN_KEY = 'supplier_no_green_done', NO_GREEN_NOW = '1';
+export async function removeGreenDoneOnce(DB, env, fetchImpl = fetch) {
+  if (await getSetting(DB, NO_GREEN_KEY) === NO_GREEN_NOW) return false;
+  const { wq } = await tabNames(DB), tabs = allTabs(wq), requests = [];
+  const data = await sheetsRequest(env, '?fields=sheets(properties(sheetId,title),conditionalFormats)', {}, fetchImpl);
+  for (const s of data?.sheets || []) {
+    if (!tabs.includes(s.properties?.title)) continue;
+    (s.conditionalFormats || []).map((rule, index) => ({ rule, index })).filter(({ rule }) => (rule.booleanRule?.condition?.values || []).some(v => String(v.userEnteredValue || '').includes(REVISION_DONE)))
+      .reverse().forEach(({ index }) => requests.push({ deleteConditionalFormatRule: { sheetId: s.properties.sheetId, index } }));
+  }
+  if (requests.length) await batch(env, requests, fetchImpl);
+  await DB.prepare('DELETE FROM portal_settings WHERE key=?').bind(ZH_KEY).run();
+  await putSetting(DB, NO_GREEN_KEY, NO_GREEN_NOW);
+  return requests.length || true;
+}
+const noGreenSafely = async (DB, env, fetchImpl) => { try { return await removeGreenDoneOnce(DB, env, fetchImpl); } catch (e) { console.error('Green done colour not removed', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 // ---------- English + Chinese (Erwin, 3 Nov 2026) ----------
 // Every text the supplier reads is in English and, on the next line, Chinese (sheet-zh.mjs), and the rows holding them
 // are tall enough to read without resizing anything: row 3 help (2 lines), row 4 alerts and totals (2 lines), row 5
@@ -1272,6 +1291,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     result.cancelledSorted = await sortSafely(DB, env, fetchImpl);
     result.fillsCleaned = await fillsSafely(DB, env, fetchImpl);
     result.revisionColours = await revSafely(DB, env, fetchImpl);
+    result.greenDoneRemoved = await noGreenSafely(DB, env, fetchImpl);
     result.bilingual = await zhSafely(DB, env, fetchImpl);
     const { wq } = await tabNames(DB);
     // Old "ADDRESS CHANGED" warnings: take them off, a few rows a minute (Google's write limit), until none are left.

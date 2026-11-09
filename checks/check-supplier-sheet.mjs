@@ -79,6 +79,7 @@ globalThis.fetch = (real => async (url, opt = {}) => {
       else if (kind === 'sortRange') { const [, s] = byId(a.range.sheetId), k = a.sortSpecs[0].dimensionIndex, down = a.sortSpecs[0].sortOrder === 'DESCENDING', st = a.range.startRowIndex; const rows = s.grid.slice(st), v = r => String(r?.[k] ?? ''); const full = rows.filter(r => v(r) !== ''), empty = rows.filter(r => v(r) === ''); full.sort((x, y) => (v(x) < v(y) ? -1 : v(x) > v(y) ? 1 : 0) * (down ? -1 : 1)); s.grid.splice(st, rows.length, ...full, ...empty); }
       // Cell fills (9 Nov 2026): the latest repeatCell covering a cell wins; no colour = cleared.
       else if (kind === 'repeatCell' && a.fields === 'userEnteredFormat.backgroundColor') { const [, s] = byId(a.range.sheetId); (s.fills ||= []).push({ r0: a.range.startRowIndex, r1: a.range.endRowIndex ?? Infinity, c0: a.range.startColumnIndex, c1: a.range.endColumnIndex, rgb: a.cell?.userEnteredFormat?.backgroundColor ?? null }); }
+      else if (kind === 'deleteConditionalFormatRule') byId(a.sheetId)[1].cf.splice(a.index, 1);
       else if (kind === 'appendDimension') { const [, s] = byId(a.sheetId); s.cols = (s.cols ?? 35) + a.length; }
       else if (kind === 'deleteDimension') { const [, s] = byId(a.range.sheetId); if (a.range.dimension === 'ROWS') s.grid.splice(a.range.startIndex, a.range.endIndex - a.range.startIndex); }
       replies.push({});
@@ -626,11 +627,19 @@ console.log('PASS duplicates in the sheet: red rows and tracking warning on Orde
 // approved by itself, NO keeps the price and puts the cost back, and Total cost accepts NO.
 for (const t of [WQ_NEW, SHIPPED_TAB]) {
   const s1 = sheets.get(t), has = w => (s1.cf || []).some(r => (r.booleanRule?.condition?.values || []).some(v => String(v.userEnteredValue || '').includes(w)));
-  assert.ok(has('NEW COST SENT') && has('✓ REVISION DONE'), t + ': purple and green rules');
+  assert.ok(has('NEW COST SENT') && !has('✓ REVISION DONE'), t + ': purple rule, no green "done" rule (taken off 9 Nov 2026)');
   assert.ok((s1.rules || []).some(v => v.range.startColumnIndex === N && /no\|keep\|same/.test(v.rule?.condition?.values?.[0]?.userEnteredValue || '') && v.rule.strict), t + ': Total cost takes a number or NO');
   assert.match(String(s1.grid[3][0]), /type the new Total cost or NO \+ reason .*个降价请求等待回复/, t + ': row 4 says how to refuse, in English and Chinese');
   assert.ok((s1.rules || []).some(v => v.range.startColumnIndex === N && /\\b\|不能\|无法\)\[[^\]]*\]\*\[\^/.test(v.rule?.condition?.values?.[0]?.userEnteredValue || '')), t + ': NO (or 不能) needs a reason');
 }
+// The green "done" fill taken off (Erwin, 9 Nov 2026): a rule already on the live sheet is deleted once, the others stay.
+{ const doneRule = t => ({ ranges: [{ sheetId: sheets.get(t).sheetId, startRowIndex: 5, startColumnIndex: 14, endColumnIndex: 15 }], booleanRule: { condition: { type: 'TEXT_STARTS_WITH', values: [{ userEnteredValue: '✓ REVISION DONE' }] }, format: {} } });
+  for (const t of [WQ_NEW, SHIPPED_TAB]) sheets.get(t).cf.splice(2, 0, doneRule(t)); // in the middle, so the indexes after it have to shift
+  const n1 = [WQ_NEW, SHIPPED_TAB].map(t => sheets.get(t).cf.length), guide0 = JSON.stringify(sheets.get('Guide 使用说明').grid.slice(0, 40)).length;
+  await DB.prepare("DELETE FROM portal_settings WHERE key='supplier_no_green_done'").run(); later(); await cron();
+  [WQ_NEW, SHIPPED_TAB].forEach((t, i) => { const cf = sheets.get(t).cf; assert.equal(cf.length, n1[i] - 1, t + ': only the green rule went'); assert.ok(!cf.some(r => (r.booleanRule?.condition?.values || []).some(v => String(v.userEnteredValue || '').includes('✓ REVISION DONE'))), t + ': no green done rule'); assert.ok(cf.some(r => (r.booleanRule?.condition?.values || []).some(v => String(v.userEnteredValue || '').includes('NEW COST SENT'))), t + ': purple stays'); });
+  assert.ok(JSON.stringify(sheets.get('Guide 使用说明').grid).includes('NO COLOUR = the cost revision is done'), 'the Guide says no colour for done');
+  const n2 = sheets.get(WQ_NEW).cf.length; later(); await cron(); assert.equal(sheets.get(WQ_NEW).cf.length, n2, 'removed once'); }
 { const n0 = (sheets.get(WQ_NEW).cf || []).length; await cron(); assert.equal((sheets.get(WQ_NEW).cf || []).length, n0, 'revision colours added once'); }
 const COMPC = 14, compCell = id => { const [t, r] = where(id); return String(sheets.get(t).grid[r][COMPC]); }, costCell = id => { const [t, r] = where(id); return sheets.get(t).grid[r][N]; };
 const RV = await mk('REV-S1'); await settle(); supplierTypes(RV.id, N, 30); await cron(); await settle();
