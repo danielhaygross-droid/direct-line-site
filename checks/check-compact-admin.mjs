@@ -95,7 +95,7 @@ try {
     if (!paidD) {
       await page.goto(`${base}/portal/?lang=en#/payments?tab=cancelled`); await page.reload(); await page.waitForSelector('[data-cancelled-box]');
       const t = await cxText(page.locator('[data-cancelled-box]'));
-      assert.ok(t.includes('Credit left ' + usd(cx.credit)) && !t.includes('used on'), 'before: all the credit is still there ' + t);
+      assert.ok(/Credit left[^$]*\$/.test(t) && t.includes(usd(cx.credit)) && !t.includes('Already used'), 'before: all the credit is still there ' + t);
       ok(await call('/admin/payments', 'POST', { clientId: id, amount: owes, paidAt: '2026-10-21', method: 'Bank transfer', orderIds: [D] }, admin)); paidD = true;
       assert.equal(ok(await call('/me', 'GET', null, client)).summary.outstanding, 0, 'nothing owed');
     }
@@ -107,10 +107,10 @@ try {
     await page.goto(`${base}/portal/?lang=${lang}#/payments?tab=cancelled`); await page.reload(); await page.waitForSelector('[data-cancelled-box]'); await page.waitForTimeout(300);
     const box = page.locator('[data-cancelled-box]'), t = await cxText(box);
     if (lang === 'en') {
-      assert.ok(t.includes('Credit left $0.00') && t.includes(`${usd(cx.credit)} used on your bills`), tag + ' credit used: ' + t);
-      assert.ok(/Cancellation fees \$[\d.]+ Settled/.test(t), tag + ' fees settled: ' + t);
-    } else assert.ok(t.includes('זיכוי שנשאר') && t.includes(`${usd(cx.credit)} נוצלו בחשבונות שלך`) && t.includes('סולק'), tag + ' Hebrew: ' + t);
-    assert.equal(await box.locator('.cx-stat.neg').count(), 0, tag + ' settled fees are not red');
+      assert.ok(/= Credit left\s+\$0\.00/.test(t) && t.includes(`Already used on your later bills -${usd(cx.credit)}`), tag + ' credit used: ' + t);
+      assert.ok(!t.includes('Fees still to pay'), tag + ' fees settled: nothing still to pay: ' + t);
+    } else assert.ok(t.includes('זיכוי שנשאר') && t.includes('כבר נוצל בחשבונות הבאים שלך') && !t.includes('עמלות שעוד צריך לשלם'), tag + ' Hebrew: ' + t);
+    assert.equal(await box.locator('.cx-owed').count(), 0, tag + ' settled fees: no red "still to pay" line');
     await box.scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-client-cancelled.png`) });
     assert.deepEqual(errors, [], tag); await ctx.close();
 

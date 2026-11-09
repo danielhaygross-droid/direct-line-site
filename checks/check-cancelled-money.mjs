@@ -72,10 +72,14 @@ assert.equal(rf.cancelled.refunded, 10); assert.equal(rf.cancelled.credit, Math.
 assert.equal(ok(await call('/me', 'GET', null, client)).summary.outstanding, Math.round((owes0 + 10) * 100) / 100, 'refund raises the balance');
 const adm = ok(await call('/admin/payments?clientId=' + id, 'GET', null, admin)).cancelled;
 const mine = ok(await call('/payments', 'GET', null, client));
-const { kept: _k, ...admNoKept } = adm; admNoKept.orders = adm.orders.map(({ kept: _o, ...o }) => o);
+const { kept: _k, ...admNoKept } = adm; admNoKept.orders = adm.orders.map(({ kept: _o, supPaid: _p, supFee: _f, ...o }) => o);
 assert.deepEqual(mine.cancelled, admNoKept, 'admin and client see the same numbers (the client without our kept part)');
 // Clients never see that we keep a fee per order (29 Oct 2026): no kept field, no separate line; one fee per order.
 assert.ok(!JSON.stringify(mine).includes('kept'), 'nothing about our kept fee in the client data');
+await DB.prepare("UPDATE client_orders SET supplier_cost = price - COALESCE(commission, 0) WHERE client_id = ? AND status = 'cancelled'").bind(id).run(); // the sheet's Total cost
+// Totals per cancel date (9 Nov 2026): each order has its cancel day (China time); the supplier's side is admin only.
+assert.ok(adm.orders.every(o => /^\d{4}-\d{2}-\d{2}$/.test(o.day)), 'every cancelled order has its cancel day');
+assert.ok(adm.orders.every(o => 'supPaid' in o && 'supFee' in o) && !/supPaid|supFee/.test(JSON.stringify(mine)), 'supplier side for the admin only');
 // Our earnings count the fee we keep on paid cancelled orders (Erwin, 4 Nov 2026).
 { const ov = (await call('/admin/overview', 'GET', null, admin)).data, me = ov.clients.find(x => x.id === id);
   const active = Number((await DB.prepare("SELECT COALESCE(SUM(commission),0) AS n FROM client_orders WHERE client_id=? AND status <> 'cancelled'").bind(me.id).first()).n);
@@ -88,8 +92,11 @@ try {
     const tag = `${lang}-${width}`;
     let ctx = await session(client, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/portal/?lang=${lang}#/payments?tab=cancelled`); await page.reload(); await page.waitForSelector('[data-cancelled-box]'); await page.waitForTimeout(400);
-    await page.locator('[data-cancelled-box]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-client.png`) });
+    await page.locator('[data-cancelled-box]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-client.png`) }); await page.locator('[data-cancelled-box]').screenshot({ path: path.join(out, `${tag}-client-box.png`) });
     assert.equal(await page.locator('[data-cancelled-box] tbody tr').count(), 3, tag); assert.equal(await page.locator('[data-refund-form]').count(), 0, tag + ' client cannot record refunds');
+    assert.equal(await page.locator('[data-cancelled-box] .cx-ours').count(), 0, tag + ' the client never sees our fee');
+    { const t = (await page.locator('[data-cancelled-box] .cx-calc').innerText()).replace(/\s+/g, ' '), u = n => '$' + Number(n).toFixed(2);
+      assert.ok(t.includes(u(c.paid)) && t.includes(u(c.dueBack)), tag + ' the calculation shows paid and due back: ' + t); }
     // Refunded (29 Oct 2026): the paid cancelled orders (A, B) say Refunded; C (paid from the credit) does not.
     await page.locator(`[data-cancelled-box] [data-open-order="${A.id}"]`).click(); await page.waitForSelector('.pay-tag.refunded'); await page.waitForTimeout(300);
     await page.locator('.pay-tag.refunded').first().scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-refunded.png`) });
@@ -109,9 +116,12 @@ try {
     if (!(await ui.locator('.cx-fold').evaluate(d => d.open))) await ui.locator('.cx-fold > summary').click(); // folded in the panel since 7 Nov 2026
     await ui.waitForSelector('[data-cancelled-box]'); await page.waitForTimeout(400);
     await ui.locator('.cx-add > summary').click(); await ui.locator('[data-cancelled-box]').scrollIntoViewIfNeeded(); await page.waitForTimeout(300);
-    await page.screenshot({ path: path.join(out, `${tag}-admin.png`) });
+    await page.screenshot({ path: path.join(out, `${tag}-admin.png`) }); await ui.locator('[data-cancelled-box]').screenshot({ path: path.join(out, `${tag}-admin-box.png`) });
     assert.equal(await ui.locator('[data-refund-undo]').count(), 1, tag);
-    if (lang === 'en') assert.match(await ui.locator('[data-cancelled-box] .cx-stats').innerText(), /Includes \$[\d.]+ of our fees kept/, tag + ' admin sees our fee kept');
+    if (lang === 'en') assert.match(await ui.locator('[data-cancelled-box] .cx-calc').innerText(), /includes \$[\d.]+ of our fee/, tag + ' admin sees our fee kept');
+    // By cancel date: one block per day; the admin sees it without our fee (like the supplier sheet), the client never.
+    assert.equal(await ui.locator('[data-cancelled-box] [data-cx-date]').count(), new Set(adm.orders.map(o => o.day)).size, tag + ' one block per cancel date');
+    if (lang === 'en') assert.match(await ui.locator('[data-cancelled-box] .cx-dates').innerText(), /Without our fee \(as in the supplier sheet\): paid \$[\d.]+ · fees \$[\d.]+ · refund/, tag + ' admin: without our fee');
     await page.keyboard.press('Escape'); await page.waitForTimeout(300);
     await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter=cancelled]').first().click(); await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(out, `${tag}-admin-orders.png`) }); assert.equal(await ui.locator('.pay-tag.refunded').count(), 2, tag + ' admin Orders: A and B Refunded');
