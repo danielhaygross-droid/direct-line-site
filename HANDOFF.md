@@ -4,7 +4,7 @@ Read this first in every new session, then just continue. No need to ask Erwin t
 **Keep it current:** after every task that ships (or stops halfway), rewrite sections 2, 4, 5 and 6 below.
 Lives in the repo root, so local and cloud sessions both see it; update it in the same PR as the work. How to work: `CLAUDE.md` (repo root). Older history: `docs/handoff/HISTORY.md` (cleaned copy of Erwin's notes), `git log`, PR descriptions. Working rules: `docs/handoff/RULES.md`. Agents: `.claude/agents/`.
 
-Last updated: 8 Nov 2026, after the cancel-window PR (choose fees per order before cancelling).
+Last updated: 9 Nov 2026, after the ui-contrast-touch PR (readable colours and 44px taps).
 
 ---
 
@@ -15,8 +15,10 @@ Last updated: 8 Nov 2026, after the cancel-window PR (choose fees per order befo
 - What "done" means: live on the site, checked in English + Hebrew at desktop + phone, tests green, Erwin told in short plain words.
 - Hard rules (also in `CLAUDE.md`): no secrets in files/chat; no permanent deletes of real data; never touch Byzroyal; don't invent facts for clients; **never show our fee/commission to clients**; never change sheet columns without a safe one-time switch; do all work in one session (no side sessions); every number shown must add up (Erwin, 4 Nov: "do your facts straight").
 
-## 2. Current state (8 Nov 2026)
-- **Live:** `main` = `origin/main`, last PR **new-cancel-alerts** (after #193). Versions: portal.js 110, admin.js 123, real-ui.js 17, admin.css 41, i18n 118, ui.css 40, portal.css 48, payment-orders.js 10, common.js 32, order-ui.js 25, notify.js 6.
+## 2. Current state (9 Nov 2026)
+- **Live:** `main` = `origin/main`, last PR **ui-contrast-touch** (after new-cancel-alerts). Versions: portal.js 110, admin.js 123, real-ui.js 17, admin.css 41, i18n 118, ui.css 41, portal.css 48, payment-orders.js 10, common.js 32, order-ui.js 25, notify.js 6.
+- **Readable + tappable** (9 Nov, UI UX Pro Max review): `dist/p/ui.css` has `--focus` (gold-2 in light), `--line-field` (input borders 3:1), `--<status>-ink` (status pill text 4.5:1 in light; same as the tone in dark) and `--on-gold` (dark text on the gold button and own chat bubble). Phones (≤560px): field text 16px (no iPhone zoom), buttons / chips / icon buttons ≥44px. Check `checks/check-ui-contrast.mjs`. Not done (Erwin chose 1–6): text under 12px (badges, tracker dates, eyebrow) and the white-on-red unread badge (3.7:1).
+- **Design system artifact** (9 Nov): a private Claude artifact (link in Erwin's `CONTINUE_HERE.md`) = tokens, components and brand rules taken from `ui.css`. `design-system/direct-line-control/MASTER.md` is an old generated file that does not match the site (Cormorant/Montserrat): don't follow it.
 - **Cancel window** (8 Nov): every cancellation from admin (bulk Set status → Cancelled, an order's Cancelled button, Approve cancellation…) opens a window first (`src/admin/03-cancel-window.js`): per order in/out, cancellation fee (supplier's from the sheet, editable, "Set for all") and "Charge our fee" (ticked on paid orders = the old rule). Saved as `client_orders.keep_fee` (`auto`/`yes`/`no`; reopening resets to `auto`); `syncKeptFees` charges our fee when `yes`, or `auto` + paid. A fee kept on an unpaid order is owed (balance, "not paid yet"), not collected. Clients never see `keepFee` (CLIENT_HIDDEN). The inline cancel box and the fee box on the request card are gone; Reject stays one click.
 - **Status changed date** (8 Nov, part 1 of 3): `client_orders.status_changed_at` (set in `changeStatus`; older orders from their last `status` event; empty = created_at, see `statusAt`). Sorts "Status changed: newest / oldest" in admin Client orders, the client panel Orders and the client Orders list (`bySort.changed` in `dist/p/common.js`); while sorted by it the time shows under the status (`.st-when`). Supplier sheet **layout 20**: AJ "Status changed" (website-written, protected, date `yyyy-mm-dd hh:mm` China time, filter A-AJ) on all three tabs; rows fill in through the normal retries (4 rows / 30 s).
 - **Sheet row fix** (8 Nov, layout 21): after layout 20, Google's `values:append` put moved / new rows on top with cells shifted right (A-V empty), and stuck moves. New rows are now inserted at row 7, written from A, moved to row 6 (no append). Layout 21 deletes rows with A and B empty and rewrites every order.
@@ -46,6 +48,7 @@ Last updated: 8 Nov 2026, after the cancel-window PR (choose fees per order befo
 - Reports: layout files in `tools/report-template/` (shared `head.html`, Hebrew style, the 22 Oct report `body.html` + `make_he.py`, `render*.cjs`) and `tools/report-template/r1101/` (`page_fn.py` layout, `render.cjs` PDF, `shot.cjs` preview). The report text `gen.py` holds real store and billing figures, so it stays on Erwin's computer in `direct-line-control/tools/report-template/r1101/`: copy that folder to a new `rMMDD` and put screenshots in its `img/`. Scripts use the repo's `playwright-core`; set `CHROME_PATH` if Chromium is not at Erwin's path. Finished PDFs: `direct-line-control/reports/`.
 
 ## 4. Changes (most recent first)
+- ui-contrast-touch (9 Nov): Erwin asked for a UI/UX Pro Max review, then "fix 1–6": iPhone zoom on fields, faint status pills, focus ring, field borders, white on gold, small taps on phones. `check-ui-contrast` measures all of it in en/he, 1440/390, light/dark.
 - new-cancel-alerts (8 Nov): Erwin: Ada and Ye must not miss new cancellations. `check-supplier-sheet` asserts the yellow rule (once), the counts in row 4 of Cancelled and Orders.
 - cancelled-red-rows (8 Nov): Erwin: top rows of Cancelled not red. `check-supplier-sheet` slides the Cancelled rules 12 rows and expects them back at row 6.
 - sheet-row-lock (8 Nov): rows lost / blank after Erwin's 17 cancels. `check-supplier-sheet` cancels 3 at once with a slow fake sheet (fails without the lock) and loses a row on purpose (layout 22 brings it back).
@@ -80,6 +83,7 @@ Last updated: 8 Nov 2026, after the cancel-window PR (choose fees per order befo
 - #145–#152 (1–2 Nov): photo per variation, sheet picture with variant names, Paste button, cost revision tags/filter/sort, Sort on every list, Shipped colour rules repair.
 
 ## 5. Failed attempts / lessons (don't repeat these)
+- **`sed -i` in Git Bash turns CRLF files into LF** (it did on ui.css and the index files): edit with Python `newline=''`, or convert back before committing. Checks run alone need `CHROME_PATH` (the runner sets it: `node scripts/run-checks.mjs <name>`).
 - **Supplier rows are found by number: never write them side by side.** The fake sheet answered instantly, so races never showed; `globalThis.slowSheet` in check-supplier-sheet makes syncs interleave like Google.
 - **Never use `values:append` for supplier rows**: Google guesses the table and, once a sparse column (AJ) was added, wrote rows shifted right. The fake sheets always appended correctly, so checks missed it. Insert a row and write an exact range instead.
 - **A new sheet column needs the full check to fill rows** (waiting rows are rewritten 4 per retry); bump `SHEET_WORK` so the first minute after deploy runs a full check, and checks must clear `sheet_retry_until` to flush them.
@@ -104,6 +108,7 @@ Last updated: 8 Nov 2026, after the cancel-window PR (choose fees per order befo
 - Stop when Erwin says "don't start yet" and explain the plan first; Pauline doesn't need to know how we operate (keep client messages short).
 
 ## 6. Next steps / open items
+- From the 9 Nov UI review, not done yet: minimum 12px text (`.badge-new`, `.icon-btn .count`, tracker `small`, stacked-table labels, eyebrow) and a darker red behind the unread count. Old `dist/p/common.css` still declares older tokens (`--gold:#b98a3e`, `--radius:14px`).
 - Nothing half-done in code. Start new work from `origin/main` on a new `claude/<name>` branch.
 - Payments page sections done (#179); admin Fees & settings tabs and Client products rows done (#182). Erwin wants the whole client and admin dashboards less long: Claims done too (#183), client panel lists (#185), client Home (#186); the rest done in compact-admin-rest (lists page, order view folds). Client New order form left as is: its parts are required and More details is already folded (Erwin can ask).
 - **Cleanup plan agreed with Erwin (5 Nov): all 3 PRs done** (#171 cards, #173 section headers, #174 late money). Month picker moved to the title line (7 Nov).
