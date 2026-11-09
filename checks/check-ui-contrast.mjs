@@ -68,6 +68,11 @@ const measure = () => {
   const gold = rgba(css.getPropertyValue('--gold'));
   const t = document.createElement('button'); t.className = 'btn btn-primary'; t.textContent = 'x'; document.body.append(t);
   r.primary = ratio(rgba(getComputedStyle(t).color), gold); t.remove();
+  r.badges = [...document.querySelectorAll('.badge-new, .icon-btn .count')].filter(e => e.getClientRects().length).map(e => [e.className, ratio(rgba(getComputedStyle(e).color), bgOf(e))]);
+  // Every visible piece of text is 12px or more (the wordmark sub-line and chart labels are left out on purpose).
+  r.tiny = [...document.querySelectorAll('body *')].filter(e => e.getClientRects().length && [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && !e.closest('.brand, svg, .bars, .chart'))
+    .map(e => [e.tagName.toLowerCase() + '.' + String(e.className).split(' ')[0] + ' "' + e.textContent.trim().slice(0, 16) + '"', parseFloat(getComputedStyle(e).fontSize)]).filter(x => x[1] < 12);
+  for (const e of document.querySelectorAll('.tbl.stack td[data-label]')) { const f = parseFloat(getComputedStyle(e, '::before').fontSize); if (e.getClientRects().length && getComputedStyle(e, '::before').content !== 'none' && f < 12) r.tiny.push(['stacked label', f]); }
   return r;
 };
 const sizes = () => {
@@ -89,7 +94,14 @@ try {
     if (m.focus < 3) problems.push(`${tag} focus ring ${m.focus}:1`);
     if (m.field < 3) problems.push(`${tag} field border ${m.field}:1`);
     if (m.primary < 4.5) problems.push(`${tag} gold button text ${m.primary}:1`);
+    assert.ok(m.badges.length >= 1, 'unread badge shown');
+    for (const [k, v] of m.badges) if (v < 4.5) problems.push(`${tag} badge ${k} ${v}:1`);
+    for (const [k, v] of m.tiny) problems.push(`${tag} text under 12px: ${k} ${v}px`);
     await page.screenshot({ path: path.join(out, `${tag}-orders.png`) });
+    await page.locator('[data-open-order]').first().click(); await page.waitForTimeout(700);
+    const d = await page.evaluate(measure); assert.ok(d.pills.length >= 1, 'order panel open');
+    for (const [k, v] of d.tiny) problems.push(`${tag} order panel text under 12px: ${k} ${v}px`);
+    await page.screenshot({ path: path.join(out, `${tag}-order-panel.png`) });
     if (theme === 'light') {
       await page.goto(`${base}/portal/?lang=${lang}#/new`); await page.waitForSelector('.field input'); await page.waitForTimeout(600);
       await page.locator('.field input:visible').first().focus();
@@ -105,5 +117,5 @@ try {
   }
   for (const p of problems) console.log('FAIL', p);
   assert.equal(problems.length, 0, problems.length + ' readability / tap-size problems');
-  console.log('PASS pills, gold button, focus ring and field borders meet contrast (light + dark); phone fields 16px and taps 44px (en/he, 1440/390)');
+  console.log('PASS pills, badges, gold button, focus ring and field borders meet contrast (light + dark); no text under 12px; phone fields 16px and taps 44px (en/he, 1440/390)');
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }
