@@ -369,6 +369,27 @@ export async function sortCancelledOnce(DB, env, fetchImpl = fetch) {
   return true;
 }
 const sortSafely = async (DB, env, fetchImpl) => { try { return await sortCancelledOnce(DB, env, fetchImpl); } catch (e) { console.error('Cancelled tab not sorted', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
+// One look for the data rows (row 6 down) of every order tab (Erwin, 9 Nov 2026: "the coloring is all over the place").
+// Fills travel with a row when it is inserted or moved (a new row copies the one above it), so a single wrong row spread:
+// Shipped rows 6-62 had the header grey / dark yellow / dark blue, the newest Orders and Cancelled rows had no yellow,
+// AJ was yellow (it copied AI when the column was added), a few rows had a stray pink, orange or white. Only these columns
+// have a fill: O light blue, P-V and AH-AI supplier yellow. Everything else has none (colour rules paint those cells).
+const SUPPLIER_YELLOW = { red: 1, green: 0.95, blue: 0.7 };
+const fillPlan = (c = C) => [[0, c.COMP, null], [c.COMP, c.COMP + 1, blue], [c.COST, c.REASON + 1, SUPPLIER_YELLOW], [c.REASON + 1, c.DOM, null], [c.DOM, c.FEE + 1, SUPPLIER_YELLOW], [c.FEE + 1, c.END, null]];
+// from / to are 0-based row indexes; no `to` = to the end of the tab. A cell without a colour clears the fill.
+const rowFillRequests = (sheetId, from, to, c = C) => fillPlan(c).filter(([a, b]) => b > a).map(([a, b, rgb]) => ({ repeatCell: { range: { sheetId, startRowIndex: from, ...(to == null ? {} : { endRowIndex: to }), startColumnIndex: a, endColumnIndex: b },
+  cell: rgb ? { userEnteredFormat: { backgroundColor: rgb } } : {}, fields: 'userEnteredFormat.backgroundColor' } }));
+const FILLS_KEY = 'supplier_fills_clean', FILLS_NOW = '1';
+export async function cleanFillsOnce(DB, env, fetchImpl = fetch) {
+  if (await getSetting(DB, FILLS_KEY) === FILLS_NOW) return false;
+  const { wq } = await tabNames(DB), requests = [];
+  for (const tab of allTabs(wq)) { const id = await workQueueSheetId(env, fetchImpl, false, tab); if (id != null) requests.push(...rowFillRequests(id, FIRST_ROW - 1)); }
+  if (!requests.length) return false;
+  await withOrderLock(DB, ROWS_LOCK, () => batch(env, requests, fetchImpl));
+  await putSetting(DB, FILLS_KEY, FILLS_NOW);
+  return true;
+}
+const fillsSafely = async (DB, env, fetchImpl) => { try { return await cleanFillsOnce(DB, env, fetchImpl); } catch (e) { console.error('Sheet fills not cleaned', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 const newCancelSafely = async (DB, env, fetchImpl) => { try { return await ensureNewCancelAlerts(DB, env, fetchImpl); } catch (e) { console.error('New cancellation alerts not added', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 // The whole row turns red; typing a tracking number already used shows a warning on the cell (it is still accepted:
 // one parcel can be meant for two orders).
@@ -722,7 +743,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested') OR revision_status <> '')").run();
     await putSetting(DB, LAYOUT, LAYOUT_NOW);
-    await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY, NEW_CANCEL_KEY, CANCEL_SORT_KEY).run(); // re-checked next time (tabs may be new)
+    await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?, ?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY, NEW_CANCEL_KEY, CANCEL_SORT_KEY, FILLS_KEY).run(); // re-checked next time (tabs may be new)
     return true;
   } catch (e) {
     await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(LAYOUT, 'migrating:' + t).run();
@@ -1004,7 +1025,7 @@ async function syncRowNow(DB, env, order, photos, fetchImpl) {
   await batchValues(env, [{ range: `${tab}!A${FIRST_ROW + 1}:${L(C.END - 1)}${FIRST_ROW + 1}`, values: [[...am, ...supplier, ...qz, ...extra]] }], fetchImpl);
   if (from) await saveSheetCells(DB, order, changes); else await rememberSupplierCells(DB, order, supplier);
   await saveRef(DB, order);
-  await batch(env, [moveRow(sheetId, FIRST_ROW + 1, FIRST_ROW), rowHeight(sheetId, FIRST_ROW, rowPx(am))], fetchImpl);
+  await batch(env, [moveRow(sheetId, FIRST_ROW + 1, FIRST_ROW), rowHeight(sheetId, FIRST_ROW, rowPx(am)), ...rowFillRequests(sheetId, FIRST_ROW - 1, FIRST_ROW)], fetchImpl);
   // The new row pushed every old row of this tab one row down.
   await drop(found.map(r => (r.tab === tab && r.row >= FIRST_ROW ? { ...r, row: r.row + 1 } : r)));
   return { enabled: true, row: FIRST_ROW, tab, ...(from ? { moved: from.tab } : { added: true }) };
@@ -1249,6 +1270,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     result.dupAlerts = await dupSafely(DB, env, fetchImpl);
     result.newCancelAlerts = await newCancelSafely(DB, env, fetchImpl);
     result.cancelledSorted = await sortSafely(DB, env, fetchImpl);
+    result.fillsCleaned = await fillsSafely(DB, env, fetchImpl);
     result.revisionColours = await revSafely(DB, env, fetchImpl);
     result.bilingual = await zhSafely(DB, env, fetchImpl);
     const { wq } = await tabNames(DB);
