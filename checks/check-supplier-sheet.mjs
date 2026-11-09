@@ -77,6 +77,8 @@ globalThis.fetch = (real => async (url, opt = {}) => {
       else if (kind === 'insertDimension' && a.range.dimension === 'ROWS') { const [, s] = byId(a.range.sheetId); while (s.grid.length < a.range.startIndex) s.grid.push([]); s.grid.splice(a.range.startIndex, 0, ...Array.from({ length: a.range.endIndex - a.range.startIndex }, () => [])); }
       // Like Google: whole rows sorted by one column, stable, blank cells last.
       else if (kind === 'sortRange') { const [, s] = byId(a.range.sheetId), k = a.sortSpecs[0].dimensionIndex, down = a.sortSpecs[0].sortOrder === 'DESCENDING', st = a.range.startRowIndex; const rows = s.grid.slice(st), v = r => String(r?.[k] ?? ''); const full = rows.filter(r => v(r) !== ''), empty = rows.filter(r => v(r) === ''); full.sort((x, y) => (v(x) < v(y) ? -1 : v(x) > v(y) ? 1 : 0) * (down ? -1 : 1)); s.grid.splice(st, rows.length, ...full, ...empty); }
+      // Cell fills (9 Nov 2026): the latest repeatCell covering a cell wins; no colour = cleared.
+      else if (kind === 'repeatCell' && a.fields === 'userEnteredFormat.backgroundColor') { const [, s] = byId(a.range.sheetId); (s.fills ||= []).push({ r0: a.range.startRowIndex, r1: a.range.endRowIndex ?? Infinity, c0: a.range.startColumnIndex, c1: a.range.endColumnIndex, rgb: a.cell?.userEnteredFormat?.backgroundColor ?? null }); }
       else if (kind === 'appendDimension') { const [, s] = byId(a.sheetId); s.cols = (s.cols ?? 35) + a.length; }
       else if (kind === 'deleteDimension') { const [, s] = byId(a.range.sheetId); if (a.range.dimension === 'ROWS') s.grid.splice(a.range.startIndex, a.range.endIndex - a.range.startIndex); }
       replies.push({});
@@ -478,6 +480,26 @@ console.log('PASS layout 19: Cost per product moved next to Total cost on all ta
     const aj = data().map(r => String(r[35] ?? '')); assert.deepEqual(aj, [...aj].sort().reverse(), 'newest first');
     const before = JSON.stringify(g); later(); await cron(); assert.equal(JSON.stringify(g), before, 'sorted once, not every minute'); }
   console.log('PASS new cancellations: yellow rows (today / yesterday) on Cancelled, count on Cancelled and Orders row 4, added once; Cancelled sorted newest first once');
+}
+
+// Cell fills (Erwin, 9 Nov 2026: "the coloring is all over the place"): rows had the header look, no yellow, AJ yellow.
+// One look for every data row, put back once, and a new row is painted on its own whatever the row above looks like.
+{
+  const grey = { red: 0.93, green: 0.93, blue: 0.93 }, blueFill = { red: 0.85, green: 0.92, blue: 1 }, yellowFill = { red: 1, green: 0.95, blue: 0.7 };
+  const fillAt = (tab, row, c) => { let rgb = null; for (const f of sheets.get(tab).fills || []) if (row - 1 >= f.r0 && row - 1 < f.r1 && c >= f.c0 && c < f.c1) rgb = f.rgb; return rgb; };
+  const look = (tab, row) => {
+    for (const c of [col('A'), col('N'), col('W'), col('AG'), col('AJ')]) assert.equal(fillAt(tab, row, c), null, `${tab} row ${row} column ${c}: no fill`);
+    assert.deepEqual(fillAt(tab, row, col('O')), blueFill, `${tab} row ${row}: Competitor price is light blue`);
+    for (const c of [col('P'), col('Q'), col('V'), col('AH'), col('AI')]) assert.deepEqual(fillAt(tab, row, c), yellowFill, `${tab} row ${row} column ${c}: supplier yellow`);
+  };
+  for (const t of TABS()) (sheets.get(t).fills ||= []).push({ r0: 5, r1: Infinity, c0: 0, c1: 36, rgb: grey }); // the header look all over the data rows
+  await DB.prepare("DELETE FROM portal_settings WHERE key='supplier_fills_clean'").run(); later(); await cron();
+  for (const t of TABS()) for (const row of [FIRST_ROW, FIRST_ROW + 3, 40]) look(t, row);
+  for (const t of TABS()) sheets.get(t).fills.push({ r0: 5, r1: Infinity, c0: 0, c1: 1, rgb: grey }); later(); await cron();
+  assert.deepEqual(fillAt(main(), FIRST_ROW, 0), grey, 'cleaned once, not at every check');
+  const F = await mk('F-FILL'); await settle();
+  const [ft, fr] = where(F.id); look(ft, fr + 1);
+  console.log('PASS fills: one look on every data row (O blue, P-V and AH-AI yellow, nothing else), cleaned once, a new row is painted on its own');
 }
 
 // ---------- Billing tab (Ada, 1 Nov 2026): one list of all orders, paid apart from not paid, formulas only ----------
