@@ -75,6 +75,8 @@ globalThis.fetch = (real => async (url, opt = {}) => {
       else if (kind === 'updateDeveloperMetadata') { const l = a.dataFilters[0].developerMetadataLookup; for (const m of meta) if (m.metadataId === l.metadataId || m.metadataKey === l.metadataKey) m.metadataValue = a.developerMetadata.metadataValue; }
       // A new row (8 Nov 2026): inserted inside the data rows, so rules, filter and protection simply grow.
       else if (kind === 'insertDimension' && a.range.dimension === 'ROWS') { const [, s] = byId(a.range.sheetId); while (s.grid.length < a.range.startIndex) s.grid.push([]); s.grid.splice(a.range.startIndex, 0, ...Array.from({ length: a.range.endIndex - a.range.startIndex }, () => [])); }
+      // Like Google: whole rows sorted by one column, stable, blank cells last.
+      else if (kind === 'sortRange') { const [, s] = byId(a.range.sheetId), k = a.sortSpecs[0].dimensionIndex, down = a.sortSpecs[0].sortOrder === 'DESCENDING', st = a.range.startRowIndex; const rows = s.grid.slice(st), v = r => String(r?.[k] ?? ''); const full = rows.filter(r => v(r) !== ''), empty = rows.filter(r => v(r) === ''); full.sort((x, y) => (v(x) < v(y) ? -1 : v(x) > v(y) ? 1 : 0) * (down ? -1 : 1)); s.grid.splice(st, rows.length, ...full, ...empty); }
       else if (kind === 'appendDimension') { const [, s] = byId(a.sheetId); s.cols = (s.cols ?? 35) + a.length; }
       else if (kind === 'deleteDimension') { const [, s] = byId(a.range.sheetId); if (a.range.dimension === 'ROWS') s.grid.splice(a.range.startIndex, a.range.endIndex - a.range.startIndex); }
       replies.push({});
@@ -467,7 +469,15 @@ console.log('PASS layout 19: Cost per product moved next to Total cost on all ta
   assert.match(a4(main()), /COST REVISION/, 'the other Orders warnings stay');
   await DB.prepare("DELETE FROM portal_settings WHERE key='supplier_new_cancel'").run(); later(); await cron();
   assert.equal(newRules().length, 1, 'checked again: still one rule');
-  console.log('PASS new cancellations: yellow rows (today / yesterday) on Cancelled, count on Cancelled and Orders row 4, added once');
+  // A new cancel stuck at the bottom (8 Nov 2026): sorted once by AJ Status changed, newest on top.
+  { const g = sheets.get(CANCELLED_TAB).grid, data = () => g.slice(FIRST_ROW - 1).filter(r => r?.[1]);
+    assert.ok(data().length >= 2, 'at least two cancelled rows to sort');
+    const top = g.splice(FIRST_ROW - 1, 1)[0]; top[35] = '2099-01-01 00:00'; g.push(top);
+    await DB.prepare("DELETE FROM portal_settings WHERE key='supplier_cancelled_sorted'").run(); later(); await cron();
+    assert.equal(data()[0][1], top[1], 'the newest cancel is back on top');
+    const aj = data().map(r => String(r[35] ?? '')); assert.deepEqual(aj, [...aj].sort().reverse(), 'newest first');
+    const before = JSON.stringify(g); later(); await cron(); assert.equal(JSON.stringify(g), before, 'sorted once, not every minute'); }
+  console.log('PASS new cancellations: yellow rows (today / yesterday) on Cancelled, count on Cancelled and Orders row 4, added once; Cancelled sorted newest first once');
 }
 
 // ---------- Billing tab (Ada, 1 Nov 2026): one list of all orders, paid apart from not paid, formulas only ----------
