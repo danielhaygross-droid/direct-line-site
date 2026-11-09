@@ -373,13 +373,15 @@ const sortSafely = async (DB, env, fetchImpl) => { try { return await sortCancel
 // Fills travel with a row when it is inserted or moved (a new row copies the one above it), so a single wrong row spread:
 // Shipped rows 6-62 had the header grey / dark yellow / dark blue, the newest Orders and Cancelled rows had no yellow,
 // AJ was yellow (it copied AI when the column was added), a few rows had a stray pink, orange or white. Only these columns
-// have a fill: O light blue, P-V and AH-AI supplier yellow. Everything else has none (colour rules paint those cells).
+// have a fill: O light blue, P-V and AH-AI supplier yellow. Everything else has none (colour rules paint those cells),
+// and nothing right of AJ.
 const SUPPLIER_YELLOW = { red: 1, green: 0.95, blue: 0.7 };
-const fillPlan = (c = C) => [[0, c.COMP, null], [c.COMP, c.COMP + 1, blue], [c.COST, c.REASON + 1, SUPPLIER_YELLOW], [c.REASON + 1, c.DOM, null], [c.DOM, c.FEE + 1, SUPPLIER_YELLOW], [c.FEE + 1, c.END, null]];
+const fillPlan = (c = C) => [[0, c.COMP, null], [c.COMP, c.COMP + 1, blue], [c.COST, c.REASON + 1, SUPPLIER_YELLOW], [c.REASON + 1, c.DOM, null], [c.DOM, c.FEE + 1, SUPPLIER_YELLOW], [c.FEE + 1, c.END, null], [c.END, null, null]];
 // from / to are 0-based row indexes; no `to` = to the end of the tab. A cell without a colour clears the fill.
-const rowFillRequests = (sheetId, from, to, c = C) => fillPlan(c).filter(([a, b]) => b > a).map(([a, b, rgb]) => ({ repeatCell: { range: { sheetId, startRowIndex: from, ...(to == null ? {} : { endRowIndex: to }), startColumnIndex: a, endColumnIndex: b },
+const rowFillRequests = (sheetId, from, to, c = C) => fillPlan(c).filter(([a, b]) => b == null || b > a).map(([a, b, rgb]) => ({ repeatCell: { range: { sheetId, startRowIndex: from, ...(to == null ? {} : { endRowIndex: to }), startColumnIndex: a, ...(b == null ? {} : { endColumnIndex: b }) },
   cell: rgb ? { userEnteredFormat: { backgroundColor: rgb } } : {}, fields: 'userEnteredFormat.backgroundColor' } }));
-const FILLS_KEY = 'supplier_fills_clean', FILLS_NOW = '1';
+// '2' (9 Nov 2026): the columns right of AJ (AK, AL...) also carried a pale yellow on most rows; cleaned too.
+const FILLS_KEY = 'supplier_fills_clean', FILLS_NOW = '2';
 export async function cleanFillsOnce(DB, env, fetchImpl = fetch) {
   if (await getSetting(DB, FILLS_KEY) === FILLS_NOW) return false;
   const { wq } = await tabNames(DB), requests = [];
@@ -910,16 +912,27 @@ export async function fixRuleRanges(DB, env, fetchImpl = fetch) {
   // Cancelled too (8 Nov 2026): deleting the broken rows on top slid its red "cancelled" rules to row 18, so the
   // newest cancelled orders (rows 6-17) were not red.
   const { wq } = await tabNames(DB), tabs = allTabs(wq), top = FIRST_ROW - 1;
+  // The cancelled / cancel-requested row colours must cover A to the last website column in ONE range. The live sheet had
+  // two ranges, A-P and R-AE (Google split them when Cost per product moved to Q in layout 19), so Q stayed plain yellow
+  // on pink rows (Erwin, 9 Nov 2026). Merged back into one range here.
+  const rowRuleGap = rule => {
+    const f = String(rule.booleanRule?.condition?.values?.[0]?.userEnteredValue || ''), rs = rule.ranges || [];
+    if (rs.length < 2 || !(f.includes(`"${STATUS.cancelled}"`) || f.includes(`"${STATUS.cancellation_requested}"`))) return null;
+    const a = Math.min(...rs.map(r => r.startColumnIndex ?? 0)), b = Math.max(...rs.map(r => r.endColumnIndex ?? 0));
+    return a === 0 && b === C.MORE + 1 ? [a, b] : null;
+  };
   const data = await sheetsRequest(env, '?fields=sheets(properties(sheetId,title),conditionalFormats)', {}, fetchImpl);
   const requests = [];
   for (const s of data?.sheets || []) {
     if (!tabs.includes(s.properties?.title)) continue;
     (s.conditionalFormats || []).forEach((rule, index) => {
-      const start = Math.min(...(rule.ranges || []).map(r => r.startRowIndex ?? 0)), by = start - top;
-      if (!(by > 0) || !rule.booleanRule) return;
-      const ranges = rule.ranges.map(r => ({ ...r, startRowIndex: r.startRowIndex - by }));
+      if (!rule.booleanRule) return;
+      const start = Math.min(...(rule.ranges || []).map(r => r.startRowIndex ?? 0)), by = Math.max(0, start - top), merge = rowRuleGap(rule);
+      if (!(by > 0) && !merge) return;
+      let ranges = rule.ranges.map(r => ({ ...r, startRowIndex: (r.startRowIndex ?? 0) - by }));
+      if (merge) ranges = [{ ...ranges[0], startColumnIndex: merge[0], endColumnIndex: merge[1] }];
       // Custom formulas point at their first row ($O44): point them back at row 6. Other conditions have no cells.
-      const c = rule.booleanRule.condition, values = c.type === 'CUSTOM_FORMULA'
+      const c = rule.booleanRule.condition, values = by > 0 && c.type === 'CUSTOM_FORMULA'
         ? c.values.map(v => ({ ...v, userEnteredValue: String(v.userEnteredValue).replace(/(\$?[A-Z]{1,3})(\d+)/g, (m, col, row) => col + (Number(row) - by)) })) : c.values;
       requests.push({ updateConditionalFormatRule: { index, sheetId: s.properties.sheetId, rule: { ranges, booleanRule: { ...rule.booleanRule, condition: { ...c, ...(values ? { values } : {}) } } } } });
     });
