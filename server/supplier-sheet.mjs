@@ -376,16 +376,20 @@ const sortSafely = async (DB, env, fetchImpl) => { try { return await sortCancel
 // have a fill: O light blue, P-V and AH-AI supplier yellow. Everything else has none (colour rules paint those cells),
 // and nothing right of AJ.
 const SUPPLIER_YELLOW = { red: 1, green: 0.95, blue: 0.7 };
-const fillPlan = (c = C) => [[0, c.COMP, null], [c.COMP, c.COMP + 1, blue], [c.COST, c.REASON + 1, SUPPLIER_YELLOW], [c.REASON + 1, c.DOM, null], [c.DOM, c.FEE + 1, SUPPLIER_YELLOW], [c.FEE + 1, c.END, null], [c.END, null, null]];
+// cols: the tab's column count. Right of AJ is cleared only on a tab that has columns there (10 Nov 2026: Shipped has
+// exactly A-AJ, and a range starting past its last column made Google refuse the whole request, row moves included).
+const fillPlan = (c = C, cols) => [[0, c.COMP, null], [c.COMP, c.COMP + 1, blue], [c.COST, c.REASON + 1, SUPPLIER_YELLOW], [c.REASON + 1, c.DOM, null], [c.DOM, c.FEE + 1, SUPPLIER_YELLOW], [c.FEE + 1, c.END, null], ...(cols > c.END ? [[c.END, null, null]] : [])];
 // from / to are 0-based row indexes; no `to` = to the end of the tab. A cell without a colour clears the fill.
-const rowFillRequests = (sheetId, from, to, c = C) => fillPlan(c).filter(([a, b]) => b == null || b > a).map(([a, b, rgb]) => ({ repeatCell: { range: { sheetId, startRowIndex: from, ...(to == null ? {} : { endRowIndex: to }), startColumnIndex: a, ...(b == null ? {} : { endColumnIndex: b }) },
+const rowFillRequests = (sheetId, from, to, c = C, cols) => fillPlan(c, cols).filter(([a, b]) => b == null || b > a).map(([a, b, rgb]) => ({ repeatCell: { range: { sheetId, startRowIndex: from, ...(to == null ? {} : { endRowIndex: to }), startColumnIndex: a, ...(b == null ? {} : { endColumnIndex: b }) },
   cell: rgb ? { userEnteredFormat: { backgroundColor: rgb } } : {}, fields: 'userEnteredFormat.backgroundColor' } }));
-// '2' (9 Nov 2026): the columns right of AJ (AK, AL...) also carried a pale yellow on most rows; cleaned too.
+// '2' (9 Nov 2026): the columns right of AJ (AK, AL...) also carried a pale yellow on most rows; cleaned too (on the
+// tabs that have columns there).
 const FILLS_KEY = 'supplier_fills_clean', FILLS_NOW = '2';
 export async function cleanFillsOnce(DB, env, fetchImpl = fetch) {
   if (await getSetting(DB, FILLS_KEY) === FILLS_NOW) return false;
   const { wq } = await tabNames(DB), requests = [];
-  for (const tab of allTabs(wq)) { const id = await workQueueSheetId(env, fetchImpl, false, tab); if (id != null) requests.push(...rowFillRequests(id, FIRST_ROW - 1)); }
+  const props = ((await sheetsRequest(env, '?fields=sheets.properties', {}, fetchImpl)).sheets || []).map(x => x.properties || {});
+  for (const tab of allTabs(wq)) { const p = props.find(x => x.title === tab); if (p?.sheetId != null) requests.push(...rowFillRequests(p.sheetId, FIRST_ROW - 1, null, C, Number(p.gridProperties?.columnCount) || 0)); }
   if (!requests.length) return false;
   await withOrderLock(DB, ROWS_LOCK, () => batch(env, requests, fetchImpl));
   await putSetting(DB, FILLS_KEY, FILLS_NOW);
@@ -820,7 +824,7 @@ const websiteProtection = (sheetId, email, c = C) => [[{ sheetId, startColumnInd
 // never reads the tab, so nothing typed or shown there can change an order or a bill. The whole tab is protected.
 // Errors here are logged and never stop the order sync.
 export const BILLING_TAB = 'Billing';
-const BILLING_KEY = 'supplier_billing_tab', BILLING_V = '3';
+const BILLING_KEY = 'supplier_billing_tab', BILLING_V = '4';
 const BILL_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Qty', 'Total cost (USD)', ITEM_COSTS, 'Shipping status', 'Client paid'];
 // Cancelled orders and the supplier's refund (Erwin, 3 Nov 2026: "properly show the whole refund calculation"), far
 // right from U: every cancelled order, the ones our client PAID first, with what was paid for it (Total cost: the
@@ -892,6 +896,8 @@ const dayFormat = sheetId => {
     { repeatCell: { range: r(4, 1000, A, Z), cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment)' } },
     { repeatCell: { range: r(4, 1000, A, A + 1), cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'd mmm yyyy' }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(numberFormat,textFormat)' } },
     ...[3, 4, 5, 7].map(i => ({ repeatCell: { range: r(4, 1000, A + i, A + i + 1), cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } })),
+    // Counts are plain numbers (10 Nov 2026: the new columns copied the dollar format of the column before them).
+    ...[1, 2, 6].map(i => ({ repeatCell: { range: r(4, 1000, A + i, A + i + 1), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '0' }, horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(numberFormat,horizontalAlignment)' } })),
     ...[30, 110, 80, 80, 120, 120, 110, 75, 120].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: A - 1 + i, endIndex: A + i }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
   ];
 };
@@ -925,7 +931,7 @@ export async function ensureBillingTab(DB, env, fetchImpl = fetch, { force = fal
     // A tab that has the refund part already (9 Nov 2026) only gets the part per cancel date: its TOTAL rule is not added twice.
     const had = tab.gridProperties?.columnCount || 0;
     await batch(env, [{ appendDimension: { sheetId: tab.sheetId, dimension: 'COLUMNS', length: BILLING_WIDTH - had } }, ...(had < REFUND_END ? refundFormat(tab.sheetId) : []), ...dayFormat(tab.sheetId)], fetchImpl);
-  }
+  } else await batch(env, dayFormat(tab.sheetId), fetchImpl); // a new version: the per-date look again (no rules in it, safe to repeat)
   await batchValues(env, billingCells(wq), fetchImpl);
   await putSetting(DB, BILLING_KEY, want);
   return tab ? 'written' : 'added';
