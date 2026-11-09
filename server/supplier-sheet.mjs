@@ -355,6 +355,20 @@ export async function ensureNewCancelAlerts(DB, env, fetchImpl = fetch) {
   await putSetting(DB, NEW_CANCEL_KEY, NEW_CANCEL_NOW);
   return true;
 }
+// Newest cancellations on top (Erwin, 9 Nov 2026: "a new cancelled order at the very bottom of the Cancelled tab"). A
+// row the 8 Nov breakage left at the bottom was rewritten in place by layout 22, so it stayed there. Once, the Cancelled
+// tab is sorted by AJ Status changed, newest first (whole rows A-AJ, so the hidden ids move with their row).
+const CANCEL_SORT_KEY = 'supplier_cancelled_sorted', CANCEL_SORT_NOW = '1';
+export async function sortCancelledOnce(DB, env, fetchImpl = fetch) {
+  if (await getSetting(DB, CANCEL_SORT_KEY) === CANCEL_SORT_NOW) return false;
+  const id = await workQueueSheetId(env, fetchImpl, false, CANCELLED_TAB);
+  if (id == null) return false;
+  await withOrderLock(DB, ROWS_LOCK, () => batch(env, [{ sortRange: { range: { sheetId: id, startRowIndex: FIRST_ROW - 1, startColumnIndex: 0, endColumnIndex: C.END },
+    sortSpecs: [{ dimensionIndex: C.CHANGED, sortOrder: 'DESCENDING' }] } }], fetchImpl));
+  await putSetting(DB, CANCEL_SORT_KEY, CANCEL_SORT_NOW);
+  return true;
+}
+const sortSafely = async (DB, env, fetchImpl) => { try { return await sortCancelledOnce(DB, env, fetchImpl); } catch (e) { console.error('Cancelled tab not sorted', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 const newCancelSafely = async (DB, env, fetchImpl) => { try { return await ensureNewCancelAlerts(DB, env, fetchImpl); } catch (e) { console.error('New cancellation alerts not added', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 // The whole row turns red; typing a tracking number already used shows a warning on the cell (it is still accepted:
 // one parcel can be meant for two orders).
@@ -708,7 +722,7 @@ export async function ensureLayout(DB, env, fetchImpl = fetch) {
     // Every active row is written again so the new columns get their values.
     await DB.prepare("UPDATE client_orders SET sheet_sync_status='waiting' WHERE NOT archived AND (tax_number IS NOT NULL OR gift_message IS NOT NULL OR courier IS NOT NULL OR status IN ('cancelled','cancellation_requested') OR revision_status <> '')").run();
     await putSetting(DB, LAYOUT, LAYOUT_NOW);
-    await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY, NEW_CANCEL_KEY).run(); // re-checked next time (tabs may be new)
+    await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY, NEW_CANCEL_KEY, CANCEL_SORT_KEY).run(); // re-checked next time (tabs may be new)
     return true;
   } catch (e) {
     await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(LAYOUT, 'migrating:' + t).run();
@@ -1234,6 +1248,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     result.rulesFixed = await rulesSafely(DB, env, fetchImpl);
     result.dupAlerts = await dupSafely(DB, env, fetchImpl);
     result.newCancelAlerts = await newCancelSafely(DB, env, fetchImpl);
+    result.cancelledSorted = await sortSafely(DB, env, fetchImpl);
     result.revisionColours = await revSafely(DB, env, fetchImpl);
     result.bilingual = await zhSafely(DB, env, fetchImpl);
     const { wq } = await tabNames(DB);
@@ -1423,7 +1438,7 @@ export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
   await splitSupplierTabs(DB, env, wq, sheetId, fetchImpl);
   await DB.prepare('DELETE FROM portal_settings WHERE key=?').bind(BILLING_KEY).run();
   // The rebuilt tabs get the duplicate and cost revision colours and warnings again (next check).
-  await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY, NEW_CANCEL_KEY).run();
+  await DB.prepare('DELETE FROM portal_settings WHERE key IN (?, ?, ?, ?, ?)').bind(DUP_ALERTS, REV_RULES, ZH_KEY, NEW_CANCEL_KEY, CANCEL_SORT_KEY).run();
   await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(SETTING, '1').run();
   await putSetting(DB, LAYOUT, LAYOUT_NOW);
   return { ok: true, rows: rows.length, sheetId, backup: !!current };
