@@ -152,13 +152,16 @@
     const groups = new Map(); for (const o of c.orders) { const k = o.day || ''; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(o); }
     const days = [...groups].sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
     const dayCard = ([k, list]) => {
-      const paidL = list.filter(o => o.paid > 0), openL = list.filter(o => !(o.paid > 0) && o.fee > 0);
-      const pPaid = sumC(paidL, o => o.paid), pFee = sumC(paidL, o => o.fee), sPaid = sumC(paidL, o => o.supPaid), sFee = sumC(paidL, o => o.supFee), openFee = sumC(openL, o => o.fee), fromCr = sumC(openL.filter(o => o.fromCredit), o => o.fee);
+      // Erwin, 10 Nov 2026: "cancelation fees dont depend on wether the order is paid or not paid": the fees of ALL the
+      // day's orders together, and back = paid - those fees (a fee the credit could not cover is on the bill instead).
+      const paidL = list.filter(o => o.paid > 0);
+      const pPaid = sumC(paidL, o => o.paid), allFee = sumC(list, o => o.fee), back = sumC(list, o => o.back), onBill = Math.max(0, allFee - (pPaid - back));
+      const sPaid = sumC(paidL, o => o.supPaid), sFee = sumC(list, o => o.supFee);
       const head = t2(`${list.length} cancelled${paidL.length ? `, ${paidL.length} were paid` : ''}`, `${list.length} בוטלו${paidL.length ? `, ${paidL.length} שולמו` : ''}`);
-      const ours = admin && paidL.length && paidL.every(o => o.supPaid > 0) && (pPaid !== sPaid || pFee !== sFee) ? t2(`Without our fee (as in the supplier sheet): paid ${fmt(sPaid)} · fees ${fmt(sFee)} · refund ${fmt(sPaid - sFee)}`, `בלי העמלה שלנו (כמו בגיליון הספק): שולם ${fmt(sPaid)} · עמלות ${fmt(sFee)} · החזר ${fmt(sPaid - sFee)}`) : '';
+      const ours = admin && paidL.length && paidL.every(o => o.supPaid > 0) && (pPaid !== sPaid || allFee !== sFee) ? t2(`Without our fee (as in the supplier sheet): paid ${fmt(sPaid)} · fees ${fmt(sFee)} · refund ${fmt(sPaid - sFee)}`, `בלי העמלה שלנו (כמו בגיליון הספק): שולם ${fmt(sPaid)} · עמלות ${fmt(sFee)} · החזר ${fmt(sPaid - sFee)}`) : '';
       const lines = [
-        paidL.length ? t2(`Paid ${fmt(pPaid)} · fees ${fmt(pFee)} · back ${fmt(pPaid - pFee)}`, `שולם ${fmt(pPaid)} · עמלות ${fmt(pFee)} · חוזר ${fmt(pPaid - pFee)}`) : '',
-        openL.length ? t2(`${openL.length} not paid: fees ${fmt(openFee)}${fromCr === openFee ? ' (taken from credit)' : fromCr ? ` (${fmt(fromCr)} taken from credit)` : ' (on the bill)'}`, `${openL.length} לא שולמו: עמלות ${fmt(openFee)}${fromCr === openFee ? ' (נלקח מהזיכוי)' : fromCr ? ` (${fmt(fromCr)} נלקח מהזיכוי)` : ' (בחשבון)'}`) : '',
+        allFee || pPaid ? t2(`Paid ${fmt(pPaid)} · fees ${fmt(allFee)} · back ${fmt(back)}`, `שולם ${fmt(pPaid)} · עמלות ${fmt(allFee)} · חוזר ${fmt(back)}`) : '',
+        onBill ? t2(`${fmt(onBill)} of the fees is on the bill`, `${fmt(onBill)} מהעמלות בחשבון`) : '',
       ].filter(Boolean);
       return `<div class="cx-date" data-cx-date="${esc(k)}" data-no-i18n><b>${k ? day(k) : '—'}</b><span class="cx-date-head">${head}</span>${lines.map(l => `<small>${esc(l)}</small>`).join('')}${ours ? `<small class="cx-ours">${esc(ours)}</small>` : ''}</div>`;
     };

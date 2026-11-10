@@ -824,7 +824,7 @@ const websiteProtection = (sheetId, email, c = C) => [[{ sheetId, startColumnInd
 // never reads the tab, so nothing typed or shown there can change an order or a bill. The whole tab is protected.
 // Errors here are logged and never stop the order sync.
 export const BILLING_TAB = 'Billing';
-const BILLING_KEY = 'supplier_billing_tab', BILLING_V = '4';
+const BILLING_KEY = 'supplier_billing_tab', BILLING_V = '5';
 const BILL_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Qty', 'Total cost (USD)', ITEM_COSTS, 'Shipping status', 'Client paid'];
 // Cancelled orders and the supplier's refund (Erwin, 3 Nov 2026: "properly show the whole refund calculation"), far
 // right from U: every cancelled order, the ones our client PAID first, with what was paid for it (Total cost: the
@@ -833,8 +833,10 @@ const BILL_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Qty', 'Total
 const REFUND_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Client paid', 'Total cost (USD)', 'Paid for it (USD)', 'Cancellation fee (USD)', 'Refund (USD)'];
 // Totals per cancel date (Erwin, 9 Nov 2026: "it should accurately show both", the paid amount and the fees of the
 // orders cancelled on one day): right of the refund part, one line per day of AJ Status changed (China time), newest
-// first. Paid orders: what was paid, their fees and the refund; not paid orders only owe their fee.
-const DAY_COLS = ['Cancelled on', 'Cancelled', 'Paid orders', 'Paid for them (USD)', 'Fees on paid (USD)', 'Refund (USD)', 'Not paid', 'Fees not paid (USD)'];
+// first. Erwin, 10 Nov 2026: "cancelation fees dont depend on wether the order is paid or not paid": ALL the fees of
+// the day in one column, and the refund = paid - all fees (like the total in row 3), so the supplier can add it up.
+// The last column stays empty (the tab keeps its width; it held the fees of not paid orders before).
+const DAY_COLS = ['Cancelled on', 'Cancelled', 'Paid orders', 'Not paid', 'Paid for them (USD)', 'Cancellation fees, all orders (USD)', 'Refund (USD)', ''];
 const REFUND_AT = 2 * BILL_COLS.length + 2, REFUND_END = REFUND_AT + REFUND_COLS.length, DAYS_AT = REFUND_END + 1, BILLING_WIDTH = DAYS_AT + DAY_COLS.length;
 export const BILLING_HEADERS = [...BILL_COLS, '', ...BILL_COLS, '', ...REFUND_COLS, '', ...DAY_COLS];
 const BILLING_HELP = 'All orders from Orders and Shipped, newest first. Left: PAID by our clients. Middle: NOT PAID yet. Right (from column U): CANCELLED orders and the refund (paid minus cancellation fees). Worked out by the sheet: do not type here.\nOrders 和 Shipped 的所有订单，最新的在前。左边：客户已付款。中间：未付款。右边（从 U 列开始）：已取消订单和退款（已付金额减取消费）。由表格自动计算，请不要在这里输入。';
@@ -857,12 +859,12 @@ export function billingCells(wq, c = C) {
     + `VSTACK(SORT(HSTACK(CHOOSECOLS(f,1,2,3,${c.h.indexOf('Product / variation') + 1}),INDEX(f,,${W1}),cost,got,fee,got-fee),paid,FALSE,INDEX(f,,1),FALSE),`
     + `HSTACK("","","","TOTAL 合计","",SUM(cost),SUM(got),SUM(fee),SUM(got)-SUM(fee)))),"No cancelled orders · 暂无已取消订单"))`;
   const AJ1 = c.CHANGED + 1, D = L(DAYS_AT), on = 'SUMPRODUCT(--(dy=x)';
-  const dayTop = 'BY CANCEL DATE (Status changed, China time): paid orders, their fees and the refund. Not paid orders only owe their fee.\n按取消日期（状态更新时间，中国时间）：已付款订单、取消费和退款。未付款订单只需付取消费。';
+  const dayTop = 'BY CANCEL DATE (Status changed, China time): refund = paid for them - cancellation fees of ALL the orders (paid and not paid).\n按取消日期（状态更新时间，中国时间）：退款 = 已付金额 - 所有订单的取消费（已付款和未付款）。';
   const dayList = `=ARRAYFORMULA(IFERROR(LET(d,INDIRECT("${q(CANCELLED_TAB)}!A${FIRST_ROW}:${L(c.CHANGED)}"),f,FILTER(d,INDEX(d,,2)<>""),`
     + `dy,IF(ISNUMBER(INDEX(f,,${AJ1})),INT(INDEX(f,,${AJ1})),-1),paid,--(INDEX(f,,${W1})="${PAID}"),`
     + `cost,IF(ISNUMBER(INDEX(f,,${P1})),INDEX(f,,${P1}),0),fee,IF(ISNUMBER(INDEX(f,,${F1})),INDEX(f,,${F1}),0),k,SORT(UNIQUE(FILTER(dy,dy>0)),1,FALSE),`
-    + `HSTACK(k,MAP(k,LAMBDA(x,${on}))),MAP(k,LAMBDA(x,${on},paid))),MAP(k,LAMBDA(x,${on},paid,cost))),MAP(k,LAMBDA(x,${on},paid,fee))),`
-    + `MAP(k,LAMBDA(x,${on},paid,cost-fee))),MAP(k,LAMBDA(x,${on},1-paid))),MAP(k,LAMBDA(x,${on},1-paid,fee))))),"No cancelled orders · 暂无已取消订单"))`;
+    + `HSTACK(k,MAP(k,LAMBDA(x,${on}))),MAP(k,LAMBDA(x,${on},paid))),MAP(k,LAMBDA(x,${on},1-paid))),MAP(k,LAMBDA(x,${on},paid,cost))),`
+    + `MAP(k,LAMBDA(x,${on},fee))),MAP(k,LAMBDA(x,${on},paid*cost-fee))))),"No cancelled orders · 暂无已取消订单"))`;
   return [
     { range: `${BILLING_TAB}!A1:A2`, values: [['Direct Line — Billing'], [BILLING_HELP]] },
     { range: `${BILLING_TAB}!A3:K3`, values: [[`="PAID by our clients: "&(${paidN})&" orders · "&TEXT(${paidSum},"$#,##0.00")&CHAR(10)&"客户已付款："&(${paidN})&" 单 · "&TEXT(${paidSum},"$#,##0.00")`, '', '', '', '', '', '', '', '', '', `="NOT PAID yet: "&(${openN})&" orders · "&TEXT(${openSum},"$#,##0.00")&CHAR(10)&"未付款："&(${openN})&" 单 · "&TEXT(${openSum},"$#,##0.00")`]] },
@@ -895,10 +897,10 @@ const dayFormat = sheetId => {
     { repeatCell: { range: r(2, 4, A, Z), cell: { userEnteredFormat: { backgroundColor: { red: 0.85, green: 0.92, blue: 1 }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
     { repeatCell: { range: r(4, 1000, A, Z), cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment)' } },
     { repeatCell: { range: r(4, 1000, A, A + 1), cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'd mmm yyyy' }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(numberFormat,textFormat)' } },
-    ...[3, 4, 5, 7].map(i => ({ repeatCell: { range: r(4, 1000, A + i, A + i + 1), cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } })),
+    ...[4, 5, 6].map(i => ({ repeatCell: { range: r(4, 1000, A + i, A + i + 1), cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } })),
     // Counts are plain numbers (10 Nov 2026: the new columns copied the dollar format of the column before them).
-    ...[1, 2, 6].map(i => ({ repeatCell: { range: r(4, 1000, A + i, A + i + 1), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '0' }, horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(numberFormat,horizontalAlignment)' } })),
-    ...[30, 110, 80, 80, 120, 120, 110, 75, 120].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: A - 1 + i, endIndex: A + i }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
+    ...[1, 2, 3].map(i => ({ repeatCell: { range: r(4, 1000, A + i, A + i + 1), cell: { userEnteredFormat: { numberFormat: { type: 'NUMBER', pattern: '0' }, horizontalAlignment: 'CENTER' } }, fields: 'userEnteredFormat(numberFormat,horizontalAlignment)' } })),
+    ...[30, 110, 80, 80, 75, 120, 140, 120, 30].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: A - 1 + i, endIndex: A + i }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
   ];
 };
 // The refund part (U-AC): rose header, dollars, widths, and the TOTAL row in bold.
