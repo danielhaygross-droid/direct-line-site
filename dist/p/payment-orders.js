@@ -93,7 +93,7 @@
   if (typeof document !== 'undefined' && document.addEventListener) {
     document.addEventListener('click', e => {
       const m = e.target.closest?.('[data-cx-more]');
-      if (m) { const box = m.closest('[data-cancelled-box]'), all = !box.classList.contains('cx-all'); box.classList.toggle('cx-all', all); m.textContent = all ? m.dataset.less : m.dataset.more; m.setAttribute('aria-expanded', String(all)); return; }
+      if (m) { const box = m.closest('[data-cx-fold]') || m.closest('[data-cancelled-box]'), all = !box.classList.contains('cx-all'); box.classList.toggle('cx-all', all); m.textContent = all ? m.dataset.less : m.dataset.more; m.setAttribute('aria-expanded', String(all)); return; }
       const b = e.target.closest?.('[data-po-oldest],[data-po-all],[data-po-none]'); if (!b) return;
       const box = b.closest('[data-po]'); if (!box) return;
       e.preventDefault();
@@ -151,21 +151,28 @@
     // what the supplier sheet's Billing tab shows.
     const groups = new Map(); for (const o of c.orders) { const k = o.day || ''; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(o); }
     const days = [...groups].sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
-    const dayCard = ([k, list]) => {
+    // One short table row per date, newest 3 shown, older folded (Erwin, 10 Nov 2026: "are you planning to just stack this
+    // every time we have canceled orders??"). Same numbers as before.
+    const DFOLD = 3, lbl = { on: t2('Cancelled on', 'בוטל בתאריך'), n: t2('Orders', 'הזמנות'), paid: t2('Paid', 'שולם'), fee: t2('Fees (all orders)', 'עמלות (כל ההזמנות)'), back: t2('Back', 'חוזר') };
+    const money = (v, show = v) => (show ? `<bdi dir="ltr">${fmt(v)}</bdi>` : '—');
+    const dayRow = ([k, list], i) => {
       // Erwin, 10 Nov 2026: "cancelation fees dont depend on wether the order is paid or not paid": the fees of ALL the
       // day's orders together, and back = paid - those fees (a fee the credit could not cover is on the bill instead).
       const paidL = list.filter(o => o.paid > 0);
       const pPaid = sumC(paidL, o => o.paid), allFee = sumC(list, o => o.fee), back = sumC(list, o => o.back), onBill = Math.max(0, allFee - (pPaid - back));
       const sPaid = sumC(paidL, o => o.supPaid), sFee = sumC(list, o => o.supFee);
-      const head = t2(`${list.length} cancelled${paidL.length ? `, ${paidL.length} were paid` : ''}`, `${list.length} בוטלו${paidL.length ? `, ${paidL.length} שולמו` : ''}`);
-      const ours = admin && paidL.length && paidL.every(o => o.supPaid > 0) && (pPaid !== sPaid || allFee !== sFee) ? t2(`Without our fee (as in the supplier sheet): paid ${fmt(sPaid)} · fees ${fmt(sFee)} · refund ${fmt(sPaid - sFee)}`, `בלי העמלה שלנו (כמו בגיליון הספק): שולם ${fmt(sPaid)} · עמלות ${fmt(sFee)} · החזר ${fmt(sPaid - sFee)}`) : '';
-      const lines = [
-        allFee || pPaid ? t2(`Paid ${fmt(pPaid)} · fees ${fmt(allFee)} · back ${fmt(back)}`, `שולם ${fmt(pPaid)} · עמלות ${fmt(allFee)} · חוזר ${fmt(back)}`) : '',
-        onBill ? t2(`${fmt(onBill)} of the fees is on the bill`, `${fmt(onBill)} מהעמלות בחשבון`) : '',
-      ].filter(Boolean);
-      return `<div class="cx-date" data-cx-date="${esc(k)}" data-no-i18n><b>${k ? day(k) : '—'}</b><span class="cx-date-head">${head}</span>${lines.map(l => `<small>${esc(l)}</small>`).join('')}${ours ? `<small class="cx-ours">${esc(ours)}</small>` : ''}</div>`;
+      const ours = admin && paidL.length && paidL.every(o => o.supPaid > 0) && (pPaid !== sPaid || allFee !== sFee) ? `${t2('without our fee', 'בלי העמלה שלנו')}: <bdi dir="ltr">${fmt(sPaid)} · ${fmt(sFee)} · ${fmt(sPaid - sFee)}</bdi>` : '';
+      const old = i >= DFOLD ? ' cx-old' : '';
+      return `<tr class="cx-drow${ours ? ' has-ours' : ''}${old}" data-cx-date="${esc(k)}"><td data-label="${esc(lbl.on)}"><b>${k ? day(k) : '—'}</b></td>`
+        + `<td data-label="${esc(lbl.n)}">${list.length}${paidL.length ? ` · ${t2(`${paidL.length} paid`, `${paidL.length} שולמו`)}` : ''}</td>`
+        + `<td class="num" data-label="${esc(lbl.paid)}">${money(pPaid)}</td>`
+        + `<td class="num cx-dfee" data-label="${esc(lbl.fee)}" data-cents="${allFee}">${money(allFee)}${onBill ? `<small>${t2(`${fmt(onBill)} on the bill`, `${fmt(onBill)} בחשבון`)}</small>` : ''}</td>`
+        + `<td class="num" data-label="${esc(lbl.back)}"><b>${money(back, back || pPaid)}</b></td></tr>`
+        + (ours ? `<tr class="cx-ours-row${old}"><td colspan="5" class="wide"><small class="cx-ours">${ours}</small></td></tr>` : '');
     };
-    const byDate = days.length ? `<h4 class="cx-sub" data-no-i18n>${t2('By cancel date', 'לפי תאריך ביטול')}</h4><div class="cx-dates">${days.map(dayCard).join('')}</div>` : '';
+    const dMore = t2(`Show all ${days.length} dates`, `הצגת כל ${days.length} התאריכים`), dLess = t2('Show fewer', 'הצגת פחות');
+    const byDate = days.length ? `<h4 class="cx-sub" data-no-i18n>${t2('By cancel date', 'לפי תאריך ביטול')}</h4><div class="cx-dates" data-cx-fold data-no-i18n><div class="table-wrap"><table class="tbl stack cx-dtable"><thead><tr><th>${lbl.on}</th><th>${lbl.n}</th><th class="num">${lbl.paid}</th><th class="num">${lbl.fee}</th><th class="num">${lbl.back}</th></tr></thead><tbody>${days.map(dayRow).join('')}</tbody></table></div>`
+      + `${days.length > DFOLD ? `<button type="button" class="btn btn-sm cx-more-btn" data-cx-more data-more="${esc(dMore)}" data-less="${esc(dLess)}" aria-expanded="false">${esc(dMore)}</button>` : ''}</div>` : '';
     const refunds = (c.refunds || []).map(r => `<div class="cx-refund"><span data-no-i18n>${day(r.refundedAt)}</span><b data-no-i18n>${usd(r.amount)}</b><span data-no-i18n>${esc([r.method, r.note].filter(Boolean).join(' · '))}</span>${admin ? `<button type="button" class="btn btn-sm btn-ghost" data-refund-undo="${r.id}">Undo</button>` : ''}</div>`).join('');
     return `<section class="card card-pad cx-box" data-cancelled-box><h3 class="sec-title">Cancelled orders</h3>
       ${calc}

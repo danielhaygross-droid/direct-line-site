@@ -87,14 +87,40 @@ assert.ok(adm.orders.every(o => 'supPaid' in o && 'supFee' in o) && !/supPaid|su
   assert.ok(!JSON.stringify((await call('/me', 'GET', null, client)).data).includes('kept'), 'never in the client summary'); }
 const feeB = mine.adjustments.filter(x => x.orderId === B.id); assert.deepEqual(feeB.map(x => [x.kind, x.amount]), [['cancellation_fee', 5 + Number(adm.orders.find(o => o.id === B.id).kept)]], 'one cancellation fee line for B');
 console.log('PASS cancelled money: paid, fees, due back, refund, credit; balance includes refunds; admin = client');
+// Compact per-date table (Erwin, 10 Nov 2026: "are you planning to just stack this every time"): four cancel dates, the
+// newest 3 shown, the oldest behind "Show all 4 dates". E is cancelled without payment or fee (a short row like the others).
+const E = await mk('KUMO-5', 12);
+ok(await call('/orders/' + E.id + '/request-cancellation', 'POST', { reason: 'Store suspended' }, client)); ok(await call('/orders/' + E.id + '/approve-cancellation', 'POST', {}, admin));
+for (const [o, d] of [[A, 4], [B, 3], [C, 2], [E, 1]]) await DB.prepare('UPDATE client_orders SET status_changed_at=COALESCE(status_changed_at, created_at)-86400*? WHERE id=?').bind(d, o.id).run();
+const adm2 = ok(await call('/admin/payments?clientId=' + id, 'GET', null, admin)).cancelled;
+assert.equal(new Set(adm2.orders.map(o => o.day)).size, 4, 'four cancel dates'); assert.equal(adm2.fees, adm.fees, 'E adds no fee');
+// 4 dates: 3 rows visible, the button opens the 4th and folds it again; the fees of all the date rows add up to all the fees.
+const cxDates = async (ui, page, tag, who) => {
+  const box = ui.locator('[data-cancelled-box] .cx-dates'), rows = box.locator('tr[data-cx-date]');
+  assert.equal(await rows.count(), 4, tag + ' one row per cancel date');
+  const shown = async () => (await rows.evaluateAll(r => r.map(x => x.offsetParent !== null))).filter(Boolean).length;
+  assert.equal(await shown(), 3, tag + ' newest 3 dates shown');
+  const days = await rows.evaluateAll(r => r.map(x => x.dataset.cxDate)); assert.deepEqual(days, [...days].sort().reverse(), tag + ' newest first');
+  const btn = box.locator('[data-cx-more]'); if (tag.startsWith('en')) assert.equal(await btn.innerText(), 'Show all 4 dates', tag);
+  await box.scrollIntoViewIfNeeded(); await box.screenshot({ path: path.join(out, `${tag}-${who}-dates.png`) });
+  await btn.click(); assert.equal(await shown(), 4, tag + ' all dates after Show all');
+  const f = (await box.locator('td.cx-dfee').evaluateAll(t => t.map(x => Number(x.dataset.cents)))).reduce((a, b) => a + b, 0);
+  assert.equal(f, Math.round(adm2.fees * 100), tag + ' the dates add up to all the fees');
+  if (tag.startsWith('en')) { const shownFees = (await box.locator('td.cx-dfee').allInnerTexts()).map(t => /\$([\d,.]+)/.exec(t)).reduce((n, m) => n + (m ? Math.round(Number(m[1].replace(/,/g, '')) * 100) : 0), 0); assert.equal(shownFees, f, tag + ' the shown fees add up to all the fees'); }
+  await box.screenshot({ path: path.join(out, `${tag}-${who}-dates-all.png`) });
+  if (tag.startsWith('en')) assert.equal(await btn.innerText(), 'Show fewer', tag);
+  await btn.click(); assert.equal(await shown(), 3, tag + ' folded again');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
+};
 try {
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
     const tag = `${lang}-${width}`;
     let ctx = await session(client, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/portal/?lang=${lang}#/payments?tab=cancelled`); await page.reload(); await page.waitForSelector('[data-cancelled-box]'); await page.waitForTimeout(400);
     await page.locator('[data-cancelled-box]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-client.png`) }); await page.locator('[data-cancelled-box]').screenshot({ path: path.join(out, `${tag}-client-box.png`) });
-    assert.equal(await page.locator('[data-cancelled-box] tbody tr').count(), 3, tag); assert.equal(await page.locator('[data-refund-form]').count(), 0, tag + ' client cannot record refunds');
+    assert.equal(await page.locator('[data-cancelled-box] .cx-table tbody tr').count(), 4, tag); assert.equal(await page.locator('[data-refund-form]').count(), 0, tag + ' client cannot record refunds');
     assert.equal(await page.locator('[data-cancelled-box] .cx-ours').count(), 0, tag + ' the client never sees our fee');
+    await cxDates(page, page, tag, 'client');
     { const t = (await page.locator('[data-cancelled-box] .cx-calc').innerText()).replace(/\s+/g, ' '), u = n => '$' + Number(n).toFixed(2);
       assert.ok(t.includes(u(c.paid)) && t.includes(u(c.dueBack)), tag + ' the calculation shows paid and due back: ' + t); }
     // Refunded (29 Oct 2026): the paid cancelled orders (A, B) say Refunded; C (paid from the credit) does not.
@@ -119,11 +145,10 @@ try {
     await page.screenshot({ path: path.join(out, `${tag}-admin.png`) }); await ui.locator('[data-cancelled-box]').screenshot({ path: path.join(out, `${tag}-admin-box.png`) });
     assert.equal(await ui.locator('[data-refund-undo]').count(), 1, tag);
     if (lang === 'en') assert.match(await ui.locator('[data-cancelled-box] .cx-calc').innerText(), /includes \$[\d.]+ of our fee/, tag + ' admin sees our fee kept');
-    // By cancel date: one block per day; the admin sees it without our fee (like the supplier sheet), the client never.
-    assert.equal(await ui.locator('[data-cancelled-box] [data-cx-date]').count(), new Set(adm.orders.map(o => o.day)).size, tag + ' one block per cancel date');
-    if (lang === 'en') assert.match(await ui.locator('[data-cancelled-box] .cx-dates').innerText(), /Without our fee \(as in the supplier sheet\): paid \$[\d.]+ · fees \$[\d.]+ · refund/, tag + ' admin: without our fee');
-    // 10 Nov 2026: each date shows the fees of ALL its orders (paid or not); together they are all the fees.
-    if (lang === 'en') { const t = await ui.locator('[data-cancelled-box] .cx-dates').innerText(), f = [...t.matchAll(/· fees \$([\d,.]+) · back/g)].reduce((n, m) => n + Math.round(Number(m[1].replace(/,/g, '')) * 100), 0); assert.equal(f, Math.round(adm.fees * 100), tag + ' the dates add up to all the fees: ' + t); }
+    // By cancel date: one table row per day, newest 3 shown, the rest behind "Show all 4 dates"; the admin sees a small
+    // "without our fee" line (like the supplier sheet), the client never.
+    await cxDates(ui, page, tag, 'admin');
+    if (lang === 'en') assert.match(await ui.locator('[data-cancelled-box] .cx-dates').innerText(), /without our fee: \$[\d.]+ · \$[\d.]+ · \$[\d.]+/, tag + ' admin: without our fee');
     await page.keyboard.press('Escape'); await page.waitForTimeout(300);
     await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter=cancelled]').first().click(); await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(out, `${tag}-admin-orders.png`) }); assert.equal(await ui.locator('.pay-tag.refunded').count(), 2, tag + ' admin Orders: A and B Refunded');
