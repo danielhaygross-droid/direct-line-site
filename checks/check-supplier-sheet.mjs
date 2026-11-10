@@ -536,12 +536,14 @@ assert.ok(!readTabs.has(BILLING_TAB));
 // Totals per cancel date (9 Nov 2026): right of the refund part, from the Cancelled tab's AJ (China time), newest first.
 { const row = r => bill()[r - 1] || [], at = BILLING_HEADERS.indexOf('Cancelled on');
   assert.ok(at > BILLING_HEADERS.indexOf('Refund (USD)'), 'per date: right of the refund part');
-  assert.deepEqual(BILLING_HEADERS.slice(at), ['Cancelled on', 'Cancelled', 'Paid orders', 'Paid for them (USD)', 'Fees on paid (USD)', 'Refund (USD)', 'Not paid', 'Fees not paid (USD)']);
+  assert.deepEqual(BILLING_HEADERS.slice(at), ['Cancelled on', 'Cancelled', 'Paid orders', 'Not paid', 'Paid for them (USD)', 'Cancellation fees, all orders (USD)', 'Refund (USD)', '']);
   assert.match(String(row(3)[at]), /^BY CANCEL DATE .*\n按取消日期/, 'title in English and Chinese');
   const f = String(row(5)[at]);
   assert.match(f, /INDIRECT\("'Cancelled'!A6:AJ"\)/, 'reads the Cancelled tab to AJ');
   assert.match(f, /INT\(INDEX\(f,,36\)\)/, 'the day of AJ Status changed'); assert.match(f, /INDEX\(f,,23\)="Paid"/, 'W Client paid');
-  assert.match(f, /INDEX\(f,,16\)/, 'P Total cost'); assert.match(f, /INDEX\(f,,35\)/, 'AI Cancellation fee'); assert.match(f, /SORT\(UNIQUE\(FILTER\(dy,dy>0\)\),1,FALSE\)/, 'newest day first'); }
+  assert.match(f, /INDEX\(f,,16\)/, 'P Total cost'); assert.match(f, /INDEX\(f,,35\)/, 'AI Cancellation fee'); assert.match(f, /SORT\(UNIQUE\(FILTER\(dy,dy>0\)\),1,FALSE\)/, 'newest day first');
+  // 10 Nov 2026: the fees of ALL the day's orders (paid or not) in one column, refund = paid - all fees.
+  assert.match(f, /MAP\(k,LAMBDA\(x,SUMPRODUCT\(--\(dy=x\),fee\)\)\)/, 'all fees of the day'); assert.match(f, /paid\*cost-fee/, 'refund = paid - all fees'); }
 console.log('PASS Billing tab: all orders, paid apart from not paid, formulas only, protected, never read, safe if it fails; totals per cancel date');
 // Refunds (Erwin, 3 Nov 2026): far right, every cancelled order (paid first) with paid, fee and refund, a TOTAL row,
 // and row 3 with the whole sum: paid by our clients minus the cancellation fees.

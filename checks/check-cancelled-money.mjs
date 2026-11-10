@@ -122,6 +122,8 @@ try {
     // By cancel date: one block per day; the admin sees it without our fee (like the supplier sheet), the client never.
     assert.equal(await ui.locator('[data-cancelled-box] [data-cx-date]').count(), new Set(adm.orders.map(o => o.day)).size, tag + ' one block per cancel date');
     if (lang === 'en') assert.match(await ui.locator('[data-cancelled-box] .cx-dates').innerText(), /Without our fee \(as in the supplier sheet\): paid \$[\d.]+ · fees \$[\d.]+ · refund/, tag + ' admin: without our fee');
+    // 10 Nov 2026: each date shows the fees of ALL its orders (paid or not); together they are all the fees.
+    if (lang === 'en') { const t = await ui.locator('[data-cancelled-box] .cx-dates').innerText(), f = [...t.matchAll(/· fees \$([\d,.]+) · back/g)].reduce((n, m) => n + Math.round(Number(m[1].replace(/,/g, '')) * 100), 0); assert.equal(f, Math.round(adm.fees * 100), tag + ' the dates add up to all the fees: ' + t); }
     await page.keyboard.press('Escape'); await page.waitForTimeout(300);
     await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter=cancelled]').first().click(); await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(out, `${tag}-admin-orders.png`) }); assert.equal(await ui.locator('.pay-tag.refunded').count(), 2, tag + ' admin Orders: A and B Refunded');
