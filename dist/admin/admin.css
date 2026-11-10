@@ -18,7 +18,7 @@ html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 .bar select{min-height:40px;padding:0 12px;border:1px solid var(--line-2);border-radius:11px;background:var(--surface);font-size:14px}
 .bar .search{width:min(280px,100%)}
 .chip.alert{border-color:color-mix(in srgb,var(--red) 50%,transparent);color:var(--red)}
-.chip.alert.on{background:var(--red);border-color:var(--red);color:#fff}.chip.alert.on span{color:#fff}
+.chip.fresh{border-color:color-mix(in srgb,var(--gold) 60%,transparent);color:var(--gold-2)}.chip.fresh.on{background:var(--gold);border-color:var(--gold);color:#fff}.chip.fresh.on span{color:#fff}.chip.alert.on{background:var(--red);border-color:var(--red);color:#fff}.chip.alert.on span{color:#fff}
 .who{display:flex;align-items:center;gap:10px;min-width:0}
 .ava{display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:10px;background:color-mix(in srgb,var(--gold) 18%,transparent);color:var(--gold-2);font:700 12px var(--mono)}
 [data-theme=dark] .ava{color:var(--gold)}

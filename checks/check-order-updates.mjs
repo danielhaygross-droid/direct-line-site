@@ -74,6 +74,9 @@ try {
     await ui.locator('[data-tab=orders]').click(); await ui.waitForSelector('[data-sort=admin-orders-2]'); await page.waitForTimeout(500);
     assert.equal(await ui.locator('[data-sort=admin-orders-2]').inputValue(), 'updates', tag + ' new updates first by default');
     assert.equal(await ui.locator('[data-filter=updates] span').innerText(), '3', tag + ' 3 orders with updates');
+    // New orders (11 Nov 2026): only orders a client sent that aren't opened yet; all 3 here.
+    assert.equal(await ui.locator('[data-filter=neworders] span').innerText(), '3', tag + ' 3 new orders');
+    assert.equal(await ui.locator('[data-filter=neworders]').innerText().then(t => t.replace(/\s*\d+$/, '')), lang === 'he' ? 'הזמנות חדשות' : 'New orders', tag + ' New orders label');
     const refs = await ui.locator('tbody tr[data-open-order]').evaluateAll(rs => rs.map(r => r.dataset.openOrder));
     assert.equal(Number(refs[0]), B.id, tag + ' B (latest update) first');
     const tagsB = await ui.locator(`tr[data-open-order="${B.id}"] .upd-tag`).allInnerTexts();
@@ -82,6 +85,12 @@ try {
     await ui.locator(`tr[data-open-order="${B.id}"] td.wide`).click(); await page.waitForTimeout(500); await page.keyboard.press('Escape'); await page.waitForTimeout(400);
     assert.equal(await ui.locator(`tr[data-open-order="${B.id}"] .upd-tag`).count(), 0, tag + ' opening B clears its tags');
     assert.equal(await ui.locator('[data-filter=updates] span').innerText(), '2', tag + ' 2 left');
+    assert.equal(await ui.locator('[data-filter=neworders] span').innerText(), '2', tag + ' 2 new orders left');
+    await ui.locator('[data-filter=neworders]').click(); await page.waitForTimeout(300);
+    const newRows = await ui.locator('tbody tr[data-open-order]').evaluateAll(rs => rs.map(r => Number(r.dataset.openOrder)));
+    assert.deepEqual(newRows.sort(), [A.id, C.id].sort(), tag + ' New orders shows only the unopened orders');
+    await page.screenshot({ path: path.join(out, `${tag}-admin-neworders.png`) });
+    await ui.locator('[data-filter=all]').click(); await page.waitForTimeout(200);
     assert.ok((await page.evaluate(() => JSON.parse(localStorage.getItem('dl_notif_read_ids')))).length >= 2, tag + ' shared with the bell');
     assert.deepEqual(errors, [], tag); await ctx.close();
     // Client: our updates on A.

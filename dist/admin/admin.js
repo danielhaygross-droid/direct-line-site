@@ -82,6 +82,8 @@
   const freshRead = () => { readCache = readState(); return readCache; };
   const newUpdates = o => { const r = readCache || freshRead(); return (o.updates || []).filter(u => u.at * 1000 > r.at && !r.ids.has('ev-' + u.id)); };
   const lastNew = o => newUpdates(o)[0]?.at || 0;
+  // New orders (Erwin, 11 Nov 2026: "I can't tell which are the newest orders"): sent by a client and not opened here yet.
+  const isNewOrder = o => newUpdates(o).some(u => u.kind === 'created');
   const updateLabel = u => u.kind === 'created' ? ['New order', 'gold'] : u.kind === 'duplicate' ? ['Possible duplicate', 'red'] : u.kind === 'message' ? ['New message', 'blue'] : u.kind === 'revision_requested' ? ['Cost revision requested', 'orange']
     : u.kind === 'claim' ? ['Problem reported', 'red'] : u.kind === 'tracking' ? ['Tracking added', 'mint'] : u.kind === 'photo' ? [u.detail === 'removed' ? 'Photo removed' : 'Photo added', 'orange']
     : u.kind === 'supplier_sheet' ? (/"f":"dup_tracking"/.test(u.detail || '') ? ['Same tracking as another order', 'red'] : /"f":"dup_order"/.test(u.detail || '') ? ['Twice in the sheet', 'red'] : /"f":"cancel_fee"/.test(u.detail || '') ? ['Supplier cancellation fee', 'red']
@@ -611,7 +613,7 @@
   const customerPaid = o => o.sellingPrice == null ? '<span class="dim">Not entered</span>' : `${esc(o.currency || 'USD')} ${Number(o.sellingPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   // Not billed yet: no product cost or shipping fee, and no fixed unit quote (quoted orders are billed from the quote).
   const needsCost = o => o.status !== 'cancelled' && o.productCost == null && o.shippingFee == null && o.quotedUnitPrice == null;
-  const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'updates' ? newUpdates(o).length > 0 : f === 'followups' ? o.unreadMessages > 0 : f === 'needscost' ? needsCost(o) : f === 'revision' ? ['open', 'offered'].includes(o.revision?.status) : f === 'unpaid' ? window.DLPayOrders.state(o) === 'unpaid' : o.status === f));
+  const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'neworders' ? isNewOrder(o) : f === 'updates' ? newUpdates(o).length > 0 : f === 'followups' ? o.unreadMessages > 0 : f === 'needscost' ? needsCost(o) : f === 'revision' ? ['open', 'offered'].includes(o.revision?.status) : f === 'unpaid' ? window.DLPayOrders.state(o) === 'unpaid' : o.status === f));
   // Long lists show the first rows, then "Show N more" (Erwin, 7 Nov 2026: shorter screens; 100+ orders made Client orders
   // 12,000 px long, 38,000 px on a phone). Search, filters, counts and sorting still use every row. S.shown keeps how many
   // rows a list shows until its filter, search or client changes.
@@ -623,10 +625,10 @@
     const all = [...S.orders,...S.archivedOrders];
     const inClient = all.filter(o => !S.client || String(o.clientId) === S.client);
     const count = f => inClient.filter(o => matches(o, f)).length;
-    const label = f => (f === 'archived' ? 'Archived orders' : f === 'all' ? 'All' : f === 'updates' ? 'New updates' : f === 'followups' ? 'New follow-ups' : f === 'needscost' ? 'Needs cost' : f === 'revision' ? 'Cost revision' : f === 'unpaid' ? 'Not paid' : UI.LABEL[f]);
+    const label = f => (f === 'archived' ? 'Archived orders' : f === 'all' ? 'All' : f === 'neworders' ? 'New orders' : f === 'updates' ? 'New updates' : f === 'followups' ? 'New follow-ups' : f === 'needscost' ? 'Needs cost' : f === 'revision' ? 'Cost revision' : f === 'unpaid' ? 'Not paid' : UI.LABEL[f]);
     // Shipped is always there (Erwin, 29 Oct 2026: "we need a sort view for Shipped order"), even before anything ships.
-    $('[data-chips]').innerHTML = ['all', 'updates', 'followups', 'revision', 'needscost', 'unpaid', ...STATUSES, 'archived'].filter(f => ['archived', 'all', 'shipped'].includes(f) || count(f) || f === S.filter)
-      .map(f => `<button type="button" class="chip t-${f}${f === 'followups' || f === 'updates' ? ' alert' : ''}${S.filter === f ? ' on' : ''}" data-filter="${f}">${!['all', 'followups', 'updates'].includes(f) ? '<i class="dot"></i>' : ''}${label(f)} <span>${count(f)}</span></button>`).join('');
+    $('[data-chips]').innerHTML = ['all', 'neworders', 'updates', 'followups', 'revision', 'needscost', 'unpaid', ...STATUSES, 'archived'].filter(f => ['archived', 'all', 'neworders', 'shipped'].includes(f) || count(f) || f === S.filter)
+      .map(f => `<button type="button" class="chip t-${f}${f === 'neworders' ? ' fresh' : f === 'followups' || f === 'updates' ? ' alert' : ''}${S.filter === f ? ' on' : ''}" data-filter="${f}">${!['all', 'neworders', 'followups', 'updates'].includes(f) ? '<i class="dot"></i>' : ''}${label(f)} <span>${count(f)}</span></button>`).join('');
     const sel = $('[data-client-filter]');
     sel.innerHTML = '<option value="">All clients</option>' + S.ov.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
     sel.value = S.client;
@@ -647,7 +649,7 @@
         <td data-label="Messages">${o.unreadMessages ? `<span class="unread-pill">${ic('chat')}${o.unreadMessages} new</span>` : o.messages ? `<span class="msgs">${ic('chat')}${o.messages}</span>` : '<span class="dim">—</span>'}</td>
         <td class="num hide-sm">${UI.svg(P.chev).replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:var(--dim);stroke-width:2"')}</td></tr>`).join('')}
       </tbody></table></div>${listMore('orders', seen.length, rows.length)}`
-      : S.orders.length ? empty('No orders here', S.filter === 'followups' ? 'No unread follow-ups. You’re all caught up.' : S.filter === 'updates' ? 'No new updates. You’re all caught up.' : S.filter === 'archived' ? 'No archived orders match this search.' : 'Try another filter or search.')
+      : S.orders.length ? empty('No orders here', S.filter === 'followups' ? 'No unread follow-ups. You’re all caught up.' : S.filter === 'neworders' ? 'No new orders. You’re all caught up.' : S.filter === 'updates' ? 'No new updates. You’re all caught up.' : S.filter === 'archived' ? 'No archived orders match this search.' : 'Try another filter or search.')
         : empty('No client orders yet', 'They show up here as soon as a client adds one in their portal. You can also add one for a client.', '<button type="button" class="btn btn-primary" data-new-order>New order</button>');
   }
 
