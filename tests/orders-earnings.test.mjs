@@ -12,7 +12,9 @@ test('Home starts with the money, and the earnings live only on Home', async () 
   const portal = await read('dist/portal/portal.js'), i18n = await read('dist/p/i18n.js');
   assert.equal(portal.split('function statCardsHTML()').length, 2, 'one definition of the cards');
   assert.ok(portal.includes('${payStrip()}\n      ${moneyNow()}\n      ${window.DLClientStoreUI.periodFields('), 'the unpaid strip (to-do) first, then Your money (7 Nov 2026)');
-  assert.ok(portal.includes("'Cancellation fees', money(c.fees)") && portal.includes("'Credit left', money(cx.leftC / 100)"), 'cancellation fees and credit left on Home, only while open (check-compact-admin)');
+  // 12 Nov 2026: Home shows one result (a second "Credit left" tile gave a different credit than the hero); the full
+  // account statement is on Payments (check-account-statement).
+  assert.ok(!portal.includes("'Credit left', money(cx.leftC / 100)") && portal.includes('window.DLPayOrders.statement({ summary: s, orders: S.orders'), 'one credit on Home; the statement on Payments');
   assert.ok(!portal.includes('profitChart') && !portal.includes('Profit over selected period'), 'the old profit bars are gone (Money by month shows the profit)');
   assert.ok(!portal.includes('earningsInner') && !portal.includes('data-earn'), 'no earnings block on the Orders page');
   // 5 Nov 2026 (no duplication): the unpaid strip is on Home and Payments only; Orders starts with the toolbar and the list.

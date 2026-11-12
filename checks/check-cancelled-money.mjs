@@ -129,9 +129,8 @@ try {
     assert.equal(await page.locator('.pay-tag.refunded').first().innerText(), lang === 'he' ? 'הוחזר' : 'Refunded', tag);
     // Home starts with the money, cancellation fees and credit included (29 Oct 2026).
     await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('[data-money-now]'); await page.waitForTimeout(600);
-    const tiles = await page.locator('[data-money-now] .mn-tile').allInnerTexts(); assert.equal(tiles.length, 5, tag + ' balance, billed, paid, fees, credit');
-    const usd = n => '$' + n.toFixed(2);
-    assert.ok(tiles.some(t => t.includes(usd(8 + kept))) && tiles.some(t => t.includes(usd(c.dueBack - 10))), tag + ' fees and credit on Home: ' + tiles.join(' | '));
+    // 12 Nov 2026: Home shows one result (balance, billed, paid); the fees and the credit are on the Payments statement.
+    const tiles = await page.locator('[data-money-now] .mn-tile').allInnerTexts(); assert.equal(tiles.length, 3, tag + ' balance, billed, paid');
     await page.screenshot({ path: path.join(out, `${tag}-home.png`) });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
     assert.deepEqual(errors, [], tag); await ctx.close();

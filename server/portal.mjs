@@ -18,7 +18,7 @@ import { REFUND_SCHEMA, refundedTotal, cancelledSummary, addRefund, withCreditPa
 import { cancelledTotals, moneyMonths } from './money-overview.mjs';
 import { itemCostList, itemPrices } from './item-costs.mjs';
 import { REVISION_SCHEMA, withRevisions, requestRevision, answerOrder, productRequoted, keepProduct } from './cost-revisions.mjs';
-import { PAYMENT_ORDER_SCHEMA, orderIdList, checkOrders, setPaymentOrders, paymentOrderIds, withPaid, dropTakenOrders } from './payment-orders.mjs';
+import { PAYMENT_ORDER_SCHEMA, orderIdList, checkOrders, setPaymentOrders, paymentOrderIds, withPaid, paidOrders, dropTakenOrders } from './payment-orders.mjs';
 
 import { STATUS_SCHEMA, changeStatus, balanceAdjustments, statusAt } from './order-status.mjs';
 
@@ -658,7 +658,18 @@ async function clientSummary(DB, clientId, settings) {
   const commission = round2(o.commission), supplierShare = 0;
   // Our fee kept on paid cancelled orders is ours too (Erwin, 4 Nov 2026: "accurate countings on our profit").
   const kept = round2((await DB.prepare(`SELECT COALESCE(SUM(amount),0) AS n FROM client_balance_adjustments WHERE client_id = ? AND kind = '${KEPT_FEE}'`).bind(clientId).first())?.n);
-  return { orders: Number(o.n), billed, paid, refunded, outstanding: round2(billed - paid + refunded), commission, supplierShare, keptFees: kept, ourShare: round2(commission - supplierShare + kept), clientProfit: performance.totals.profit };
+  // Account statement (Erwin, 12 Nov 2026: "the money flows are all over the place"; Ada's sums did not match the admin).
+  // parts: what the bill is made of (orders + cancellation fees + other changes = billed, so the lines always add up).
+  // supplier (admin only): the same statement without our fee, which is how the supplier sheet counts.
+  const rows = (await DB.prepare("SELECT id, price, commission, supplier_cost FROM client_orders WHERE client_id = ? AND status <> 'cancelled' AND price > 0").bind(clientId).all()).results || [];
+  const kinds = new Map(((await DB.prepare('SELECT kind, COALESCE(SUM(amount),0) AS n FROM client_balance_adjustments WHERE client_id = ? GROUP BY kind').bind(clientId).all()).results || []).map(r => [r.kind, Number(r.n)]));
+  const supOf = r => Math.max(0, r.supplier_cost == null ? Number(r.price) - Number(r.commission || 0) : Number(r.supplier_cost));
+  const paidIds = await paidOrders(DB, clientId), supFees = round2(kinds.get('cancellation_fee') || 0), fees = round2(supFees + kept);
+  const ordersBilled = round2(rows.reduce((n, r) => n + Number(r.price), 0)), other = round2(billed - ordersBilled - fees);
+  const supOrders = round2(rows.reduce((n, r) => n + supOf(r), 0)), ourPaid = round2(rows.reduce((n, r) => n + (paidIds.has(Number(r.id)) ? Number(r.price) - supOf(r) : 0), 0) + kept);
+  const supBilled = round2(supOrders + supFees + other), supReceived = round2(paid - refunded - ourPaid);
+  const parts = { orders: ordersBilled, fees, other }, supplier = { orders: supOrders, fees: supFees, other, billed: supBilled, received: supReceived, ourFee: ourPaid, balance: round2(supBilled - supReceived) };
+  return { orders: Number(o.n), billed, paid, refunded, outstanding: round2(billed - paid + refunded), parts, supplier, commission, supplierShare, keptFees: kept, ourShare: round2(commission - supplierShare + kept), clientProfit: performance.totals.profit };
 }
 
 // ---------- request handler ----------
@@ -770,7 +781,7 @@ async function routePortal(request, url, ctx, meta) {
     if (!who.preview && !who.acting) await DB.prepare('UPDATE users SET last_seen_at=? WHERE id=? AND COALESCE(last_seen_at,0)<?').bind(now(), who.clientId, now() - 300).run();
     const u = await DB.prepare('SELECT id, username, display_name, active, trial_start, trial_end, sub_status, sub_last_payment FROM users WHERE id = ?').bind(who.clientId).first();
     if (!u || !u.active) return json({ ok: false, error: 'Account disabled' }, 403);
-    return json({ ok: true, role: 'client', preview: !!who.preview, acting: !!who.acting, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor, ...Object.fromEntries(BANK_FIELDS.map(k => [k, settings[k] || ''])) }, subscription: subscriptionOut(u, settings), summary: (({ commission, supplierShare, ourShare, keptFees, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
+    return json({ ok: true, role: 'client', preview: !!who.preview, acting: !!who.acting, id: u.id, username: u.username, name: u.display_name, settings: { volumetric_divisor: settings.volumetric_divisor, ...Object.fromEntries(BANK_FIELDS.map(k => [k, settings[k] || ''])) }, subscription: subscriptionOut(u, settings), summary: (({ commission, supplierShare, ourShare, keptFees, supplier, ...rest }) => rest)(await clientSummary(DB, u.id, settings)) });
   }
 
   // Archived orders are read-only for admins and unavailable to clients.

@@ -4,13 +4,14 @@
   // the Payments page; every tile opens Payments for the details.
   function moneyNow() {
     // Cancellation tiles show only while a fee is owed or credit is left (Erwin, 6–7 Nov 2026: settled money clears).
-    const s = S.me.summary, c = S.cancelled, cx = c && c.count ? window.DLPayOrders.cxSettle(c, creditCents(), s.outstanding) : null, credit = s.outstanding < 0, n = (k, one, many) => `<b data-no-i18n>${k}</b> <span>${k === 1 ? one : many}</span>`;
+    // One result here (12 Nov 2026): a second "Credit left" tile showed a different credit than the hero; the full
+    // statement is on Payments.
+    const s = S.me.summary, credit = s.outstanding < 0, n = (k, one, many) => `<b data-no-i18n>${k}</b> <span>${k === 1 ? one : many}</span>`;
     const tile = (cls, label, value, note, tone = '') => `<a class="mn-tile ${cls}" href="#/payments"><small>${label}</small><strong class="${tone}" data-no-i18n>${value}</strong><em>${note}</em></a>`;
     return `<section class="card card-pad money-now" data-money-now><div class="mn-head"><h3 class="sec-title">Your money</h3><a class="link" href="#/payments">Payments details</a></div><div class="mn-grid">
       ${tile('hero', credit ? 'Credit on your account' : 'Balance due', money(Math.abs(s.outstanding)), credit ? 'It counts toward your next orders' : s.outstanding > 0 ? 'Please send this to Direct Line' : 'You’re all paid up')}
-      ${tile('', 'Total billed', money(s.billed), n(s.orders, 'order', 'orders'))}
+      ${tile('', 'Total billed', money(s.billed), s.parts && s.parts.fees > 0 ? 'Orders and cancellation fees' : n(s.orders, 'order', 'orders'))}
       ${tile('', 'Paid', money(s.paid), n(S.payments.length, 'payment', 'payments'), 'pos')}
-      ${cx && (cx.feesOpen || cx.leftC > 0) ? tile('', 'Cancellation fees', money(c.fees), n(c.count, 'cancelled order', 'cancelled orders'), cx.feesOpen ? 'neg' : '') + tile('', 'Credit left', money(cx.leftC / 100), cx.usedC ? `${money(cx.usedC / 100)} used on your bills` : 'Counts toward your next orders', 'pos') : ''}
     </div></section>`;
   }
   function viewHome() {

@@ -84,7 +84,7 @@ try {
     ctx = await session(admin, 1440); page = await ctx.newPage(); errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=en`); let ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=clients]');
     await openPayments(ui, page);
-    assert.match(await ui.locator('.pay-sum').innerText(), /Not paid yet\s*3\s*\$75\.00/);
+    assert.match(await ui.locator('[data-statement]').innerText(), /Still to pay\s*3\s*\$75\.00/);
     assert.match(await ui.locator('.bill-view').innerText(), /Sample Person[\s\S]*Sample Shop Ltd[\s\S]*Tel Aviv[\s\S]*billing@example\.com/, 'admin sees the billing details');
     assert.equal(await ui.locator('[data-pay-form]').count(), 0, 'the record form opens on demand');
     await ui.locator('[data-record-transfer]').click(); await ui.waitForSelector('.pay-from');

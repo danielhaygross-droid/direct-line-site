@@ -67,7 +67,7 @@
   // No unpaid strip here (5 Nov 2026): it is on Home and Payments; the "Not paid" chip filters the unpaid orders.
   const viewOrders = () => `<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders-2', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
       <section class="card" data-orders-list></section>`;
-  const isUnpaid = o => window.DLPayOrders.state(o, S.adjustments) === 'unpaid';
+  const isUnpaid = o => window.DLPayOrders.owes(o, S.adjustments);
   // "Cost revisions": every order the client asked a cost revision on (waiting or answered).
   const hasRevision = o => !!UI.revTag(o);
   const byFilter = (o, f) => f === 'all' || (f === 'updates' ? newByOrder.has(o.id) : f === 'unpaid' ? isUnpaid(o) : f === 'revision' ? hasRevision(o) : o.status === f);

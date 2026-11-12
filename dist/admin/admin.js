@@ -126,7 +126,9 @@
 
   async function loadAll() {
     const [ov, o, p, c, stores, archived] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores'),api('/admin/orders?archived=1')]);
-    S.ov = ov; S.orders = o.orders; S.archivedOrders = archived.orders; S.products=p.products; S.claims=c.claims;S.stores=stores.stores; window.DL.setRates(ov.rates);
+    S.ov = ov; S.orders = o.orders;
+    // Orders the client's credit already covers are not owed (12 Nov 2026): flagged once here, read by tags and filters.
+    window.DLPayOrders.markCovered(S.orders, id => ov.clients.find(c => c.id === id)?.outstanding ?? Infinity, () => [], id => Math.round(((ov.cancelled?.clients || []).find(r => r.clientId === id)?.feesOwed || 0) * 100)); S.archivedOrders = archived.orders; S.products=p.products; S.claims=c.claims;S.stores=stores.stores; window.DL.setRates(ov.rates);
     if (S.filter === null) S.filter = S.orders.some(x => newUpdates(x).length) ? 'all' : S.orders.some(x => x.status === 'cancellation_requested') ? 'cancellation_requested' : S.orders.some(x => x.unreadMessages) ? 'followups' : S.orders.some(x => x.status === 'pending') ? 'pending' : 'all';
     renderKpis();
     tell({ type: 'dl-followups', unread: unreadTotal() });
@@ -148,7 +150,7 @@
   // Red only for late money (Erwin, 5 Nov 2026): an unpaid order is late after 14 days, the same rule as the client's own
   // reminder in the portal (src/portal/13-payments.js). Days by order date, counted the same way.
   const LATE_DAYS = 14, unpaidDays = o => Math.floor((Date.now() - Date.parse(window.DLClientStoreMath.dateKey(o) + 'T12:00:00Z')) / 864e5);
-  const lateClientIds = () => new Set(S.orders.filter(o => !o.archived && window.DLPayOrders.state(o) === 'unpaid' && !(unpaidDays(o) <= LATE_DAYS)).map(o => o.clientId));
+  const lateClientIds = () => new Set(S.orders.filter(o => !o.archived && window.DLPayOrders.owes(o) && !(unpaidDays(o) <= LATE_DAYS)).map(o => o.clientId));
 
   // Every number the four cards show, worked out once for the cards and for their windows.
   function kpiFacts() {
@@ -613,7 +615,7 @@
   const customerPaid = o => o.sellingPrice == null ? '<span class="dim">Not entered</span>' : `${esc(o.currency || 'USD')} ${Number(o.sellingPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   // Not billed yet: no product cost or shipping fee, and no fixed unit quote (quoted orders are billed from the quote).
   const needsCost = o => o.status !== 'cancelled' && o.productCost == null && o.shippingFee == null && o.quotedUnitPrice == null;
-  const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'neworders' ? isNewOrder(o) : f === 'updates' ? newUpdates(o).length > 0 : f === 'followups' ? o.unreadMessages > 0 : f === 'needscost' ? needsCost(o) : f === 'revision' ? ['open', 'offered'].includes(o.revision?.status) : f === 'unpaid' ? window.DLPayOrders.state(o) === 'unpaid' : o.status === f));
+  const matches = (o, f) => f === 'archived' ? o.archived : !o.archived && (f === 'all' || (f === 'neworders' ? isNewOrder(o) : f === 'updates' ? newUpdates(o).length > 0 : f === 'followups' ? o.unreadMessages > 0 : f === 'needscost' ? needsCost(o) : f === 'revision' ? ['open', 'offered'].includes(o.revision?.status) : f === 'unpaid' ? window.DLPayOrders.owes(o) : o.status === f));
   // Long lists show the first rows, then "Show N more" (Erwin, 7 Nov 2026: shorter screens; 100+ orders made Client orders
   // 12,000 px long, 38,000 px on a phone). Search, filters, counts and sorting still use every row. S.shown keeps how many
   // rows a list shows until its filter, search or client changes.
@@ -750,11 +752,11 @@
     const lateIds = lateClientIds(); // red only when an unpaid order is over 14 days old (5 Nov 2026)
     const all = sortList(S.ov.clients.filter(c => !q || (c.name + ' ' + c.username).toLowerCase().includes(q)), 'admin-clients', CLIENT_SORTS);
     const list = all.slice(0, listShown('clients', S.cq));
-    $('[data-list]').innerHTML = list.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Orders</th><th class="num">Billed</th><th class="num" title="Billed minus our fee: the supplier's cost">Without our fee</th><th class="num">Paid</th><th class="num">Outstanding</th><th class="num">Our earnings</th><th class="num">Fee / order</th><th>Subscription</th><th>Status</th></tr></thead><tbody>
+    $('[data-list]').innerHTML = list.length ? `<div class="table-wrap"><table class="tbl stack"><thead><tr><th>Client</th><th class="num">Orders</th><th class="num">Billed</th><th class="num" title="Billed minus our fee: the supplier's cost">Without our fee</th><th class="num">Paid</th><th class="num" title="Billed minus received">Balance</th><th class="num">Our earnings</th><th class="num">Fee / order</th><th>Subscription</th><th>Status</th></tr></thead><tbody>
       ${list.map(c => `<tr class="click" data-open-client="${c.id}" tabindex="0">
         <td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small>${c.pendingTransfers ? `<small>${c.pendingTransfers} transfer confirmation${c.pendingTransfers === 1 ? '' : 's'} waiting</small>` : ''}</div></div></td>
         <td data-label="Orders" class="num">${c.orders}</td><td data-label="Billed" class="num">${money(c.billed)}</td><td data-label="Without our fee" class="num dim hide-sm">${money((c.billed || 0) - (c.ourShare || 0))}</td><td data-label="Paid" class="num">${money(c.paid)}</td>
-        <td data-label="Outstanding" class="num ${c.outstanding > 0 && lateIds.has(c.id) ? 'neg' : ''}"><b><bdi>${money(c.outstanding)}</bdi></b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
+        <td data-label="Balance" class="num ${c.outstanding > 0 && lateIds.has(c.id) ? 'neg' : c.outstanding < 0 ? 'pos' : ''}"><small class="bal-word">${c.outstanding > 0 ? 'To pay' : c.outstanding < 0 ? 'Credit' : ''}</small> <b><bdi>${money(Math.abs(c.outstanding))}</bdi></b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
         <td data-label="Fee / order" class="num hide-sm">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="dim" style="font-size:12px">default</span>' : ''}</td>
         <td data-label="Subscription" class="sub-cell">${subPill(c.subscription)}</td>
         <td data-label="Status"${c.active ? ' class="hide-sm"' : ''}>${c.active ? '<span class="st st-delivered">Active</span>' : '<span class="st st-cancelled">Disabled</span>'}</td></tr>`).join('')}
@@ -1028,7 +1030,7 @@
         ${o.supplierCost != null ? `<div><span>Supplier total <span class="dim">(from supplier sheet)</span></span><span>${money(o.supplierCost)}</span></div>` : ''}
         <div><span>Product cost <span class="dim">(fee included)</span></span><span>${money(o.productCost)}</span></div><div><span>Shipping fee</span><span>${money(o.shippingFee)}</span></div>
         <div class="total"><span>Client pays</span><span>${money(o.price)}</span></div>
-        <div><span>Payment</span><span>${o.paymentId ? `<span class="pay-tag paid">Paid</span> <small class="dim" data-no-i18n>${esc(window.DLPayOrders.day(o.paidAt))}</small>` : window.DLPayOrders.state(o) === 'unpaid' ? '<span class="pay-tag unpaid">Not paid</span>' : '<span class="dim">No bill yet</span>'}</span></div>${o.priceSource === 'saved' ? '<p class="note" style="margin:6px 0 0">Priced automatically from an earlier order of this client (same store, product, variation, country and quantity). The supplier can change the total cost in the sheet.</p>' : ''}
+        <div><span>Payment</span><span>${o.paymentId ? `<span class="pay-tag paid">Paid</span> <small class="dim" data-no-i18n>${esc(window.DLPayOrders.day(o.paidAt))}</small>` : window.DLPayOrders.state(o) === 'unpaid' ? (o.coveredByCredit ? '<span class="pay-tag credit">Covered by credit</span>' : '<span class="pay-tag unpaid">Not paid</span>') : '<span class="dim">No bill yet</span>'}</span></div>${o.priceSource === 'saved' ? '<p class="note" style="margin:6px 0 0">Priced automatically from an earlier order of this client (same store, product, variation, country and quantity). The supplier can change the total cost in the sheet.</p>' : ''}
         <div><span>Customer paid client</span><span>${customerPaid(o)}</span></div><div><span>Client’s profit</span><span class="${o.profit != null && o.profit > 0 ? 'pos' : o.profit != null && o.profit < 0 ? 'neg' : ''}">${needsCost(o) ? 'Pending costs' : o.profit == null ? ((o.currency || 'USD') !== 'USD' && o.earned != null ? '<span class="dim">Not in USD</span>' : '<span class="dim">Needs the Etsy earnings</span>') : money(o.profit)}</span></div></div>
         <div class="split"><div><small>Fee on this order</small><b>${money(o.commission)}</b></div><div><small>We earn</small><b class="pos">${money(o.ourShare)}</b></div></div></section>
       ${UI.activity(events)}`; // history last: what needs doing comes first (Erwin, 7 Nov 2026)
@@ -1250,12 +1252,10 @@
     const live = payments.filter(p => !p.archived), loose = live.filter(p => !p.orderIds?.length), noReceipt = live.filter(p => !receiptsOf(p).length);
     const todo = [[loose, 'payment is not linked to orders yet', 'payments are not linked to orders yet', 'Press Edit on it and tick its orders.'],
       [noReceipt, 'payment has no receipt yet', 'payments have no receipt yet', 'Press Attach receipt: the client gets it in their portal.']].filter(([l]) => l.length);
-    return `<section class="card card-pad"><h3 class="sec-title">Orders and payments</h3><div class="pay-sum">
-        <div><small>Paid orders</small><b class="pos">${mine.filter(o => st(o) === 'paid').length}</b></div>
-        <div><small>Not paid yet</small><b class="${unpaid.length ? 'neg' : ''}">${unpaid.length}</b><em>${money(due)}</em>${unpaid.length ? `<em><span>Without our fee</span> ${money(due - unpaidFee)}</em>` : ''}</div>
-        <div><small>No bill yet</small><b>${mine.filter(o => st(o) === 'unbilled').length}</b><em>No cost yet</em></div>
-        <div><small>Balance</small><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b><em><span>Billed</span> ${money(c.billed)} · <span>Paid</span> ${money(c.paid)}</em><em><span>Without our fee</span> ${money(owedNoFee(c))}</em></div></div>
-      ${todo.length ? `<div class="pay-todo"><b class="pay-todo-title">To do</b>${todo.map(([l, one, many, hint]) => `<p><button type="button" class="link-btn" data-scroll-pay="pay-${l[0].id}"><b>${l.length}</b> <span>${l.length === 1 ? one : many}</span></button> <span class="dim">${hint}</span></p>`).join('')}</div>` : ''}</section>`;
+    // One account statement instead of four separate tiles (12 Nov 2026): billed - received = to pay / credit, with the
+    // same statement without our fee next to it (the supplier sheet's way of counting).
+    return `${PO.statement({ summary: c, orders: mine, adjustments: balanceAdjustments, cancelled: cancelledMoney, payments: live.length, admin: true })}
+      ${todo.length ? `<section class="card card-pad"><div class="pay-todo"><b class="pay-todo-title">To do</b>${todo.map(([l, one, many, hint]) => `<p><button type="button" class="link-btn" data-scroll-pay="pay-${l[0].id}"><b>${l.length}</b> <span>${l.length === 1 ? one : many}</span></button> <span class="dim">${hint}</span></p>`).join('')}</div></section>` : ''}`;
   }
   // Billing details for receipts (the client fills them in on their Payments page; Ada uses them for the invoice header).
   function billingHTML(c) {
@@ -1328,7 +1328,7 @@
   }
   // Cancelled orders in the panel fold to one line with the count and the credit left (7 Nov 2026: shorter Payments tab).
   function cancelledFold(c) {
-    const box = PO.cancelledBox(cancelledMoney, { admin: true, creditLeft: creditLeftC(c, cancelledMoney?.feesOwed), balance: c.outstanding }); if (!box) return '';
+    const box = PO.cancelledBox(cancelledMoney, { admin: true, creditLeft: creditLeftC(c, cancelledMoney?.feesOwed), balance: c.outstanding, unpaidC: PO.cover(S.orders.filter(o => o.clientId === c.id && !o.archived), balanceAdjustments, c.outstanding).unpaidC }); if (!box) return '';
     const st = PO.cxSettle(cancelledMoney, creditLeftC(c, cancelledMoney?.feesOwed), c.outstanding), n = cancelledMoney.count;
     return `<details class="cx-fold" data-fold="cx"${foldOpen('cx') ? ' open' : ''}><summary class="card card-pad"><h3 class="sec-title">Cancelled orders</h3><span class="cx-fold-sum"><span>${n === 1 ? '1 order' : n + ' orders'}</span> · <span>Credit left</span> <b data-no-i18n>${money(st.leftC / 100)}</b>${st.feesOpen ? ' · <span class="neg">Fees owed</span>' : ''}</span>${UI.svg('<path d="m6 9 6 6 6-6"/>')}</summary>${box}</details>`;
   }
@@ -1386,7 +1386,7 @@
     d.body.innerHTML = `
       <div class="kpis">
         <div><span>Orders</span><b>${c.orders}</b></div>
-        <div><span>Outstanding</span><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b><small><span>Billed</span> ${money(c.billed)}</small><small><span>Without our fee</span> ${money(owedNoFee(c))}</small></div>
+        <div><span>${c.outstanding < 0 ? 'Credit' : 'To pay'}</span><b class="${c.outstanding > 0 ? 'neg' : c.outstanding < 0 ? 'pos' : ''}">${money(Math.abs(c.outstanding))}</b><small><span>Billed</span> ${money(c.billed)}</small>${c.supplier ? `<small><span>Without our fee</span> ${money(Math.abs(c.supplier.balance))}</small>` : ''}</div>
         <div><span>Paid</span><b class="pos">${money(c.paid)}</b></div>
         <div><span>Our earnings</span><b>${money(c.ourShare)}</b><small><span>Client’s profit</span> ${money(c.clientProfit)}</small></div></div>
       <div class="gtabs" role="tablist">${CLIENT_GROUPS.map(([g, label, secs]) => `<button type="button" role="tab" aria-selected="${group === g}" class="${group === g ? 'on' : ''}" data-ctab="${S.drawer.last?.[g] || secs[0]}">${label}${g === 'orders' ? ` <small>${orders.length}</small>` : ''}${g === 'shop' && waiting ? '<i class="tab-dot" title="Waiting for a price"></i>' : ''}</button>`).join('')}</div>
