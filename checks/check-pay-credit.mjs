@@ -106,7 +106,7 @@ try {
     await page.goto(`${base}/portal/?lang=en#/payments?pay=1`); await page.reload(); await page.waitForSelector('#pay-flow [name=poOrder]');
     const f = page.locator('#transfer-form');
     // Billed $69 - paid $40 = $29; unpaid A + B = $45; credit $16 = $10 extra paid + $6 lowered cost.
-    assert.match(await page.locator('.stat.hero strong').first().innerText(), /\$29\.00/, 'balance due after the lower cost');
+    assert.match(await page.locator('[data-statement-result]').innerText(), /\$29\.00/, 'balance due after the lower cost');
     assert.equal(await f.locator('[data-pf-total]').innerText(), '$29.00', 'send the total = balance due');
     assert.match(await f.locator('[data-pf-credit]').innerText(), /Ticked orders \$45\.00 minus the credit on your account -\$16\.00/);
     await f.locator('[data-pf-credit]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, 'en-1440-lowered-after-paid.png') });
