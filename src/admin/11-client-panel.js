@@ -144,12 +144,10 @@
     const live = payments.filter(p => !p.archived), loose = live.filter(p => !p.orderIds?.length), noReceipt = live.filter(p => !receiptsOf(p).length);
     const todo = [[loose, 'payment is not linked to orders yet', 'payments are not linked to orders yet', 'Press Edit on it and tick its orders.'],
       [noReceipt, 'payment has no receipt yet', 'payments have no receipt yet', 'Press Attach receipt: the client gets it in their portal.']].filter(([l]) => l.length);
-    return `<section class="card card-pad"><h3 class="sec-title">Orders and payments</h3><div class="pay-sum">
-        <div><small>Paid orders</small><b class="pos">${mine.filter(o => st(o) === 'paid').length}</b></div>
-        <div><small>Not paid yet</small><b class="${unpaid.length ? 'neg' : ''}">${unpaid.length}</b><em>${money(due)}</em>${unpaid.length ? `<em><span>Without our fee</span> ${money(due - unpaidFee)}</em>` : ''}</div>
-        <div><small>No bill yet</small><b>${mine.filter(o => st(o) === 'unbilled').length}</b><em>No cost yet</em></div>
-        <div><small>Balance</small><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b><em><span>Billed</span> ${money(c.billed)} · <span>Paid</span> ${money(c.paid)}</em><em><span>Without our fee</span> ${money(owedNoFee(c))}</em></div></div>
-      ${todo.length ? `<div class="pay-todo"><b class="pay-todo-title">To do</b>${todo.map(([l, one, many, hint]) => `<p><button type="button" class="link-btn" data-scroll-pay="pay-${l[0].id}"><b>${l.length}</b> <span>${l.length === 1 ? one : many}</span></button> <span class="dim">${hint}</span></p>`).join('')}</div>` : ''}</section>`;
+    // One account statement instead of four separate tiles (12 Nov 2026): billed - received = to pay / credit, with the
+    // same statement without our fee next to it (the supplier sheet's way of counting).
+    return `${PO.statement({ summary: c, orders: mine, adjustments: balanceAdjustments, cancelled: cancelledMoney, payments: live.length, admin: true })}
+      ${todo.length ? `<section class="card card-pad"><div class="pay-todo"><b class="pay-todo-title">To do</b>${todo.map(([l, one, many, hint]) => `<p><button type="button" class="link-btn" data-scroll-pay="pay-${l[0].id}"><b>${l.length}</b> <span>${l.length === 1 ? one : many}</span></button> <span class="dim">${hint}</span></p>`).join('')}</div></section>` : ''}`;
   }
   // Billing details for receipts (the client fills them in on their Payments page; Ada uses them for the invoice header).
   function billingHTML(c) {
@@ -222,7 +220,7 @@
   }
   // Cancelled orders in the panel fold to one line with the count and the credit left (7 Nov 2026: shorter Payments tab).
   function cancelledFold(c) {
-    const box = PO.cancelledBox(cancelledMoney, { admin: true, creditLeft: creditLeftC(c, cancelledMoney?.feesOwed), balance: c.outstanding }); if (!box) return '';
+    const box = PO.cancelledBox(cancelledMoney, { admin: true, creditLeft: creditLeftC(c, cancelledMoney?.feesOwed), balance: c.outstanding, unpaidC: PO.cover(S.orders.filter(o => o.clientId === c.id && !o.archived), balanceAdjustments, c.outstanding).unpaidC }); if (!box) return '';
     const st = PO.cxSettle(cancelledMoney, creditLeftC(c, cancelledMoney?.feesOwed), c.outstanding), n = cancelledMoney.count;
     return `<details class="cx-fold" data-fold="cx"${foldOpen('cx') ? ' open' : ''}><summary class="card card-pad"><h3 class="sec-title">Cancelled orders</h3><span class="cx-fold-sum"><span>${n === 1 ? '1 order' : n + ' orders'}</span> · <span>Credit left</span> <b data-no-i18n>${money(st.leftC / 100)}</b>${st.feesOpen ? ' · <span class="neg">Fees owed</span>' : ''}</span>${UI.svg('<path d="m6 9 6 6 6-6"/>')}</summary>${box}</details>`;
   }
@@ -280,7 +278,7 @@
     d.body.innerHTML = `
       <div class="kpis">
         <div><span>Orders</span><b>${c.orders}</b></div>
-        <div><span>Outstanding</span><b class="${c.outstanding > 0 ? 'neg' : ''}">${money(c.outstanding)}</b><small><span>Billed</span> ${money(c.billed)}</small><small><span>Without our fee</span> ${money(owedNoFee(c))}</small></div>
+        <div><span>${c.outstanding < 0 ? 'Credit' : 'To pay'}</span><b class="${c.outstanding > 0 ? 'neg' : c.outstanding < 0 ? 'pos' : ''}">${money(Math.abs(c.outstanding))}</b><small><span>Billed</span> ${money(c.billed)}</small>${c.supplier ? `<small><span>Without our fee</span> ${money(Math.abs(c.supplier.balance))}</small>` : ''}</div>
         <div><span>Paid</span><b class="pos">${money(c.paid)}</b></div>
         <div><span>Our earnings</span><b>${money(c.ourShare)}</b><small><span>Client’s profit</span> ${money(c.clientProfit)}</small></div></div>
       <div class="gtabs" role="tablist">${CLIENT_GROUPS.map(([g, label, secs]) => `<button type="button" role="tab" aria-selected="${group === g}" class="${group === g ? 'on' : ''}" data-ctab="${S.drawer.last?.[g] || secs[0]}">${label}${g === 'orders' ? ` <small>${orders.length}</small>` : ''}${g === 'shop' && waiting ? '<i class="tab-dot" title="Waiting for a price"></i>' : ''}</button>`).join('')}</div>

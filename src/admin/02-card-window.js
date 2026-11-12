@@ -6,7 +6,7 @@
   // Red only for late money (Erwin, 5 Nov 2026): an unpaid order is late after 14 days, the same rule as the client's own
   // reminder in the portal (src/portal/13-payments.js). Days by order date, counted the same way.
   const LATE_DAYS = 14, unpaidDays = o => Math.floor((Date.now() - Date.parse(window.DLClientStoreMath.dateKey(o) + 'T12:00:00Z')) / 864e5);
-  const lateClientIds = () => new Set(S.orders.filter(o => !o.archived && window.DLPayOrders.state(o) === 'unpaid' && !(unpaidDays(o) <= LATE_DAYS)).map(o => o.clientId));
+  const lateClientIds = () => new Set(S.orders.filter(o => !o.archived && window.DLPayOrders.owes(o) && !(unpaidDays(o) <= LATE_DAYS)).map(o => o.clientId));
 
   // Every number the four cards show, worked out once for the cards and for their windows.
   function kpiFacts() {

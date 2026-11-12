@@ -196,7 +196,7 @@ try {
   const np2 = ui2.locator('[data-kpi-card="unpaid"]');
   assert.ok(await np2.evaluate(el => el.classList.contains('owe') && !el.classList.contains('late')), 'owed but not late');
   await ui2.locator('[data-tab=clients]').click(); await ui2.waitForSelector('[data-list] tbody tr');
-  assert.equal(await ui2.locator('[data-list] td[data-label=Outstanding].neg').count(), 0, 'a client with no late order is not red');
+  assert.equal(await ui2.locator('[data-list] td[data-label=Balance].neg').count(), 0, 'a client with no late order is not red');
   console.log('PASS owed but not late: not red');
   await ctx.close(); console.log('PASS everything paid');
   // UI UX Pro Max (4 Nov 2026): every common width, English + Hebrew, light + dark: no sideways scroll, nothing spills

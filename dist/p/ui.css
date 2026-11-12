@@ -487,3 +487,21 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}input[type=color]::-we
 [data-cancelled-box]:not(.cx-all) tr.cx-more{display:none}.cx-more-btn{margin-top:10px}
 /* Phones (UI/UX review 9 Nov 2026): 16px text in fields so iPhones don't zoom in; tap targets at least 44px. */
 @media(max-width:560px){.input,.field input,.field select,.field textarea,.search input,.composer textarea,.tbl select{font-size:16px}.btn,.btn-sm,.chip,.quick button,.tbl select,.search input,.seg-pick span{min-height:44px}.icon-btn{width:44px;height:44px}}
+/* Account statement (12 Nov 2026): billed - received = to pay / credit, the same block for admin and client. */
+.pay-tag.credit{background:color-mix(in srgb,var(--mint) 12%,transparent);color:var(--mint);outline:1px dashed color-mix(in srgb,var(--mint) 55%,transparent);outline-offset:-1px}
+.acct-top .sec-title{margin-bottom:2px}.acct-big{margin:0;font-size:clamp(24px,3vw,30px);font-weight:700;letter-spacing:-.01em}.acct-big.pos{color:var(--mint)}.acct-big.neg{color:var(--red)}
+.acct-sub{margin:2px 0 10px;color:var(--muted)}
+.acct-tbl{width:100%;max-width:680px;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.acct-tbl td,.acct-tbl th{padding:7px 0;border-bottom:1px solid var(--line);text-align:start;font-weight:400}
+.acct-tbl .num{text-align:end;white-space:nowrap;padding-inline-start:16px}
+.acct-tbl td small{color:var(--muted);font-size:12px}
+.acct-h th{padding-top:14px;font-size:12px;color:var(--muted);font-weight:700}.acct-h th:first-child{font-size:14px;color:inherit}
+.acct-total td{font-weight:700}
+.acct-res td{border-bottom:0;padding-top:12px;font-weight:700}.acct-res b{font-size:16px}.acct-res.pos td:nth-child(2) b{color:var(--mint)}.acct-res.neg td:nth-child(2) b{color:var(--red)}
+.acct-tbl .acct-sup{color:var(--muted)}
+.acct-hint{margin:8px 0 0;color:var(--dim);font-size:12.5px}
+.acct-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px;margin-top:14px}
+.acct-tile{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2)}
+.acct-tile small{color:var(--muted);font-size:12px}.acct-tile b{font-size:18px}.acct-tile em{font-style:normal;font-size:13px}.acct-tile .acct-note{color:var(--muted);font-size:12px}
+.acct-tile.owed b{color:var(--red)}.acct-tile.credit b,.acct-tile.paid b{color:var(--mint)}
+@media(max-width:560px){.acct-tbl .num{padding-inline-start:8px}.acct-tbl{font-size:13.5px}.acct-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}

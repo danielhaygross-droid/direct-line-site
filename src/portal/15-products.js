@@ -74,7 +74,7 @@
   }
   function viewPayments() {
     const s = S.me.summary, credit = s.outstanding < 0, adjustments=S.adjustments.filter(a=>!S.storeId||S.orders.some(o=>o.id===a.orderId&&o.storeId===S.storeId));
-    const tab = payTab(), c = S.cancelled, nUnpaid = unpaidOrders().length;
+    const tab = payTab(), c = S.cancelled, nUnpaid = unpaidOrders().filter(o => !o.coveredByCredit).length;
     const tabBtn = (id, label, extra = '') => `<button type="button" role="tab" class="pay-tab${tab === id ? ' on' : ''}" aria-selected="${tab === id}" aria-controls="pay-panel" data-pay-tab="${id}"><span>${label}</span>${extra}</button>`;
     const count = n => n ? `<small class="pay-tab-n" data-no-i18n>${n}</small>` : '';
     const tabs = `<nav class="pay-tabs" role="tablist" aria-label="Payments sections">${tabBtn('pay', S.me.preview ? 'Not paid yet' : 'Pay', count(nUnpaid))}${tabBtn('history', 'Payment history', count(S.payments.length))}${c?.count || c?.refunds?.length ? tabBtn('cancelled', 'Cancelled orders', count(c.count)) : ''}${tabBtn('billing', 'Billing details', S.billing ? '' : '<i class="pay-tab-dot" aria-label="Missing"></i>')}</nav>`;
@@ -83,14 +83,11 @@
       history: () => `<section class="card"><div class="card-head" style="padding-bottom:6px"><h3>Payment history</h3>${S.payments.length > 1 ? sortPick('portal-payments', window.DL.LIST_SORTS.payments) : ''}${S.payments.length ? `<button type="button" class="btn btn-sm" data-pay-excel title="An Excel file with all your payments">${ic('doc')}<span>Download Excel</span></button>` : ''}<form id="invoice-month-form" class="month-receipts"><label class="field"><span>Receipts for a month</span><input type="month" name="month" value="${localDay().slice(0,7)}" required></label><button class="btn btn-sm" type="submit">Download all</button><p data-month-msg class="form-msg"></p></form></div>
         ${S.payments.length ? `<div class="cpay-list">${sortList(S.payments, 'portal-payments', window.DL.LIST_SORTS.payments).map(paymentRow).join('')}</div>` : empty('wallet', 'No payments yet', 'When we receive a payment from you, we record it here.')}
       </section>`,
-      cancelled: () => `${window.DLPayOrders.cancelledBox(c, { creditLeft: creditCents(), balance: S.me.summary?.outstanding })}${adjustments.length ? `<details class="card card-pad adj-card"><summary><h3 class="sec-title">Balance adjustments</h3><small class="pay-tab-n" data-no-i18n>${adjustments.length}</small></summary>${adjustments.map(a=>`<div class="confirmation-row"><a href="#/orders" data-open-order="${a.orderId}">${esc(a.orderRef || '#'+a.orderId)}</a><span>${esc(a.note)}</span><b>${money(a.amount)}</b></div>`).join('')}</details>` : ''}`,
+      cancelled: () => `${window.DLPayOrders.cancelledBox(c, { creditLeft: creditCents(), balance: S.me.summary?.outstanding, unpaidC: unpaidCents() })}${adjustments.length ? `<details class="card card-pad adj-card"><summary><h3 class="sec-title">Balance adjustments</h3><small class="pay-tab-n" data-no-i18n>${adjustments.length}</small></summary>${adjustments.map(a=>`<div class="confirmation-row"><a href="#/orders" data-open-order="${a.orderId}">${esc(a.orderRef || '#'+a.orderId)}</a><span>${esc(a.note)}</span><b>${money(a.amount)}</b></div>`).join('')}</details>` : ''}`,
       billing: () => billingCard(),
     }[tab]();
-    return `<section class="stats">
-        <div class="stat"><small>Total billed</small><strong>${money(s.billed)}</strong><em>${s.orders} order${s.orders === 1 ? '' : 's'}, cancelled ones not counted</em></div>
-        <div class="stat"><small>Paid</small><strong class="pos">${money(s.paid)}</strong><em>${S.payments.length} payment${S.payments.length === 1 ? '' : 's'}</em></div>
-        <div class="stat hero"><small>${credit ? 'Credit on your account' : 'Balance due'}</small><strong>${money(Math.abs(s.outstanding))}</strong><em>${credit ? 'It counts toward your next orders' : s.outstanding > 0 ? 'Please send this to Direct Line' : 'You’re all paid up'}</em></div>
-      </section>
+    // One account statement (12 Nov 2026): billed - paid = to pay / credit, the same block the admin sees.
+    return `${window.DLPayOrders.statement({ summary: s, orders: S.orders, adjustments: S.adjustments, cancelled: c, payments: S.payments.length })}
       ${S.storeId ? `<section class="card card-pad"><span>Billed for this store</span>: <b>${money(window.DLClientStoreMath.performance(S.stores,S.orders,S.adjustments).rows.find(s=>s.id===S.storeId)?.billed||0)}</b><p class="muted">Payments cover all stores in this account.</p></section>` : ''}
       ${tabs}
       <div id="pay-panel" role="tabpanel" class="pay-panel">${body}</div>

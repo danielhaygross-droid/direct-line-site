@@ -70,8 +70,7 @@ try {
     assert.equal(await f.locator('[data-pf-copy]').getAttribute('data-copy'), '35.00', tag);
     assert.equal(await f.locator('[data-pf-sum]').innerText(), '$45.00', tag + ' ticked orders before the credit');
     assert.match(await f.locator('[data-pf-credit]').innerText(), lang === 'en' ? /Ticked orders \$45\.00 minus the credit on your account -\$10\.00/ : /הזמנות שסומנו[\s\S]*פחות הזיכוי בחשבון שלך[\s\S]*-\$10\.00/, tag);
-    const bal = await page.locator('.pay-sum .hero strong, .stat.hero strong, .tile.hero strong').first().innerText().catch(() => '');
-    if (bal) assert.equal(moneyOf(bal), '35.00', tag + ' Balance due on the page');
+    assert.equal(moneyOf(await page.locator('[data-statement-result]').innerText()), '35.00', tag + ' "To pay" on the account statement');
     await f.locator('[data-pf-credit]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-pay-credit.png`) });
     // Untick B ($25): $20 - $10 credit = $10 to send.
     await f.locator(`[name=poOrder][value="${B}"]`).uncheck();
