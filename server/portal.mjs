@@ -143,6 +143,9 @@ export const SCHEMA = [
   'CREATE INDEX IF NOT EXISTS order_events_client_idx ON order_events (client_id, created_at)',
   'CREATE INDEX IF NOT EXISTS order_events_order_idx ON order_events (order_id, created_at)',
   'CREATE INDEX IF NOT EXISTS order_events_actor_idx ON order_events (actor, created_at)',
+  // Hidden from the client (Erwin, 13 Nov 2026: cost notices on cancelled orders "will cause confusion"): the entry stays
+  // in the order's history for admins, but the client's notifications and order timeline leave it out. Never deleted.
+  'ALTER TABLE order_events ADD COLUMN IF NOT EXISTS client_hidden BOOLEAN NOT NULL DEFAULT FALSE',
   // When the client last opened their notifications (everything newer shows as "New").
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS notif_seen_at INTEGER NOT NULL DEFAULT 0',
   // Archived clients (e.g. test accounts) are hidden from lists, totals and notifications and can't sign in.
@@ -884,7 +887,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/notifications' && method === 'GET' && !who.admin) {
     // prev_bill: for a "billed" event, the order's bill before it (an earlier billed / price change), so a later
     // cost change reads "Product cost updated" even when the first bill is no longer among the latest 50 (Erwin, 28 Oct 2026).
-    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, CASE WHEN e.kind = 'billed' THEN (SELECT CASE WHEN p.kind = 'price_changed' THEN split_part(p.detail, '|', 2) ELSE p.detail END FROM order_events p WHERE p.order_id = e.order_id AND p.kind IN ('billed', 'price_changed') AND p.id < e.id ORDER BY p.id DESC LIMIT 1) END AS prev_bill FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND NOT o.archived AND e.actor = 'admin' AND e.kind <> 'supplier_sheet' ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
+    const rows = (await DB.prepare("SELECT e.*, o.order_ref, o.status, CASE WHEN e.kind = 'billed' THEN (SELECT CASE WHEN p.kind = 'price_changed' THEN split_part(p.detail, '|', 2) ELSE p.detail END FROM order_events p WHERE p.order_id = e.order_id AND p.kind IN ('billed', 'price_changed') AND NOT p.client_hidden AND p.id < e.id ORDER BY p.id DESC LIMIT 1) END AS prev_bill FROM order_events e JOIN client_orders o ON o.id = e.order_id WHERE e.client_id = ? AND NOT o.archived AND e.actor = 'admin' AND e.kind <> 'supplier_sheet' AND NOT e.client_hidden ORDER BY e.created_at DESC, e.id DESC LIMIT 50").bind(who.clientId).all()).results || [];
     // A receipt: "amount|YYYY-MM-DD" of its payment (the portal shows "For your $1301.00 payment of 21 Oct 2026"), else the file name.
     const pays = new Map((((await DB.prepare('SELECT id, amount, paid_at FROM client_payments WHERE client_id = ? AND NOT archived').bind(who.clientId).all()).results) || []).map(p => [Number(p.id), p]));
     for(const f of await invoices(DB,who.clientId)) { const p = pays.get(f.paymentId); rows.push({id:'invoice-'+f.id,order_id:f.orderIds[0]||null,client_id:who.clientId,kind:'invoice',actor:'admin',detail:p ? Number(p.amount).toFixed(2) + '|' + new Date(Number(p.paid_at) * 1000).toISOString().slice(0, 10) : f.filename,created_at:f.createdAt}); }
@@ -917,7 +920,8 @@ async function routePortal(request, url, ctx, meta) {
       : "UPDATE order_messages SET read_by_client = TRUE WHERE order_id = ? AND author = 'admin'").bind(id).run();
     const rows = (await DB.prepare('SELECT * FROM order_messages WHERE order_id = ? ORDER BY created_at, id').bind(id).all()).results || [];
     // The supplier-sheet audit is for the Direct Line team only (not clients, not admins viewing the client's portal).
-    const events = (await DB.prepare("SELECT * FROM order_events WHERE order_id = ? AND kind <> 'message' AND (? OR kind NOT IN ('supplier_sheet', 'duplicate')) ORDER BY created_at, id").bind(id, !!who.admin && !who.preview && !who.acting).all()).results || [];
+    const team = !!who.admin && !who.preview && !who.acting;
+    const events = (await DB.prepare("SELECT * FROM order_events WHERE order_id = ? AND kind <> 'message' AND (? OR kind NOT IN ('supplier_sheet', 'duplicate')) AND (? OR NOT client_hidden) ORDER BY created_at, id").bind(id, team, team).all()).results || [];
     return json({ ok: true, messages: rows.map(messageOut), events: events.map(eventOut) });
   }
   if(path==='/claims'&&method==='GET'&&!who.admin)return json({ok:true,claims:await claims(DB,who.clientId)});
@@ -1252,6 +1256,14 @@ async function routePortal(request, url, ctx, meta) {
     return json({ ok: true });
   }
   if (path==='/admin/invoices' && method==='POST') {try{return json({ok:true,invoice:await saveInvoice(DB,await readBody(request))});}catch(e){return json({ok:false,error:e.message},400);}}
+  // Hide (or show again) one order history entry for the client: notifications and the order timeline (13 Nov 2026).
+  const eventHide = /^\/admin\/order-events\/(\d+)\/client-hidden$/.exec(path);
+  if (eventHide && method === 'POST') {
+    const body = await readBody(request);
+    const row = await DB.prepare('UPDATE order_events SET client_hidden = ? WHERE id = ? RETURNING id, order_id, kind, client_hidden').bind(body.hidden !== false, Number(eventHide[1])).first();
+    if (!row) return json({ ok: false, error: 'Not found' }, 404);
+    return json({ ok: true, id: Number(row.id), orderId: Number(row.order_id), kind: row.kind, clientHidden: !!row.client_hidden });
+  }
   if (path === '/admin/payments' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(clientId).all()).results || [];
