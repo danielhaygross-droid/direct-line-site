@@ -13,17 +13,19 @@ Daniel's idea (12 Nov 2026): a portal only for our supplier (Beyond: Ada and Ye)
 - **Separate logins** for Ada and Ye; Erwin creates them in admin and sets the passwords himself. Only admins add or remove supplier accounts (in our admin portal); suppliers can't add, remove or change any account.
 - **Languages:** English and Simplified Chinese (reuse the sheet's translations in `server/sheet-zh.mjs`).
 - Simple: one clear action per screen, numbers that add up, no counting by hand.
+- **No contact between clients and the supplier** (Erwin, 13 Nov 2026: prevents backdoor deals). Clients message us, we pass it on. The portal has no client-supplier messages and shows no client contact details (email, phone, WhatsApp).
 
 ## Open decisions (before phase 1 is built)
 1. Decided (Erwin, 13 Nov 2026): clients send the money directly to the supplier's account. Our fee stays off every supplier screen.
 2. Decided: the supplier share per order is part of the supplier's billing numbers, so they can keep track of what they owe us. Exact form (running total, what is already settled) to be designed.
 3. Decided: fee settings in our admin portal stay as they are (per-client fees unchanged); the supplier portal does not change them.
-4. Open: which extra functions the supplier needs (payments received, invoices, alerts, a bought step, search, messages, export, own password) - Erwin to pick.
+4. Decided (Erwin, 13 Nov 2026), functions in the portal: record a payment received (client, amount, date, proof screenshot; the website marks which orders it paid; admins can still see and correct it), invoice PDF per client (unpaid orders and total), balance per client, new order alerts (badge, optional sound / email), a Bought step before Shipped, download all photos of an order + copy the address in one tap, export to Excel, product quotes, price revision requests, search and filters, change own password. Dropped: messages (see the no-contact rule) and bulk tracking paste.
+5. Decided (Erwin, 13 Nov 2026): cancelled orders don't count in the supplier share, only orders that were bought. Assumed until Erwin says otherwise: refunds stay as client credit.
 
 ## Phases
-1. **Billing (read-only) + supplier logins.** New account type `supplier` (next to client and admin); supplier API answers built from an allow-list of fields. Billing: balance per client (same numbers as the sheet's BALANCE PER CLIENT box), per client: payments with their orders, refunds per cancel date, orders not paid yet, cost changed after payment, supplier share line. Admin > Fees & settings > Team accounts: add / remove supplier accounts. The sheet keeps working.
-2. **Work queue.** Orders (New · In progress · Shipped · Cancelled) with inline editing of total cost, cost per product, tracking, courier, shipping status, delayed + reason, domestic tracking, cancellation fee; tracking typed per order (no bulk paste: Erwin, 13 Nov, order numbers and tracking come from different sources); who/when on every change. The website keeps writing portal edits into the sheet while both exist.
-3. **Price requests, quotes, retire the sheet.** Cost revisions (accept with a new cost / keep the price) and product quotes in the portal; then the sheet becomes a read-only backup and the minute sync stops reading it.
+1. **Billing + payments + supplier logins.** Record payments received (with proof), invoice PDF per client, supplier share (per order, what is already paid to us, what is still owed), own password. New account type `supplier` (next to client and admin); supplier API answers built from an allow-list of fields. Billing: balance per client (same numbers as the sheet's BALANCE PER CLIENT box), per client: payments with their orders, refunds per cancel date, orders not paid yet, cost changed after payment, supplier share line. Admin > Fees & settings > Team accounts: add / remove supplier accounts. The sheet keeps working.
+2. **Work queue.** New order alerts, Bought step, download photos / copy address, search and filters, export to Excel. Orders (New · In progress · Shipped · Cancelled) with inline editing of total cost, cost per product, tracking, courier, shipping status, delayed + reason, domestic tracking, cancellation fee; tracking typed per order (no bulk paste: Erwin, 13 Nov, order numbers and tracking come from different sources); who/when on every change. The website keeps writing portal edits into the sheet while both exist.
+3. **Price revision requests, product quotes, retire the sheet.** Cost revisions (accept with a new cost / keep the price) and product quotes in the portal; then the sheet becomes a read-only backup and the minute sync stops reading it.
 
 ## How it's built
 - Screens in `src/supplier/NN-*.js` built into `dist/supplier/`, shared CSS `dist/p/ui.css`, a `zh` dictionary; server routes `/api/portal/supplier/*`, role `supplier`, an audit log of supplier changes.
@@ -36,4 +38,4 @@ Daniel's idea (12 Nov 2026): a portal only for our supplier (Beyond: Ada and Ye)
 - Questions the design raised (answer with the open decisions): count cancelled orders in the supplier share or not; are refunds ever paid back as money or always kept as credit; when a New order moves to In progress (first save, or after some time); should duplicate tracking block saving or only warn; should admins manage the courier list; should the supplier see client names or letters only.
 
 ## Status
-- 13 Nov 2026: plan written, designer agent added, mock-ups done (8 screens, EN + 中文, 1440 + 390 px; admin screen EN + HE), waiting for Erwin and Daniel. Nothing built yet.
+- 13 Nov 2026: plan written, designer agent added, mock-ups done (8 screens, EN + 中文, 1440 + 390 px; admin screen EN + HE), waiting for Erwin and Daniel. Erwin picked the functions (Open decisions 4); designer adds their screens next. Nothing built yet.
