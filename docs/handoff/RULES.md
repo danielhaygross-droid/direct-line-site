@@ -13,10 +13,14 @@ Copy of the rules kept in Claude's memory on Erwin's computer, so cloud sessions
 - **No store auto-import.** Don't propose automatic Etsy/Shopify import; clients own their stores and enter orders in the portal.
 
 ## Writing for people
-- **Never show our fee to clients.** In anything a client reads, give only the price they pay; no fee, commission or cost split. Supplier messages and internal reports may mention it.
+- **Never show our fee to clients.** In anything a client reads, give only the price they pay; no fee, commission or cost split. Internal reports may mention it.
+- **The supplier never sees our fee, commission or profit** (Erwin, 13 Nov 2026). Supplier-facing numbers (sheet Billing tab, the planned supplier portal, messages to Ada/Ye) show their costs, cancellation fees, refunds, payments for their part and the supplier share per order they pay us; nothing else.
 - **Done items stay done.** When Erwin says something is done, never list it as open again. A request for the end-of-day report means he already checked everything.
 - **Report context.** Write each report item so Shahar and Daniel understand it without the chat: what happened, whose orders, what a fee/credit/refund is for. Don't explain people they know (Ada, Ye, Yehuda).
 - **Full-format reports.** End-of-day PDFs use the full 22 Oct layout (cover, "In short", 4 stat boxes, PR table, one page per feature with screenshots, end-of-day status), built with `tools/report-template/`. The WhatsApp text comes from the daily-report skill.
+
+## Keep the repo the briefing
+- **Every update goes into the repo** (Erwin, 13 Nov 2026: "all the updates must be inside our direct line environment so that when i create new session we wont be having issues"). New agents (`.claude/agents/`), plans (`docs/`), decisions and rules (`HANDOFF.md`, this file) are committed in the same session, not only kept in local memory or `Claude outputs/`. Local-only: money figures, personal data, logins.
 
 ## Public repo
 - This repo is public. Before adding any notes/doc file, scan it for emails, usernames, phone numbers, login/security details and money figures and leave those out. The full history (`CONTINUE_HERE.md`) and report text with real figures (`r1101/gen.py`) stay on Erwin's computer; `docs/handoff/HISTORY.md` is a cleaned copy.
