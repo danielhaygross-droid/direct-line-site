@@ -34,13 +34,15 @@ export async function cancelledSummary(DB, clientId) {
     LEFT JOIN client_balance_adjustments a ON a.order_id = o.id AND a.kind = 'cancellation_fee'
     LEFT JOIN client_balance_adjustments k ON k.order_id = o.id AND k.kind = '${KEPT_FEE}'
     WHERE o.client_id = ? AND o.status = 'cancelled' AND NOT o.archived ORDER BY o.updated_at DESC, o.id DESC`).bind(clientId).all()).results || [];
-  const orders = (await withPaid(DB, rows.map(r => ({ ...r, id: Number(r.id) })), clientId)).map(o => {
+  // paid / supPaid: what the client paid for the order when they paid it (Erwin, 13 Nov 2026: a cost lowered after the
+  // payment made the refund smaller than the money paid). Today's price only for a link saved without it.
+  const orders = (await withPaid(DB, rows.map(r => ({ ...r, id: Number(r.id) })), clientId, { cost: true })).map(o => {
     // fee = everything the cancellation costs the client: the supplier's fee plus our own fee kept on a paid order.
-    const price = r2(o.price), kept = r2(o.kept), fee = r2(Number(o.fee) + kept), paid = o.paymentId ? price : 0;
+    const price = r2(o.price), kept = r2(o.kept), fee = r2(Number(o.fee) + kept), paid = o.paymentId ? r2(o.paidPrice ?? price) : 0;
     // day: the day it was cancelled, China / Manila time like the sheet's Status changed (totals per cancel date).
     // supPaid / supFee (admin only, taken off for clients): what was paid and the fee without our fee, as in the sheet.
     return { id: o.id, orderRef: o.order_ref || '', store: o.store || '', cancelledAt: Number(o.updated_at || 0), day: cancelDay(o), price, paid, fee, kept,
-      supPaid: o.paymentId ? r2(o.supplier_cost) : 0, supFee: r2(o.fee), back: o.paymentId ? r2(paid - fee) : 0 };
+      supPaid: o.paymentId ? r2(o.paidCost ?? o.supplier_cost) : 0, supFee: r2(o.fee), back: o.paymentId ? r2(paid - fee) : 0 };
   });
   const refunds = ((await DB.prepare('SELECT * FROM client_refunds WHERE client_id = ? AND NOT archived ORDER BY refunded_at DESC, id DESC').bind(clientId).all()).results || [])
     .map(r => ({ id: Number(r.id), amount: r2(r.amount), refundedAt: Number(r.refunded_at), method: r.method || '', note: r.note || '' }));

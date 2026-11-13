@@ -672,6 +672,21 @@ async function clientSummary(DB, clientId, settings) {
   return { orders: Number(o.n), billed, paid, refunded, outstanding: round2(billed - paid + refunded), parts, supplier, commission, supplierShare, keptFees: kept, ourShare: round2(commission - supplierShare + kept), clientProfit: performance.totals.profit };
 }
 
+// One line per client for the supplier sheet's Billing tab (Ada, 13 Nov 2026: "why do I get the feeling that things are
+// becoming increasingly complicated?"): the account statement without our fee (clientSummary().supplier), so the
+// supplier reads each client's balance instead of adding it up. [name, orders, cancellation fees, paid, still owes, credit].
+// Orders include other changes on the bill (e.g. a claim refund), so the line always adds up.
+export async function supplierBalances(DB) {
+  const settings = await getSettings(DB), out = [];
+  const users = (await DB.prepare("SELECT id, username, display_name FROM users WHERE role = 'client' AND NOT archived ORDER BY id").all()).results || [];
+  for (const u of users) {
+    const s = (await clientSummary(DB, u.id, settings)).supplier;
+    if (!s.billed && !s.received) continue;
+    out.push([u.display_name || u.username, round2(s.orders + s.other), s.fees, s.received, Math.max(0, s.balance), Math.max(0, round2(-s.balance))]);
+  }
+  return out;
+}
+
 // ---------- request handler ----------
 // Returns a Response for /api/portal/* routes, or null if the path isn't ours.
 export async function handlePortal(request, url, ctx) {
@@ -1202,7 +1217,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/admin/orders' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0), archived = url.searchParams.get('archived') === '1';
     const rows = (await DB.prepare(`SELECT * FROM client_orders WHERE archived=? ${clientId ? 'AND client_id=?' : 'AND client_id NOT IN (SELECT id FROM users WHERE archived)'} ORDER BY created_at DESC, id DESC`).bind(archived,...(clientId ? [clientId] : [])).all()).results;
-    return json({ ok: true, orders: await withUpdates(DB, await withRevisions(DB, await withCreditPaid(DB, await withPaid(DB, await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)), clientId || null)), 'order')) });
+    return json({ ok: true, orders: await withUpdates(DB, await withRevisions(DB, await withCreditPaid(DB, await withPaid(DB, await withPhotos(DB, await withMessages(DB, (rows || []).map(orderOut), true)), clientId || null, { cost: true })), 'order')) });
   }
   if(path==='/admin/client-stores'&&method==='GET'){const clientId=url.searchParams.has('clientId')?Number(url.searchParams.get('clientId')):null;return json({ok:true,stores:await clientStores(DB,clientId)});}
   const adminStore=/^\/admin\/client-stores(?:\/(\d+))?$/.exec(path);if(adminStore&&method==='POST'){const body=await readBody(request);try{const store=await saveStore(DB,Number(body.clientId),adminStore[1]?Number(adminStore[1]):null,body);return store?json({ok:true,store}):json({ok:false,error:'Not found'},404);}catch(e){return json({ok:false,error:e.message},400);}}
