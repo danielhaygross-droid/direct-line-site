@@ -15,8 +15,10 @@ Daniel's idea (12 Nov 2026): a portal only for our supplier (Beyond: Ada and Ye)
 - Simple: one clear action per screen, numbers that add up, no counting by hand.
 
 ## Open decisions (before phase 1 is built)
-1. Money flow: do clients pay the supplier directly or pay us? If they pay the supplier, our fee can be kept off every screen but not fully hidden.
-2. The supplier share: a running total the supplier owes us, or settled per payment?
+1. Decided (Erwin, 13 Nov 2026): clients send the money directly to the supplier's account. Our fee stays off every supplier screen.
+2. Decided: the supplier share per order is part of the supplier's billing numbers, so they can keep track of what they owe us. Exact form (running total, what is already settled) to be designed.
+3. Decided: fee settings in our admin portal stay as they are (per-client fees unchanged); the supplier portal does not change them.
+4. Open: which extra functions the supplier needs (payments received, invoices, alerts, a bought step, search, messages, export, own password) - Erwin to pick.
 
 ## Phases
 1. **Billing (read-only) + supplier logins.** New account type `supplier` (next to client and admin); supplier API answers built from an allow-list of fields. Billing: balance per client (same numbers as the sheet's BALANCE PER CLIENT box), per client: payments with their orders, refunds per cancel date, orders not paid yet, cost changed after payment, supplier share line. Admin > Fees & settings > Team accounts: add / remove supplier accounts. The sheet keeps working.
