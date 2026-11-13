@@ -14,6 +14,9 @@ Use the Skill tool for each one (if a skill can't be loaded, read its `SKILL.md`
 4. **dataviz**: for any number tiles, totals, charts or status colours.
 5. **artifact-design**: only when you are asked to publish the mock-up as a page.
 
+## Start from the Direct Line design system
+The design system is https://claude.ai/artifact/LxsBLbQmjaaF9bgCXpkSHr (Erwin's, built from this repo on 9 Nov 2026). Read it with the Artifact tool (`action: read`, `paths`): `project/README.md` (brand book: words, colour, type, space, depth, layout, icons, wordmark), `project/tokens.json`, `project/components/bundle.css` and `project/components/<Name>/README.md` + `preview.html` (Brand, Button, Card, Chip, Drawer, EmptyState, Field, IconButton, Search, SegmentedPick, Stat, StatusPill, Table, Tag, Toast). On Erwin's computer a copy may already be in `Claude outputs/design/direct-line-design-system/`. Build mock-ups on `bundle.css` + the tokens and reuse its components and markup; add new ones only when a screen needs them, in the same style, and list them in your README.
+
 ## House style (must match the live portal)
 - Tokens from `dist/p/ui.css` (`:root`): background `#f6f3ed`, surfaces `#fffdf9` / `#faf7f1` / `#f0ece4`, text `#1f2824`, muted `#5f6763`, gold `#bd9550` / `#8c6d38` (primary buttons are a gold gradient), mint `#2f9b88` (good), red `#c9685d` (problem), orange `#c98748` (waiting), blue `#567fa8`, navy `#111b27` (side bar). Radius 18 px cards, 12 px small. Font Heebo, numbers and labels in IBM Plex Mono. There is a dark theme too (`[data-theme=dark]` in the same file).
 - Copy the existing components when they fit (cards, chips, pay tags, tables, the account statement): look at `dist/p/ui.css`, `dist/admin/admin.css`, `dist/portal/portal.css` and the screens in `src/`.
