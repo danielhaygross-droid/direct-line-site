@@ -682,7 +682,9 @@ export async function supplierBalances(DB) {
   for (const u of users) {
     const s = (await clientSummary(DB, u.id, settings)).supplier;
     if (!s.billed && !s.received) continue;
-    out.push([u.display_name || u.username, round2(s.orders + s.other), s.fees, s.received, Math.max(0, s.balance), Math.max(0, round2(-s.balance))]);
+    // The English name when the name has one in brackets: Hebrew and English in one cell come out jumbled in the sheet.
+    const name = u.display_name || u.username, latin = /\(([^()]*[A-Za-z][^()]*)\)/.exec(name)?.[1]?.trim();
+    out.push([latin || name, round2(s.orders + s.other), s.fees, s.received, Math.max(0, s.balance), Math.max(0, round2(-s.balance))]);
   }
   return out;
 }

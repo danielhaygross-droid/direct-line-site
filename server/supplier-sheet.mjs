@@ -826,7 +826,7 @@ const websiteProtection = (sheetId, email, c = C) => [[{ sheetId, startColumnInd
 // never reads the tab, so nothing typed or shown there can change an order or a bill. The whole tab is protected.
 // Errors here are logged and never stop the order sync.
 export const BILLING_TAB = 'Billing';
-const BILLING_KEY = 'supplier_billing_tab', BILLING_V = '6';
+const BILLING_KEY = 'supplier_billing_tab', BILLING_V = '7';
 const BILL_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Qty', 'Total cost (USD)', ITEM_COSTS, 'Shipping status', 'Client paid'];
 // Cancelled orders and the supplier's refund (Erwin, 3 Nov 2026: "properly show the whole refund calculation"), far
 // right from U: every cancelled order, the ones our client PAID first, with what was paid for it (Total cost: the
@@ -852,7 +852,8 @@ const REFUND_AT = 2 * BILL_COLS.length + 2, REFUND_END = REFUND_AT + REFUND_COLS
 const BAL_AT = DAYS_AT + DAY_COLS.length, BAL_END = BAL_AT + BAL_COLS.length, HELP_AT = BAL_END + 1, BILLING_WIDTH = HELP_AT + HELP_COLS.length;
 export const BILLING_HEADERS = [...BILL_COLS, '', ...BILL_COLS, '', ...REFUND_COLS, '', ...DAY_COLS, ...BAL_COLS, '', ...HELP_COLS];
 const BILLING_HELP = 'All orders from Orders and Shipped, newest first. Left: PAID by our clients. Middle: NOT PAID yet. Right (from column U): CANCELLED orders and the refund (paid minus cancellation fees); "Paid for it" is the cost when the client paid. Far right (from column AM): the BALANCE PER CLIENT, worked out by the website. Worked out by the sheet: do not type here.\nOrders 和 Shipped 的所有订单，最新的在前。左边：客户已付款。中间：未付款。右边（从 U 列开始）：已取消订单和退款（已付金额减取消费）；“已付金额”是客户付款时的成本。最右边（从 AM 列开始）：每个客户的余额，由网站自动计算。由表格自动计算，请不要在这里输入。';
-const BAL_TOP = 'BALANCE PER CLIENT (worked out by the website, without our fee). No need to add anything up: Client credit = Paid by the client - Orders - Cancellation fees. The client uses the credit for the next orders.\n每个客户的余额（网站自动计算，不含我们的费用）。不需要自己计算：客户余额 = 客户已付 - 订单 - 取消费。客户的余额用于下一批订单。';
+// Short enough to fit above its own columns (13 Nov 2026: the longer title ran past the last column and was cut off).
+const BAL_TOP = 'BALANCE PER CLIENT (by the website, without our fee): Client credit = Paid by the client - Orders - Cancellation fees.\n每个客户的余额（网站计算，不含我们的费用）：客户余额 = 客户已付 - 订单 - 取消费。';
 // What a paid order cost when it was paid: looked up by order id in the hidden list, else the fallback (its Total cost).
 const HELP_RANGE = () => `$${L(HELP_AT)}$5:$${L(HELP_AT + 1)}`;
 const paidCostOf = (id, fallback) => `IFERROR(VLOOKUP(--${id},${HELP_RANGE()},2,FALSE),${fallback})`;
@@ -918,7 +919,7 @@ const balanceFormat = sheetId => {
     { repeatCell: { range: r(4, 1000, A, A + 1), cell: { userEnteredFormat: { textFormat: { bold: true } } }, fields: 'userEnteredFormat.textFormat' } },
     { repeatCell: { range: r(4, 1000, A + 1, Z), cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
     { repeatCell: { range: r(4, 1000, Z - 2, Z), cell: { userEnteredFormat: { textFormat: { bold: true } } }, fields: 'userEnteredFormat.textFormat' } },
-    ...[160, 110, 130, 130, 130, 130, 30].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: A + i, endIndex: A + i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
+    ...[180, 110, 150, 150, 150, 150, 30].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: A + i, endIndex: A + i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
     { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: HELP_AT, endIndex: BILLING_WIDTH }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
   ];
 };
