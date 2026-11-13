@@ -288,8 +288,29 @@ const pay = await call('/admin/payments', 'POST', { clientId, amount: 14, orderI
 assert.ok(await DB.prepare("SELECT 1 AS x FROM portal_settings WHERE key='supplier_sheet_paid_dirty'").first(), 'the column is marked for the next poll');
 assert.equal((await cron()).ok, true); assert.equal(paidCell(T.id), 'Paid', 'the next poll shows it');
 assert.equal(await DB.prepare("SELECT 1 AS x FROM portal_settings WHERE key='supplier_sheet_paid_dirty'").first(), null, 'done');
+// The cost at payment (Erwin, 13 Nov 2026: a cost lowered after the payment made a refund in the sheet too low). The Billing
+// tab's hidden list (AT-AU) keeps what T cost when it was paid; a later cost change in the sheet does not change it.
+{
+  const billGrid = () => sheets.get('Billing').grid, helper = () => billGrid().slice(4).filter(r => r?.[45] !== '' && r?.[45] != null).map(r => [Number(r[45]), Number(r[46])]);
+  const paidCost = Number((await order(T.id)).supplier_cost);
+  assert.ok(paidCost > 0, 'T has a cost');
+  assert.deepEqual(helper(), [[T.id, paidCost]], 'the paid cost of T, by order id');
+  const link = await DB.prepare('SELECT paid_price, paid_cost FROM payment_orders WHERE order_id = ?').bind(T.id).first();
+  assert.equal(Number(link.paid_cost), paidCost, 'saved on the payment link');
+  supplierTypes(T.id, N, paidCost + 3); later(); assert.equal((await cron()).ok, true);
+  assert.equal(Number((await order(T.id)).supplier_cost), paidCost + 3, 'the supplier changed the cost after the payment');
+  assert.deepEqual(helper(), [[T.id, paidCost]], 'Paid for it stays what was paid');
+  // The balance per client (Ada, 13 Nov 2026): one line per client from the website, the statement without our fee.
+  const ov = (await call('/admin/overview', 'GET', null, admin)).data.clients.find(c => c.id === clientId).supplier;
+  const line = billGrid().slice(4).find(r => r?.[38]);
+  assert.ok(line, 'a line for the client: ' + JSON.stringify(billGrid().slice(4, 7).map(r => r?.slice(38, 44))));
+  assert.deepEqual(line.slice(39, 44).map(Number), [ov.orders + ov.other, ov.fees, ov.received, Math.max(0, ov.balance), Math.max(0, -ov.balance)], 'orders, fees, paid, still owes, credit');
+  assert.ok(Math.abs(line[41] - line[39] - line[40] - (line[43] - line[42])) < 0.005, 'credit - owes = paid - orders - fees');
+  supplierTypes(T.id, N, paidCost); later(); assert.equal((await cron()).ok, true);
+}
 await call('/admin/payments/' + pay.data.id + '/delete', 'POST', {}, admin); assert.equal((await cron()).ok, true);
 assert.equal(paidCell(T.id), 'Not paid', 'an archived payment does not count');
+assert.deepEqual(sheets.get('Billing').grid.slice(4).filter(r => r?.[45] !== '' && r?.[45] != null).length, 0, 'and leaves the paid-cost list');
 console.log('PASS Client paid column follows the payments; row 4 adds up the supplier’s Total cost (all / paid / not paid)');
 
 // Rows waiting for the sheet are rewritten by the cron too, with no admin screen open.
@@ -536,27 +557,33 @@ assert.ok(!readTabs.has(BILLING_TAB));
 // Totals per cancel date (9 Nov 2026): right of the refund part, from the Cancelled tab's AJ (China time), newest first.
 { const row = r => bill()[r - 1] || [], at = BILLING_HEADERS.indexOf('Cancelled on');
   assert.ok(at > BILLING_HEADERS.indexOf('Refund (USD)'), 'per date: right of the refund part');
-  assert.deepEqual(BILLING_HEADERS.slice(at), ['Cancelled on', 'Cancelled', 'Paid orders', 'Not paid', 'Paid for them (USD)', 'Cancellation fees, all orders (USD)', 'Refund (USD)', '']);
+  assert.deepEqual(BILLING_HEADERS.slice(at, at + 8), ['Cancelled on', 'Cancelled', 'Paid orders', 'Not paid', 'Paid for them (USD)', 'Cancellation fees, all orders (USD)', 'Refund (USD)', '']);
+  // Right of it (13 Nov 2026): the balance per client (AM-AR), then the hidden paid-cost list (AT-AU).
+  assert.deepEqual(BILLING_HEADERS.slice(at + 8), ['Client', 'Orders (USD)', 'Cancellation fees (USD)', 'Paid by the client (USD)', 'Client still owes (USD)', 'Client credit (USD)', '', 'Order ID (website)', 'Paid for it (website)']);
+  assert.match(String(row(3)[at + 8]), /^BALANCE PER CLIENT .*\n每个客户的余额/, 'balance title in English and Chinese');
   assert.match(String(row(3)[at]), /^BY CANCEL DATE .*\n按取消日期/, 'title in English and Chinese');
   const f = String(row(5)[at]);
   assert.match(f, /INDIRECT\("'Cancelled'!A6:AJ"\)/, 'reads the Cancelled tab to AJ');
   assert.match(f, /INT\(INDEX\(f,,36\)\)/, 'the day of AJ Status changed'); assert.match(f, /INDEX\(f,,23\)="Paid"/, 'W Client paid');
   assert.match(f, /INDEX\(f,,16\)/, 'P Total cost'); assert.match(f, /INDEX\(f,,35\)/, 'AI Cancellation fee'); assert.match(f, /SORT\(UNIQUE\(FILTER\(dy,dy>0\)\),1,FALSE\)/, 'newest day first');
   // 10 Nov 2026: the fees of ALL the day's orders (paid or not) in one column, refund = paid - all fees.
-  assert.match(f, /MAP\(k,LAMBDA\(x,SUMPRODUCT\(--\(dy=x\),fee\)\)\)/, 'all fees of the day'); assert.match(f, /paid\*cost-fee/, 'refund = paid - all fees'); }
+  assert.match(f, /MAP\(k,LAMBDA\(x,SUMPRODUCT\(--\(dy=x\),fee\)\)\)/, 'all fees of the day'); assert.match(f, /paid\*pc-fee/, 'refund = paid - all fees');
+  // 13 Nov 2026: paid = the cost when it was paid (hidden list AT-AU by order id AF), else Total cost.
+  assert.match(f, /pc,IFERROR\(VLOOKUP\(--INDEX\(f,,32\),\$AT\$5:\$AU,2,FALSE\),cost\)/, 'paid cost by order id'); }
 console.log('PASS Billing tab: all orders, paid apart from not paid, formulas only, protected, never read, safe if it fails; totals per cancel date');
 // Refunds (Erwin, 3 Nov 2026): far right, every cancelled order (paid first) with paid, fee and refund, a TOTAL row,
 // and row 3 with the whole sum: paid by our clients minus the cancellation fees.
 {
   const g = bill(), u3 = String(g[2][20]), u5 = String(g[4][20]);
-  assert.equal(sheets.get(BILLING_TAB).cols, 38, 'the tab is A to AL (refunds to AC, per cancel date AE-AL)');
+  assert.equal(sheets.get(BILLING_TAB).cols, 47, 'the tab is A to AU (refunds to AC, per cancel date AE-AL, balances AM-AR, paid costs AT-AU)');
   assert.deepEqual(BILLING_HEADERS.slice(20, 29), ['Date', 'Order', 'Shop', 'Product / variation', 'Client paid', 'Total cost (USD)', 'Paid for it (USD)', 'Cancellation fee (USD)', 'Refund (USD)']);
-  assert.match(u3, /^="CANCELLED: REFUND DUE "&TEXT\(SUMIF\(INDIRECT\("'Cancelled'!W6:W"\),"Paid",INDIRECT\("'Cancelled'!P6:P"\)\)-SUM\(INDIRECT\("'Cancelled'!AI6:AI"\)\)/, 'row 3: paid by our clients minus the fees');
+  assert.match(u3, /^="CANCELLED: REFUND DUE "&TEXT\(ARRAYFORMULA\(SUM\(IF\(INDIRECT\("'Cancelled'!W6:W"\)="Paid",IFERROR\(VLOOKUP\(--INDIRECT\("'Cancelled'!AF6:AF"\),\$AT\$5:\$AU,2,FALSE\),IF\(ISNUMBER\(INDIRECT\("'Cancelled'!P6:P"\)\),INDIRECT\("'Cancelled'!P6:P"\),0\)\),0\)\)\)-SUM\(INDIRECT\("'Cancelled'!AI6:AI"\)\)/, 'row 3: paid by our clients (cost when paid) minus the fees');
   assert.match(u5, /INDIRECT\("'Cancelled'!A6:AI"\)/, 'reads the Cancelled tab, A to Cancellation fee');
   const cols = /CHOOSECOLS\(f,([\d,]+)\)/.exec(u5)[1].split(',').map(n => HEADERS[Number(n) - 1]);
   assert.deepEqual(cols, ['Date', 'Order', 'Shop', 'Product / variation']);
   assert.equal(HEADERS[15], 'Total cost (USD)'); assert.equal(HEADERS[34], 'Cancellation fee (USD)');
-  assert.match(u5, /paid,INDEX\(f,,23\)="Paid",cost,IF\(ISNUMBER\(INDEX\(f,,16\)\),INDEX\(f,,16\),0\),fee,IF\(ISNUMBER\(INDEX\(f,,35\)\),INDEX\(f,,35\),0\),got,IF\(paid,cost,0\)/, 'paid = Total cost of the orders our client paid');
+  assert.match(u5, /paid,INDEX\(f,,23\)="Paid",cost,IF\(ISNUMBER\(INDEX\(f,,16\)\),INDEX\(f,,16\),0\),fee,IF\(ISNUMBER\(INDEX\(f,,35\)\),INDEX\(f,,35\),0\),got,IF\(paid,IFERROR\(VLOOKUP\(--INDEX\(f,,32\),\$AT\$5:\$AU,2,FALSE\),cost\),0\)/, 'paid = what the order cost when our client paid it (else Total cost)');
+  assert.equal(HEADERS[31], 'Order ID');
   assert.match(u5, /got-fee\),paid,FALSE/, 'refund = paid - fee, paid orders first');
   assert.match(u5, /HSTACK\("","","","TOTAL 合计","",SUM\(cost\),SUM\(got\),SUM\(fee\),SUM\(got\)-SUM\(fee\)\)/, 'a TOTAL row');
   assert.ok((sheets.get(BILLING_TAB).cf || []).some(r => /"TOTAL"/.test(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || '')), 'TOTAL row in bold');
@@ -564,13 +591,18 @@ console.log('PASS Billing tab: all orders, paid apart from not paid, formulas on
   const tb = sheets.get(BILLING_TAB); tb.cols = 19; tb.cf = []; tb.grid = [];
   await DB.prepare("UPDATE portal_settings SET value = '1|' || split_part(value, '|', 2) WHERE key = 'supplier_billing_tab'").run();
   later(); await cron();
-  assert.equal(tb.cols, 38, 'old tab widened to AL'); assert.match(String(tb.grid[4]?.[20]), /'Cancelled'!A6:AI/, 'refund list written');
+  assert.equal(tb.cols, 47, 'old tab widened to AU'); assert.match(String(tb.grid[4]?.[20]), /'Cancelled'!A6:AI/, 'refund list written');
   assert.equal(tb.cf.filter(r => /"TOTAL"/.test(r.booleanRule?.condition?.values?.[0]?.userEnteredValue || '')).length, 1);
   later(); await cron(); assert.equal(tb.cf.length, 1, 'not added again');
   // The live tab (9 Nov 2026): version 2, A to AC with the refund part. Widened to AL, the TOTAL rule stays one.
   tb.cols = 29; await DB.prepare("UPDATE portal_settings SET value = '2|' || split_part(value, '|', 2) WHERE key = 'supplier_billing_tab'").run();
   later(); await cron();
-  assert.equal(tb.cols, 38, 'A to AL'); assert.match(String(tb.grid[4]?.[30]), /^=ARRAYFORMULA\(IFERROR\(LET\(d,INDIRECT\("'Cancelled'!A6:AJ"\)/, 'per cancel date written');
+  assert.equal(tb.cols, 47, 'A to AU'); assert.match(String(tb.grid[4]?.[30]), /^=ARRAYFORMULA\(IFERROR\(LET\(d,INDIRECT\("'Cancelled'!A6:AJ"\)/, 'per cancel date written');
+  // The live tab now (13 Nov 2026): version 5, A to AL. Widened to AU; the balances and paid costs come back on the next checks.
+  tb.cols = 38; await DB.prepare("UPDATE portal_settings SET value = '5|' || split_part(value, '|', 2) WHERE key = 'supplier_billing_tab'").run();
+  later(); await cron(); later(); await cron();
+  assert.equal(tb.cols, 47, 'A to AU'); assert.match(String(tb.grid[2]?.[38]), /^BALANCE PER CLIENT/, 'balance title written');
+  assert.equal(tb.cf.length, 1, 'still one TOTAL rule');
   assert.equal(tb.cf.length, 1, 'the TOTAL rule is not added twice');
 }
 console.log('PASS Billing refunds: cancelled orders, paid minus cancellation fees, TOTAL row, old tab widened once');

@@ -16,6 +16,8 @@ export const ZH = {
   'Cancelled on': '取消日期', 'Cancelled': '已取消', 'Paid orders': '已付款订单', 'Paid for them (USD)': '已付金额（美元）',
   'Fees on paid (USD)': '已付订单的取消费（美元）', 'Not paid': '未付款', 'Fees not paid (USD)': '未付款订单的取消费（美元）',
   'Cancellation fees, all orders (USD)': '取消费，所有订单（美元）',
+  'Client': '客户', 'Orders (USD)': '订单（美元）', 'Cancellation fees (USD)': '取消费（美元）', 'Paid by the client (USD)': '客户已付（美元）',
+  'Client still owes (USD)': '客户还需付（美元）', 'Client credit (USD)': '客户余额（美元）', 'Order ID (website)': '订单 ID（网站）', 'Paid for it (website)': '已付金额（网站）',
   'Requested': '询价日期', 'Request': '编号', 'Product name': '商品名称', 'Variation / notes': '款式 / 备注', 'Expected per month': '预计每月数量',
   'Price per item (USD)': '单价（美元）', 'Shipping per order (USD)': '每单运费（美元）', 'Available?': '有货吗？', 'Supplier note': '供应商备注',
   'Product ID': '商品 ID',

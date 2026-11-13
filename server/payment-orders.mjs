@@ -3,6 +3,23 @@
 // that is not archived. The balance itself does not change (billed - paid - adjustments); this only says which
 // orders the money was for. A gap between the amount and the linked orders is allowed and shown, not refused.
 // A client can tick the orders a transfer confirmation is for; the admin sees them ticked when recording it.
+// What an order cost when it was paid (Erwin, 13 Nov 2026): a client's refund in the supplier sheet came out too low because the cost
+// of 4 paid orders was lowered in the sheet after the payment, and the sheet only knew today's cost. paid_price (what
+// the client paid for the order) and paid_cost (the supplier's cost in it) are saved when the order is linked to a
+// payment; refunds and the supplier sheet's "Paid for it" use them, never today's cost. Links made before this got
+// them once from the order's history (FILL_PAID_AT): the last cost the supplier typed before the payment (its date, or
+// the moment it was recorded if that was earlier); else what the first later change changed it from (a cost entered on the
+// website leaves no event); else the first cost typed after it; else today's.
+const costPart = k => `substring(e.detail from '"${k}":"[$]{0,1}([0-9]+([.][0-9]+){0,1})"')`; // no ? (d1-postgres turns every ? into a parameter)
+const COST_TO = costPart('to');
+const costEvent = (cmp, dir, k = 'to') => `(SELECT ${costPart(k)}::double precision FROM order_events e WHERE e.order_id = po2.order_id AND e.kind = 'supplier_sheet'
+      AND e.detail LIKE '{"f":"cost"%' AND ${costPart(k)} IS NOT NULL AND e.created_at ${cmp} LEAST(p.paid_at, po2.created_at) ORDER BY e.created_at ${dir}, e.id ${dir} LIMIT 1)`;
+export const FILL_PAID_AT = `UPDATE payment_orders po SET paid_cost = x.cost, paid_price = ROUND((x.cost + x.margin)::numeric, 2)::double precision
+  FROM (SELECT po2.payment_id, po2.order_id, COALESCE(o.price - o.supplier_cost, o.commission, 0) AS margin,
+      COALESCE(${costEvent('<=', 'DESC')}, ${costEvent('>', 'ASC', 'from')}, ${costEvent('>', 'ASC')}, o.supplier_cost) AS cost
+    FROM payment_orders po2 JOIN client_payments p ON p.id = po2.payment_id JOIN client_orders o ON o.id = po2.order_id
+    WHERE po2.paid_cost IS NULL AND o.supplier_cost IS NOT NULL) x
+  WHERE po.payment_id = x.payment_id AND po.order_id = x.order_id AND x.cost IS NOT NULL`;
 export const PAYMENT_ORDER_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS payment_orders (
     payment_id INTEGER NOT NULL REFERENCES client_payments(id), order_id INTEGER NOT NULL REFERENCES client_orders(id),
@@ -11,6 +28,9 @@ export const PAYMENT_ORDER_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS transfer_orders (
     file_id INTEGER NOT NULL REFERENCES portal_files(id), order_id INTEGER NOT NULL REFERENCES client_orders(id),
     PRIMARY KEY (file_id, order_id))`,
+  'ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS paid_price DOUBLE PRECISION',
+  'ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS paid_cost DOUBLE PRECISION',
+  FILL_PAID_AT,
 ];
 const MAX_ORDERS = 500;
 const now = () => Math.floor(Date.now() / 1000);
@@ -37,19 +57,23 @@ async function orderRows(DB, clientId, ids) {
     FROM client_orders o WHERE o.client_id = ? AND o.id IN (${marks(ids.length)})`).bind(clientId, ...ids).all()).results || [];
 }
 
-// Active links: orderId -> { paymentId, paidAt }. Archived payments don't count.
+// Active links: orderId -> { paymentId, paidAt, paidPrice, paidCost }. Archived payments don't count.
+// paidPrice / paidCost: what the order cost when it was paid (null for a link without them: use today's).
+const numOrNull = v => (v == null ? null : Number(v));
 export async function paidOrders(DB, clientId = null) {
-  const rows = (await DB.prepare(`SELECT po.order_id, p.id AS payment_id, p.paid_at FROM payment_orders po JOIN client_payments p ON p.id = po.payment_id
+  const rows = (await DB.prepare(`SELECT po.order_id, p.id AS payment_id, p.paid_at, po.paid_price, po.paid_cost FROM payment_orders po JOIN client_payments p ON p.id = po.payment_id
     WHERE NOT p.archived${clientId ? ' AND p.client_id = ?' : ''} ORDER BY p.paid_at, p.id`).bind(...(clientId ? [clientId] : [])).all()).results || [];
   const map = new Map();
-  for (const r of rows) if (!map.has(Number(r.order_id))) map.set(Number(r.order_id), { paymentId: Number(r.payment_id), paidAt: Number(r.paid_at) });
+  for (const r of rows) if (!map.has(Number(r.order_id))) map.set(Number(r.order_id), { paymentId: Number(r.payment_id), paidAt: Number(r.paid_at), paidPrice: numOrNull(r.paid_price), paidCost: numOrNull(r.paid_cost) });
   return map;
 }
-// Adds paymentId / paidAt (null when not paid) to order objects from orderOut().
-export async function withPaid(DB, orders, clientId = null) {
+// Adds paymentId / paidAt / paidPrice (null when not paid) to order objects from orderOut(). cost: also paidCost, the
+// supplier's cost when it was paid (admins and the server only, never sent to clients).
+export async function withPaid(DB, orders, clientId = null, { cost = false } = {}) {
   if (!orders.length) return orders;
   const paid = await paidOrders(DB, clientId);
-  return orders.map(o => ({ ...o, paymentId: paid.get(Number(o.id))?.paymentId ?? null, paidAt: paid.get(Number(o.id))?.paidAt ?? null }));
+  return orders.map(o => { const p = paid.get(Number(o.id));
+    return { ...o, paymentId: p?.paymentId ?? null, paidAt: p?.paidAt ?? null, paidPrice: p?.paidPrice ?? null, ...(cost ? { paidCost: p?.paidCost ?? null } : {}) }; });
 }
 // paymentId -> [orderIds] for one client's payments (archived ones too).
 export async function paymentOrderIds(DB, clientId) {
@@ -89,7 +113,8 @@ export async function setPaymentOrders(DB, paymentId, clientId, ids, { log = tru
   const want = new Set(ids), had = new Set(before);
   const removed = before.filter(id => !want.has(id)), added = ids.filter(id => !had.has(id));
   if (removed.length) await DB.prepare(`DELETE FROM payment_orders WHERE payment_id = ? AND order_id IN (${marks(removed.length)})`).bind(paymentId, ...removed).run();
-  for (const id of added) await DB.prepare('INSERT INTO payment_orders (payment_id, order_id, created_at) VALUES (?,?,?) ON CONFLICT DO NOTHING').bind(paymentId, id, now()).run();
+  // The order's price and cost right now are what this payment paid for it (see FILL_PAID_AT).
+  for (const id of added) await DB.prepare('INSERT INTO payment_orders (payment_id, order_id, created_at, paid_price, paid_cost) SELECT ?, o.id, ?, o.price, o.supplier_cost FROM client_orders o WHERE o.id = ? ON CONFLICT DO NOTHING').bind(paymentId, now(), id).run();
   if (log && (removed.length || added.length)) {
     const names = async list => (await orderRows(DB, clientId, list)).sort((a, b) => Number(a.id) - Number(b.id)).map(nameOf).join(', ');
     await DB.prepare('INSERT INTO payment_edits (payment_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?)').bind(paymentId, 'orders', await names(before), await names(ids), now()).run();

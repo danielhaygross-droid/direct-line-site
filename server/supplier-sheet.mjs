@@ -16,7 +16,7 @@
 // sheet_cost / sheet_tracking / sheet_shipped hold the last value seen in (or written to) each cell, so a
 // change is applied once, and a supplier's edit is never overwritten by an older website value.
 // Nothing here runs until an admin presses "Set up supplier sheet" (portal_settings supplier_sheet = '1').
-import { paidLabels, PAID, NOT_PAID } from './payment-orders.mjs';
+import { paidLabels, paidOrders, PAID, NOT_PAID } from './payment-orders.mjs';
 import { sheetsRequest, googleSheetsConfig, googleSheetsConfigured, syncPortalOrderToGoogleSheet } from './google-sheets.mjs';
 import { changeStatus, statusAt } from './order-status.mjs';
 import { sheetPhotoUrl, sheetCollageUrl } from './sheet-photos.mjs';
@@ -612,6 +612,8 @@ async function refreshPaidNow(DB, env, fetchImpl) {
     await batchValues(env, fix.map(([r, want]) => ({ range: `${CANCELLED_TAB}!${L(C.SHIP)}${r.row}`, values: [[want]] })), fetchImpl);
     for (const [r, want] of fix) await DB.prepare('UPDATE client_orders SET sheet_shipped=? WHERE id=?').bind(want, r.orderId).run();
   }
+  // The Billing tab's paid costs (13 Nov 2026). Its own errors never stop the Client paid column.
+  try { await writePaidHelper(DB, env, fetchImpl); } catch (e) { console.error('Billing paid costs not updated', e); }
   return true;
 }
 const courierRule = (sheetId, couriers, c = C) => ({ setDataValidation: { range: { sheetId, startRowIndex: FIRST_ROW - 1, startColumnIndex: c.COURIER, endColumnIndex: c.COURIER + 1 }, rule: {
@@ -824,7 +826,7 @@ const websiteProtection = (sheetId, email, c = C) => [[{ sheetId, startColumnInd
 // never reads the tab, so nothing typed or shown there can change an order or a bill. The whole tab is protected.
 // Errors here are logged and never stop the order sync.
 export const BILLING_TAB = 'Billing';
-const BILLING_KEY = 'supplier_billing_tab', BILLING_V = '5';
+const BILLING_KEY = 'supplier_billing_tab', BILLING_V = '6';
 const BILL_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Qty', 'Total cost (USD)', ITEM_COSTS, 'Shipping status', 'Client paid'];
 // Cancelled orders and the supplier's refund (Erwin, 3 Nov 2026: "properly show the whole refund calculation"), far
 // right from U: every cancelled order, the ones our client PAID first, with what was paid for it (Total cost: the
@@ -837,9 +839,23 @@ const REFUND_COLS = ['Date', 'Order', 'Shop', 'Product / variation', 'Client pai
 // the day in one column, and the refund = paid - all fees (like the total in row 3), so the supplier can add it up.
 // The last column stays empty (the tab keeps its width; it held the fees of not paid orders before).
 const DAY_COLS = ['Cancelled on', 'Cancelled', 'Paid orders', 'Not paid', 'Paid for them (USD)', 'Cancellation fees, all orders (USD)', 'Refund (USD)', ''];
-const REFUND_AT = 2 * BILL_COLS.length + 2, REFUND_END = REFUND_AT + REFUND_COLS.length, DAYS_AT = REFUND_END + 1, BILLING_WIDTH = DAYS_AT + DAY_COLS.length;
-export const BILLING_HEADERS = [...BILL_COLS, '', ...BILL_COLS, '', ...REFUND_COLS, '', ...DAY_COLS];
-const BILLING_HELP = 'All orders from Orders and Shipped, newest first. Left: PAID by our clients. Middle: NOT PAID yet. Right (from column U): CANCELLED orders and the refund (paid minus cancellation fees). Worked out by the sheet: do not type here.\nOrders 和 Shipped 的所有订单，最新的在前。左边：客户已付款。中间：未付款。右边（从 U 列开始）：已取消订单和退款（已付金额减取消费）。由表格自动计算，请不要在这里输入。';
+// Balance per client (Ada, 13 Nov 2026: "why do I get the feeling that things are becoming increasingly complicated?"):
+// right of the per-date part, one line per client written by the website: the account statement without our fee, so
+// the supplier reads each client's balance instead of adding up refunds and unpaid orders. Balance = paid by the client
+// - (all orders not cancelled + all cancellation fees). Values, not formulas (see writeBalances).
+const BAL_COLS = ['Client', 'Orders (USD)', 'Cancellation fees (USD)', 'Paid by the client (USD)', 'Client still owes (USD)', 'Client credit (USD)'];
+// Hidden, written by the website: what each paid order cost when it was paid (payment_orders.paid_cost). "Paid for it"
+// and the refunds look it up by the order's id (AF), so a cost changed after the payment no longer changes the refund
+// (Erwin, 13 Nov 2026). An order not in the list (not paid, or paid before the website kept it) uses its Total cost.
+const HELP_COLS = ['Order ID (website)', 'Paid for it (website)'];
+const REFUND_AT = 2 * BILL_COLS.length + 2, REFUND_END = REFUND_AT + REFUND_COLS.length, DAYS_AT = REFUND_END + 1;
+const BAL_AT = DAYS_AT + DAY_COLS.length, BAL_END = BAL_AT + BAL_COLS.length, HELP_AT = BAL_END + 1, BILLING_WIDTH = HELP_AT + HELP_COLS.length;
+export const BILLING_HEADERS = [...BILL_COLS, '', ...BILL_COLS, '', ...REFUND_COLS, '', ...DAY_COLS, ...BAL_COLS, '', ...HELP_COLS];
+const BILLING_HELP = 'All orders from Orders and Shipped, newest first. Left: PAID by our clients. Middle: NOT PAID yet. Right (from column U): CANCELLED orders and the refund (paid minus cancellation fees); "Paid for it" is the cost when the client paid. Far right (from column AM): the BALANCE PER CLIENT, worked out by the website. Worked out by the sheet: do not type here.\nOrders 和 Shipped 的所有订单，最新的在前。左边：客户已付款。中间：未付款。右边（从 U 列开始）：已取消订单和退款（已付金额减取消费）；“已付金额”是客户付款时的成本。最右边（从 AM 列开始）：每个客户的余额，由网站自动计算。由表格自动计算，请不要在这里输入。';
+const BAL_TOP = 'BALANCE PER CLIENT (worked out by the website, without our fee). No need to add anything up: Client credit = Paid by the client - Orders - Cancellation fees. The client uses the credit for the next orders.\n每个客户的余额（网站自动计算，不含我们的费用）。不需要自己计算：客户余额 = 客户已付 - 订单 - 取消费。客户的余额用于下一批订单。';
+// What a paid order cost when it was paid: looked up by order id in the hidden list, else the fallback (its Total cost).
+const HELP_RANGE = () => `$${L(HELP_AT)}$5:$${L(HELP_AT + 1)}`;
+const paidCostOf = (id, fallback) => `IFERROR(VLOOKUP(--${id},${HELP_RANGE()},2,FALSE),${fallback})`;
 export function billingCells(wq, c = C) {
   const q = t => `'${t.replace(/'/g, "''")}'`, tabs = [wq, SHIPPED_TAB], last = L(c.PAIDC);
   const col = n => `INDIRECT("${q('@')}!${n}${FIRST_ROW}:${n}")`, both = (f, n) => tabs.map(t => f(col(n).replace('@', t)));
@@ -851,20 +867,21 @@ export function billingCells(wq, c = C) {
   const openN = tabs.map(t => `COUNTIFS(${col(B).replace('@', t)},"<>",${col(W).replace('@', t)},"<>${PAID}")`).join('+');
   const openSum = tabs.map(t => `SUMIFS(${col(P).replace('@', t)},${col(B).replace('@', t)},"<>",${col(W).replace('@', t)},"<>${PAID}")`).join('+');
   // Refunds: the Cancelled tab, A to Cancellation fee.
-  const cx = n => `INDIRECT("${q(CANCELLED_TAB)}!${n}${FIRST_ROW}:${n}")`, W1 = c.PAIDC + 1, P1 = c.COST + 1, F1 = c.FEE + 1, U = L(REFUND_AT);
-  const got = `SUMIF(${cx(W)},"${PAID}",${cx(P)})`, fees = `SUM(${cx(L(c.FEE))})`;
+  const cx = n => `INDIRECT("${q(CANCELLED_TAB)}!${n}${FIRST_ROW}:${n}")`, W1 = c.PAIDC + 1, P1 = c.COST + 1, F1 = c.FEE + 1, ID1 = c.ID + 1, U = L(REFUND_AT);
+  // Paid by our clients = the cost of each paid order when it was paid (13 Nov 2026), not today's Total cost.
+  const got = `ARRAYFORMULA(SUM(IF(${cx(W)}="${PAID}",${paidCostOf(cx(L(c.ID)), `IF(ISNUMBER(${cx(P)}),${cx(P)},0)`)},0)))`, fees = `SUM(${cx(L(c.FEE))})`;
   const refundTop = `="CANCELLED: REFUND DUE "&TEXT(${got}-${fees},"$#,##0.00")&"  =  paid by our clients "&TEXT(${got},"$#,##0.00")&" ("&COUNTIF(${cx(W)},"${PAID}")&" orders)  −  cancellation fees "&TEXT(${fees},"$#,##0.00")&" ("&COUNTIF(${cx(L(c.FEE))},">0")&" orders)"&CHAR(10)&"已取消：应退款 "&TEXT(${got}-${fees},"$#,##0.00")&" = 客户已付 "&TEXT(${got},"$#,##0.00")&"（"&COUNTIF(${cx(W)},"${PAID}")&" 单）− 取消费 "&TEXT(${fees},"$#,##0.00")&"（"&COUNTIF(${cx(L(c.FEE))},">0")&" 单）"`;
   const refundList = `=ARRAYFORMULA(IFERROR(LET(d,INDIRECT("${q(CANCELLED_TAB)}!A${FIRST_ROW}:${L(c.FEE)}"),f,FILTER(d,INDEX(d,,2)<>""),paid,INDEX(f,,${W1})="${PAID}",`
-    + `cost,IF(ISNUMBER(INDEX(f,,${P1})),INDEX(f,,${P1}),0),fee,IF(ISNUMBER(INDEX(f,,${F1})),INDEX(f,,${F1}),0),got,IF(paid,cost,0),`
+    + `cost,IF(ISNUMBER(INDEX(f,,${P1})),INDEX(f,,${P1}),0),fee,IF(ISNUMBER(INDEX(f,,${F1})),INDEX(f,,${F1}),0),got,IF(paid,${paidCostOf(`INDEX(f,,${ID1})`, 'cost')},0),`
     + `VSTACK(SORT(HSTACK(CHOOSECOLS(f,1,2,3,${c.h.indexOf('Product / variation') + 1}),INDEX(f,,${W1}),cost,got,fee,got-fee),paid,FALSE,INDEX(f,,1),FALSE),`
     + `HSTACK("","","","TOTAL 合计","",SUM(cost),SUM(got),SUM(fee),SUM(got)-SUM(fee)))),"No cancelled orders · 暂无已取消订单"))`;
   const AJ1 = c.CHANGED + 1, D = L(DAYS_AT), on = 'SUMPRODUCT(--(dy=x)';
   const dayTop = 'BY CANCEL DATE (Status changed, China time): refund = paid for them - cancellation fees of ALL the orders (paid and not paid).\n按取消日期（状态更新时间，中国时间）：退款 = 已付金额 - 所有订单的取消费（已付款和未付款）。';
   const dayList = `=ARRAYFORMULA(IFERROR(LET(d,INDIRECT("${q(CANCELLED_TAB)}!A${FIRST_ROW}:${L(c.CHANGED)}"),f,FILTER(d,INDEX(d,,2)<>""),`
     + `dy,IF(ISNUMBER(INDEX(f,,${AJ1})),INT(INDEX(f,,${AJ1})),-1),paid,--(INDEX(f,,${W1})="${PAID}"),`
-    + `cost,IF(ISNUMBER(INDEX(f,,${P1})),INDEX(f,,${P1}),0),fee,IF(ISNUMBER(INDEX(f,,${F1})),INDEX(f,,${F1}),0),k,SORT(UNIQUE(FILTER(dy,dy>0)),1,FALSE),`
-    + `HSTACK(k,MAP(k,LAMBDA(x,${on}))),MAP(k,LAMBDA(x,${on},paid))),MAP(k,LAMBDA(x,${on},1-paid))),MAP(k,LAMBDA(x,${on},paid,cost))),`
-    + `MAP(k,LAMBDA(x,${on},fee))),MAP(k,LAMBDA(x,${on},paid*cost-fee))))),"No cancelled orders · 暂无已取消订单"))`;
+    + `cost,IF(ISNUMBER(INDEX(f,,${P1})),INDEX(f,,${P1}),0),pc,${paidCostOf(`INDEX(f,,${ID1})`, 'cost')},fee,IF(ISNUMBER(INDEX(f,,${F1})),INDEX(f,,${F1}),0),k,SORT(UNIQUE(FILTER(dy,dy>0)),1,FALSE),`
+    + `HSTACK(k,MAP(k,LAMBDA(x,${on}))),MAP(k,LAMBDA(x,${on},paid))),MAP(k,LAMBDA(x,${on},1-paid))),MAP(k,LAMBDA(x,${on},paid,pc))),`
+    + `MAP(k,LAMBDA(x,${on},fee))),MAP(k,LAMBDA(x,${on},paid*pc-fee))))),"No cancelled orders · 暂无已取消订单"))`;
   return [
     { range: `${BILLING_TAB}!A1:A2`, values: [['Direct Line — Billing'], [BILLING_HELP]] },
     { range: `${BILLING_TAB}!A3:K3`, values: [[`="PAID by our clients: "&(${paidN})&" orders · "&TEXT(${paidSum},"$#,##0.00")&CHAR(10)&"客户已付款："&(${paidN})&" 单 · "&TEXT(${paidSum},"$#,##0.00")`, '', '', '', '', '', '', '', '', '', `="NOT PAID yet: "&(${openN})&" orders · "&TEXT(${openSum},"$#,##0.00")&CHAR(10)&"未付款："&(${openN})&" 单 · "&TEXT(${openSum},"$#,##0.00")`]] },
@@ -874,6 +891,7 @@ export function billingCells(wq, c = C) {
     { range: `${BILLING_TAB}!${U}5`, values: [[refundList]] },
     { range: `${BILLING_TAB}!${D}3`, values: [[dayTop]] },
     { range: `${BILLING_TAB}!${D}5`, values: [[dayList]] },
+    { range: `${BILLING_TAB}!${L(BAL_AT)}3`, values: [[BAL_TOP]] },
   ];
 }
 const billingFormat = (sheetId, email) => {
@@ -887,7 +905,21 @@ const billingFormat = (sheetId, email) => {
     ...[5, 15].map(i => ({ repeatCell: { range: r(4, 1000, i, i + 1), cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } })),
     ...[...widths.slice(0, 9), widths[9], ...widths.slice(0, 9)].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: i, endIndex: i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
     { addProtectedRange: { protectedRange: { range: { sheetId }, description: 'Billing: worked out by the sheet (Direct Line)', editors: { users: [email] } } } },
-    ...refundFormat(sheetId), ...dayFormat(sheetId), ...billingHeadRows(sheetId),
+    ...refundFormat(sheetId), ...dayFormat(sheetId), ...balanceFormat(sheetId), ...billingHeadRows(sheetId),
+  ];
+};
+// The balance per client (AM-AR, 13 Nov 2026): green header, dollars, widths; the hidden paid-cost list (AT-AU).
+// No rules in it, so it is safe to repeat.
+const balanceFormat = sheetId => {
+  const r = (r1, r2, c1, c2) => ({ sheetId, startRowIndex: r1, endRowIndex: r2, startColumnIndex: c1, endColumnIndex: c2 }), A = BAL_AT, Z = BAL_END;
+  return [
+    { repeatCell: { range: r(2, 4, A, Z), cell: { userEnteredFormat: { backgroundColor: green, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
+    { repeatCell: { range: r(4, 1000, A, Z), cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'MIDDLE' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment)' } },
+    { repeatCell: { range: r(4, 1000, A, A + 1), cell: { userEnteredFormat: { textFormat: { bold: true } } }, fields: 'userEnteredFormat.textFormat' } },
+    { repeatCell: { range: r(4, 1000, A + 1, Z), cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } } }, fields: 'userEnteredFormat.numberFormat' } },
+    { repeatCell: { range: r(4, 1000, Z - 2, Z), cell: { userEnteredFormat: { textFormat: { bold: true } } }, fields: 'userEnteredFormat.textFormat' } },
+    ...[160, 110, 130, 130, 130, 130, 30].map((px, i) => ({ updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: A + i, endIndex: A + i + 1 }, properties: { pixelSize: px }, fields: 'pixelSize' } })),
+    { updateDimensionProperties: { range: { sheetId, dimension: 'COLUMNS', startIndex: HELP_AT, endIndex: BILLING_WIDTH }, properties: { hiddenByUser: true }, fields: 'hiddenByUser' } },
   ];
 };
 // The part per cancel date (AE-AL): light blue header, the date, counts, dollars, widths.
@@ -932,12 +964,42 @@ export async function ensureBillingTab(DB, env, fetchImpl = fetch, { force = fal
     // A Billing tab from before the refund part (3 Nov 2026): its columns and their look are added once.
     // A tab that has the refund part already (9 Nov 2026) only gets the part per cancel date: its TOTAL rule is not added twice.
     const had = tab.gridProperties?.columnCount || 0;
-    await batch(env, [{ appendDimension: { sheetId: tab.sheetId, dimension: 'COLUMNS', length: BILLING_WIDTH - had } }, ...(had < REFUND_END ? refundFormat(tab.sheetId) : []), ...dayFormat(tab.sheetId)], fetchImpl);
-  } else await batch(env, dayFormat(tab.sheetId), fetchImpl); // a new version: the per-date look again (no rules in it, safe to repeat)
+    await batch(env, [{ appendDimension: { sheetId: tab.sheetId, dimension: 'COLUMNS', length: BILLING_WIDTH - had } }, ...(had < REFUND_END ? refundFormat(tab.sheetId) : []), ...dayFormat(tab.sheetId), ...balanceFormat(tab.sheetId)], fetchImpl);
+  } else await batch(env, [...dayFormat(tab.sheetId), ...balanceFormat(tab.sheetId)], fetchImpl); // a new version: the looks again (no rules in them, safe to repeat)
   await batchValues(env, billingCells(wq), fetchImpl);
+  // The values the formulas need: the paid costs now, the balances on this check (writeBalances).
+  await writePaidHelper(DB, env, fetchImpl);
+  await putSetting(DB, BAL_KEY, '');
   await putSetting(DB, BILLING_KEY, want);
   return tab ? 'written' : 'added';
 }
+// Writes a block of values from row 5 down in columns a..z of the Billing tab and clears what was below it before.
+async function billingBlock(env, a, z, rows, fetchImpl) {
+  const end = 5 + rows.length;
+  if (rows.length) await batchValues(env, [{ range: `${BILLING_TAB}!${a}5:${z}${end - 1}`, values: rows }], fetchImpl);
+  await sheetsRequest(env, '/values:batchClear', { method: 'POST', body: JSON.stringify({ ranges: [`${BILLING_TAB}!${a}${end}:${z}`] }) }, fetchImpl);
+}
+// The hidden paid-cost list (see HELP_COLS): every order on a payment that is not archived, by order id.
+export async function writePaidHelper(DB, env, fetchImpl = fetch) {
+  const rows = [...await paidOrders(DB)].filter(([, p]) => p.paidCost != null).sort((x, y) => x[0] - y[0]).map(([id, p]) => [id, p.paidCost]);
+  await billingBlock(env, L(HELP_AT), L(HELP_AT + 1), rows, fetchImpl);
+  return rows.length;
+}
+// The balance per client (see BAL_COLS). Worked out when payments or supplier costs changed (force) and at least every
+// 10 minutes (an admin can change prices or fees on the website); written only when a number changed.
+const BAL_KEY = 'supplier_billing_balances', BAL_EVERY = 600;
+export async function writeBalances(DB, env, fetchImpl = fetch, { force = false } = {}) {
+  let last = {}; try { last = JSON.parse(await getSetting(DB, BAL_KEY) || '{}'); } catch { last = {}; }
+  const t = Math.floor(Date.now() / 1000);
+  if (!force && last.at && t - last.at < BAL_EVERY) return 'not due';
+  // portal.mjs works out the account statement (clientSummary); it imports this file, so it is loaded already.
+  const { supplierBalances } = await import('./portal.mjs');
+  const rows = (await supplierBalances(DB)).map(([name, ...n]) => [/^[=+\-@']/.test(name) ? "'" + name : name, ...n]), hash = JSON.stringify(rows);
+  if (hash !== last.hash) await billingBlock(env, L(BAL_AT), L(BAL_END - 1), rows, fetchImpl);
+  await putSetting(DB, BAL_KEY, JSON.stringify({ at: t, hash }));
+  return hash !== last.hash ? 'written' : 'same';
+}
+const balancesSafely = async (DB, env, fetchImpl, opts) => { try { return await writeBalances(DB, env, fetchImpl, opts); } catch (e) { console.error('Billing balances not updated', e); return 'error: ' + String(e.message || e).slice(0, 200); } };
 // Colour rules that slid down (Erwin, 2 Nov 2026): an order moved to the top of a tab (newest on top) pushes the colour
 // rules that start at that row one row down. On the Shipped tab they had slid to row 44, so the orange cost revision
 // rows, Paid / Not paid and delay colours were missing on rows 6-43. Every sheet check puts any slid rule of Orders and
@@ -1348,7 +1410,8 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     }
     // Once: orders whose tax number / gift message were typed into the notes before those fields existed.
     for (const id of await splitOldNotes(DB)) { const sync = syncPortalOrderToGoogleSheet(DB, env, id, fetchImpl).catch(e => console.error('Sheet refresh after notes split failed', e)); if (waitUntil) waitUntil(sync); else await sync; }
-    if (await getSetting(DB, PAID_DIRTY)) { const seen = await getSetting(DB, PAID_DIRTY); await refreshPaidColumn(DB, env, fetchImpl); await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(PAID_DIRTY, seen).run(); }
+    const paidChanged = !!await getSetting(DB, PAID_DIRTY);
+    if (paidChanged) { const seen = await getSetting(DB, PAID_DIRTY); await refreshPaidColumn(DB, env, fetchImpl); await DB.prepare('DELETE FROM portal_settings WHERE key=? AND value=?').bind(PAID_DIRTY, seen).run(); }
     // All three tabs (Orders, Shipped, Cancelled): the supplier can edit in any of them.
     const tabs = allTabs(wq);
     const ranges = tabs.flatMap(supplierRanges).map(r => 'ranges=' + encodeURIComponent(r)).join('&');
@@ -1427,6 +1490,8 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     // Product price checks (Product Quotes tab).
     const fee = await getSetting(DB, 'commission_per_order');
     result.quotes = await pollQuoteTab(DB, env, { commission_per_order: fee ?? '2' }, fetchImpl);
+    // The Billing tab's balance per client, after the costs above were read.
+    result.balances = await balancesSafely(DB, env, fetchImpl, { force: paidChanged || result.changed.length > 0 });
   } catch (e) { result.ok = false; result.error = String(e.message || e).slice(0, 300); }
   await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
     .bind(LAST, JSON.stringify({ at: t, ok: result.ok, checked: result.checked, changed: result.changed.length, skipped: result.skipped.slice(0, 20), error: result.error || '' })).run();
