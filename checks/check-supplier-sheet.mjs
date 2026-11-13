@@ -353,6 +353,11 @@ assert.equal(cell(K.id, P), 'Cancelled', 'Shipping status says Cancelled'); asse
 supplierTypes(K.id, 34, 4); await cron();
 assert.equal(Number((await order(K.id)).supplier_cancel_fee), 4, 'a fee typed in the Cancelled tab is read');
 assert.equal(Number((await DB.prepare("SELECT amount FROM client_balance_adjustments WHERE order_id=? AND kind='cancellation_fee'").bind(K.id).first())?.amount), 4, 'and billed');
+// A cost typed on a cancelled order (13 Nov 2026): applied, but its notice is hidden from the client.
+supplierTypes(K.id, N, 21.5); later(); await cron();
+assert.equal(Number((await order(K.id)).supplier_cost), 21.5, 'the cost on a cancelled order is read');
+const kEv = await DB.prepare("SELECT client_hidden FROM order_events WHERE order_id=? AND kind IN ('billed','price_changed') ORDER BY id DESC LIMIT 1").bind(K.id).first();
+assert.equal(kEv?.client_hidden, true, 'its billed / price changed entry is hidden from the client');
 const back = await call('/orders/' + K.id, 'PUT', { status: 'pending' }, admin); assert.equal(back.status, 200, JSON.stringify(back.data)); await settle();
 assert.deepEqual(where(K.id), [main(), FIRST_ROW - 1], 'reopened: back in the supplier tab'); assert.equal(cell(K.id, 34), 4, 'fee kept with the row');
 // A move that stopped halfway (row in two tabs) is cleaned up on the next write, and read once meanwhile.

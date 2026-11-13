@@ -1193,8 +1193,11 @@ const rememberSupplierCells = (DB, o, s) => DB.prepare('UPDATE client_orders SET
 const colName = i => { let s = ''; i += 1; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
 
 // ---------- sheet → website ----------
+// A cost change on a cancelled order changes nothing the client pays (the refund uses what was paid), so its "billed" /
+// "price changed" entry is hidden from the client (Erwin, 13 Nov 2026: five such notices "will cause confusion").
 async function event(DB, o, kind, detail, t) {
-  await DB.prepare('INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,?,?,?,?)').bind(o.id, o.client_id, kind, 'admin', detail, t).run();
+  const hidden = o.status === 'cancelled' && (kind === 'billed' || kind === 'price_changed');
+  await DB.prepare('INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at, client_hidden) VALUES (?,?,?,?,?,?,?)').bind(o.id, o.client_id, kind, 'admin', detail, t, hidden).run();
 }
 // The supplier's cancellation fee on a cancelled order is billed straight away, exactly that amount (Erwin, 26 Oct 2026:
 // "we cancel any time; the supplier can put the fee in the sheet any time and the client is notified right away").
