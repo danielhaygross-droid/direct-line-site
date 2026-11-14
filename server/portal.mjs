@@ -3,6 +3,7 @@
 // so one login works across the store dashboard, the client portal and the admin view.
 //   role "admin"          -> Daniel / Erwin (env admin or admin users in the DB)
 //   role "client-<id>"    -> a client account from the users table
+//   role "supplier-<id>"  -> a supplier login (Ada, Ye): only the supplier routes in supplier-portal.mjs
 
 import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { serveSheetPhoto, serveSheetProductPhoto, serveSheetCollage } from './sheet-photos.mjs';
@@ -27,6 +28,7 @@ import { INVOICE_SCHEMA, invoices, saveInvoice, monthlyInvoices } from './invoic
 import { PRODUCT_SCHEMA, products, addProduct, quoteProduct, productPhoto, productEvents, priceOptions, setCompetitorPrice, competitorText } from './products.mjs';
 
 import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from './claims.mjs';
+import { SUPPLIER_SCHEMA, supplierSession, routeSupplier, routeSupplierAdmin } from './supplier-portal.mjs';
 
 import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance } from './client-stores.mjs';
 
@@ -51,7 +53,7 @@ export const SCHEMA = [
      id SERIAL PRIMARY KEY,
      username TEXT NOT NULL UNIQUE,
      password_hash TEXT NOT NULL,
-     role TEXT NOT NULL CHECK (role IN ('admin','client')),
+     role TEXT NOT NULL CHECK (role IN ('admin','client','supplier')),
      display_name TEXT NOT NULL,
      commission_per_order DOUBLE PRECISION,
      supplier_share_per_order DOUBLE PRECISION,
@@ -216,6 +218,9 @@ SCHEMA.push(`CREATE TABLE IF NOT EXISTS payment_edits (
   old_value TEXT NOT NULL DEFAULT '', new_value TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`);
 // Which orders each payment is for (payment-orders.mjs).
 SCHEMA.push(...PAYMENT_ORDER_SCHEMA, ...BILLING_SCHEMA, ...REFUND_SCHEMA, ...REVISION_SCHEMA);
+// Supplier logins (supplier portal phase 1, 14 Nov 2026): the role list gets 'supplier'.
+SCHEMA.push('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check',
+  "ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','client','supplier'))", ...SUPPLIER_SCHEMA);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
@@ -376,6 +381,8 @@ export async function readSessionRole(request, secret) {
 }
 export function parseRole(role) {
   if (role === 'admin') return { admin: true };
+  const s = /^supplier-(\d+)-v(\d+)$/.exec(role || '');
+  if (s) return { admin: false, supplier: true, supplierId: Number(s[1]), sessionVersion: Number(s[2]) };
   const m = /^client-(\d+)(?:-v(\d+))?$/.exec(role || '');
   return m ? { admin: false, clientId: Number(m[1]), sessionVersion: Number(m[2] || 0) } : null;
 }
@@ -726,13 +733,15 @@ async function routePortal(request, url, ctx, meta) {
     const role = signed.role;
     if (!role) return json({ ok: false, error: 'Invalid credentials' }, 401);
     const info = parseRole(role);
-    return json({ ok: true, role: info.admin ? 'admin' : 'client', redirect: info.admin ? '/admin/' : '/portal/' }, 200,
+    return json({ ok: true, role: info.admin ? 'admin' : info.supplier ? 'supplier' : 'client', redirect: info.admin ? '/admin/' : info.supplier ? '/supplier/' : '/portal/' }, 200,
       { 'set-cookie': await createSessionCookie(role, env.APP_SESSION_SECRET, { remember: body.remember === true }) });
   }
 
   const role = await readSessionRole(request, env.APP_SESSION_SECRET);
   let who = parseRole(role);
   if (!who) return json({ ok: false, error: 'Unauthorized' }, 401);
+  // A supplier login reaches the supplier routes and nothing else.
+  if (who.supplier) return routeSupplier(request, path, ctx, who, { clientSummary, getSettings, hashPassword, verifyPassword, createSessionCookie });
   // Admin preview of a client's portal ("see what the client sees"): read-only.
   // With x-dl-act: 1 the admin is logged in as the client: same rights as the client, every change logged and recorded as admin.
   const viewAs = request.headers.get('x-dl-view-as');
@@ -1102,6 +1111,7 @@ async function routePortal(request, url, ctx, meta) {
 
   // ----- admin-only routes -----
   if (!who.admin) return json({ ok: false, error: 'Forbidden' }, 403);
+  { const r = await routeSupplierAdmin(request, path, ctx); if (r) return r; }
 
   if (path === '/admin/terms' && method === 'POST') {
     try { return json({ ok: true, policy: await publishTerms(DB,await readBody(request)) }); }
@@ -1165,9 +1175,10 @@ async function routePortal(request, url, ctx, meta) {
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
+    const suppliers = users.filter(u => u.role === 'supplier').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active, archived: !!u.archived, lastLogin: u.last_login == null ? null : Number(u.last_login) }));
     // All clients together for the Overview: cancelled-order money and money per month (Erwin, 27 Oct 2026).
     const cancelled = await cancelledTotals(DB, clients), months = await moneyMonths(DB);
-    return json({ ok: true, settings, termsPolicy, totals, clients, admins, archived, cancelled, months, rates: SHIPPING_RATES, googleSheets: { configured: googleSheetsConfigured(env) } });
+    return json({ ok: true, settings, termsPolicy, totals, clients, admins, suppliers, archived, cancelled, months, rates: SHIPPING_RATES, googleSheets: { configured: googleSheetsConfigured(env) } });
   }
   // ----- Daniel's stores (dashboard store list) -----
   if (path === '/admin/stores' && method === 'GET') {
@@ -1342,7 +1353,7 @@ async function routePortal(request, url, ctx, meta) {
   }
   if (path === '/admin/users' && method === 'POST') {
     const body = await readBody(request);
-    const username = text(body.username, 60), password = String(body.password || ''), userRole = body.role === 'admin' ? 'admin' : 'client';
+    const username = text(body.username, 60), password = String(body.password || ''), userRole = ['admin', 'supplier'].includes(body.role) ? body.role : 'client';
     if (!/^[A-Za-z0-9._@-]{3,60}$/.test(username)) return json({ ok: false, error: 'Username: 3-60 letters, numbers, . _ - @' }, 400);
     if (password.length < 8) return json({ ok: false, error: 'Password must be at least 8 characters' }, 400);
     if (env.ADMIN_USERNAME && username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase()) return json({ ok: false, error: 'Username already taken' }, 409);
@@ -1385,7 +1396,7 @@ async function routePortal(request, url, ctx, meta) {
     if (body.commissionPerOrder !== undefined) { cpo = money(body.commissionPerOrder); if (!isMoney(cpo)) return json({ ok: false, error: 'Invalid commission' }, 400); }
     let hash = u.password_hash;
     if (body.password) { if (String(body.password).length < 8) return json({ ok: false, error: 'Password must be at least 8 characters' }, 400); hash = await hashPassword(String(body.password)); }
-    const archived = body.archived !== undefined && u.role === 'client' ? Boolean(body.archived) : u.archived;
+    const archived = body.archived !== undefined && ['client', 'supplier'].includes(u.role) ? Boolean(body.archived) : u.archived;
     // A new username: signs the person in from now on (and is a client's payment reference).
     let username = u.username;
     if (body.username !== undefined && String(body.username).trim() !== u.username) {
@@ -1460,6 +1471,7 @@ export async function authenticate(DB, env, username, password) {
   const u = await DB.prepare('SELECT id, role, password_hash, active, archived, session_version FROM users WHERE LOWER(username) = LOWER(?)').bind(username).first();
   if (!u || !u.active || u.archived || !(await verifyPassword(password, u.password_hash))) return null;
   await DB.prepare('UPDATE users SET last_login=? WHERE id=?').bind(now(), u.id).run();
+  if (u.role === 'supplier') return 'supplier-' + u.id + '-v' + Number(u.session_version || 0);
   return u.role === 'admin' ? 'admin' : 'client-' + u.id + '-v' + Number(u.session_version || 0);
 }
 

@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const SCREENS = [['src/admin', 'dist/admin/admin.js'], ['src/portal', 'dist/portal/portal.js']];
+export const SCREENS = [['src/admin', 'dist/admin/admin.js'], ['src/portal', 'dist/portal/portal.js'], ['src/supplier', 'dist/supplier/supplier.js']];
 
 export async function joined(dir) {
   const names = (await readdir(path.join(root, dir))).filter(n => /^\d\d-[a-z0-9-]+\.js$/.test(n)).sort();

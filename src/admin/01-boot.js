@@ -6,7 +6,7 @@
       if (e.status === 401 || e.status === 403) return renderLogin(document.body, { title: 'Admin sign in', subtitle: 'Direct Line team access.' });
       $('#boot').textContent = e.message; return;
     }
-    if (me.role !== 'admin') { location.href = '/portal/'; return; }
+    if (me.role !== 'admin') { location.href = me.role === 'supplier' ? '/supplier/' : '/portal/'; return; }
     shell();
     await loadAll();
     $('#boot').remove(); $('#app').hidden = false;

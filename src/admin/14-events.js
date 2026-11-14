@@ -18,15 +18,15 @@
     const lm = t.closest('[data-list-more]'); if (lm) { const k = lm.dataset.listMore; S.shown[k].n += LIST_PAGE[k]; (k === 'orders' ? renderOrders : renderClients)(); return; }
     const ea=t.closest('[data-edit-admin]');
     if(ea){
-      const x=S.ov.admins.find(a=>a.id===Number(ea.dataset.editAdmin)),row=ea.parentElement;if(!x)return;
+      const sup=(S.ov.suppliers||[]).some(a=>a.id===Number(ea.dataset.editAdmin)),x=[...S.ov.admins,...(S.ov.suppliers||[])].find(a=>a.id===Number(ea.dataset.editAdmin)),row=ea.parentElement;if(!x)return;
       if(row.nextElementSibling?.matches('[data-admin-form]')){row.nextElementSibling.remove();return;}
       row.insertAdjacentHTML('afterend',`<form class="form-grid" data-admin-form="${x.id}" novalidate style="padding:12px;border:1px solid var(--line);border-radius:12px">
         <label class="field"><span>Name</span><input name="name" maxlength="120" value="${esc(x.name)}"></label>
         <label class="field"><span>Username</span><input name="username" maxlength="60" autocomplete="off" data-no-i18n value="${esc(x.username)}"></label>
         <label class="field"><span>Status</span><select name="active"><option value="true"${x.active?' selected':''}>Active</option><option value="false"${x.active?'':' selected'}>Disabled (can’t sign in)</option></select></label>
         <label class="field"><span>New password <small>leave empty to keep the current one</small></span><input name="password" type="password" maxlength="128" autocomplete="new-password"></label>
-        <p class="note full" style="margin:0">A disabled admin can’t sign in again. If they are signed in right now, they stay signed in until that session ends.</p>
-        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save admin</button><button type="button" class="btn" data-admin-cancel>Cancel</button><p class="form-msg" data-admin-msg style="margin:0"></p></div></form>`);
+        <p class="note full" style="margin:0">${sup?'A disabled supplier login is signed out at once and can’t sign in again (nothing is deleted).':'A disabled admin can’t sign in again. If they are signed in right now, they stay signed in until that session ends.'}</p>
+        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">${sup?'Save supplier login':'Save admin'}</button><button type="button" class="btn" data-admin-cancel>Cancel</button><p class="form-msg" data-admin-msg style="margin:0"></p></div></form>`);
       row.nextElementSibling.querySelector('[name=name]').focus();return;
     }
     if(t.closest('[data-admin-cancel]')){t.closest('[data-admin-form]').remove();return;}
@@ -227,7 +227,7 @@
       const b = $('[type=submit]', adf), m = $('[data-admin-msg]', adf); if (b.disabled) return; m.textContent = ''; m.className = 'form-msg';
       if (adf.password.value && adf.password.value.length < 8) { m.textContent = 'Password must be at least 8 characters'; m.className = 'form-msg err'; return; }
       b.disabled = true;
-      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Admin saved.'); }
+      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Saved.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
       return;
     }

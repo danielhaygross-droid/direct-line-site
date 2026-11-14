@@ -37,6 +37,11 @@
       "source": "/admin",
       "destination": "/admin/",
       "permanent": false
+    },
+    {
+      "source": "/supplier",
+      "destination": "/supplier/",
+      "permanent": false
     }
   ],
   "headers": [

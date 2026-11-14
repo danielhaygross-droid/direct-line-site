@@ -9,6 +9,7 @@ import worker from '../server/worker.mjs';
 import { createD1 } from '../server/d1-postgres.mjs';
 import { LOCK_MESSAGE } from '../server/login-limit.mjs';
 import { SCHEMA as PORTAL_SCHEMA, handlePortal, signIn, createSessionCookie, readSessionRole, parseRole, clientSession } from '../server/portal.mjs';
+import { supplierSession } from '../server/supplier-portal.mjs';
 import { syncFileStorage } from '../server/file-storage.mjs';
 import { runBackup } from '../server/backup.mjs';
 import { pollSupplierSheet, supplierSheetQuickLook, rememberSupplierSheet } from '../server/supplier-sheet.mjs';
@@ -80,12 +81,13 @@ export async function route(request, { db = DB, env: baseEnv = process.env } = {
       const role = signed.role;
       if (!role) return json({ ok: false, error: 'Invalid credentials' }, 401);
       const who = parseRole(role);
-      return json({ ok: true, role: who.admin ? 'admin' : 'client', ...(who.admin ? {} : { redirect: '/portal/' }) }, 200,
+      return json({ ok: true, role: who.admin ? 'admin' : who.supplier ? 'supplier' : 'client', ...(who.admin ? {} : { redirect: who.supplier ? '/supplier/' : '/portal/' }) }, 200,
         { 'set-cookie': await createSessionCookie(role, env.APP_SESSION_SECRET, { remember: body.remember === true }) });
     }
     if (path === '/api/auth/session') {
       const who = parseRole(await readSessionRole(request, env.APP_SESSION_SECRET));
       if (!who) return json({ ok: false }, 401);
+      if (who.supplier) return (await supplierSession(db, who)) ? json({ ok: true, role: 'supplier', redirect: '/supplier/' }) : json({ ok: false }, 401);
       if (!who.admin) {
         const user = await clientSession(db, who);
         if (!user) return json({ ok: false }, 401);
