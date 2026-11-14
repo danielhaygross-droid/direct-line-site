@@ -12,7 +12,8 @@ Use the Skill tool for each one (if a skill can't be loaded, read its `SKILL.md`
 2. **taste-skill** (design-taste-frontend): follow its app-screen run (screens people work in) and its look-and-fix loop on screenshots. No "AI-made" look: no generic gradients, no emoji icons, no filler text.
 3. **design-motion-principles**: only purposeful motion (state changes, saving, a row updating). Respect reduced motion.
 4. **dataviz**: for any number tiles, totals, charts or status colours.
-5. **artifact-design**: only when you are asked to publish the mock-up as a page.
+5. **frontend-design** (Anthropic plugin, added 14 Nov 2026): its guidance for building the screens as real, polished front-end code (layout, components, states). Like the others, it never replaces the Direct Line brand.
+6. **artifact-design**: only when you are asked to publish the mock-up as a page.
 
 ## Start from the Direct Line design system
 The design system is https://claude.ai/artifact/LxsBLbQmjaaF9bgCXpkSHr (Erwin's, built from this repo on 9 Nov 2026). Read it with the Artifact tool (`action: read`, `paths`): `project/README.md` (brand book: words, colour, type, space, depth, layout, icons, wordmark), `project/tokens.json`, `project/components/bundle.css` and `project/components/<Name>/README.md` + `preview.html` (Brand, Button, Card, Chip, Drawer, EmptyState, Field, IconButton, Search, SegmentedPick, Stat, StatusPill, Table, Tag, Toast). On Erwin's computer a copy may already be in `Claude outputs/design/direct-line-design-system/`. Build mock-ups on `bundle.css` + the tokens and reuse its components and markup; add new ones only when a screen needs them, in the same style, and list them in your README.
