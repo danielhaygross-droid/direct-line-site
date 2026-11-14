@@ -112,7 +112,7 @@
       if (e.status === 401 || e.status === 403) return renderLogin(document.body, { title: 'Admin sign in', subtitle: 'Direct Line team access.' });
       $('#boot').textContent = e.message; return;
     }
-    if (me.role !== 'admin') { location.href = '/portal/'; return; }
+    if (me.role !== 'admin') { location.href = me.role === 'supplier' ? '/supplier/' : '/portal/'; return; }
     shell();
     await loadAll();
     $('#boot').remove(); $('#app').hidden = false;
@@ -482,7 +482,7 @@
     if (S.tab === 'orders') renderOrders();
     else if (S.tab === 'clients') renderClients();
     else if (S.tab === 'overview') renderOverview();
-    else { const a = $('[data-admins]'); if (a && !a.querySelector('[data-admin-form]')) a.innerHTML = adminsHTML(); }
+    else { const a = $('[data-admins]'); if (a && !a.querySelector('[data-admin-form]')) a.innerHTML = adminsHTML(); const sp = $('[data-suppliers]'); if (sp && !sp.querySelector('[data-admin-form]')) sp.innerHTML = suppliersHTML(); }
   }
 
   // ---------- cancel window: decide each order's fees before cancelling (Erwin, 8 Nov 2026) ----------
@@ -765,6 +765,40 @@
   }
 
   // ---------- settings tab ----------
+  // Supplier logins (supplier portal, 14 Nov 2026): only admins add or remove them; a removed login is disabled, never deleted.
+  function suppliersHTML() {
+    const list = (S.ov.suppliers || []).filter(x => !x.archived);
+    return list.length ? list.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b><small><span data-no-i18n>@${esc(x.username)}</span>${x.active ? '' : ' · <span>disabled</span>'}${x.lastLogin ? ` · <span>last sign-in</span> <span data-no-i18n>${esc(fmtDay(new Date(x.lastLogin * 1000).toLocaleDateString('en-CA', { timeZone: window.DL.displayTimeZone() })))}</span>` : ''}</small></span></span><button type="button" class="btn btn-sm" data-edit-admin="${x.id}" style="margin-inline-start:auto">Edit</button></div>`).join('')
+      : '<p class="note" style="margin:0">No supplier logins yet.</p>';
+  }
+  // What the supplier paid us for the supplier share (their own amount per paid order).
+  function shareHTML(d) {
+    const rows = d.payments.length ? `<div class="acc-list">${d.payments.map(p => `<div><span class="who"><span><b data-no-i18n>${money(p.amount)}</b><small><span data-no-i18n>${esc(fmtDay(new Date(p.paidAt * 1000).toISOString().slice(0, 10)))}</span>${p.note ? ' · <span data-no-i18n>' + esc(p.note) + '</span>' : ''}</small></span></span><button type="button" class="btn btn-sm" data-share-remove="${p.id}" style="margin-inline-start:auto">Remove</button></div>`).join('')}</div>`
+      : '<p class="note" style="margin:0">Nothing recorded yet.</p>';
+    return `<p style="margin:0 0 10px"><span>Paid by the supplier so far:</span> <b data-no-i18n>${money(d.paid)}</b></p>${rows}`;
+  }
+  async function loadShare() {
+    const box = $('[data-share]'); if (!box) return;
+    try { box.innerHTML = shareHTML(await api('/admin/supplier-share')); }
+    catch (ex) { box.innerHTML = `<p class="note" style="margin:0">${esc(ex.message)}</p>`; }
+  }
+  function bindShare() {
+    loadShare();
+    const f = $('#share-form'); if (!f) return;
+    f.paidAt.value = new Date().toLocaleDateString('en-CA', { timeZone: window.DL.displayTimeZone() });
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const m = $('[data-share-msg]'), b = $('[type=submit]', f); if (b.disabled) return; b.disabled = true; m.textContent = ''; m.className = 'form-msg full';
+      try { await api('/admin/supplier-share', { method: 'POST', body: { amount: f.amount.value, paidAt: f.paidAt.value, note: f.note.value } }); f.amount.value = ''; f.note.value = ''; m.textContent = 'Saved. The supplier sees it in their Billing.'; m.className = 'form-msg full ok'; await loadShare(); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg full err'; }
+      b.disabled = false;
+    });
+    $('[data-share]').addEventListener('click', async e => {
+      const r = e.target.closest('[data-share-remove]'); if (!r) return;
+      if (!confirm('Remove this supplier share payment? It is kept in the records, only no longer counted.')) return;
+      try { await api('/admin/supplier-share/' + r.dataset.shareRemove + '/archive', { method: 'POST' }); await loadShare(); } catch (ex) { toast(ex.message); }
+    });
+  }
   function adminsHTML() {
     return S.ov.admins.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b><small>@${esc(x.username)}${x.active ? '' : ' · disabled'}</small></span></span><button type="button" class="btn btn-sm" data-edit-admin="${x.id}" style="margin-inline-start:auto">Edit</button></div>`).join('')
       + '<div><span class="ava">DL</span><span class="who"><span><b>Main admin login</b><small>set in Vercel</small></span></span></div>';
@@ -829,6 +863,15 @@
           <div class="field full"><button type="submit" class="btn btn-primary">Publish new terms version</button></div><p class="form-msg full" data-terms-msg role="status"></p></form></section>`) + panel('team', '', `
       <section class="card card-pad"><h3 class="form-sec">Team accounts</h3><div class="acc-list" data-admins>${adminsHTML()}</div>
         <button type="button" class="btn" style="margin-top:12px" data-add-account="admin">${ic('plus')}Add admin</button></section>
+      <section class="card card-pad"><h3 class="form-sec">Supplier logins</h3><p class="muted" style="margin:0 0 10px;font-size:14px">The supplier (Ada, Ye) signs in at the same address and only sees the supplier portal: their costs, cancellation fees and what was paid for their part. Never our fee or client prices.</p>
+        <div class="acc-list" data-suppliers>${suppliersHTML()}</div>
+        <button type="button" class="btn" style="margin-top:12px" data-add-account="supplier">${ic('plus')}Add supplier login</button></section>
+      <section class="card card-pad"><h3 class="form-sec">Supplier share payments</h3><p class="muted" style="margin:0 0 10px;font-size:14px">What the supplier paid us for their amount per paid order (set in Fees). The supplier sees the total and what is still to pay.</p>
+        <div data-share><p class="muted" style="margin:0">Loading…</p></div>
+        <form id="share-form" class="form-grid" novalidate style="margin-top:12px"><label class="field"><span>Amount (USD)</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" required></span></label>
+          <label class="field"><span>Paid on</span><input name="paidAt" type="date" required></label>
+          <label class="field full"><span>Note <small>optional</small></span><input name="note" maxlength="300"></label>
+          <div class="field full"><button type="submit" class="btn btn-primary">Record supplier payment</button></div><p class="form-msg full" data-share-msg role="status"></p></form></section>
       <section class="card card-pad"><h3 class="form-sec">Client portal link</h3><p class="muted" style="margin:0 0 10px;font-size:14px">Clients sign in here with the username and password you give them.</p>
         <div class="copy-line"><span style="flex:1">${esc(location.origin)}/portal/</span><button type="button" class="btn btn-sm" data-copy="${esc(location.origin)}/portal/">${ic('copy')}Copy</button></div></section>
       <section class="card card-pad"><h3 class="form-sec">Storage &amp; backups</h3><div data-storage><p class="muted" style="margin:0">Loading…</p></div>
@@ -907,6 +950,7 @@
   function bindSettings() {
     bindSetTabs();
     bindStorage();
+    bindShare();
     bindSupplierSheet();
     const tf = $('#terms-publish');
     if (tf) tf.addEventListener('submit', async e => {
@@ -1554,9 +1598,9 @@
     S.drawer = { kind: 'account' };
     d.onClose = () => { S.drawer = null; };
     d.open('a');
-    d.head.innerHTML = `<h2 data-acc-title>${role === 'admin' ? 'Add an admin' : 'Add a client'}</h2><p>Share the username and password with them privately.</p>`;
+    d.head.innerHTML = `<h2 data-acc-title>${role === 'admin' ? 'Add an admin' : role === 'supplier' ? 'Add a supplier login' : 'Add a client'}</h2><p>Share the username and password with them privately.</p>`;
     d.body.innerHTML = `<form class="form-grid" id="user-form" novalidate>
-      <label class="field full"><span>Account type</span><select name="role"><option value="client"${role === 'client' ? ' selected' : ''}>Client (their own portal)</option><option value="admin"${role === 'admin' ? ' selected' : ''}>Admin (full access)</option></select></label>
+      <label class="field full"><span>Account type</span><select name="role"><option value="client"${role === 'client' ? ' selected' : ''}>Client (their own portal)</option><option value="admin"${role === 'admin' ? ' selected' : ''}>Admin (full access)</option><option value="supplier"${role === 'supplier' ? ' selected' : ''}>Supplier (supplier portal only)</option></select></label>
       <label class="field full"><span>Name</span><input name="name" maxlength="120"></label>
       <label class="field"><span>Username</span><input name="username" maxlength="60" autocomplete="off" placeholder="letters, numbers, . _ - @"></label>
       <label class="field"><span>Password <small>8+ characters</small></span><input name="password" type="password" autocomplete="new-password"></label>
@@ -1567,13 +1611,14 @@
     d.foot.innerHTML = '<button type="submit" form="user-form" class="btn btn-primary">Create account</button><button type="button" class="btn btn-ghost" data-close-drawer>Cancel</button>';
     const f = $('#user-form');
     const sync = () => {
-      const admin = f.role.value === 'admin';
-      $('[data-cpo]').hidden = admin;
-      $('[data-acc-title]').textContent = admin ? 'Add an admin' : 'Add a client';
-      f.name.placeholder = admin ? 'Team member’s name' : 'Client or store name';
+      const admin = f.role.value === 'admin', supplier = f.role.value === 'supplier';
+      $('[data-cpo]').hidden = admin || supplier;
+      $('[data-acc-title]').textContent = admin ? 'Add an admin' : supplier ? 'Add a supplier login' : 'Add a client';
+      f.name.placeholder = admin ? 'Team member’s name' : supplier ? 'Ada or Ye' : 'Client or store name';
       // Admins sign in on the main dashboard; clients on their portal. (The admin app runs inside the dashboard.)
       $('[data-signin-note]').innerHTML = admin
         ? `They sign in at <b>${esc(location.origin)}/</b> and get full access to the dashboard.`
+        : supplier ? `They sign in at <b>${esc(location.origin)}/supplier/</b> and only see the supplier portal (Billing for their part, their password). Only admins can add, change or remove supplier logins.`
         : `They sign in at <b>${esc(location.origin)}/portal/</b>. Their free month starts today (${esc(fmtDay(new Date().toLocaleDateString('en-CA', { timeZone: window.DL.displayTimeZone() })))}).`;
     };
     f.role.addEventListener('change', sync); sync();
@@ -1623,15 +1668,15 @@
     const lm = t.closest('[data-list-more]'); if (lm) { const k = lm.dataset.listMore; S.shown[k].n += LIST_PAGE[k]; (k === 'orders' ? renderOrders : renderClients)(); return; }
     const ea=t.closest('[data-edit-admin]');
     if(ea){
-      const x=S.ov.admins.find(a=>a.id===Number(ea.dataset.editAdmin)),row=ea.parentElement;if(!x)return;
+      const sup=(S.ov.suppliers||[]).some(a=>a.id===Number(ea.dataset.editAdmin)),x=[...S.ov.admins,...(S.ov.suppliers||[])].find(a=>a.id===Number(ea.dataset.editAdmin)),row=ea.parentElement;if(!x)return;
       if(row.nextElementSibling?.matches('[data-admin-form]')){row.nextElementSibling.remove();return;}
       row.insertAdjacentHTML('afterend',`<form class="form-grid" data-admin-form="${x.id}" novalidate style="padding:12px;border:1px solid var(--line);border-radius:12px">
         <label class="field"><span>Name</span><input name="name" maxlength="120" value="${esc(x.name)}"></label>
         <label class="field"><span>Username</span><input name="username" maxlength="60" autocomplete="off" data-no-i18n value="${esc(x.username)}"></label>
         <label class="field"><span>Status</span><select name="active"><option value="true"${x.active?' selected':''}>Active</option><option value="false"${x.active?'':' selected'}>Disabled (can’t sign in)</option></select></label>
         <label class="field"><span>New password <small>leave empty to keep the current one</small></span><input name="password" type="password" maxlength="128" autocomplete="new-password"></label>
-        <p class="note full" style="margin:0">A disabled admin can’t sign in again. If they are signed in right now, they stay signed in until that session ends.</p>
-        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">Save admin</button><button type="button" class="btn" data-admin-cancel>Cancel</button><p class="form-msg" data-admin-msg style="margin:0"></p></div></form>`);
+        <p class="note full" style="margin:0">${sup?'A disabled supplier login is signed out at once and can’t sign in again (nothing is deleted).':'A disabled admin can’t sign in again. If they are signed in right now, they stay signed in until that session ends.'}</p>
+        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">${sup?'Save supplier login':'Save admin'}</button><button type="button" class="btn" data-admin-cancel>Cancel</button><p class="form-msg" data-admin-msg style="margin:0"></p></div></form>`);
       row.nextElementSibling.querySelector('[name=name]').focus();return;
     }
     if(t.closest('[data-admin-cancel]')){t.closest('[data-admin-form]').remove();return;}
@@ -1832,7 +1877,7 @@
       const b = $('[type=submit]', adf), m = $('[data-admin-msg]', adf); if (b.disabled) return; m.textContent = ''; m.className = 'form-msg';
       if (adf.password.value && adf.password.value.length < 8) { m.textContent = 'Password must be at least 8 characters'; m.className = 'form-msg err'; return; }
       b.disabled = true;
-      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Admin saved.'); }
+      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Saved.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
       return;
     }

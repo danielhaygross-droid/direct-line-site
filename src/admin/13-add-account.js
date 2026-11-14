@@ -5,9 +5,9 @@
     S.drawer = { kind: 'account' };
     d.onClose = () => { S.drawer = null; };
     d.open('a');
-    d.head.innerHTML = `<h2 data-acc-title>${role === 'admin' ? 'Add an admin' : 'Add a client'}</h2><p>Share the username and password with them privately.</p>`;
+    d.head.innerHTML = `<h2 data-acc-title>${role === 'admin' ? 'Add an admin' : role === 'supplier' ? 'Add a supplier login' : 'Add a client'}</h2><p>Share the username and password with them privately.</p>`;
     d.body.innerHTML = `<form class="form-grid" id="user-form" novalidate>
-      <label class="field full"><span>Account type</span><select name="role"><option value="client"${role === 'client' ? ' selected' : ''}>Client (their own portal)</option><option value="admin"${role === 'admin' ? ' selected' : ''}>Admin (full access)</option></select></label>
+      <label class="field full"><span>Account type</span><select name="role"><option value="client"${role === 'client' ? ' selected' : ''}>Client (their own portal)</option><option value="admin"${role === 'admin' ? ' selected' : ''}>Admin (full access)</option><option value="supplier"${role === 'supplier' ? ' selected' : ''}>Supplier (supplier portal only)</option></select></label>
       <label class="field full"><span>Name</span><input name="name" maxlength="120"></label>
       <label class="field"><span>Username</span><input name="username" maxlength="60" autocomplete="off" placeholder="letters, numbers, . _ - @"></label>
       <label class="field"><span>Password <small>8+ characters</small></span><input name="password" type="password" autocomplete="new-password"></label>
@@ -18,13 +18,14 @@
     d.foot.innerHTML = '<button type="submit" form="user-form" class="btn btn-primary">Create account</button><button type="button" class="btn btn-ghost" data-close-drawer>Cancel</button>';
     const f = $('#user-form');
     const sync = () => {
-      const admin = f.role.value === 'admin';
-      $('[data-cpo]').hidden = admin;
-      $('[data-acc-title]').textContent = admin ? 'Add an admin' : 'Add a client';
-      f.name.placeholder = admin ? 'Team member’s name' : 'Client or store name';
+      const admin = f.role.value === 'admin', supplier = f.role.value === 'supplier';
+      $('[data-cpo]').hidden = admin || supplier;
+      $('[data-acc-title]').textContent = admin ? 'Add an admin' : supplier ? 'Add a supplier login' : 'Add a client';
+      f.name.placeholder = admin ? 'Team member’s name' : supplier ? 'Ada or Ye' : 'Client or store name';
       // Admins sign in on the main dashboard; clients on their portal. (The admin app runs inside the dashboard.)
       $('[data-signin-note]').innerHTML = admin
         ? `They sign in at <b>${esc(location.origin)}/</b> and get full access to the dashboard.`
+        : supplier ? `They sign in at <b>${esc(location.origin)}/supplier/</b> and only see the supplier portal (Billing for their part, their password). Only admins can add, change or remove supplier logins.`
         : `They sign in at <b>${esc(location.origin)}/portal/</b>. Their free month starts today (${esc(fmtDay(new Date().toLocaleDateString('en-CA', { timeZone: window.DL.displayTimeZone() })))}).`;
     };
     f.role.addEventListener('change', sync); sync();

@@ -39,4 +39,5 @@ Daniel's idea (12 Nov 2026): a portal only for our supplier (Beyond: Ada and Ye)
 - Questions the design raised (answer with the open decisions): count cancelled orders in the supplier share or not; are refunds ever paid back as money or always kept as credit; when a New order moves to In progress (first save, or after some time); should duplicate tracking block saving or only warn; should admins manage the courier list; should the supplier see client names or letters only.
 
 ## Status
+- 14 Nov 2026: Erwin approved; **phase 1 built** (supplier logins, Billing all clients + one client, supplier share tracker with admin-recorded payments, change password, admin Supplier logins / Supplier share payments). Code: `server/supplier-portal.mjs`, `src/supplier/`, `dist/supplier/`. Not in phase 1: Excel export on Billing, share paid per client. Next: phase 2.
 - 13 Nov 2026: plan written, designer agent added, mock-ups done (8 screens, EN + 中文, 1440 + 390 px; admin screen EN + HE), waiting for Erwin and Daniel. Erwin picked the functions (Open decisions 4); designer adds their screens next. Nothing built yet.

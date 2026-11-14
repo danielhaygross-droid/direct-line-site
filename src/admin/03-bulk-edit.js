@@ -46,6 +46,6 @@
     if (S.tab === 'orders') renderOrders();
     else if (S.tab === 'clients') renderClients();
     else if (S.tab === 'overview') renderOverview();
-    else { const a = $('[data-admins]'); if (a && !a.querySelector('[data-admin-form]')) a.innerHTML = adminsHTML(); }
+    else { const a = $('[data-admins]'); if (a && !a.querySelector('[data-admin-form]')) a.innerHTML = adminsHTML(); const sp = $('[data-suppliers]'); if (sp && !sp.querySelector('[data-admin-form]')) sp.innerHTML = suppliersHTML(); }
   }
 

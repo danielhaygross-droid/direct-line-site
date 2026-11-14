@@ -5,6 +5,7 @@
       if (e.status === 401 || e.status === 403) return renderLogin(document.body, { title: 'Welcome back', subtitle: 'Sign in to add and track your orders.', portal: true });
       return bootError(e);
     }
+    if (S.me.role === 'supplier') { location.href = '/supplier/'; return; }
     if (S.me.termsRequired) return termsScreen();
     if (S.me.passwordResetRequired) return passwordScreen();
     if (S.me.role === 'admin') {
