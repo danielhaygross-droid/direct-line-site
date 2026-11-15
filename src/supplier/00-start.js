@@ -15,7 +15,7 @@
   try { lang = new URLSearchParams(location.search).get('lang') || localStorage.getItem('dl_supplier_lang') || 'en'; } catch (e) { /* private mode */ }
   if (lang !== 'zh') lang = 'en';
   const ZH = {
-    'Admin view': '管理员查看', 'Back to admin': '返回管理后台', 'Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.': '管理员查看：这是供应商平台。您的修改会像供应商的修改一样保存。',
+    'Admin view': '管理员查看', 'Sign in with a supplier login': '用供应商账号登录', 'Back to admin': '返回管理后台', 'Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.': '管理员查看：这是供应商平台。您的修改会像供应商的修改一样保存。',
     'SUPPLIER PORTAL': '供应商平台', 'Billing': '账单', 'Sign in': '登录', 'Username': '用户名', 'Password': '密码', 'Keep me signed in': '保持登录',
     'Sign in to see your billing.': '登录查看您的账单。', 'Wrong username or password.': '用户名或密码不正确。', 'Too many tries. Please wait 15 minutes.': '尝试次数过多，请等待 15 分钟。',
     'Could not connect. Please try again.': '无法连接，请重试。', 'Log out': '退出登录', 'Change password': '修改密码', 'Supplier': '供应商',
@@ -66,7 +66,7 @@
   const fmtTime = sec => new Date(sec * 1000).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-GB', { timeZone: 'Asia/Shanghai', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
   async function api(path, { method = 'GET', body } = {}) {
-    const r = await fetch('/api/portal' + path, { method, credentials: 'same-origin', headers: body ? { 'content-type': 'application/json' } : {}, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const r = await fetch('/api/portal' + path, { method, credentials: 'same-origin', headers: { 'x-dl-portal': 'supplier', ...(body ? { 'content-type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const data = await r.json().catch(() => ({}));
     if (!r.ok || data.ok === false) { const e = new Error(t(data.error || 'Something went wrong.')); e.status = r.status; throw e; }
     return data;

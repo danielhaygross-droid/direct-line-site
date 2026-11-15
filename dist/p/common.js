@@ -77,10 +77,12 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+  // Which portal this page is (each keeps its own sign-in): the admin's preview of a client (?as=) counts as admin.
+  const PORTAL = typeof location === 'undefined' ? 'admin' : location.pathname.startsWith('/supplier') ? 'supplier' : location.pathname.startsWith('/portal') ? (new URLSearchParams(location.search).get('as') ? 'admin' : 'client') : 'admin';
   async function api(path, { method = 'GET', body } = {}) {
     const res = await fetch('/api/portal' + path, {
       method, credentials: 'same-origin',
-      headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(window.DL_VIEW_AS ? { 'x-dl-view-as': String(window.DL_VIEW_AS) } : {}), ...(window.DL_VIEW_AS && window.DL_ACT ? { 'x-dl-act': '1' } : {}) },
+      headers: { 'x-dl-portal': PORTAL, ...(body ? { 'content-type': 'application/json' } : {}), ...(window.DL_VIEW_AS ? { 'x-dl-view-as': String(window.DL_VIEW_AS) } : {}), ...(window.DL_VIEW_AS && window.DL_ACT ? { 'x-dl-act': '1' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
@@ -92,7 +94,7 @@
   }
 
   async function logout() {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: { 'x-dl-portal': PORTAL } }).catch(() => {});
     location.reload();
   }
 

@@ -36,11 +36,15 @@ assert.equal(login.status, 200); assert.equal(login.data.redirect, '/supplier/')
 const me = ok(await call('/me', 'GET', null, sup)); assert.equal(me.role, 'supplier');
 for (const [p, m] of [['/orders', 'GET'], ['/payments', 'GET'], ['/admin/overview', 'GET'], ['/admin/orders', 'GET'], ['/products', 'GET'], ['/admin/users', 'POST'], ['/client-stores', 'GET'], ['/terms', 'GET']])
   assert.ok([403, 404].includes((await call(p, m, m === 'POST' ? { username: 'evil', password: 'evilpass123', role: 'admin' } : null, sup)).status), 'supplier blocked: ' + p);
-assert.ok([403, 404].includes((await call('/orders/' + A, 'GET', null, sup, { 'x-dl-view-as': String(id) })).status), 'no client preview');
+assert.ok([401, 403, 404].includes((await call('/orders/' + A, 'GET', null, sup, { 'x-dl-view-as': String(id) })).status), 'no client preview');
 assert.ok([401, 403, 404].includes((await call('/supplier/billing', 'GET', null, client)).status), 'clients get no supplier billing');
-const rt = (p, cookie) => route(new Request('http://localhost' + p, { headers: { cookie } }), { db: DB, env });
-assert.equal((await (await rt('/api/auth/session', sup)).json()).redirect, '/supplier/');
-assert.equal((await rt('/api/stores', sup)).status, 403, 'store dashboard: admins only');
+const rt = (p, cookie, headers = {}) => route(new Request('http://localhost' + p, { headers: { cookie, ...headers } }), { db: DB, env });
+// One sign-in per portal (16 Nov 2026): the supplier sign-in has its own cookie; the main page (admin) does not use it.
+assert.equal((await rt('/api/auth/session', sup)).status, 401, 'main page: a supplier sign-in is not an admin sign-in');
+assert.equal((await (await rt('/api/auth/session', sup, { 'x-dl-portal': 'supplier' })).json()).redirect, '/supplier/');
+assert.ok([401, 403, 404].includes((await rt('/api/stores', sup)).status), 'store dashboard: admins only (no admin sign-in: nothing served)');
+const legacySup = 'dl_session=' + sup.split('=').slice(1).join('=');
+assert.equal((await rt('/api/stores', legacySup)).status, 403, 'store dashboard: an older supplier sign-in (in dl_session) is refused');
 
 // Billing: the sheet's balance without our fee, and it adds up.
 const all = ok(await call('/supplier/billing', 'GET', null, sup));

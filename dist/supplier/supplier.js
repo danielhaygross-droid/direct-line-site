@@ -15,7 +15,7 @@
   try { lang = new URLSearchParams(location.search).get('lang') || localStorage.getItem('dl_supplier_lang') || 'en'; } catch (e) { /* private mode */ }
   if (lang !== 'zh') lang = 'en';
   const ZH = {
-    'Admin view': '管理员查看', 'Back to admin': '返回管理后台', 'Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.': '管理员查看：这是供应商平台。您的修改会像供应商的修改一样保存。',
+    'Admin view': '管理员查看', 'Sign in with a supplier login': '用供应商账号登录', 'Back to admin': '返回管理后台', 'Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.': '管理员查看：这是供应商平台。您的修改会像供应商的修改一样保存。',
     'SUPPLIER PORTAL': '供应商平台', 'Billing': '账单', 'Sign in': '登录', 'Username': '用户名', 'Password': '密码', 'Keep me signed in': '保持登录',
     'Sign in to see your billing.': '登录查看您的账单。', 'Wrong username or password.': '用户名或密码不正确。', 'Too many tries. Please wait 15 minutes.': '尝试次数过多，请等待 15 分钟。',
     'Could not connect. Please try again.': '无法连接，请重试。', 'Log out': '退出登录', 'Change password': '修改密码', 'Supplier': '供应商',
@@ -66,7 +66,7 @@
   const fmtTime = sec => new Date(sec * 1000).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-GB', { timeZone: 'Asia/Shanghai', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
   async function api(path, { method = 'GET', body } = {}) {
-    const r = await fetch('/api/portal' + path, { method, credentials: 'same-origin', headers: body ? { 'content-type': 'application/json' } : {}, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const r = await fetch('/api/portal' + path, { method, credentials: 'same-origin', headers: { 'x-dl-portal': 'supplier', ...(body ? { 'content-type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const data = await r.json().catch(() => ({}));
     if (!r.ok || data.ok === false) { const e = new Error(t(data.error || 'Something went wrong.')); e.status = r.status; throw e; }
     return data;
@@ -118,7 +118,7 @@
       <nav class="sp-nav">${navItems('sp-tab')}</nav>
       <div class="sp-right">${langSwitch()}${bellHTML()}
         <details class="sp-me"><summary aria-label="${esc(t('Supplier'))}"><span class="sp-ava">${esc(ini)}</span><span class="sp-who"><b>${esc(name)}</b><small>${t('Supplier')}</small></span></summary>
-          <div class="sp-menu">${S.view ? `<a href="/admin/">${t('Back to admin')}</a>` : `<a href="#password">${t('Change password')}</a>`}<button type="button" data-logout>${t('Log out')}</button></div></details></div></header>
+          <div class="sp-menu">${S.view ? `<a href="/admin/">${t('Back to admin')}</a><button type="button" data-supplier-login>${t('Sign in with a supplier login')}</button>` : `<a href="#password">${t('Change password')}</a>`}<button type="button" data-logout>${t('Log out')}</button></div></details></div></header>
       ${S.view ? `<div class="sp-view" role="status"><span>${t('Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.')}</span><a href="/admin/">${t('Back to admin')}</a></div>` : ''}
       <main class="sp-main${S.page === 'orders' ? ' wide' : ''}" id="sp-main">${inner}</main>
       <nav class="sp-bottom">${navItems('')}</nav>`;
@@ -651,7 +651,8 @@
   const rerenderOrders = () => { S.keepScroll = true; render(); };
   document.addEventListener('click', async e => {
     const l = e.target.closest('[data-lang]'); if (l) { setLang(l.dataset.lang); return; }
-    if (e.target.closest('[data-logout]')) { await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {}); location.href = '/'; return; }
+    if (e.target.closest('[data-supplier-login]')) { S.me = null; S.view = false; render(); return; }
+    if (e.target.closest('[data-logout]')) { await fetch('/api/auth/logout', { method: 'POST', headers: { 'x-dl-portal': S.view ? 'admin' : 'supplier' } }).catch(() => {}); location.href = S.view ? '/' : '/supplier/'; return; }
     if (e.target.closest('[data-retry]')) { load(); return; }
     if (e.target.closest('[data-see-new]')) { seeNew(); return; }
     const p = e.target.closest('[data-pay]'); if (p) { const id = Number(p.dataset.pay); S.open.has(id) ? S.open.delete(id) : S.open.add(id); S.keepScroll = true; render(); return; }
