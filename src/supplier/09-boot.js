@@ -88,7 +88,7 @@
     readHash();
     try { S.me = await api('/me'); }
     catch (e) { S.me = null; return render(); }
-    // An admin sees what the supplier sees, read-only (the server refuses every change).
+    // An admin works in the supplier portal with the supplier's screens (edits are recorded under the admin's name).
     if (S.me.role === 'admin') { S.view = true; S.me = { ...S.me, name: t('Admin view') }; }
     else if (S.me.role !== 'supplier') { location.href = '/portal/'; return; }
     S.billing = null; S.client = null; S.queue = null;

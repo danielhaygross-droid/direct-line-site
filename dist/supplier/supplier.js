@@ -15,7 +15,7 @@
   try { lang = new URLSearchParams(location.search).get('lang') || localStorage.getItem('dl_supplier_lang') || 'en'; } catch (e) { /* private mode */ }
   if (lang !== 'zh') lang = 'en';
   const ZH = {
-    'Admin view': '管理员查看', 'Back to admin': '返回管理后台', 'Admin view: this is what the supplier sees. Changes are not saved here.': '管理员查看：这是供应商看到的页面，在这里的修改不会保存。', 'Admin view: read only. Nothing was saved.': '管理员查看：只读，未保存任何内容。',
+    'Admin view': '管理员查看', 'Back to admin': '返回管理后台', 'Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.': '管理员查看：这是供应商平台。您的修改会像供应商的修改一样保存。',
     'SUPPLIER PORTAL': '供应商平台', 'Billing': '账单', 'Sign in': '登录', 'Username': '用户名', 'Password': '密码', 'Keep me signed in': '保持登录',
     'Sign in to see your billing.': '登录查看您的账单。', 'Wrong username or password.': '用户名或密码不正确。', 'Too many tries. Please wait 15 minutes.': '尝试次数过多，请等待 15 分钟。',
     'Could not connect. Please try again.': '无法连接，请重试。', 'Log out': '退出登录', 'Change password': '修改密码', 'Supplier': '供应商',
@@ -119,7 +119,7 @@
       <div class="sp-right">${langSwitch()}${bellHTML()}
         <details class="sp-me"><summary aria-label="${esc(t('Supplier'))}"><span class="sp-ava">${esc(ini)}</span><span class="sp-who"><b>${esc(name)}</b><small>${t('Supplier')}</small></span></summary>
           <div class="sp-menu">${S.view ? `<a href="/admin/">${t('Back to admin')}</a>` : `<a href="#password">${t('Change password')}</a>`}<button type="button" data-logout>${t('Log out')}</button></div></details></div></header>
-      ${S.view ? `<div class="sp-view" role="status"><span>${t('Admin view: this is what the supplier sees. Changes are not saved here.')}</span><a href="/admin/">${t('Back to admin')}</a></div>` : ''}
+      ${S.view ? `<div class="sp-view" role="status"><span>${t('Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.')}</span><a href="/admin/">${t('Back to admin')}</a></div>` : ''}
       <main class="sp-main${S.page === 'orders' ? ' wide' : ''}" id="sp-main">${inner}</main>
       <nav class="sp-bottom">${navItems('')}</nav>`;
   }
@@ -705,7 +705,7 @@
     readHash();
     try { S.me = await api('/me'); }
     catch (e) { S.me = null; return render(); }
-    // An admin sees what the supplier sees, read-only (the server refuses every change).
+    // An admin works in the supplier portal with the supplier's screens (edits are recorded under the admin's name).
     if (S.me.role === 'admin') { S.view = true; S.me = { ...S.me, name: t('Admin view') }; }
     else if (S.me.role !== 'supplier') { location.href = '/portal/'; return; }
     S.billing = null; S.client = null; S.queue = null;
