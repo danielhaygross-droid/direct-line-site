@@ -94,7 +94,9 @@ export async function route(request, { db = DB, env: baseEnv = process.env } = {
         if (!user) return json({ ok: false }, 401);
         return json({ ok: true, role: 'client', redirect: '/portal/', passwordResetRequired: !!user.password_reset_required });
       }
-      return json(who.admin ? { ok: true, role: 'admin' } : { ok: true, role: 'client', redirect: '/portal/' });
+      // Team admins see their own name and position at the top; the main login (set in Vercel) keeps the page's own (Daniel).
+      const me = who.adminId ? await db.prepare('SELECT display_name, position FROM users WHERE id = ?').bind(who.adminId).first().catch(() => null) : null;
+      return json({ ok: true, role: 'admin', ...(me ? { name: String(me.display_name || ''), position: String(me.position || '') } : {}) });
     }
 
     // Store dashboard endpoints: admins only (the Etsy OAuth callback is validated by its own state).
