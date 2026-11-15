@@ -776,6 +776,27 @@ console.log('PASS cost revisions in the sheet: orange / purple / green, lower ap
 }
 console.log('PASS English + Chinese: headers, help, row 4, Billing, Product Quotes, Guide tab, 不能降价');
 for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 36, t + ': the filter covers A-AJ');
+// Supplier portal edits (phase 2, 15 Nov 2026): a box saved in the portal is written into the sheet row, the minute check
+// does not read the old cell back as a new edit, and a later edit typed in the sheet still counts.
+{
+  const P2 = await mk('P2-PORTAL'); await settle();
+  assert.equal((await call('/admin/users', 'POST', { username: 'sup-p2', name: 'Ye', password: 'supplierpass1', role: 'supplier' }, admin)).status, 200);
+  const sup = (await call('/login', 'POST', { username: 'sup-p2', password: 'supplierpass1' })).cookie;
+  const put = async (field, value) => { const r = await call('/supplier/orders/' + P2.id, 'PUT', { field, value }, sup); assert.equal(r.status, 200, field + ' ' + JSON.stringify(r.data)); await settle(); };
+  await put('cost', '33');
+  assert.equal(cell(P2.id, N), 33, 'the portal cost is written into the sheet');
+  later(); await cron();
+  assert.equal(Number((await order(P2.id)).supplier_cost), 33, 'the minute check does not undo the portal edit');
+  supplierTypes(P2.id, N, 35); later(); await cron();
+  assert.equal(Number((await order(P2.id)).supplier_cost), 35, 'a later edit typed in the sheet still counts');
+  await put('domestic', 'SF99'); await put('tracking', 'PT123'); await put('shipped', true);
+  assert.equal(where(P2.id)[0], SHIPPED_TAB, 'shipped from the portal: the row moves to Shipped');
+  assert.deepEqual([cell(P2.id, N), cell(P2.id, O), cell(P2.id, 33)], [35, 'PT123', 'SF99'], 'and keeps the supplier cells');
+  later(); await cron();
+  const o2 = await order(P2.id);
+  assert.deepEqual([o2.status, o2.tracking_number, o2.domestic_tracking, Number(o2.supplier_cost)], ['shipped', 'PT123', 'SF99', 35], 'nothing undone by the next check');
+  console.log('PASS supplier portal edits reach the sheet and are not undone by the minute check; sheet edits still count');
+}
 const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 22))])));
 const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);
 const before0 = supplierPart(), costs0 = await costs();

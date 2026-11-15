@@ -2,7 +2,8 @@
    English and Simplified Chinese. The server only ever sends supplier-safe numbers (server/supplier-portal.mjs). */
 (function () {
   'use strict';
-  const S = { me: null, page: 'billing', clientId: null, billing: null, client: null, open: new Set() };
+  const S = { me: null, page: 'orders', clientId: null, billing: null, client: null, open: new Set(),
+    queue: null, tab: 'new', q: '', f: {}, limit: 50, pinned: new Set(), pinnedTab: null, saving: {}, pending: {}, warn: {}, err: {}, drawer: null, alerts: null, seenAt: null };
   const $ = (sel, root = document) => root.querySelector(sel);
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const money = v => { const n = Number(v || 0); return (n < 0 ? '−' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
@@ -69,6 +70,7 @@
     return data;
   }
   const ICON = {
+    box: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/></svg>',
     bill: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>',
     back: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>',
     next: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>',

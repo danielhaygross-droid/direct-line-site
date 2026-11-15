@@ -110,6 +110,22 @@
       + `<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup orientation="landscape" paperSize="9" fitToWidth="1" fitToHeight="0"/></worksheet>`;
     return book(sheet, x(t('Payments')).slice(0, 31), title, `$A$4:$F$${last}`);
   }
+  // A plain table (supplier portal, 15 Nov 2026): head + rows; money = column indexes written as numbers in USD.
+  function table({ title, subtitle, sheetName, head, rows: list, money = [], widths = [], rtl = false }) {
+    const first = 5, rows = [], n = head.length;
+    rows.push(`<row r="1" ht="24" customHeight="1">${str('A1', title, 1)}</row>`, `<row r="2">${str('A2', subtitle || '', 2)}</row>`);
+    rows.push(`<row r="4" ht="20" customHeight="1">${head.map((h, i) => str(col(i) + 4, h, 3)).join('')}</row>`);
+    list.forEach((cells, i) => { const r = first + i;
+      rows.push(`<row r="${r}">${cells.map((v, j) => (money.includes(j) && v !== '' && v != null && Number.isFinite(Number(v)) ? num(col(j) + r, Math.round(Number(v) * 100) / 100, 5) : typeof v === 'number' ? num(col(j) + r, v, 7) : str(col(j) + r, v ?? '', 4))).join('')}</row>`); });
+    const last = first + Math.max(list.length, 1) - 1, end = col(n - 1);
+    const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
+      + `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${end}${last}"/>`
+      + `<sheetViews><sheetView workbookViewId="0"${rtl ? ' rightToLeft="1"' : ''}><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+      + `<sheetFormatPr defaultRowHeight="15"/><cols>${head.map((_, i) => `<col min="${i + 1}" max="${i + 1}" width="${widths[i] || 14}" customWidth="1"/>`).join('')}</cols>`
+      + `<sheetData>${rows.join('')}</sheetData><autoFilter ref="A4:${end}${last}"/>`
+      + `<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup orientation="landscape" paperSize="9" fitToWidth="1" fitToHeight="0"/></worksheet>`;
+    return book(sheet, x(sheetName || 'Sheet1').slice(0, 31), title, `$A$4:$${end}$${last}`);
+  }
   // One-sheet workbook around a worksheet XML (orders and payments exports).
   function book(sheet, sheetName, title, filterRef) {
     const files = [
@@ -128,5 +144,5 @@
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
     document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
-  window.DLExcelExport = { orders, payments, download, zip, crc32, MIME };
+  window.DLExcelExport = { orders, payments, table, download, zip, crc32, MIME };
 })();

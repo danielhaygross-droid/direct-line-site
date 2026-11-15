@@ -7,12 +7,14 @@
 
 import { paidOrders, paymentOrderIds } from './payment-orders.mjs';
 import { cancelledSummary, KEPT_FEE } from './cancellations.mjs';
+import { QUEUE_SCHEMA, routeQueue } from './supplier-queue.mjs';
 
 export const SUPPLIER_SCHEMA = [
   // What the supplier paid Direct Line for the supplier share ($1 per order that is not cancelled). Recorded by admins.
   `CREATE TABLE IF NOT EXISTS supplier_share_payments (
      id SERIAL PRIMARY KEY, amount DOUBLE PRECISION NOT NULL, paid_at INTEGER NOT NULL, note TEXT NOT NULL DEFAULT '',
      archived BOOLEAN NOT NULL DEFAULT FALSE, created_at INTEGER NOT NULL)`,
+  ...QUEUE_SCHEMA,
 ];
 
 const r2 = v => Math.round(Number(v || 0) * 100) / 100;
@@ -144,6 +146,8 @@ export async function routeSupplier(request, path, ctx, who, deps) {
     if (!changed) return json({ ok: false, error: 'Please sign in again.' }, 401);
     return json({ ok: true }, 200, { 'set-cookie': await createSessionCookie('supplier-' + me.id + '-v' + changed.session_version, env.APP_SESSION_SECRET) });
   }
+  const q = await routeQueue(request, path, ctx, me);
+  if (q) return q;
   return json({ ok: false, error: 'Not found' }, 404);
 }
 

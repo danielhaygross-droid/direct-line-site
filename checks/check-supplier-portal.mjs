@@ -76,15 +76,15 @@ try {
     await page.fill('[name=username]', 'sup-ada'); await page.fill('[name=password]', 'wrong-password'); await page.click('#sp-login [type=submit]');
     await page.waitForSelector('#sp-login .form-msg.err'); assert.match(await page.locator('#sp-login .form-msg').innerText(), lang === 'zh' ? /不正确/ : /Wrong/);
     await page.fill('[name=password]', 'supplierpass1'); await page.click('#sp-login [type=submit]');
-    await page.waitForSelector('.sp-tiles'); await ctx.close();
+    await page.waitForSelector('.sp-chips'); await ctx.close();
   }
-  console.log('PASS sign in (EN, 中文): wrong password says so, the right one opens Billing');
+  console.log('PASS sign in (EN, 中文): wrong password says so, the right one opens Orders');
 
   const sup = (await call('/login', 'POST', { username: 'sup-ada', password: 'supplierpass1' })).cookie;
   const all = ok(await call('/supplier/billing', 'GET', null, sup));
   for (const lang of ['en', 'zh']) for (const w of [1440, 390]) {
     const tag = `${lang}-${w}`, ctx = await session(sup, w), page = await ctx.newPage();
-    await page.goto(`${base}/supplier/?lang=${lang}`); await page.waitForSelector('.sp-tiles');
+    await page.goto(`${base}/supplier/?lang=${lang}#billing`); await page.waitForSelector('.sp-tiles');
     const text = flat(await page.locator('body').innerText());
     for (const n of ['0.37', '61.11', '40.27', '65.27', '26.27']) assert.ok(!text.includes(n), `${tag}: shows ${n}`);
     assert.ok(text.includes('$' + all.totals.paidForYourPart.toLocaleString('en-US', { minimumFractionDigits: 2 })), tag + ': paid for your part');
