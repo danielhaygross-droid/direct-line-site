@@ -48,7 +48,7 @@ const c = all.clients.find(x => x.id === id);
 assert.deepEqual([c.orders, c.cancelFees, c.paidForYourPart, c.balance], [68, 4, 60, 12], 'orders 20+33+15, fee 4, paid for your part 60, still owes 12');
 assert.deepEqual([c.ordersTotal, c.cancelledCount], [4, 1]);
 assert.equal(Math.round((c.orders + c.cancelFees - c.paidForYourPart) * 100) / 100, c.balance, 'orders + fees - paid = balance');
-assert.deepEqual([c.share.counted, c.share.amount], [2, 2], 'share: paid orders not cancelled (A, B) x $1');
+assert.deepEqual([c.share.counted, c.share.amount], [3, 3], 'share: every order except cancelled (A, B, C) x $1');
 assert.equal(all.totals.stillOwed - all.totals.credit, all.totals.net);
 const one = ok(await call('/supplier/billing/' + id, 'GET', null, sup)).client;
 assert.deepEqual(one.payments.map(p => p.yourPart), [60], 'the payment shows only the supplier part');
@@ -64,7 +64,7 @@ assert.equal(one.statement.billed - one.statement.paid, one.balance);
 assert.equal((await call('/admin/supplier-share', 'POST', { amount: 1, paidAt: '2026-11-10' }, sup)).status, 404);
 ok(await call('/admin/supplier-share', 'POST', { amount: 1, paidAt: '2026-11-10', note: 'WeChat' }, admin));
 const share = ok(await call('/supplier/billing', 'GET', null, sup)).share;
-assert.deepEqual([share.counted, share.amount, share.paid, share.stillToPay], [2, 2, 1, 1]);
+assert.deepEqual([share.counted, share.amount, share.paid, share.stillToPay], [3, 3, 1, 2]);
 
 // Nothing about our fee, client prices or full payment amounts in any supplier answer.
 const forbiddenKeys = /^(commission|price|sellingPrice|paidPrice|profit|ourFee|ourShare|fee|fees|keptFees|kept|supplierShare|amountReceived|clientProfit|etsy.*|buyer.*|email|phone)$/i;

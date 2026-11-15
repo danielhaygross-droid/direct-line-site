@@ -8,7 +8,7 @@ import { waitUntil } from '@vercel/functions';
 import worker from '../server/worker.mjs';
 import { createD1 } from '../server/d1-postgres.mjs';
 import { LOCK_MESSAGE } from '../server/login-limit.mjs';
-import { SCHEMA as PORTAL_SCHEMA, handlePortal, signIn, createSessionCookie, readSessionRole, parseRole, clientSession } from '../server/portal.mjs';
+import { SCHEMA as PORTAL_SCHEMA, handlePortal, signIn, createSessionCookie, readSessionRole, parseRole, clientSession, adminSession } from '../server/portal.mjs';
 import { supplierSession } from '../server/supplier-portal.mjs';
 import { syncFileStorage } from '../server/file-storage.mjs';
 import { runBackup } from '../server/backup.mjs';
@@ -88,6 +88,7 @@ export async function route(request, { db = DB, env: baseEnv = process.env } = {
       const who = parseRole(await readSessionRole(request, env.APP_SESSION_SECRET));
       if (!who) return json({ ok: false }, 401);
       if (who.supplier) return (await supplierSession(db, who)) ? json({ ok: true, role: 'supplier', redirect: '/supplier/' }) : json({ ok: false }, 401);
+      if (who.admin && !await adminSession(db, who)) return json({ ok: false }, 401);
       if (!who.admin) {
         const user = await clientSession(db, who);
         if (!user) return json({ ok: false }, 401);
@@ -98,8 +99,9 @@ export async function route(request, { db = DB, env: baseEnv = process.env } = {
 
     // Store dashboard endpoints: admins only (the Etsy OAuth callback is validated by its own state).
     if (path !== '/api/auth/logout' && path !== '/api/etsy/callback') {
-      const who = parseRole(await readSessionRole(request, env.APP_SESSION_SECRET));
-      if (who && !who.admin) return json({ ok: false, error: 'Forbidden' }, 403);
+      // Any signed cookie that is not a current admin (a client, a supplier, a disabled admin, an old bare "admin") stops here.
+      const raw = await readSessionRole(request, env.APP_SESSION_SECRET), who = parseRole(raw);
+      if (raw && !(who?.admin && await adminSession(db, who))) return json({ ok: false, error: who && !who.admin ? 'Forbidden' : 'Please sign in again.' }, who && !who.admin ? 403 : 401);
     }
   } catch (error) {
     console.error('API error', error);

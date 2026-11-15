@@ -20,16 +20,28 @@
     if(ea){
       const sup=(S.ov.suppliers||[]).some(a=>a.id===Number(ea.dataset.editAdmin)),x=[...S.ov.admins,...(S.ov.suppliers||[])].find(a=>a.id===Number(ea.dataset.editAdmin)),row=ea.parentElement;if(!x)return;
       if(row.nextElementSibling?.matches('[data-admin-form]')){row.nextElementSibling.remove();return;}
-      row.insertAdjacentHTML('afterend',`<form class="form-grid" data-admin-form="${x.id}" novalidate style="padding:12px;border:1px solid var(--line);border-radius:12px">
+      row.insertAdjacentHTML('afterend',`<form class="form-grid" data-admin-form="${x.id}" data-was="${sup?'supplier':'admin'}" novalidate style="padding:12px;border:1px solid var(--line);border-radius:12px">
         <label class="field"><span>Name</span><input name="name" maxlength="120" value="${esc(x.name)}"></label>
         <label class="field"><span>Username</span><input name="username" maxlength="60" autocomplete="off" data-no-i18n value="${esc(x.username)}"></label>
+        <label class="field"><span>Position <small>shown next to the name, e.g. Owner, Developer, Supplier</small></span><input name="position" maxlength="60" data-no-i18n value="${esc(x.position||'')}"></label>
+        <label class="field"><span>Type</span><select name="role"><option value="admin"${sup?'':' selected'}>Admin (full access)</option><option value="supplier"${sup?' selected':''}>Supplier (supplier portal only)</option></select></label>
         <label class="field"><span>Status</span><select name="active"><option value="true"${x.active?' selected':''}>Active</option><option value="false"${x.active?'':' selected'}>Disabled (can’t sign in)</option></select></label>
         <label class="field"><span>New password <small>leave empty to keep the current one</small></span><input name="password" type="password" maxlength="128" autocomplete="new-password"></label>
-        <p class="note full" style="margin:0">${sup?'A disabled supplier login is signed out at once and can’t sign in again (nothing is deleted).':'A disabled admin can’t sign in again. If they are signed in right now, they stay signed in until that session ends.'}</p>
-        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">${sup?'Save supplier login':'Save admin'}</button><button type="button" class="btn" data-admin-cancel>Cancel</button><p class="form-msg" data-admin-msg style="margin:0"></p></div></form>`);
+        ${sup?'':`<label class="check full"><input type="checkbox" name="owner"${x.owner?' checked':''}${S.ov.me?.id===x.id?' disabled':''}> <span>Owner: can add, change and remove team logins</span></label>`}
+        <p class="note full" style="margin:0">${sup?'A disabled supplier login is signed out at once and can’t sign in again (nothing is deleted).':'A disabled admin is signed out at once and can’t sign in again (nothing is deleted).'}</p>
+        <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">${sup?'Save supplier login':'Save admin'}</button><button type="button" class="btn" data-admin-cancel>Cancel</button>${S.ov.me?.id===x.id?'':`<button type="button" class="btn btn-danger" data-admin-remove="${x.id}" style="margin-inline-start:auto">${sup?'Remove supplier login':'Remove admin'}</button>`}<p class="form-msg" data-admin-msg style="margin:0"></p></div></form>`);
       row.nextElementSibling.querySelector('[name=name]').focus();return;
     }
     if(t.closest('[data-admin-cancel]')){t.closest('[data-admin-form]').remove();return;}
+    const ar=t.closest('[data-admin-remove]');
+    if(ar){
+      const f=ar.closest('[data-admin-form]'),x=[...S.ov.admins,...(S.ov.suppliers||[])].find(a=>a.id===Number(ar.dataset.adminRemove));if(!x)return;
+      if(!confirm(`Remove ${x.name} (@${x.username})? They are signed out at once and can’t sign in again. Nothing is deleted.`))return;
+      ar.disabled=true;
+      (async()=>{try{await api('/admin/users/'+x.id,{method:'POST',body:{archived:true}});f.remove();await loadAll();renderList();toast('Login removed.');}
+      catch(ex){const m=$('[data-admin-msg]',f);m.textContent=ex.message;m.className='form-msg err';ar.disabled=false;}})();
+      return;
+    }
     const acc = t.closest('[data-add-account]'); if (acc) { openAddAccount(acc.dataset.addAccount); return; }
     const no = t.closest('[data-new-order]'); if (no) { openOrderForm(null, no.dataset.newOrder); return; }
     const rs = t.closest('[data-restore]');
@@ -226,8 +238,9 @@
       e.preventDefault();
       const b = $('[type=submit]', adf), m = $('[data-admin-msg]', adf); if (b.disabled) return; m.textContent = ''; m.className = 'form-msg';
       if (adf.password.value && adf.password.value.length < 8) { m.textContent = 'Password must be at least 8 characters'; m.className = 'form-msg err'; return; }
+      if (adf.role.value !== adf.dataset.was && !confirm(adf.role.value === 'supplier' ? 'Make this login a supplier login? It is signed out at once and from then on only sees the supplier portal.' : 'Make this login an ADMIN? It gets full access, including our fees and client prices.')) return;
       b.disabled = true;
-      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Saved.'); }
+      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), position: adf.position.value, role: adf.role.value, ...(adf.owner && !adf.owner.disabled ? { owner: adf.owner.checked } : {}), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Saved.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
       return;
     }

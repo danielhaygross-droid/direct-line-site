@@ -63,6 +63,8 @@ for (const [oid, fee] of [[N[1], 8], [N[2], 0]]) {
 }
 ok(await call('/admin/supplier-share', 'POST', { amount: 2, paidAt: '2026-11-10' }, admin));
 const supId = ok(await call('/admin/users', 'POST', { username: 'sup-ada', name: 'Ada', password: 'supplierpass1', role: 'supplier' }, admin)).id;
+ok(await call('/admin/users/' + supId, 'POST', { position: 'Supplier · Beyond' }, admin));
+{ const e = ok(await call('/admin/users', 'POST', { username: 'erwin-dev', name: 'Erwin', password: 'erwinpass12', role: 'admin' }, admin)).id; ok(await call('/admin/users/' + e, 'POST', { position: 'Developer', owner: true }, admin)); globalThis.shaharId = ok(await call('/admin/users', 'POST', { username: 'shahar-x', name: 'Shahar', password: 'shaharpass1', role: 'admin' }, admin)).id; }
 
 const flat = s => s.replace(/\s+/g, ' ');
 try {
@@ -111,8 +113,12 @@ try {
     await ui.locator('[data-tab=settings]').click(); await ui.waitForSelector('.set-tabs'); await ui.locator('[data-set-tab=team]').click();
     await ui.waitForSelector('[data-suppliers]'); await ui.waitForSelector('[data-share] .acc-list');
     assert.match(await ui.locator('[data-suppliers]').innerText(), /@sup-ada/);
+    assert.match(await ui.locator('[data-admins]').innerText(), /Developer/);
     await ui.locator('[data-suppliers]').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(out, `admin-${lang}-${w}-team.png`) });
+    await ui.locator(`[data-edit-admin="${globalThis.shaharId}"]`).click(); await ui.waitForSelector('[data-admin-remove]');
+    await ui.locator('[data-admin-form]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `admin-${lang}-${w}-team-edit.png`) });
+    await ui.locator('[data-admin-cancel]').click();
     if (lang === 'en' && w === 1440) {
       await ui.locator(`[data-edit-admin="${supId}"]`).click(); await ui.waitForSelector('[data-admin-form]');
       await ui.selectOption('[data-admin-form] [name=active]', 'false'); await ui.locator('[data-admin-form] [type=submit]').click();

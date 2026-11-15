@@ -1,7 +1,9 @@
 // Client portal + admin monitoring API.
 // Shares the dashboard's signed `dl_session` cookie (same HMAC format as the Worker),
 // so one login works across the store dashboard, the client portal and the admin view.
-//   role "admin"          -> Daniel / Erwin (env admin or admin users in the DB)
+//   role "admin-env"      -> the main admin login (set in Vercel)
+//   role "admin-<id>-v<n>" -> an admin user from the DB; ends at once when disabled, its type or password changes
+//   (a bare "admin" cookie from before 15 Nov 2026 is no longer accepted: one new sign-in for everyone)
 //   role "client-<id>"    -> a client account from the users table
 //   role "supplier-<id>"  -> a supplier login (Ada, Ye): only the supplier routes in supplier-portal.mjs
 
@@ -159,6 +161,10 @@ export const SCHEMA = [
   // Tracked by hand for now: nothing is charged or blocked automatically.
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_required BOOLEAN NOT NULL DEFAULT FALSE',
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0',
+  // Position shown next to a team member (Erwin, 15 Nov 2026: "to know who is who").
+  "ALTER TABLE users ADD COLUMN IF NOT EXISTS position TEXT NOT NULL DEFAULT ''",
+  // Owners (Erwin, Shahar, Daniel; 15 Nov 2026): only they add, change or remove team logins. The main login is always one.
+  'ALTER TABLE users ADD COLUMN IF NOT EXISTS owner BOOLEAN NOT NULL DEFAULT FALSE',
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login INTEGER',
   'ALTER TABLE client_orders ADD COLUMN IF NOT EXISTS edit_locked BOOLEAN NOT NULL DEFAULT FALSE',
   "UPDATE client_orders SET edit_locked=TRUE WHERE NOT edit_locked AND (status <> 'pending' OR EXISTS (SELECT 1 FROM order_events e WHERE e.order_id=client_orders.id AND e.kind='status' AND e.detail IN ('processing','shipped','delivered')))",
@@ -366,6 +372,21 @@ async function sign(value, secret) {
   return b64url(await crypto.subtle.sign('HMAC', key, utf8.encode(value)));
 }
 export const REMEMBER_SECONDS = 30 * 24 * 3600; // "Remember me": 30 days
+export const ENV_ADMIN_ROLE = 'admin-env';
+// Only owners manage team logins (admins and suppliers). The main admin login (set in Vercel) is always an owner.
+export async function isOwner(DB, who) {
+  if (!who?.admin) return false;
+  if (!who.adminId) return true;
+  return !!(await DB.prepare("SELECT owner FROM users WHERE id = ? AND role = 'admin'").bind(who.adminId).first())?.owner;
+}
+const OWNERS_ONLY = 'Only the owners (Erwin, Shahar, Daniel) can add, change or remove team logins.';
+// An admin user from the DB is signed in only while active, not archived, still an admin and on the same session version.
+export async function adminSession(DB, who) {
+  if (!who?.admin) return false;
+  if (!who.adminId) return true;
+  const u = DB && await DB.prepare("SELECT active, archived, session_version FROM users WHERE id = ? AND role = 'admin'").bind(who.adminId).first();
+  return !!u && !!u.active && !u.archived && Number(u.session_version || 0) === Number(who.sessionVersion || 0);
+}
 export async function createSessionCookie(role, secret, { remember = false } = {}) {
   const seconds = remember ? REMEMBER_SECONDS : SESSION_SECONDS;
   const payload = role + '.' + (now() + seconds);
@@ -380,7 +401,9 @@ export async function readSessionRole(request, secret) {
   return (await sign(parts[0] + '.' + parts[1], secret)) === parts[2] ? parts[0] : null;
 }
 export function parseRole(role) {
-  if (role === 'admin') return { admin: true };
+  if (role === ENV_ADMIN_ROLE) return { admin: true };
+  const a = /^admin-(\d+)-v(\d+)$/.exec(role || '');
+  if (a) return { admin: true, adminId: Number(a[1]), sessionVersion: Number(a[2]) };
   const s = /^supplier-(\d+)-v(\d+)$/.exec(role || '');
   if (s) return { admin: false, supplier: true, supplierId: Number(s[1]), sessionVersion: Number(s[2]) };
   const m = /^client-(\d+)(?:-v(\d+))?$/.exec(role || '');
@@ -740,6 +763,7 @@ async function routePortal(request, url, ctx, meta) {
   const role = await readSessionRole(request, env.APP_SESSION_SECRET);
   let who = parseRole(role);
   if (!who) return json({ ok: false, error: 'Unauthorized' }, 401);
+  if (who.admin && !await adminSession(DB, who)) return json({ ok: false, error: 'Please sign in again.' }, 401);
   // A supplier login reaches the supplier routes and nothing else.
   if (who.supplier) return routeSupplier(request, path, ctx, who, { clientSummary, getSettings, hashPassword, verifyPassword, createSessionCookie });
   // Admin preview of a client's portal ("see what the client sees"): read-only.
@@ -806,7 +830,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/acting/start' && method === 'POST' && who.acting) return json({ ok: true });
   if (path === '/me' && method === 'GET') {
     const settings = await getSettings(DB);
-    if (who.admin) return json({ ok: true, role: 'admin', name: 'Admin', settings });
+    if (who.admin) return json({ ok: true, role: 'admin', name: 'Admin', owner: await isOwner(DB, who), settings });
     if (!who.preview && !who.acting) await DB.prepare('UPDATE users SET last_seen_at=? WHERE id=? AND COALESCE(last_seen_at,0)<?').bind(now(), who.clientId, now() - 300).run();
     const u = await DB.prepare('SELECT id, username, display_name, active, trial_start, trial_end, sub_status, sub_last_payment FROM users WHERE id = ?').bind(who.clientId).first();
     if (!u || !u.active) return json({ ok: false, error: 'Account disabled' }, 403);
@@ -1165,7 +1189,7 @@ async function routePortal(request, url, ctx, meta) {
     const termsPolicy = await currentTerms(DB);
     const termsRows = (await DB.prepare('SELECT DISTINCT ON (client_id) client_id,version,accepted_at FROM client_terms_acceptances ORDER BY client_id,version DESC').all()).results || [];
     const acceptedTerms = new Map(termsRows.map(r => [r.client_id, { version: Number(r.version), acceptedAt: Number(r.accepted_at) }]));
-    const users = (await DB.prepare('SELECT id, username, role, display_name, commission_per_order, supplier_share_per_order, active, archived, created_at, trial_start, trial_end, sub_status, sub_last_payment, last_login, password_reset_required FROM users ORDER BY role, display_name').all()).results || [];
+    const users = (await DB.prepare('SELECT id, username, role, display_name, position, owner, commission_per_order, supplier_share_per_order, active, archived, created_at, trial_start, trial_end, sub_status, sub_last_payment, last_login, password_reset_required FROM users ORDER BY role, display_name').all()).results || [];
     const pendingTransfers = new Map(((await DB.prepare("SELECT f.client_id,COUNT(*) AS n FROM portal_files f LEFT JOIN client_payments p ON p.confirmation_id=f.id WHERE f.kind='confirmation' AND NOT f.archived AND p.id IS NULL GROUP BY f.client_id").all()).results || []).map(r=>[r.client_id,Number(r.n)]));
     const clients = [];
     const archived = [];
@@ -1174,11 +1198,12 @@ async function routePortal(request, url, ctx, meta) {
     const keys = ['billed', 'paid', 'outstanding', 'commission', 'supplierShare', 'keptFees', 'ourShare'];
     const totals = clients.reduce((t, c) => { t.orders += c.orders; for (const k of keys) t[k] = round2(t[k] + c[k]); return t; },
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
-    const admins = users.filter(u => u.role === 'admin').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active }));
-    const suppliers = users.filter(u => u.role === 'supplier').map(u => ({ id: u.id, username: u.username, name: u.display_name, active: u.active, archived: !!u.archived, lastLogin: u.last_login == null ? null : Number(u.last_login) }));
+    const admins = users.filter(u => u.role === 'admin' && !u.archived).map(u => ({ id: u.id, username: u.username, name: u.display_name, position: u.position || '', role: 'admin', owner: !!u.owner, active: u.active }));
+    const me = { id: who.adminId || null, owner: await isOwner(DB, who) };
+    const suppliers = users.filter(u => u.role === 'supplier').map(u => ({ id: u.id, username: u.username, name: u.display_name, position: u.position || '', role: 'supplier', active: u.active, archived: !!u.archived, lastLogin: u.last_login == null ? null : Number(u.last_login) }));
     // All clients together for the Overview: cancelled-order money and money per month (Erwin, 27 Oct 2026).
     const cancelled = await cancelledTotals(DB, clients), months = await moneyMonths(DB);
-    return json({ ok: true, settings, termsPolicy, totals, clients, admins, suppliers, archived, cancelled, months, rates: SHIPPING_RATES, googleSheets: { configured: googleSheetsConfigured(env) } });
+    return json({ ok: true, settings, termsPolicy, totals, clients, admins, suppliers, me, archived, cancelled, months, rates: SHIPPING_RATES, googleSheets: { configured: googleSheetsConfigured(env) } });
   }
   // ----- Daniel's stores (dashboard store list) -----
   if (path === '/admin/stores' && method === 'GET') {
@@ -1354,6 +1379,7 @@ async function routePortal(request, url, ctx, meta) {
   if (path === '/admin/users' && method === 'POST') {
     const body = await readBody(request);
     const username = text(body.username, 60), password = String(body.password || ''), userRole = ['admin', 'supplier'].includes(body.role) ? body.role : 'client';
+    if (userRole !== 'client' && !await isOwner(DB, who)) return json({ ok: false, error: OWNERS_ONLY }, 403);
     if (!/^[A-Za-z0-9._@-]{3,60}$/.test(username)) return json({ ok: false, error: 'Username: 3-60 letters, numbers, . _ - @' }, 400);
     if (password.length < 8) return json({ ok: false, error: 'Password must be at least 8 characters' }, 400);
     if (env.ADMIN_USERNAME && username.toLowerCase() === env.ADMIN_USERNAME.toLowerCase()) return json({ ok: false, error: 'Username already taken' }, 409);
@@ -1390,13 +1416,21 @@ async function routePortal(request, url, ctx, meta) {
     const u = await DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
     if (!u) return json({ ok: false, error: 'Not found' }, 404);
     const body = await readBody(request);
+    // Team logins (admins, suppliers): owners only. Nobody removes, disables, demotes or un-owns themselves (no lock-out).
+    if (u.role !== 'client') {
+      if (!await isOwner(DB, who)) return json({ ok: false, error: OWNERS_ONLY }, 403);
+      const self = who.adminId === Number(u.id);
+      if (self && ((body.archived === true) || body.active === false || (body.role !== undefined && body.role !== u.role) || body.owner === false))
+        return json({ ok: false, error: 'You can’t remove, disable or demote your own login. Ask another owner.' }, 400);
+      if (body.owner !== undefined && u.role !== 'admin' && body.owner) return json({ ok: false, error: 'Only admins can be owners.' }, 400);
+    }
     const name = body.name !== undefined ? text(body.name, 120) || u.display_name : u.display_name;
     const active = body.active !== undefined ? Boolean(body.active) : u.active;
     let cpo = u.commission_per_order;
     if (body.commissionPerOrder !== undefined) { cpo = money(body.commissionPerOrder); if (!isMoney(cpo)) return json({ ok: false, error: 'Invalid commission' }, 400); }
     let hash = u.password_hash;
     if (body.password) { if (String(body.password).length < 8) return json({ ok: false, error: 'Password must be at least 8 characters' }, 400); hash = await hashPassword(String(body.password)); }
-    const archived = body.archived !== undefined && ['client', 'supplier'].includes(u.role) ? Boolean(body.archived) : u.archived;
+    const archived = body.archived !== undefined && ['client', 'supplier', 'admin'].includes(u.role) ? Boolean(body.archived) : u.archived;
     // A new username: signs the person in from now on (and is a client's payment reference).
     let username = u.username;
     if (body.username !== undefined && String(body.username).trim() !== u.username) {
@@ -1421,6 +1455,18 @@ async function routePortal(request, url, ctx, meta) {
     }
     await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=CASE WHEN ? THEN ? ELSE password_hash END, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=?, password_reset_required=CASE WHEN ? THEN ? ELSE password_reset_required END, session_version=session_version+? WHERE id = ?').bind(name, active, cpo, !!body.password, hash, archived, trialStart, trialEnd, subStatus, lastPay, !!body.password, u.role === 'client', body.password ? 1 : 0, id).run();
     if (username !== u.username) await DB.prepare('UPDATE users SET username=? WHERE id=?').bind(username, id).run();
+    if (body.position !== undefined) await DB.prepare('UPDATE users SET position=? WHERE id=?').bind(text(body.position, 60), id).run();
+    // Change a team login's type (admin <-> supplier); clients can't be changed. Signs the person out at once.
+    if (body.role !== undefined && body.role !== u.role) {
+      if (!['admin', 'supplier'].includes(u.role) || !['admin', 'supplier'].includes(body.role)) return json({ ok: false, error: 'Only admin and supplier logins can change type.' }, 400);
+      await DB.prepare('UPDATE users SET role=?, session_version=session_version+1 WHERE id=?').bind(body.role, id).run();
+    }
+    if (body.owner !== undefined && u.role === 'admin') await DB.prepare('UPDATE users SET owner=? WHERE id=?').bind(!!body.owner, id).run();
+    if (body.role === 'supplier' && u.role === 'admin') await DB.prepare('UPDATE users SET owner=FALSE WHERE id=?').bind(id).run();
+    // Removing (archiving) a team login signs it out at once; it is kept, never deleted.
+    if (u.role !== 'client' && !u.archived && archived) await DB.prepare('UPDATE users SET session_version=session_version+1, owner=FALSE WHERE id=?').bind(id).run();
+    // Disabling a team login signs it out at once.
+    if (u.role !== 'client' && u.active && !active) await DB.prepare('UPDATE users SET session_version=session_version+1 WHERE id=?').bind(id).run();
     // Bulk: put this client's fee on existing orders too, by status (Erwin): "new" = only new orders (nothing changes now),
     // "pending", "processing" (In progress), "open" (Pending + In progress) or "all" (every order except cancelled ones).
     let ordersUpdated = 0;
@@ -1466,13 +1512,13 @@ async function routePortal(request, url, ctx, meta) {
 // Returns the session role string for valid credentials, or null.
 export async function authenticate(DB, env, username, password) {
   if (!username || !password) return null;
-  if (env.ADMIN_USERNAME && env.ADMIN_PASSWORD && username === env.ADMIN_USERNAME && password === env.ADMIN_PASSWORD) return 'admin';
+  if (env.ADMIN_USERNAME && env.ADMIN_PASSWORD && username === env.ADMIN_USERNAME && password === env.ADMIN_PASSWORD) return ENV_ADMIN_ROLE;
   if (!DB) return null;
   const u = await DB.prepare('SELECT id, role, password_hash, active, archived, session_version FROM users WHERE LOWER(username) = LOWER(?)').bind(username).first();
   if (!u || !u.active || u.archived || !(await verifyPassword(password, u.password_hash))) return null;
   await DB.prepare('UPDATE users SET last_login=? WHERE id=?').bind(now(), u.id).run();
   if (u.role === 'supplier') return 'supplier-' + u.id + '-v' + Number(u.session_version || 0);
-  return u.role === 'admin' ? 'admin' : 'client-' + u.id + '-v' + Number(u.session_version || 0);
+  return (u.role === 'admin' ? 'admin-' : 'client-') + u.id + '-v' + Number(u.session_version || 0);
 }
 
 // authenticate() behind the failed sign-in limits (server/login-limit.mjs). Returns { role } —

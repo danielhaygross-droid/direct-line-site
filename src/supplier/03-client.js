@@ -68,6 +68,6 @@
       <div class="sp-grid2">${statementHTML(c)}${addsHTML(c)}</div>
       ${paymentsHTML(c)}${cancelledHTML(c)}
       <div class="sp-grid2">${notPaidHTML(c)}${changedHTML(c)}</div>
-      <section class="card sp-card"><h2>${t('Your supplier share for this client')}</h2><p class="sp-sub">${t('Only orders the client has paid count (bought orders).')} ${t('Not part of the client’s balance.')} ${t('Shown in Billing for all clients together.')}</p>
+      <section class="card sp-card"><h2>${t('Your supplier share for this client')}</h2><p class="sp-sub">${t('Every order counts, except cancelled ones.')} ${t('Not part of the client’s balance.')} ${t('Shown in Billing for all clients together.')}</p>
         <div class="sp-mini two"><div><small>${t('Orders counted')}</small><b>${c.share.counted}</b></div><div><small>${money(c.share.rate)} × ${t('orders')}</small><b>${money(c.share.amount)}</b></div></div></section>`;
   }
