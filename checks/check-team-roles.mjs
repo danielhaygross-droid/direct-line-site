@@ -51,3 +51,27 @@ const cId = ok(await call('/admin/users', 'POST', { username: 'client-x', name: 
 assert.equal((await call('/admin/users/' + cId, 'POST', { role: 'admin' }, boss)).status, 400, 'a client can’t be made an admin');
 assert.ok([403, 404].includes((await call('/admin/users/' + eId, 'POST', { role: 'admin' }, sup.cookie)).status), 'a supplier can’t change logins');
 console.log('PASS admin sessions end at once (disabled, type changed); old bare admin cookies refused; admin -> supplier login; positions shown');
+
+// Owners (Erwin, 15 Nov 2026: "me, Shahar and Daniel are the only ones" who remove co-admins). The main login is one.
+assert.equal(ok(await call('/admin/overview', 'GET', null, boss)).me.owner, true, 'main login = owner');
+const erwin = (await call('/login', 'POST', { username: 'erwin-x', password: 'erwinpass12' })).cookie;
+assert.equal(ok(await call('/admin/overview', 'GET', null, erwin)).me.owner, false);
+assert.equal((await call('/admin/users', 'POST', { username: 'co-1', name: 'Co', password: 'copassword1', role: 'admin' }, erwin)).status, 403, 'not an owner: can’t add admins');
+assert.equal((await call('/admin/users', 'POST', { username: 'sup-2', name: 'S', password: 'suppass1234', role: 'supplier' }, erwin)).status, 403, 'not an owner: can’t add suppliers');
+assert.equal((await call('/admin/users/' + yeId, 'POST', { password: 'takeover123' }, erwin)).status, 403, 'not an owner: can’t change a team login');
+ok(await call('/admin/users', 'POST', { username: 'client-y', name: 'Client Y', password: 'clientpass12', role: 'client' }, erwin)); // clients: any admin
+ok(await call('/admin/users/' + eId, 'POST', { owner: true }, boss));
+const coId = ok(await call('/admin/users', 'POST', { username: 'co-1', name: 'Co', password: 'copassword1', role: 'admin' }, erwin)).id;
+const co = (await call('/login', 'POST', { username: 'co-1', password: 'copassword1' })).cookie;
+ok(await call('/admin/overview', 'GET', null, co));
+assert.equal((await call('/admin/users/' + eId, 'POST', { archived: true }, erwin)).status, 400, 'nobody removes their own login');
+assert.equal((await call('/admin/users/' + eId, 'POST', { owner: false }, erwin)).status, 400, 'nobody un-owns themselves');
+assert.equal((await call('/admin/users/' + eId, 'POST', { archived: true }, co)).status, 403, 'a co-admin can’t remove an owner');
+ok(await call('/admin/users/' + coId, 'POST', { archived: true }, erwin));
+assert.equal((await call('/admin/overview', 'GET', null, co)).status, 401, 'removed: signed out at once');
+assert.equal((await call('/login', 'POST', { username: 'co-1', password: 'copassword1' })).status, 401, 'removed: can’t sign in');
+const after = ok(await call('/admin/overview', 'GET', null, boss));
+assert.ok(!after.admins.some(a => a.id === coId), 'removed admin is not listed');
+assert.ok(await DB.prepare('SELECT id FROM users WHERE id = ?').bind(coId).first(), 'kept in the database (archived, not deleted)');
+assert.equal(after.admins.find(a => a.id === eId).owner, true);
+console.log('PASS only owners add, change or remove team logins; remove = archived + signed out; nobody removes or un-owns themselves');

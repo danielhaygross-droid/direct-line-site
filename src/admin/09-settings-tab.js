@@ -2,7 +2,7 @@
   // Supplier logins (supplier portal, 14 Nov 2026): only admins add or remove them; a removed login is disabled, never deleted.
   function suppliersHTML() {
     const list = (S.ov.suppliers || []).filter(x => !x.archived);
-    return list.length ? list.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b>${posTag(x, 'Supplier')}<small><span data-no-i18n>@${esc(x.username)}</span>${x.active ? '' : ' · <span>disabled</span>'}${x.lastLogin ? ` · <span>last sign-in</span> <span data-no-i18n>${esc(fmtDay(new Date(x.lastLogin * 1000).toLocaleDateString('en-CA', { timeZone: window.DL.displayTimeZone() })))}</span>` : ''}</small></span></span><button type="button" class="btn btn-sm" data-edit-admin="${x.id}" style="margin-inline-start:auto">Edit</button></div>`).join('')
+    return list.length ? list.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b>${posTag(x, 'Supplier')}<small><span data-no-i18n>@${esc(x.username)}</span>${x.active ? '' : ' · <span>disabled</span>'}${x.lastLogin ? ` · <span>last sign-in</span> <span data-no-i18n>${esc(fmtDay(new Date(x.lastLogin * 1000).toLocaleDateString('en-CA', { timeZone: window.DL.displayTimeZone() })))}</span>` : ''}</small></span></span>${canManage() ? `<button type="button" class="btn btn-sm" data-edit-admin="${x.id}" style="margin-inline-start:auto">Edit</button>` : ''}</div>`).join('')
       : '<p class="note" style="margin:0">No supplier logins yet.</p>';
   }
   // What the supplier paid us for the supplier share (their own amount per paid order).
@@ -34,10 +34,13 @@
     });
   }
   // The position on the right of each team login (Erwin, 15 Nov 2026: "to know who is who"); empty = the login type.
+  // Only owners (Erwin, Shahar, Daniel; the main login always) add, change or remove team logins (15 Nov 2026).
+  const canManage = () => !!S.ov.me?.owner;
+  const ownersNote = () => canManage() ? '' : '<p class="note" style="margin:10px 0 0">Only the owners (Erwin, Shahar, Daniel) can add, change or remove team logins.</p>';
   function posTag(x, type) { return `<span class="tag${x.position ? ' tag-gold' : ''}" style="margin:3px 0 1px"${x.position ? ' data-no-i18n' : ''}>${esc(x.position || type)}</span>`; }
   function adminsHTML() {
-    return S.ov.admins.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b>${posTag(x, 'Admin')}<small>@${esc(x.username)}${x.active ? '' : ' · disabled'}</small></span></span><button type="button" class="btn btn-sm" data-edit-admin="${x.id}" style="margin-inline-start:auto">Edit</button></div>`).join('')
-      + `<div><span class="ava">DL</span><span class="who"><span><b>Main admin login</b>${posTag({}, 'Admin')}<small>set in Vercel</small></span></span></div>`;
+    return S.ov.admins.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b><span>${posTag(x, 'Admin')}${x.owner ? ' <span class="tag" style="margin:3px 0 1px">Owner</span>' : ''}</span><small>@${esc(x.username)}${x.active ? '' : ' · disabled'}</small></span></span>${canManage() ? `<button type="button" class="btn btn-sm" data-edit-admin="${x.id}" style="margin-inline-start:auto">Edit</button>` : ''}</div>`).join('')
+      + `<div><span class="ava">DL</span><span class="who"><span><b>Main admin login</b><span>${posTag({}, 'Admin')} <span class="tag" style="margin:3px 0 1px">Owner</span></span><small>set in Vercel</small></span></span></div>`;
   }
   const BANK_UI = [['bank_currency', 'Currency'], ['bank_holder', 'Account holder name'], ['bank_account', 'Account number'], ['bank_ach', 'ACH routing number'],
     ['bank_wire', 'Wire routing number'], ['bank_swift', 'SWIFT/BIC'], ['bank_name', 'Bank name'], ['bank_address', 'Bank address'], ['bank_reference', 'Payment reference note']];
@@ -98,10 +101,10 @@
           <label class="field full-sm"><span>Hebrew policy text</span><textarea name="hebrew" rows="12" maxlength="18000" dir="rtl" required>${esc(S.ov.termsPolicy.hebrew)}</textarea></label>
           <div class="field full"><button type="submit" class="btn btn-primary">Publish new terms version</button></div><p class="form-msg full" data-terms-msg role="status"></p></form></section>`) + panel('team', '', `
       <section class="card card-pad"><h3 class="form-sec">Team accounts</h3><div class="acc-list" data-admins>${adminsHTML()}</div>
-        <button type="button" class="btn" style="margin-top:12px" data-add-account="admin">${ic('plus')}Add admin</button></section>
+        ${canManage() ? `<button type="button" class="btn" style="margin-top:12px" data-add-account="admin">${ic('plus')}Add admin</button>` : ownersNote()}</section>
       <section class="card card-pad"><h3 class="form-sec">Supplier logins</h3><p class="muted" style="margin:0 0 10px;font-size:14px">The supplier (Ada, Ye) signs in at the same address and only sees the supplier portal: their costs, cancellation fees and what was paid for their part. Never our fee or client prices.</p>
         <div class="acc-list" data-suppliers>${suppliersHTML()}</div>
-        <button type="button" class="btn" style="margin-top:12px" data-add-account="supplier">${ic('plus')}Add supplier login</button></section>
+        ${canManage() ? `<button type="button" class="btn" style="margin-top:12px" data-add-account="supplier">${ic('plus')}Add supplier login</button>` : ownersNote()}</section>
       <section class="card card-pad"><h3 class="form-sec">Supplier share payments</h3><p class="muted" style="margin:0 0 10px;font-size:14px">What the supplier paid us for their amount per order, every order except cancelled ones (set in Fees). The supplier sees the total and what is still to pay.</p>
         <div data-share><p class="muted" style="margin:0">Loading…</p></div>
         <form id="share-form" class="form-grid" novalidate style="margin-top:12px"><label class="field"><span>Amount (USD)</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" required></span></label>
