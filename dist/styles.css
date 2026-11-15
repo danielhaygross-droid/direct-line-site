@@ -404,3 +404,5 @@ body.client-drawer-open .whatsapp-dock,body:has(dialog[open]) .whatsapp-dock{dis
 /* Login: no empty "Quick demo access" block when the demo buttons are hidden; English tagline on the English page. */
 .demo-access:not(:has(button:not([hidden]))){display:none}
 html[lang=en][data-theme=light] .login-brand:after{content:"In control of the numbers. Calm in operations.";direction:ltr;text-align:left}
+/* Language switch on the sign-in card (before sign-in there was no way to change language). */
+.login-card{position:relative}.login-lang{position:absolute;top:20px;inset-inline-end:22px;display:inline-flex;align-items:center;min-height:32px;padding:0 13px;border:1px solid rgba(128,120,104,.35);border-radius:999px;font-size:13px;font-weight:600;color:inherit;text-decoration:none;background:transparent}.login-lang:hover,.login-lang:focus-visible{border-color:#b98a3e;color:#b98a3e}
