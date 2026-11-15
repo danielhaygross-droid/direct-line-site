@@ -227,6 +227,15 @@ SCHEMA.push(...PAYMENT_ORDER_SCHEMA, ...BILLING_SCHEMA, ...REFUND_SCHEMA, ...REV
 // Supplier logins (supplier portal phase 1, 14 Nov 2026): the role list gets 'supplier'.
 SCHEMA.push('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check',
   "ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','client','supplier'))", ...SUPPLIER_SCHEMA);
+// One time (15 Nov 2026, Erwin from his phone: no Edit buttons, nobody but the main login was an owner yet): Erwin's and
+// Shahar's admin logins become owners, and the supplier's Ye, who had been made an ADMIN login by mistake, becomes a
+// supplier login (signed out at once). Logins are matched by the SHA-256 of their lower-case username, so no username is
+// in this public repo. Runs once (portal_settings 'team_seed_v1'); an owner can change any of it in Edit afterwards.
+SCHEMA.push(`WITH flag AS (INSERT INTO portal_settings (key, value) VALUES ('team_seed_v1', '1') ON CONFLICT (key) DO NOTHING RETURNING key),
+  own AS (UPDATE users SET owner = TRUE WHERE EXISTS (SELECT 1 FROM flag) AND role = 'admin'
+    AND encode(sha256(convert_to(LOWER(username), 'UTF8')), 'hex') IN ('f811fb9d95719fe1baa2db603fe39db637622852b724e2169e677a5832d28bcf', '4f6e92b16887c73ce2260f4862bf16c0c68ba14a918135e93d9fe7ede8809747') RETURNING id)
+  UPDATE users SET role = 'supplier', owner = FALSE, session_version = session_version + 1 WHERE EXISTS (SELECT 1 FROM flag) AND role = 'admin'
+    AND encode(sha256(convert_to(LOWER(username), 'UTF8')), 'hex') = '243a5a4f4e3a27de86391f07cf058a7b0b73ce46069bf84df749306298560f4f'`);
 
 export const SHIPPING_RATES = {
     US: { name: 'United States', general: 18, battery: 20, cosmetic: 23 },
