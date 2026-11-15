@@ -29,7 +29,7 @@
     'Only orders not shipped yet can be marked bought.': '只有还没发货的订单可以标记为已购买。', 'This order is shipped: its tracking number can’t be cleared.': '这个订单已发货：运单号不能清空。',
   });
   const SHIP_OPTS = [['not_bought', 'Not bought'], ['bought', 'Bought'], ['shipped', 'Shipped']];
-  const shipState = o => (o.ship === 'shipped' ? 'shipped' : o.boughtAt ? 'bought' : 'not_bought');
+  const shipState = o => (o.ship === 'shipped' ? 'shipped' : o.boughtAt || o.tab === 'bought' ? 'bought' : 'not_bought');
   const ago = sec => { const d = Math.max(0, Math.floor(Date.now() / 1000) - sec); return d < 60 ? t('just now') : d < 3600 ? Math.floor(d / 60) + ' ' + t('min ago') : d < 86400 ? Math.floor(d / 3600) + ' ' + t('h ago') : fmtDay(sec); };
   const lastEdit = o => Object.values(o.edits || {}).sort((a, b) => b.at - a.at)[0];
   const isNew = o => S.seenAt != null && o.createdAt > S.seenAt && o.tab === 'new';

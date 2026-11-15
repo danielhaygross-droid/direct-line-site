@@ -775,10 +775,12 @@ async function routePortal(request, url, ctx, meta) {
   if (who.admin && !await adminSession(DB, who)) return json({ ok: false, error: 'Please sign in again.' }, 401);
   // A supplier login reaches the supplier routes and nothing else.
   if (who.supplier) return routeSupplier(request, path, ctx, who, { clientSummary, getSettings, hashPassword, verifyPassword, createSessionCookie });
-  // Admin view of the supplier portal ("Open supplier portal" in Fees & settings): the same answers the supplier gets, read-only.
+  // Admins in the supplier portal ("Open supplier portal" in Fees & settings): the same screens and answers as the supplier,
+  // and they can edit too (Erwin, 15 Nov 2026: "we have full access to this portal"). Each edit is recorded under the admin's name.
   if (who.admin && path.startsWith('/supplier/')) {
-    if (request.method !== 'GET') return json({ ok: false, error: 'Admin view: read only. Nothing was saved.' }, 403);
-    return routeSupplier(request, path, ctx, who, { clientSummary, getSettings, hashPassword, verifyPassword, createSessionCookie }, { id: 0, username: 'admin', display_name: 'Admin view' });
+    const a = who.adminId ? await DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(who.adminId).first() : null;
+    return routeSupplier(request, path, ctx, who, { clientSummary, getSettings, hashPassword, verifyPassword, createSessionCookie },
+      { id: Number(who.adminId || 0), username: 'admin', display_name: (a?.display_name || 'Direct Line') + ' (admin)' });
   }
   // Admin preview of a client's portal ("see what the client sees"): read-only.
   // With x-dl-act: 1 the admin is logged in as the client: same rights as the client, every change logged and recorded as admin.

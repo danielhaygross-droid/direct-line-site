@@ -36,7 +36,7 @@ const KEEP_DONE_DAYS = 120;
 const COUNTRY = { US: 'United States', UK: 'United Kingdom', GB: 'United Kingdom', CA: 'Canada', AU: 'Australia', DE: 'Germany', FR: 'France', IT: 'Italy', ES: 'Spain', NL: 'Netherlands', IL: 'Israel' };
 const lines = o => { try { const a = o.items ? JSON.parse(o.items) : null; return Array.isArray(a) ? a : []; } catch { return []; } };
 const statusAt = o => Number(o.status_changed_at ?? o.created_at) || 0;
-export const tabOf = o => (['cancelled'].includes(o.status) ? 'cancelled' : ['shipped', 'delivered'].includes(o.status) ? 'shipped' : o.bought_at ? 'bought' : 'new');
+export const tabOf = o => (['cancelled'].includes(o.status) ? 'cancelled' : ['shipped', 'delivered'].includes(o.status) ? 'shipped' : o.bought_at || norm(o.tracking_number) ? 'bought' : 'new'); // a tracking number means it was bought
 const shipWord = o => (['shipped', 'delivered'].includes(o.status) ? 'shipped' : o.status === 'cancelled' ? 'cancelled' : o.status === 'cancellation_requested' ? 'cancel_requested' : 'not_shipped');
 
 export async function courierList(DB) {
@@ -178,7 +178,7 @@ export async function saveCell(DB, env, waitUntil, me, id, field, value) {
 export async function alerts(DB, me) {
   const seen = Number((await DB.prepare('SELECT notif_seen_at FROM users WHERE id = ?').bind(me.id).first())?.notif_seen_at || 0);
   const q = (where, b = []) => DB.prepare(`SELECT COUNT(*) AS n FROM client_orders o JOIN users u ON u.id = o.client_id AND u.role = 'client' AND NOT u.archived WHERE NOT o.archived ${where}`).bind(...b).first();
-  const fresh = Number((await q("AND o.created_at > ? AND o.status IN ('pending','processing','cancellation_requested') AND o.bought_at IS NULL", [seen]))?.n || 0);
+  const fresh = Number((await q("AND o.created_at > ? AND o.status IN ('pending','processing','cancellation_requested') AND o.bought_at IS NULL AND COALESCE(o.tracking_number, '') = ''", [seen]))?.n || 0);
   const cancelReq = Number((await q("AND o.status = 'cancellation_requested'"))?.n || 0);
   return { newOrders: fresh, cancelRequests: cancelReq, seenAt: seen };
 }

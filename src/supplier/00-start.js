@@ -15,7 +15,7 @@
   try { lang = new URLSearchParams(location.search).get('lang') || localStorage.getItem('dl_supplier_lang') || 'en'; } catch (e) { /* private mode */ }
   if (lang !== 'zh') lang = 'en';
   const ZH = {
-    'Admin view': '管理员查看', 'Back to admin': '返回管理后台', 'Admin view: this is what the supplier sees. Changes are not saved here.': '管理员查看：这是供应商看到的页面，在这里的修改不会保存。', 'Admin view: read only. Nothing was saved.': '管理员查看：只读，未保存任何内容。',
+    'Admin view': '管理员查看', 'Back to admin': '返回管理后台', 'Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.': '管理员查看：这是供应商平台。您的修改会像供应商的修改一样保存。',
     'SUPPLIER PORTAL': '供应商平台', 'Billing': '账单', 'Sign in': '登录', 'Username': '用户名', 'Password': '密码', 'Keep me signed in': '保持登录',
     'Sign in to see your billing.': '登录查看您的账单。', 'Wrong username or password.': '用户名或密码不正确。', 'Too many tries. Please wait 15 minutes.': '尝试次数过多，请等待 15 分钟。',
     'Could not connect. Please try again.': '无法连接，请重试。', 'Log out': '退出登录', 'Change password': '修改密码', 'Supplier': '供应商',

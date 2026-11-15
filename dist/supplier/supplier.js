@@ -15,7 +15,7 @@
   try { lang = new URLSearchParams(location.search).get('lang') || localStorage.getItem('dl_supplier_lang') || 'en'; } catch (e) { /* private mode */ }
   if (lang !== 'zh') lang = 'en';
   const ZH = {
-    'Admin view': '管理员查看', 'Back to admin': '返回管理后台', 'Admin view: this is what the supplier sees. Changes are not saved here.': '管理员查看：这是供应商看到的页面，在这里的修改不会保存。', 'Admin view: read only. Nothing was saved.': '管理员查看：只读，未保存任何内容。',
+    'Admin view': '管理员查看', 'Back to admin': '返回管理后台', 'Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.': '管理员查看：这是供应商平台。您的修改会像供应商的修改一样保存。',
     'SUPPLIER PORTAL': '供应商平台', 'Billing': '账单', 'Sign in': '登录', 'Username': '用户名', 'Password': '密码', 'Keep me signed in': '保持登录',
     'Sign in to see your billing.': '登录查看您的账单。', 'Wrong username or password.': '用户名或密码不正确。', 'Too many tries. Please wait 15 minutes.': '尝试次数过多，请等待 15 分钟。',
     'Could not connect. Please try again.': '无法连接，请重试。', 'Log out': '退出登录', 'Change password': '修改密码', 'Supplier': '供应商',
@@ -119,7 +119,7 @@
       <div class="sp-right">${langSwitch()}${bellHTML()}
         <details class="sp-me"><summary aria-label="${esc(t('Supplier'))}"><span class="sp-ava">${esc(ini)}</span><span class="sp-who"><b>${esc(name)}</b><small>${t('Supplier')}</small></span></summary>
           <div class="sp-menu">${S.view ? `<a href="/admin/">${t('Back to admin')}</a>` : `<a href="#password">${t('Change password')}</a>`}<button type="button" data-logout>${t('Log out')}</button></div></details></div></header>
-      ${S.view ? `<div class="sp-view" role="status"><span>${t('Admin view: this is what the supplier sees. Changes are not saved here.')}</span><a href="/admin/">${t('Back to admin')}</a></div>` : ''}
+      ${S.view ? `<div class="sp-view" role="status"><span>${t('Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.')}</span><a href="/admin/">${t('Back to admin')}</a></div>` : ''}
       <main class="sp-main${S.page === 'orders' ? ' wide' : ''}" id="sp-main">${inner}</main>
       <nav class="sp-bottom">${navItems('')}</nav>`;
   }
@@ -297,7 +297,7 @@
     'Only orders not shipped yet can be marked bought.': '只有还没发货的订单可以标记为已购买。', 'This order is shipped: its tracking number can’t be cleared.': '这个订单已发货：运单号不能清空。',
   });
   const SHIP_OPTS = [['not_bought', 'Not bought'], ['bought', 'Bought'], ['shipped', 'Shipped']];
-  const shipState = o => (o.ship === 'shipped' ? 'shipped' : o.boughtAt ? 'bought' : 'not_bought');
+  const shipState = o => (o.ship === 'shipped' ? 'shipped' : o.boughtAt || o.tab === 'bought' ? 'bought' : 'not_bought');
   const ago = sec => { const d = Math.max(0, Math.floor(Date.now() / 1000) - sec); return d < 60 ? t('just now') : d < 3600 ? Math.floor(d / 60) + ' ' + t('min ago') : d < 86400 ? Math.floor(d / 3600) + ' ' + t('h ago') : fmtDay(sec); };
   const lastEdit = o => Object.values(o.edits || {}).sort((a, b) => b.at - a.at)[0];
   const isNew = o => S.seenAt != null && o.createdAt > S.seenAt && o.tab === 'new';
@@ -443,7 +443,7 @@
             ${o.photos.length > 1 ? `<div class="sp-thumbs">${o.photos.map((p, i) => `<button type="button" data-photo="${i}" aria-pressed="${(S.photo || 0) === i}"><img src="${esc(p.thumb)}" alt="">${p.label ? `<span>${esc(p.label)}</span>` : ''}</button>`).join('')}</div>` : ''}
             ${o.photos.length ? `<a class="btn btn-sm" href="/api/portal/supplier/orders/${o.id}/photos.zip">${t('Download all photos (zip)')}</a>` : ''}</div>
             <dl class="sp-kv"><dt>${t('Product')}</dt><dd>${esc(o.product || '—')}</dd><dt>${t('Qty')}</dt><dd>${o.qty}</dd>
-              ${o.links.map((l, i) => `<dt>${o.links.length > 1 ? t('Product') + ' ' + (i + 1) : t('Open')}</dt><dd class="sp-link"><span>${esc(l)}</span><button type="button" class="btn btn-sm" data-copy="${esc(l)}">${t('Copy link')}</button><a class="btn btn-sm" href="${esc(l)}" target="_blank" rel="noopener noreferrer">${t('Open')}</a></dd>`).join('')}
+              ${o.links.map((l, i) => `<dt>${o.links.length > 1 ? t('Product') + ' ' + (i + 1) : t('Product link')}</dt><dd class="sp-link"><span>${esc(l)}</span><button type="button" class="btn btn-sm" data-copy="${esc(l)}">${t('Copy link')}</button><a class="btn btn-sm" href="${esc(l)}" target="_blank" rel="noopener noreferrer">${t('Open')}</a></dd>`).join('')}
               <dt>${t('Client paid')}</dt><dd>${t(paidL)}</dd></dl></div></section>
         <section class="card sp-card"><span class="sp-eyebrow">${t('Ship to')}</span>
           <dl class="sp-kv"><dt>${t('Customer')}</dt><dd>${esc(o.buyer || '—')}</dd><dt>${t('Delivery address & phone')}</dt><dd class="pre">${esc(o.address || '—')}</dd>
@@ -705,7 +705,7 @@
     readHash();
     try { S.me = await api('/me'); }
     catch (e) { S.me = null; return render(); }
-    // An admin sees what the supplier sees, read-only (the server refuses every change).
+    // An admin works in the supplier portal with the supplier's screens (edits are recorded under the admin's name).
     if (S.me.role === 'admin') { S.view = true; S.me = { ...S.me, name: t('Admin view') }; }
     else if (S.me.role !== 'supplier') { location.href = '/portal/'; return; }
     S.billing = null; S.client = null; S.queue = null;

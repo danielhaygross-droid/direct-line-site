@@ -86,3 +86,17 @@ const forbidden = /^(price|commission|sellingPrice|selling_price|paidPrice|profi
 const walk = v => { if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { assert.ok(!forbidden.test(k), 'key ' + k); walk(x); } };
 walk(JSON.parse(text));
 console.log('PASS work queue: saves work like the sheet (billing, bought, tracking + duplicate warning, courier, shipped, delays, cancellation fee), who saved it, alerts, photos zip; no fee or client price');
+
+// Admins have full access to the supplier portal: an admin's edit saves like the supplier's and is recorded under the admin's name.
+{ const N = await mk('Q-ADMIN');
+  ok(await call('/supplier/orders/' + N, 'PUT', { field: 'domestic', value: 'SF-ADMIN-1' }, admin));
+  const o = (await list()).find(x => x.id === N), e = await DB.prepare('SELECT by_name FROM supplier_edits WHERE order_id = ? ORDER BY id DESC').bind(N).first();
+  assert.ok(JSON.stringify(o).includes('SF-ADMIN-1'), 'the supplier sees the admin edit'); assert.match(e.by_name, /\(admin\)$/);
+  console.log('PASS admin edits in the supplier portal save and are recorded as (admin)'); }
+
+// QA 15 Nov: an order that already has a tracking number counts as Bought (live orders had tracking but showed "Not bought" under New).
+{ const T = await mk('Q-TRACKED');
+  assert.equal((await get(T)).tab, 'new');
+  ok(await put(T, 'tracking', 'UL123456789YP'));
+  assert.equal((await get(T)).tab, 'bought', 'tracking typed: the order is in Bought');
+  console.log('PASS an order with a tracking number is in Bought, not New'); }

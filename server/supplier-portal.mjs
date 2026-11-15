@@ -110,7 +110,7 @@ async function clientsFor(DB) {
 export async function routeSupplier(request, path, ctx, who, deps, viewer = null) {
   const { DB, env } = ctx, method = request.method;
   const { clientSummary, getSettings, hashPassword, verifyPassword, createSessionCookie } = deps;
-  const me = viewer || await supplierSession(DB, who); // viewer: an admin looking at the portal (GET only, see portal.mjs)
+  const me = viewer || await supplierSession(DB, who); // viewer: an admin working in the portal (see portal.mjs)
   if (!me) return json({ ok: false, error: 'Please sign in again.' }, 401);
   if (path === '/me' && method === 'GET') return json({ ok: true, role: 'supplier', redirect: '/supplier/', id: Number(me.id), username: me.username, name: me.display_name });
   if (path === '/supplier/billing' && method === 'GET') {
@@ -137,6 +137,7 @@ export async function routeSupplier(request, path, ctx, who, deps, viewer = null
     const settings = await getSettings(DB);
     return json({ ok: true, updatedAt: now(), client: await clientBilling(DB, u, await clientSummary(DB, u.id, settings), { detail: true }) });
   }
+  if (viewer && (path === '/supplier/password' || path === '/supplier/alerts/seen')) return json({ ok: false, error: 'This belongs to the supplier login.' }, 403);
   if (path === '/supplier/password' && method === 'POST') {
     const body = await request.json().catch(() => ({})), password = String(body.password || '');
     const u = await DB.prepare('SELECT password_hash, session_version FROM users WHERE id = ?').bind(me.id).first();

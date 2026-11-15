@@ -74,13 +74,13 @@ for (const p of ['/me', '/supplier/billing', '/supplier/billing/' + id]) {
   walk(body, p);
   for (const n of ['0.37', '20.37', '33.37', '15.37', '10.37', '61.11', '4.37', '0.74', '1.11']) assert.ok(!text.includes(n), `${p} holds ${n}`);
 }
-// Admin view ("Open supplier portal"): the admin gets exactly the supplier's answers, and no change goes through.
+// Admin view ("Open supplier portal"): the admin gets exactly the supplier's answers, and can edit (asserted in check-supplier-queue).
 for (const p of ['/supplier/billing', '/supplier/billing/' + id]) {
   const a = ok(await call(p, 'GET', null, admin)), s = ok(await call(p, 'GET', null, sup)); delete a.updatedAt; delete s.updatedAt;
   assert.deepEqual(a, s, 'admin view = supplier view: ' + p);
 }
-for (const p of ['/supplier/password', '/supplier/alerts/seen', '/supplier/orders/' + A])
-  assert.equal((await call(p, 'POST', { field: 'cost', value: '1', currentPassword: 'x', password: 'newpass12345' }, admin)).status, 403, 'admin view is read-only: ' + p);
+for (const p of ['/supplier/password', '/supplier/alerts/seen'])
+  assert.equal((await call(p, 'POST', { currentPassword: 'x', password: 'newpass12345' }, admin)).status, 403, 'belongs to the supplier login: ' + p);
 assert.ok([403, 404].includes((await call('/supplier/billing', 'GET', null, client)).status), 'a client never reaches supplier routes');
 console.log('PASS supplier logins reach only supplier routes; Billing = balance without our fee and adds up; share tracker; no fee, price or payment total leaks');
 

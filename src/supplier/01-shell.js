@@ -37,7 +37,7 @@
       <div class="sp-right">${langSwitch()}${bellHTML()}
         <details class="sp-me"><summary aria-label="${esc(t('Supplier'))}"><span class="sp-ava">${esc(ini)}</span><span class="sp-who"><b>${esc(name)}</b><small>${t('Supplier')}</small></span></summary>
           <div class="sp-menu">${S.view ? `<a href="/admin/">${t('Back to admin')}</a>` : `<a href="#password">${t('Change password')}</a>`}<button type="button" data-logout>${t('Log out')}</button></div></details></div></header>
-      ${S.view ? `<div class="sp-view" role="status"><span>${t('Admin view: this is what the supplier sees. Changes are not saved here.')}</span><a href="/admin/">${t('Back to admin')}</a></div>` : ''}
+      ${S.view ? `<div class="sp-view" role="status"><span>${t('Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.')}</span><a href="/admin/">${t('Back to admin')}</a></div>` : ''}
       <main class="sp-main${S.page === 'orders' ? ' wide' : ''}" id="sp-main">${inner}</main>
       <nav class="sp-bottom">${navItems('')}</nav>`;
   }
