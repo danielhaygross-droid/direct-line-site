@@ -775,6 +775,11 @@ async function routePortal(request, url, ctx, meta) {
   if (who.admin && !await adminSession(DB, who)) return json({ ok: false, error: 'Please sign in again.' }, 401);
   // A supplier login reaches the supplier routes and nothing else.
   if (who.supplier) return routeSupplier(request, path, ctx, who, { clientSummary, getSettings, hashPassword, verifyPassword, createSessionCookie });
+  // Admin view of the supplier portal ("Open supplier portal" in Fees & settings): the same answers the supplier gets, read-only.
+  if (who.admin && path.startsWith('/supplier/')) {
+    if (request.method !== 'GET') return json({ ok: false, error: 'Admin view: read only. Nothing was saved.' }, 403);
+    return routeSupplier(request, path, ctx, who, { clientSummary, getSettings, hashPassword, verifyPassword, createSessionCookie }, { id: 0, username: 'admin', display_name: 'Admin view' });
+  }
   // Admin preview of a client's portal ("see what the client sees"): read-only.
   // With x-dl-act: 1 the admin is logged in as the client: same rights as the client, every change logged and recorded as admin.
   const viewAs = request.headers.get('x-dl-view-as');

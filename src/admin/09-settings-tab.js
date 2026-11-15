@@ -104,7 +104,10 @@
         ${canManage() ? `<button type="button" class="btn" style="margin-top:12px" data-add-account="admin">${ic('plus')}Add admin</button>` : ownersNote()}</section>
       <section class="card card-pad"><h3 class="form-sec">Supplier logins</h3><p class="muted" style="margin:0 0 10px;font-size:14px">The supplier (Ada, Ye) signs in at the same address and only sees the supplier portal: their costs, cancellation fees and what was paid for their part. Never our fee or client prices.</p>
         <div class="acc-list" data-suppliers>${suppliersHTML()}</div>
-        ${canManage() ? `<button type="button" class="btn" style="margin-top:12px" data-add-account="supplier">${ic('plus')}Add supplier login</button>` : ownersNote()}</section>
+        ${canManage() ? `<button type="button" class="btn" style="margin-top:12px" data-add-account="supplier">${ic('plus')}Add supplier login</button>` : ownersNote()}
+        <h3 class="form-sec" style="margin-top:20px">Supplier portal link</h3><p class="muted" style="margin:0 0 10px;font-size:14px">Open it to see what the supplier sees (view only). The supplier signs in at this address.</p>
+        <div class="copy-line"><span style="flex:1">${esc(location.origin)}/supplier/</span><button type="button" class="btn btn-sm" data-copy="${esc(location.origin)}/supplier/">${ic('copy')}Copy</button></div>
+        <a class="btn" style="margin-top:12px" href="/supplier/" target="_blank" rel="noopener">Open supplier portal</a></section>
       <section class="card card-pad"><h3 class="form-sec">Supplier share payments</h3><p class="muted" style="margin:0 0 10px;font-size:14px">What the supplier paid us for their amount per order, every order except cancelled ones (set in Fees). The supplier sees the total and what is still to pay.</p>
         <div data-share><p class="muted" style="margin:0">Loading…</p></div>
         <form id="share-form" class="form-grid" novalidate style="margin-top:12px"><label class="field"><span>Amount (USD)</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" required></span></label>

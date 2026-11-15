@@ -280,3 +280,4 @@ a.sp-add:hover u{color:var(--gold-2)}
   .sp-rcard{padding:14px}.sp-rpic{width:64px;height:64px}
   .sp-qgrid,.sp-choices{grid-template-columns:1fr}
 }
+.sp-view{display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:9px 16px;background:#fdf3d8;color:#5c4307;font-size:14px;border-bottom:1px solid #ecd9a0;text-align:center}.sp-view a{color:inherit;font-weight:600;text-decoration:underline}
