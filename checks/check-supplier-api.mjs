@@ -61,7 +61,7 @@ assert.equal(a.other, 0);
 assert.equal(one.statement.billed - one.statement.paid, one.balance);
 
 // Supplier share payments: recorded by admins, the supplier sees what is still to pay.
-assert.equal((await call('/admin/supplier-share', 'POST', { amount: 1, paidAt: '2026-11-10' }, sup)).status, 404);
+assert.equal((await call('/admin/supplier-share', 'POST', { amount: 1, paidAt: '2026-11-10' }, sup)).status, 403);
 ok(await call('/admin/supplier-share', 'POST', { amount: 1, paidAt: '2026-11-10', note: 'WeChat' }, admin));
 const share = ok(await call('/supplier/billing', 'GET', null, sup)).share;
 assert.deepEqual([share.counted, share.amount, share.paid, share.stillToPay], [3, 3, 1, 2]);
