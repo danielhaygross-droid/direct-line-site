@@ -59,6 +59,7 @@ Last updated: 15 Nov 2026, after supplier-portal phase 3a (quotes + price reques
 - Reports: layout files in `tools/report-template/` (shared `head.html`, Hebrew style, the 22 Oct report `body.html` + `make_he.py`, `render*.cjs`) and `tools/report-template/r1101/` (`page_fn.py` layout, `render.cjs` PDF, `shot.cjs` preview). The report text `gen.py` holds real store and billing figures, so it stays on Erwin's computer in `direct-line-control/tools/report-template/r1101/`: copy that folder to a new `rMMDD` and put screenshots in its `img/`. Scripts use the repo's `playwright-core`; set `CHROME_PATH` if Chromium is not at Erwin's path. Finished PDFs: `direct-line-control/reports/`.
 
 ## 4. Changes (most recent first)
+- header-signed-in-name (15 Nov): Erwin signed in with his own login but the Control page top-right still said "Daniel / System Admin" (typed into dist/index.html + dist/en/index.html). `/api/auth/session` now returns a team admin's name + position; `dist/p/profile.js` fills the header. The main login (set in Vercel) keeps Daniel. Asserted in `checks/check-header-name.mjs` (EN+HE, 1440+390).
 - team-owners-seed (15 Nov): Erwin on his phone: no Edit buttons (nobody but the main login was an owner). One-time step: Erwin + Shahar owners, Ye (supplier) admin login -> supplier login, signed out. Tested on a throwaway database (not a repo check: the usernames would be in the public repo).
 - supplier-portal-p3 (15 Nov): Erwin: "Yes, start phase 3". Quotes and price requests in the portal (section 2). Retiring the sheet is NOT done (needs Erwin). Asserted in `checks/check-supplier-requests.mjs`, `checks/check-supplier-requests-ui.mjs`, `checks/check-quote-sheet.mjs`.
 - supplier-portal-p2 (15 Nov): Erwin: "go work with phase 2". Work queue built (see section 2). Asserted in `checks/check-supplier-queue.mjs`, `checks/check-supplier-queue-ui.mjs` and the new block in `checks/check-supplier-sheet.mjs`.
@@ -112,6 +113,7 @@ Last updated: 15 Nov 2026, after supplier-portal phase 3a (quotes + price reques
 - #145–#152 (1–2 Nov): photo per variation, sheet picture with variant names, Paste button, cost revision tags/filter/sort, Sort on every list, Shipped colour rules repair.
 
 ## 5. Failed attempts / lessons (don't repeat these)
+- The users table has `display_name`, not `name` (a `SELECT name` fails quietly behind `.catch`).
 - Supplier portal edits must go through `applySupplierRow` + `writeSupplierCells`: writing only the database lets the next minute check read the old sheet cell as a new supplier edit and undo it.
 - Sessions must be revocable: never sign a role string that carries no user id + version (the old plain `admin` could not be ended). The store dashboard worker trusts any signed cookie, so `api/index.mjs` must stop every cookie that is not a current admin before forwarding.
 - Supplier routes: never add a supplier feature by reusing a client/admin route or `orderOut()`; build the answer field by field in `server/supplier-portal.mjs` and extend `check-supplier-api` (its forbidden-key list and forbidden numbers).
