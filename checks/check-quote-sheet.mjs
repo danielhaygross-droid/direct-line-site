@@ -106,4 +106,22 @@ assert.equal(qt[i][9], 12.4, 'supplier price untouched'); assert.equal(qt[i][13]
 // junk in the price cell is ignored and reported
 qt[i][9] = 'ask me'; poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch }); assert.equal(poll.quotes.skipped.length, 1);
 console.log('PASS supplier price -> client quote (+ fee), not available with reason, admin override, junk ignored');
+// Supplier portal (phase 3, 15 Nov 2026): a quote answered in the portal is written into the Product Quotes row, the next
+// check does not read the old cells back, and a later edit typed in the sheet still counts.
+{
+  const np = (await call('/products', 'POST', { name: 'Portal lamp', link: 'https://www.etsy.com/listing/9', photos: [photo] }, client)).data.product; await settle();
+  assert.equal((await call('/admin/users', 'POST', { username: 'sup-q', name: 'Ye', password: 'supplierpass1', role: 'supplier' }, admin)).status, 200);
+  const sup = (await call('/login', 'POST', { username: 'sup-q', password: 'supplierpass1' })).cookie;
+  const put = await call('/supplier/quotes/' + np.id, 'PUT', { price: '7.10', shipping: '3.50', available: true, note: 'Ships in 2 days' }, sup); await settle();
+  assert.equal(put.status, 200, JSON.stringify(put.data));
+  const k = rowOf(np.id);
+  assert.deepEqual([qt[k][9], qt[k][10], qt[k][11], qt[k][12]], [7.1, 3.5, 'Available', 'Ships in 2 days'], 'the portal answer is in the sheet row');
+  assert.equal(qt[k][14], 'Quoted');
+  poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+  const pr = await DB.prepare('SELECT status, supplier_price, supplier_shipping FROM portal_products WHERE id = ?').bind(np.id).first();
+  assert.deepEqual([pr.status, Number(pr.supplier_price), Number(pr.supplier_shipping)], ['approved', 7.1, 3.5], 'the next check does not undo it');
+  qt[k][9] = 6.8; poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+  assert.equal(Number((await DB.prepare('SELECT supplier_price FROM portal_products WHERE id = ?').bind(np.id).first()).supplier_price), 6.8, 'a later sheet edit still counts');
+  console.log('PASS supplier portal quotes reach the Product Quotes tab and are not undone; sheet edits still count');
+}
 await pg.close();
