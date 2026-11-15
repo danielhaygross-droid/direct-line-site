@@ -2,7 +2,8 @@
    English and Simplified Chinese. The server only ever sends supplier-safe numbers (server/supplier-portal.mjs). */
 (function () {
   'use strict';
-  const S = { me: null, page: 'billing', clientId: null, billing: null, client: null, open: new Set() };
+  const S = { me: null, page: 'orders', clientId: null, billing: null, client: null, open: new Set(),
+    queue: null, tab: 'new', q: '', f: {}, limit: 50, pinned: new Set(), pinnedTab: null, saving: {}, pending: {}, warn: {}, err: {}, drawer: null, alerts: null, seenAt: null };
   const $ = (sel, root = document) => root.querySelector(sel);
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const money = v => { const n = Number(v || 0); return (n < 0 ? '−' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
@@ -69,6 +70,7 @@
     return data;
   }
   const ICON = {
+    box: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/></svg>',
     bill: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>',
     back: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>',
     next: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>',
@@ -103,12 +105,13 @@
   }
   function shell(inner) {
     const name = S.me?.name || '', ini = name.trim().slice(0, 1).toUpperCase() || 'S';
-    return `<header class="sp-top"><a class="sp-home" href="#billing" aria-label="${esc(t('Billing'))}">${brand()}</a>
-      <nav class="sp-nav"><a href="#billing" class="sp-tab" aria-current="${S.page !== 'password' ? 'page' : 'false'}">${ICON.bill}<span>${t('Billing')}</span></a></nav>
-      <div class="sp-right">${langSwitch()}
+    return `<header class="sp-top"><a class="sp-home" href="#orders" aria-label="${esc(t('Billing'))}">${brand()}</a>
+      <nav class="sp-nav"><a href="#orders" class="sp-tab" aria-current="${S.page === 'orders' ? 'page' : 'false'}">${ICON.box}<span>${t('Orders')}</span>${S.alerts?.newOrders ? `<b class="sp-badge">${S.alerts.newOrders}</b>` : ''}</a><a href="#billing" class="sp-tab" aria-current="${['billing', 'client'].includes(S.page) ? 'page' : 'false'}">${ICON.bill}<span>${t('Billing')}</span></a></nav>
+      <div class="sp-right">${langSwitch()}${bellHTML()}
         <details class="sp-me"><summary aria-label="${esc(t('Supplier'))}"><span class="sp-ava">${esc(ini)}</span><span class="sp-who"><b>${esc(name)}</b><small>${t('Supplier')}</small></span></summary>
           <div class="sp-menu"><a href="#password">${t('Change password')}</a><button type="button" data-logout>${t('Log out')}</button></div></details></div></header>
-      <main class="sp-main" id="sp-main">${inner}</main>`;
+      <main class="sp-main${S.page === 'orders' ? ' wide' : ''}" id="sp-main">${inner}</main>
+      <nav class="sp-bottom"><a href="#orders" aria-current="${S.page === 'orders' ? 'page' : 'false'}">${ICON.box}<span>${t('Orders')}</span>${S.alerts?.newOrders ? `<b class="sp-badge">${S.alerts.newOrders}</b>` : ''}</a><a href="#billing" aria-current="${['billing', 'client'].includes(S.page) ? 'page' : 'false'}">${ICON.bill}<span>${t('Billing')}</span></a></nav>`;
   }
 
   // ---------- Billing: balance per client + supplier share ----------
@@ -254,10 +257,254 @@
     });
   }
 
+  // ---------- Orders: the work queue (phase 2) ----------
+  Object.assign(ZH, {
+    'Orders': '订单', 'Newest first. Type in the gold columns: each change saves by itself.': '最新的在最上面。在金色栏里填写：每次修改都会自动保存。',
+    'New': '新订单', 'Bought': '已购买', 'Shipped': '已发货', 'Cancelled': '已取消', 'Not bought': '未购买', 'Cancel requested': '客户申请取消',
+    'cancel requests': '个取消申请', 'cancel request': '个取消申请', 'don’t buy or ship them. Wait for Direct Line.': '不要购买或发货。请等 Direct Line 通知。',
+    'Show them': '查看', 'Show all': '显示全部', 'Order number, shop, product or tracking': '订单号、店铺、商品或运单号', 'Filters': '筛选', 'Clear filters': '清除筛选',
+    'All clients': '所有客户', 'All countries': '所有国家', 'Only orders without a total cost': '只看没有总成本的订单',
+    'Order': '订单号', 'Product / variation': '商品 / 款式', 'Qty': '数量', 'Ship to': '寄往', 'Total cost (USD)': '总成本（美元）', 'Cost per product (USD)': '每件商品成本（美元）',
+    'Shipping status': '发货状态', 'Tracking number': '运单号', 'Courier': '快递公司', 'Delayed? + reason': '延迟？+ 原因', 'Domestic express tracking': '国内快递单号',
+    'Cancellation fee (USD)': '取消费（美元）', 'Pick': '选择', 'On time': '准时', 'Possibly delayed': '可能延迟', 'Reason': '原因', 'If there is one': '如果有的话',
+    'Nothing typed yet': '还没有填写', 'Saved': '已保存', 'Not saved': '未保存', 'Saving…': '保存中…', 'just now': '刚刚', 'min ago': '分钟前', 'h ago': '小时前',
+    'Also on': '也在', 'Check the number.': '请检查号码。', 'No orders here.': '这里没有订单。', 'No orders match.': '没有符合的订单。',
+    'Gold columns are yours to fill in': '金色栏由您填写', 'Red row: cancel requested': '红色行：客户申请取消', 'Enter saves and jumps to the same box in the next order.': '按回车保存并跳到下一个订单的同一格。',
+    'Export to Excel': '导出 Excel', 'Money is only your part.': '金额只包含您的部分。', 'Show more': '显示更多',
+    'Product': '商品', 'Variation': '款式', 'Open': '打开', 'Copy link': '复制链接', 'Copied': '已复制', 'Download all photos (zip)': '下载全部图片（zip）', 'All photos (zip)': '全部图片（zip）',
+    'Customer': '收件人', 'Delivery address & phone': '收货地址和电话', 'Copy address': '复制地址', 'Tax number': '税号', 'Gift message': '礼物留言', 'Notes from Direct Line': 'Direct Line 备注',
+    'Your part': '您的部分', 'Close': '关闭', 'Next order': '下一个订单', 'Client paid': '客户付款', 'Paid': '已付款', 'Not paid': '未付款', 'No bill yet': '还没有账单',
+    'No photos': '没有图片', 'Client': '客户', 'Shop': '店铺', 'Cost revision requested': '客户请求降价',
+    'new orders': '个新订单', 'new order': '个新订单', 'Sound for new orders': '新订单提示音', 'No new orders.': '没有新订单。', 'See new orders': '查看新订单',
+    'Type one cost per product, separated by commas, e.g. 10.90, 9.00.': '每件商品一个成本，用逗号分开，例如 10.90, 9.00。',
+    'Add the tracking number first.': '请先填写运单号。', 'A shipped order can’t be set back here. Ask Direct Line.': '已发货的订单不能在这里改回。请联系 Direct Line。',
+    'The client asked to cancel this order: don’t ship it. Direct Line will tell you.': '客户申请取消这个订单：不要发货。Direct Line 会通知您。',
+    'The client asked to cancel this order: don’t buy it. Direct Line will tell you.': '客户申请取消这个订单：不要购买。Direct Line 会通知您。',
+    'Type the total cost in US dollars, e.g. 17.90.': '请填写美元总成本，例如 17.90。', 'Type one tracking number, without spaces.': '请填写一个运单号，不要空格。',
+    'Pick a courier from the list.': '请从列表中选择快递公司。', 'Type the fee in US dollars, e.g. 4.': '请填写美元费用，例如 4。', 'Mark the order as possibly delayed first.': '请先标记为可能延迟。',
+    'This order is cancelled: its cost can’t change.': '这个订单已取消：成本不能修改。', 'This order is cancelled.': '这个订单已取消。',
+    'A cancellation fee is only for cancelled orders or cancel requests.': '取消费只用于已取消或申请取消的订单。', 'Only orders that are not shipped yet can be delayed.': '只有还没发货的订单可以标记延迟。',
+    'Only orders not shipped yet can be marked bought.': '只有还没发货的订单可以标记为已购买。', 'This order is shipped: its tracking number can’t be cleared.': '这个订单已发货：运单号不能清空。',
+  });
+  const SHIP_OPTS = [['not_bought', 'Not bought'], ['bought', 'Bought'], ['shipped', 'Shipped']];
+  const shipState = o => (o.ship === 'shipped' ? 'shipped' : o.boughtAt ? 'bought' : 'not_bought');
+  const ago = sec => { const d = Math.max(0, Math.floor(Date.now() / 1000) - sec); return d < 60 ? t('just now') : d < 3600 ? Math.floor(d / 60) + ' ' + t('min ago') : d < 86400 ? Math.floor(d / 3600) + ' ' + t('h ago') : fmtDay(sec); };
+  const lastEdit = o => Object.values(o.edits || {}).sort((a, b) => b.at - a.at)[0];
+  const isNew = o => S.seenAt != null && o.createdAt > S.seenAt && o.tab === 'new';
+  const searchText = o => [o.ref, o.shop, o.client, o.product, o.buyer, o.cells.tracking, o.cells.domestic, o.country].join(' ').toLowerCase();
+
+  function visibleOrders() {
+    const q = (S.q || '').trim().toLowerCase(), f = S.f || {};
+    return (S.queue?.orders || []).filter(o => {
+      if (S.onlyCancelReq) return o.cancelRequested;
+      if (!(o.tab === S.tab || S.pinned.has(o.id) && S.pinnedTab === S.tab)) return false;
+      if (q && !searchText(o).includes(q)) return false;
+      if (f.client && o.client !== f.client) return false;
+      if (f.country && o.country !== f.country) return false;
+      if (f.noCost && o.cells.cost !== '') return false;
+      return true;
+    });
+  }
+  const tabCount = tab => (S.queue?.orders || []).filter(o => o.tab === tab).length;
+  const disabledFor = (o, field) => {
+    if (field === 'cancelFee') return !(o.status === 'cancelled' || o.cancelRequested);
+    if (o.status === 'cancelled') return true;
+    if (o.cancelRequested) return field !== 'domestic';
+    if (o.ship === 'shipped') return !['tracking', 'courier', 'domestic', 'itemCosts'].includes(field);
+    return false;
+  };
+  const dis = (o, f) => (disabledFor(o, f) ? ' disabled' : '');
+  // The gold boxes. data-f = field, data-o = order id.
+  function cellBox(o, field) {
+    const c = o.cells, id = o.id;
+    if (field === 'cost') return `<span class="sp-money"><span>$</span><input inputmode="decimal" data-o="${id}" data-f="cost" value="${esc(c.cost)}" placeholder="0.00" aria-label="${esc(t('Total cost (USD)'))}"${dis(o, 'cost')}></span>`;
+    if (field === 'itemCosts') return `<input data-o="${id}" data-f="itemCosts" value="${esc(c.itemCosts)}" placeholder="—" aria-label="${esc(t('Cost per product (USD)'))}"${dis(o, 'itemCosts')}>`;
+    if (field === 'ship') return `<select data-o="${id}" data-f="ship" aria-label="${esc(t('Shipping status'))}"${o.ship === 'shipped' || o.status === 'cancelled' || o.cancelRequested ? ' disabled' : ''}>${SHIP_OPTS.map(([v, l]) => `<option value="${v}"${shipState(o) === v ? ' selected' : ''}>${t(l)}</option>`).join('')}</select>`;
+    if (field === 'tracking') return `<input class="mono" data-o="${id}" data-f="tracking" value="${esc(c.tracking)}" placeholder="${esc(t('Tracking number'))}" aria-label="${esc(t('Tracking number'))}"${dis(o, 'tracking')}>`;
+    if (field === 'courier') { const list = S.queue.couriers.includes(c.courier) || !c.courier ? S.queue.couriers : [c.courier, ...S.queue.couriers];
+      return `<select data-o="${id}" data-f="courier" aria-label="${esc(t('Courier'))}"${dis(o, 'courier')}><option value="">${t('Pick')}</option>${list.map(v => `<option${v === c.courier ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`; }
+    if (field === 'delayed') return `<select data-o="${id}" data-f="delayed" aria-label="${esc(t('Delayed? + reason'))}"${dis(o, 'delayed')}><option value="0">${t('On time')}</option><option value="1"${c.delayed ? ' selected' : ''}>${t('Possibly delayed')}</option></select>${c.delayed ? `<input data-o="${id}" data-f="reason" value="${esc(c.reason)}" placeholder="${esc(t('Reason'))}" aria-label="${esc(t('Reason'))}"${dis(o, 'reason')}>` : ''}`;
+    if (field === 'domestic') return `<input class="mono" data-o="${id}" data-f="domestic" value="${esc(c.domestic)}" placeholder="${esc(t('If there is one'))}" aria-label="${esc(t('Domestic express tracking'))}"${dis(o, 'domestic')}>`;
+    if (field === 'cancelFee') return `<span class="sp-money"><span>$</span><input inputmode="decimal" data-o="${id}" data-f="cancelFee" value="${esc(c.cancelFee)}" placeholder="0" aria-label="${esc(t('Cancellation fee (USD)'))}"${dis(o, 'cancelFee')}></span>`;
+    return '';
+  }
+  const savedLine = o => { const st = S.saving[o.id]; if (st === 'saving') return `<span class="sp-saved">${t('Saving…')}</span>`; if (st === 'err') return `<span class="sp-saved err">⚠ ${t('Not saved')}</span>`;
+    const e = lastEdit(o); return e ? `<span class="sp-saved ok">✓ ${t('Saved')} · ${esc(e.by)} · ${esc(ago(e.at))}</span>` : `<span class="sp-saved">${t('Nothing typed yet')}</span>`; };
+  const warnLine = o => { const w = S.warn[o.id]; return w?.length ? `<p class="sp-warn">${t('Also on')} ${w.map(esc).join(', ')}. ${t('Check the number.')}</p>` : ''; };
+  const errLine = o => (S.err[o.id] ? `<p class="sp-warn">${esc(S.err[o.id])}</p>` : '');
+  const thumb = o => (o.photos[0] ? `<img class="sp-thumb" src="${esc(o.photos[0].thumb)}" alt="" loading="lazy">` : '<span class="sp-thumb none"></span>');
+  const orderHead = o => `<button type="button" class="sp-ref" data-open="${o.id}">${esc(o.ref)}${ICON.next}</button>${isNew(o) ? ` <span class="sp-tag gold">${t('New')}</span>` : ''}
+    <small>${esc(o.client)}${o.shop ? ' · ' + esc(o.shop) : ''}</small><small>${esc(fmtDay(o.createdAt))}</small>${savedLine(o)}`;
+  const cancelNote = o => (o.cancelRequested ? `<span class="sp-tag red">${t('Cancel requested')}</span><p class="sp-warn">${t('don’t buy or ship them. Wait for Direct Line.')}</p>` : o.revision ? `<span class="sp-tag orange">${t('Cost revision requested')}</span>` : '');
+  function rowHTML(o) {
+    const cx = S.tab === 'cancelled';
+    return `<tr data-row="${o.id}" class="${o.cancelRequested ? 'cxreq' : ''}${isNew(o) ? ' isnew' : ''}">
+      <td class="ord">${orderHead(o)}</td>
+      <td class="prod"><div class="sp-prod">${thumb(o)}<span><b>${esc(o.product || '—')}</b>${cancelNote(o)}</span></div></td>
+      <td class="num">${o.qty}</td><td>${esc(o.country)}</td>
+      <td class="g">${cellBox(o, 'cost')}${errLine(o)}</td><td class="g">${cellBox(o, 'itemCosts')}</td>
+      ${cx ? `<td class="g">${cellBox(o, 'cancelFee')}</td><td class="g">${cellBox(o, 'tracking')}</td>` : `<td class="g">${cellBox(o, 'ship')}</td><td class="g">${cellBox(o, 'tracking')}${warnLine(o)}</td><td class="g">${cellBox(o, 'courier')}</td><td class="g dl">${cellBox(o, 'delayed')}</td>`}
+      <td class="g">${cellBox(o, 'domestic')}</td></tr>`;
+  }
+  function cardHTML(o) {
+    const cx = S.tab === 'cancelled', st = shipState(o), f = (label, box) => `<label class="sp-f"><span>${label}</span>${box}</label>`;
+    return `<article class="sp-ocard${o.cancelRequested ? ' cxreq' : ''}" data-row="${o.id}">
+      <div class="sp-ocard-h"><div>${orderHead(o)}</div><span class="sp-pill ${o.status === 'cancelled' ? 'red' : st}">${t(o.status === 'cancelled' ? 'Cancelled' : SHIP_OPTS.find(x => x[0] === st)[1])}</span></div>
+      <div class="sp-prod">${thumb(o)}<span><b>${esc(o.product || '—')}</b>${cancelNote(o)}</span></div>
+      <div class="sp-fgrid">${f(t('Qty'), `<b>${o.qty}</b>`)}${f(t('Ship to'), `<b>${esc(o.country)}</b>`)}
+        ${f(t('Total cost (USD)'), cellBox(o, 'cost') + errLine(o))}${cx ? f(t('Cancellation fee (USD)'), cellBox(o, 'cancelFee')) : f(t('Shipping status'), cellBox(o, 'ship'))}
+        ${f(t('Cost per product (USD)'), cellBox(o, 'itemCosts'))}${f(t('Tracking number'), cellBox(o, 'tracking') + warnLine(o))}
+        ${cx ? '' : f(t('Courier'), cellBox(o, 'courier')) + f(t('Delayed? + reason'), cellBox(o, 'delayed'))}${f(t('Domestic express tracking'), cellBox(o, 'domestic'))}</div>
+      <div class="sp-ocard-a"><button type="button" class="btn btn-sm" data-copy-address="${o.id}">${t('Copy address')}</button>${o.photos.length ? `<a class="btn btn-sm" href="/api/portal/supplier/orders/${o.id}/photos.zip">${t('All photos (zip)')}</a>` : ''}</div></article>`;
+  }
+  function ordersHTML() {
+    const Q = S.queue; if (!Q) return S.error || `<p class="sp-empty">${t('Loading…')}</p>`;
+    const req = Q.orders.filter(o => o.cancelRequested), list = visibleOrders(), shown = list.slice(0, S.limit), f = S.f || {};
+    const clients = [...new Set(Q.orders.map(o => o.client))].sort(), countries = [...new Set(Q.orders.map(o => o.country).filter(Boolean))].sort();
+    const filtered = !!(S.q || f.client || f.country || f.noCost || S.onlyCancelReq);
+    const tabs = [['new', 'New'], ['bought', 'Bought'], ['shipped', 'Shipped'], ['cancelled', 'Cancelled']].map(([k, l]) => {
+      const n = tabCount(k), extra = k === 'new' ? Q.orders.filter(isNew).length : k === 'cancelled' ? 0 : 0;
+      return `<button type="button" class="sp-chip" data-tab="${k}" aria-pressed="${S.tab === k && !S.onlyCancelReq}">${t(l)} <span>${n}</span>${extra ? `<b class="sp-badge">${extra}</b>` : ''}</button>`; }).join('');
+    const cx = S.tab === 'cancelled';
+    const head = `<tr><th>${t('Order')}</th><th>${t('Product / variation')}</th><th class="num">${t('Qty')}</th><th>${t('Ship to')}</th><th class="g">${t('Total cost (USD)')}</th><th class="g">${t('Cost per product (USD)')}</th>
+      ${cx ? `<th class="g">${t('Cancellation fee (USD)')}</th><th class="g">${t('Tracking number')}</th>` : `<th class="g">${t('Shipping status')}</th><th class="g">${t('Tracking number')}</th><th class="g">${t('Courier')}</th><th class="g">${t('Delayed? + reason')}</th>`}<th class="g">${t('Domestic express tracking')}</th></tr>`;
+    return `<div class="sp-head"><div><h1>${t('Orders')}</h1><p class="sp-intro">${t('Newest first. Type in the gold columns: each change saves by itself.')}</p></div>
+        <button type="button" class="btn" data-export-orders>${t('Export to Excel')}</button></div>
+      ${req.length ? `<div class="sp-alert"><b>${req.length} ${t(req.length === 1 ? 'cancel request' : 'cancel requests')}</b><span>${req.slice(0, 4).map(o => esc(o.ref)).join(', ')}${req.length > 4 ? '…' : ''}: ${t('don’t buy or ship them. Wait for Direct Line.')}</span><button type="button" class="btn btn-sm" data-cxreq>${t(S.onlyCancelReq ? 'Show all' : 'Show them')}</button></div>` : ''}
+      <div class="sp-bar"><div class="sp-chips">${tabs}</div>
+        <div class="sp-tools"><label class="sp-search"><input type="search" data-q value="${esc(S.q || '')}" placeholder="${esc(t('Order number, shop, product or tracking'))}" aria-label="${esc(t('Order number, shop, product or tracking'))}"></label>
+          <button type="button" class="btn" data-filters aria-expanded="${!!S.showFilters}">${t('Filters')}${f.client || f.country || f.noCost ? ' •' : ''}</button></div></div>
+      ${S.showFilters ? `<div class="sp-filters"><select data-fl="client"><option value="">${t('All clients')}</option>${clients.map(c => `<option${f.client === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
+        <select data-fl="country"><option value="">${t('All countries')}</option>${countries.map(c => `<option${f.country === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
+        <label class="sp-check"><input type="checkbox" data-fl="noCost"${f.noCost ? ' checked' : ''}> <span>${t('Only orders without a total cost')}</span></label>
+        ${filtered ? `<button type="button" class="btn btn-sm" data-clear>${t('Clear filters')}</button>` : ''}</div>` : ''}
+      <section class="card sp-qcard">${list.length ? `<div class="sp-qwrap"><table class="sp-q"><thead>${head}</thead><tbody>${shown.map(rowHTML).join('')}</tbody></table></div>
+        <div class="sp-qcards">${shown.map(cardHTML).join('')}</div>${list.length > shown.length ? `<div class="sp-more"><button type="button" class="btn" data-more>${t('Show more')} (${list.length - shown.length})</button></div>` : ''}`
+        : `<div class="sp-empty center"><p>${t(filtered ? 'No orders match.' : 'No orders here.')}</p>${filtered ? `<button type="button" class="btn" data-clear>${t('Clear filters')}</button>` : ''}</div>`}
+        <p class="sp-legend"><span><i class="g"></i>${t('Gold columns are yours to fill in')}</span><span><i class="r"></i>${t('Red row: cancel requested')}</span><span>${t('Not bought')} → ${t('Bought')} → ${t('Shipped')}</span><span class="end">${t('Enter saves and jumps to the same box in the next order.')}</span></p></section>`;
+  }
+  // One box saved: the order comes back from the server; only its row (and the open drawer) is redrawn, focus stays.
+  async function saveBox(el) {
+    const id = Number(el.dataset.o), f = el.dataset.f, o = S.queue.orders.find(x => x.id === id); if (!o) return;
+    let field = f, value = el.value.trim();
+    if (f === 'ship') { field = value === 'shipped' ? 'shipped' : 'bought'; value = value === 'shipped' ? true : value === 'bought'; if (field === 'bought' && !!o.boughtAt === value) return; }
+    else if (f === 'delayed') { value = value === '1'; if (value === o.cells.delayed) return; }
+    else if ((o.cells[f] ?? '') === value) return;
+    const key = id + ':' + f, sent = JSON.stringify(value); if (S.pending[key] === sent) return; S.pending[key] = sent;
+    S.saving[id] = 'saving'; delete S.err[id]; redrawOrder(id);
+    try {
+      const r = await api('/supplier/orders/' + id, { method: 'PUT', body: { field, value } });
+      Object.assign(o, r.order); delete S.saving[id];
+      if (field === 'tracking') S.warn[id] = r.warn?.sameTracking || [];
+      if (o.tab !== S.tab) { S.pinned.add(id); S.pinnedTab = S.tab; }
+    } catch (e) { S.saving[id] = 'err'; S.err[id] = e.message; }
+    delete S.pending[key];
+    redrawOrder(id);
+  }
+  function redrawOrder(id) {
+    const o = S.queue.orders.find(x => x.id === id), active = document.activeElement, keep = active?.dataset?.o == id && !active.closest('#sp-drawer') ? active.dataset.f : null, sel = keep && active.closest('.sp-ocard') ? '.sp-ocard' : 'tr';
+    for (const el of document.querySelectorAll(`[data-row="${id}"]`)) el.outerHTML = el.matches('tr') ? rowHTML(o) : cardHTML(o);
+    if (S.drawer === id) drawerFill();
+    if (keep) { const el = document.querySelector(`${sel}[data-row="${id}"] [data-f="${keep}"]`); if (el) { if (el.value !== active.value) el.value = active.value; el.focus(); } }
+  }
+  function exportOrders() {
+    const X = window.DLExcelExport; if (!X) return;
+    const list = visibleOrders(), stateL = o => t(o.status === 'cancelled' ? 'Cancelled' : o.cancelRequested ? 'Cancel requested' : SHIP_OPTS.find(x => x[0] === shipState(o))[1]);
+    const rows = list.map(o => [o.date, o.ref, o.client, o.shop, o.product, o.qty, o.country, stateL(o), o.cells.cost === '' ? '' : Number(o.cells.cost), o.cells.itemCosts, o.cells.tracking, o.cells.courier, o.cells.domestic, o.cells.cancelFee === '' ? '' : Number(o.cells.cancelFee)]);
+    const head = ['Date', 'Order', 'Client', 'Shop', 'Product / variation', 'Qty', 'Ship to', 'Shipping status', 'Total cost (USD)', 'Cost per product (USD)', 'Tracking number', 'Courier', 'Domestic express tracking', 'Cancellation fee (USD)'].map(t);
+    X.download(X.table({ title: 'Direct Line · ' + t('Orders'), subtitle: t('Money is only your part.') + ' ' + fmtTime(Math.floor(Date.now() / 1000)) + ' ' + t('(China time)'), sheetName: t('Orders'), head, rows, money: [8, 13], widths: [12, 16, 18, 16, 40, 6, 16, 14, 14, 18, 22, 14, 22, 14] }), `direct-line-orders-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
+  // ---------- one order: drawer with photos, links, address, notes and the same gold boxes ----------
+  const addressText = o => [o.buyer, o.address].filter(Boolean).join('\n');
+  async function copyText(text, btn) {
+    try { await navigator.clipboard.writeText(text); } catch (e) { const a = document.createElement('textarea'); a.value = text; document.body.append(a); a.select(); try { document.execCommand('copy'); } catch (x) { /* nothing */ } a.remove(); }
+    if (btn) { const was = btn.textContent; btn.textContent = t('Copied'); setTimeout(() => { btn.textContent = was; }, 1400); }
+  }
+  function drawerHTML(o) {
+    const big = o.photos[S.photo || 0] || o.photos[0], f = (label, box) => `<label class="sp-f"><span>${label}</span>${box}</label>`, cx = o.status === 'cancelled';
+    const paidL = { paid: 'Paid', not_paid: 'Not paid', no_bill: 'No bill yet' }[o.clientPaid];
+    return `<div class="sp-dhead"><div><h2>${esc(o.ref)}</h2><p class="muted">${esc(o.client)}${o.shop ? ' · ' + esc(o.shop) : ''} · ${esc(fmtDay(o.createdAt))} · ${t('Ship to')} ${esc(o.country)}</p></div>
+        <button type="button" class="icon-btn" data-close aria-label="${esc(t('Close'))}">✕</button></div>
+      <div class="sp-dbody">
+        ${o.cancelRequested ? `<p class="sp-alert"><b>${t('Cancel requested')}</b><span>${t('don’t buy or ship them. Wait for Direct Line.')}</span></p>` : ''}
+        <section class="card sp-card"><span class="sp-eyebrow">${t('Product')}</span>
+          <div class="sp-dprod"><div class="sp-gallery">${big ? `<a href="${esc(big.url)}" target="_blank" rel="noopener"><img class="sp-big" src="${esc(big.url)}" alt=""></a>` : `<div class="sp-big none">${t('No photos')}</div>`}
+            ${o.photos.length > 1 ? `<div class="sp-thumbs">${o.photos.map((p, i) => `<button type="button" data-photo="${i}" aria-pressed="${(S.photo || 0) === i}"><img src="${esc(p.thumb)}" alt="">${p.label ? `<span>${esc(p.label)}</span>` : ''}</button>`).join('')}</div>` : ''}
+            ${o.photos.length ? `<a class="btn btn-sm" href="/api/portal/supplier/orders/${o.id}/photos.zip">${t('Download all photos (zip)')}</a>` : ''}</div>
+            <dl class="sp-kv"><dt>${t('Product')}</dt><dd>${esc(o.product || '—')}</dd><dt>${t('Qty')}</dt><dd>${o.qty}</dd>
+              ${o.links.map((l, i) => `<dt>${o.links.length > 1 ? t('Product') + ' ' + (i + 1) : t('Open')}</dt><dd class="sp-link"><span>${esc(l)}</span><button type="button" class="btn btn-sm" data-copy="${esc(l)}">${t('Copy link')}</button><a class="btn btn-sm" href="${esc(l)}" target="_blank" rel="noopener noreferrer">${t('Open')}</a></dd>`).join('')}
+              <dt>${t('Client paid')}</dt><dd>${t(paidL)}</dd></dl></div></section>
+        <section class="card sp-card"><span class="sp-eyebrow">${t('Ship to')}</span>
+          <dl class="sp-kv"><dt>${t('Customer')}</dt><dd>${esc(o.buyer || '—')}</dd><dt>${t('Delivery address & phone')}</dt><dd class="pre">${esc(o.address || '—')}</dd>
+            ${o.taxNumber ? `<dt>${t('Tax number')}</dt><dd>${esc(o.taxNumber)}</dd>` : ''}</dl>
+          <button type="button" class="btn btn-sm" data-copy-address="${o.id}">${t('Copy address')}</button></section>
+        ${o.notes || o.giftMessage ? `<section class="card sp-card">${o.notes ? `<span class="sp-eyebrow">${t('Notes from Direct Line')}</span><p class="sp-note-box">${esc(o.notes)}</p>` : ''}${o.giftMessage ? `<span class="sp-eyebrow">${t('Gift message')}</span><p class="sp-note-box">${esc(o.giftMessage)}</p>` : ''}</section>` : ''}
+        <section class="card sp-card"><span class="sp-eyebrow">${t('Your part')}</span>
+          <div class="sp-fgrid">${f(t('Total cost (USD)'), cellBox(o, 'cost') + errLine(o))}${cx || o.cancelRequested ? f(t('Cancellation fee (USD)'), cellBox(o, 'cancelFee')) : f(t('Shipping status'), cellBox(o, 'ship'))}
+            ${f(t('Cost per product (USD)'), cellBox(o, 'itemCosts'))}${f(t('Tracking number'), cellBox(o, 'tracking') + warnLine(o))}
+            ${cx ? '' : f(t('Courier'), cellBox(o, 'courier')) + f(t('Delayed? + reason'), cellBox(o, 'delayed'))}${f(t('Domestic express tracking'), cellBox(o, 'domestic'))}</div></section>
+      </div>
+      <div class="sp-dfoot">${savedLine(o)}<span class="sp-dbtns"><button type="button" class="btn" data-close>${t('Close')}</button><button type="button" class="btn btn-dark" data-next>${t('Next order')} ${ICON.next}</button></span></div>`;
+  }
+  function drawerFill() {
+    const d = $('#sp-drawer'), o = S.queue?.orders.find(x => x.id === S.drawer); if (!d || !o) return;
+    const active = document.activeElement, keep = d.contains(active) && active.dataset?.f ? active.dataset.f : null, val = keep ? active.value : null, y = $('.sp-dbody', d)?.scrollTop || 0;
+    d.innerHTML = drawerHTML(o); $('.sp-dbody', d).scrollTop = y;
+    if (keep) { const el = d.querySelector(`[data-f="${keep}"]`); if (el) { if (el.value !== val) el.value = val; el.focus(); } }
+  }
+  function openDrawer(id) {
+    S.drawer = id; S.photo = 0;
+    let d = $('#sp-drawer');
+    if (!d) { document.body.insertAdjacentHTML('beforeend', '<div class="sp-scrim" data-close></div><aside id="sp-drawer" class="sp-drawer" role="dialog" aria-modal="true"></aside>'); d = $('#sp-drawer'); }
+    drawerFill(); document.body.classList.add('sp-noscroll'); $('[data-close]', d)?.focus();
+  }
+  function closeDrawer() { S.drawer = null; $('#sp-drawer')?.remove(); $('.sp-scrim')?.remove(); document.body.classList.remove('sp-noscroll'); }
+  function nextOrder() { const list = visibleOrders(), i = list.findIndex(o => o.id === S.drawer); if (list[i + 1]) { S.drawer = list[i + 1].id; S.photo = 0; drawerFill(); } else closeDrawer(); }
+
+  // ---------- new-order alerts: badge on the bell, a short message, an optional sound ----------
+  let soundOn = false;
+  try { soundOn = localStorage.getItem('dl_supplier_sound') === '1'; } catch (e) { /* private mode */ }
+  function beep() {
+    if (!soundOn) return;
+    try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain(); o.type = 'sine'; o.frequency.value = 880; g.gain.setValueAtTime(0.0001, a.currentTime); g.gain.exponentialRampToValueAtTime(0.2, a.currentTime + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + 0.4); o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + 0.45); } catch (e) { /* no sound */ }
+  }
+  function toast(text) {
+    $('.sp-toast')?.remove();
+    document.body.insertAdjacentHTML('beforeend', `<div class="sp-toast" role="status">${esc(text)}</div>`);
+    setTimeout(() => $('.sp-toast')?.remove(), 4000);
+  }
+  const newCountText = n => `${n} ${t(n === 1 ? 'new order' : 'new orders')}`;
+  function bellHTML() {
+    const n = S.alerts?.newOrders || 0;
+    return `<details class="sp-bell"><summary class="icon-btn" aria-label="${esc(newCountText(n))}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>${n ? `<b class="sp-badge">${n}</b>` : ''}</summary>
+      <div class="sp-menu"><p class="sp-menu-h">${n ? esc(newCountText(n)) : t('No new orders.')}</p>${n ? `<button type="button" data-see-new>${t('See new orders')}</button>` : ''}
+        <label class="sp-check"><input type="checkbox" data-sound${soundOn ? ' checked' : ''}> <span>${t('Sound for new orders')}</span></label></div></details>`;
+  }
+  async function pollAlerts(first = false) {
+    try {
+      const a = await api('/supplier/alerts'), before = S.alerts?.newOrders ?? null;
+      S.alerts = a; if (S.seenAt == null) S.seenAt = a.seenAt;
+      const bell = $('.sp-bell'); if (bell && !bell.open) bell.outerHTML = bellHTML();
+      if (first && a.newOrders) toast(newCountText(a.newOrders));
+      if (!first && before != null && a.newOrders > before) {
+        toast(newCountText(a.newOrders)); beep();
+        if (S.page === 'orders' && !document.activeElement?.dataset?.f) { const d = await api('/supplier/orders'); S.queue = d; render(); }
+      }
+    } catch (e) { /* try again next minute */ }
+  }
+  async function seeNew() {
+    S.page = 'orders'; S.tab = 'new'; S.onlyCancelReq = false;
+    if (location.hash !== '#orders') location.hash = 'orders'; else render();
+    try { await api('/supplier/alerts/seen', { method: 'POST' }); S.alerts = { ...(S.alerts || {}), newOrders: 0 }; } catch (e) { /* later */ }
+    const bell = $('.sp-bell'); if (bell) bell.outerHTML = bellHTML();
+  }
+  setInterval(() => { if (S.me) pollAlerts(); }, 60000);
+
   // ---------- pages, events, boot ----------
   function readHash() {
     const h = location.hash.replace(/^#/, ''), m = /^client\/(\d+)$/.exec(h);
-    if (m) { S.page = 'client'; S.clientId = Number(m[1]); } else if (h === 'password') S.page = 'password'; else S.page = 'billing';
+    if (m) { S.page = 'client'; S.clientId = Number(m[1]); } else if (h === 'password') S.page = 'password'; else if (h === 'billing') S.page = 'billing'; else S.page = 'orders';
   }
   const loading = () => `<p class="sp-empty">${t('Loading…')}</p>`;
   const failed = e => `<div class="sp-empty"><p>${esc(e.message)}</p><button type="button" class="btn" data-retry>${t('Try again')}</button></div>`;
@@ -265,37 +512,76 @@
     if (!S.me) return loginScreen();
     const body = S.page === 'password' ? passwordHTML()
       : S.page === 'client' ? (S.client && S.client.id === S.clientId ? clientHTML(S.client) : S.error || loading())
+      : S.page === 'orders' ? ordersHTML()
       : S.billing ? billingHTML(S.billing) : S.error || loading();
-    const y = window.scrollY;
+    const y = window.scrollY, drawer = S.drawer;
     document.body.innerHTML = shell(body);
-    document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t('Billing');
+    document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t(S.page === 'orders' ? 'Orders' : 'Billing');
     if (S.keepScroll) window.scrollTo(0, y);
     S.keepScroll = false;
     bindPassword();
+    if (drawer && S.page === 'orders') openDrawer(drawer);
   }
   async function load() {
     S.error = null;
     try {
       if (S.page === 'client') { if (!S.client || S.client.id !== S.clientId) { render(); const d = await api('/supplier/billing/' + S.clientId); S.client = d.client; S.clientAt = d.updatedAt; } }
       else if (S.page === 'billing') { if (!S.billing) render(); const d = await api('/supplier/billing'); S.billing = d; }
+      else if (S.page === 'orders') { if (!S.queue) render(); S.queue = await api('/supplier/orders'); S.pinned.clear(); }
     } catch (e) { if (e.status === 401) { S.me = null; return render(); } S.error = failed(e); }
     render();
   }
+  const rerenderOrders = () => { S.keepScroll = true; render(); };
   document.addEventListener('click', async e => {
     const l = e.target.closest('[data-lang]'); if (l) { setLang(l.dataset.lang); return; }
     if (e.target.closest('[data-logout]')) { await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {}); location.href = '/'; return; }
     if (e.target.closest('[data-retry]')) { load(); return; }
+    if (e.target.closest('[data-see-new]')) { seeNew(); return; }
     const p = e.target.closest('[data-pay]'); if (p) { const id = Number(p.dataset.pay); S.open.has(id) ? S.open.delete(id) : S.open.add(id); S.keepScroll = true; render(); return; }
     const c = e.target.closest('[data-client]'); if (c) { location.hash = 'client/' + c.dataset.client; return; }
+    // Orders
+    const tb = e.target.closest('[data-tab]'); if (tb) { S.tab = tb.dataset.tab; S.onlyCancelReq = false; S.pinned.clear(); S.limit = 50; rerenderOrders(); return; }
+    if (e.target.closest('[data-cxreq]')) { S.onlyCancelReq = !S.onlyCancelReq; rerenderOrders(); return; }
+    if (e.target.closest('[data-filters]')) { S.showFilters = !S.showFilters; rerenderOrders(); return; }
+    if (e.target.closest('[data-clear]')) { S.q = ''; S.f = {}; S.onlyCancelReq = false; rerenderOrders(); return; }
+    if (e.target.closest('[data-more]')) { S.limit += 50; rerenderOrders(); return; }
+    if (e.target.closest('[data-export-orders]')) { exportOrders(); return; }
+    const op = e.target.closest('[data-open]'); if (op) { openDrawer(Number(op.dataset.open)); return; }
+    if (e.target.closest('[data-close]')) { closeDrawer(); return; }
+    if (e.target.closest('[data-next]')) { nextOrder(); return; }
+    const ph = e.target.closest('[data-photo]'); if (ph) { S.photo = Number(ph.dataset.photo); drawerFill(); return; }
+    const ca = e.target.closest('[data-copy-address]'); if (ca) { const o = S.queue?.orders.find(x => x.id === Number(ca.dataset.copyAddress)); if (o) copyText(addressText(o), ca); return; }
+    const cp = e.target.closest('[data-copy]'); if (cp) { copyText(cp.dataset.copy, cp); return; }
   });
-  document.addEventListener('keydown', e => { const c = e.target.closest?.('tr[data-client]'); if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); location.hash = 'client/' + c.dataset.client; } });
-  window.addEventListener('hashchange', () => { readHash(); window.scrollTo(0, 0); load(); });
+  // Gold boxes save when they change (selects) or when you leave them (text); Enter saves and jumps to the same box in the next order.
+  document.addEventListener('change', e => {
+    const el = e.target;
+    if (el.matches('[data-sound]')) { soundOn = el.checked; try { localStorage.setItem('dl_supplier_sound', soundOn ? '1' : '0'); } catch (x) { /* private mode */ } if (soundOn) beep(); return; }
+    if (el.matches('[data-fl]')) { S.f = { ...S.f, [el.dataset.fl]: el.type === 'checkbox' ? el.checked : el.value }; S.limit = 50; rerenderOrders(); return; }
+    if (el.matches('[data-o][data-f]')) saveBox(el);
+  });
+  let qTimer;
+  document.addEventListener('input', e => {
+    if (e.target.matches('[data-q]')) { clearTimeout(qTimer); const v = e.target.value; qTimer = setTimeout(() => { S.q = v; S.limit = 50; rerenderOrders(); const q = $('[data-q]'); if (q) { q.focus(); q.setSelectionRange(v.length, v.length); } }, 250); }
+  });
+  document.addEventListener('keydown', e => {
+    const c = e.target.closest?.('tr[data-client]'); if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); location.hash = 'client/' + c.dataset.client; return; }
+    if (e.key === 'Escape' && S.drawer) { closeDrawer(); return; }
+    const el = e.target; if (e.key !== 'Enter' || !el.matches?.('input[data-o][data-f]')) return;
+    e.preventDefault();
+    saveBox(el);
+    const f = el.dataset.f, scope = el.closest('#sp-drawer') ? null : el.closest('.sp-qcards') ? '.sp-ocard' : 'tr', id = el.dataset.o;
+    if (scope) { const boxes = [...document.querySelectorAll(`${scope}[data-row] input[data-f="${f}"]:not([disabled])`)], i = boxes.findIndex(b => b.dataset.o === id); (boxes[i + 1] || el).focus(); boxes[i + 1]?.select(); }
+    else el.blur();
+  });
+  window.addEventListener('hashchange', () => { readHash(); closeDrawer(); window.scrollTo(0, 0); load(); });
   async function boot() {
     readHash();
     try { S.me = await api('/me'); }
     catch (e) { S.me = null; return render(); }
     if (S.me.role !== 'supplier') { location.href = S.me.role === 'admin' ? '/admin/' : '/portal/'; return; }
-    S.billing = null; S.client = null;
+    S.billing = null; S.client = null; S.queue = null;
+    await pollAlerts(true);
     load();
   }
 

@@ -1102,6 +1102,24 @@ const filled = cells => cells.filter(v => v !== '' && v != null && !/^(not shipp
 // (rows went missing, blank rows were left on top). A write that waits too long is retried automatically.
 const ROWS_LOCK = 'supplier-rows';
 export const syncWorkQueueRow = (DB, env, order, photos, fetchImpl = fetch) => withOrderLock(DB, ROWS_LOCK, () => syncRowNow(DB, env, order, photos, fetchImpl));
+// Supplier portal (phase 2, 15 Nov 2026): an edit saved in the portal goes through applySupplierRow like a sheet edit, and
+// its cells are then written into the order's row (P-V, AH, AI) with what the website now holds, so the sheet shows it and
+// the minute check doesn't read the old value back as a new edit. Out-of-line rows are left alone.
+export async function writeSupplierCells(DB, env, orderId, fetchImpl = fetch) {
+  if (!googleSheetsConfigured(env) || !await supplierSheetEnabled(DB)) return { enabled: false };
+  return withOrderLock(DB, ROWS_LOCK, async () => {
+    if (!await ensureLayout(DB, env, fetchImpl)) return { enabled: true, waiting: 'layout' };
+    const o = await DB.prepare('SELECT * FROM client_orders WHERE id=?').bind(orderId).first();
+    if (!o) return { enabled: true, written: 0 };
+    const { wq } = await tabNames(DB);
+    const rows = (await idRows(env, fetchImpl, allTabs(wq))).filter(r => r.orderId === Number(orderId) && !rowOutOfLine(r, o));
+    const numOr = v => (/^\d+(\.\d+)?$/.test(norm(v)) ? Number(norm(v)) : txt(v));
+    const pv = [numOr(o.sheet_cost), txt(o.item_costs), txt(o.sheet_tracking), txt(o.sheet_courier), txt(o.sheet_shipped), txt(o.sheet_delayed), txt(o.sheet_delay_reason)];
+    if (rows.length) await batchValues(env, rows.flatMap(r => [{ range: `${r.tab}!${L(C.COST)}${r.row}:${L(C.REASON)}${r.row}`, values: [pv] },
+      { range: `${r.tab}!${L(C.DOM)}${r.row}:${L(C.FEE)}${r.row}`, values: [[txt(o.domestic_tracking), numOr(o.sheet_cancel_fee)]] }]), fetchImpl);
+    return { enabled: true, written: rows.length };
+  });
+}
 async function syncRowNow(DB, env, order, photos, fetchImpl) {
   if (!await supplierSheetEnabled(DB)) return { enabled: false };
   if (!await ensureLayout(DB, env, fetchImpl)) throw new Error('The supplier sheet is being updated. This will be retried automatically.');
@@ -1237,7 +1255,8 @@ async function logSupplierEdits(DB, order, cells, now, t) {
   const was = { cost: order.sheet_cost, tracking: order.sheet_tracking, courier: order.sheet_courier, shipped: order.sheet_shipped, delayed: order.sheet_delayed, reason: order.sheet_delay_reason, cancel_fee: order.sheet_cancel_fee };
   for (const f of Object.keys(was)) {
     if (now[f] === undefined || now[f] === norm(was[f])) continue;
-    await event(DB, order, SUPPLIER_SHEET_EVENT, JSON.stringify({ f, from: norm(was[f]), to: now[f] }), t);
+    // by: a change made in the supplier portal (who saved it) instead of the sheet.
+    await event(DB, order, SUPPLIER_SHEET_EVENT, JSON.stringify({ f, from: norm(was[f]), to: now[f], ...(cells.by ? { by: String(cells.by).slice(0, 60) } : {}) }), t);
   }
 }
 // A new cost from the supplier on a cost revision (see offerFromSheet). The admin bell / Client orders get one line:

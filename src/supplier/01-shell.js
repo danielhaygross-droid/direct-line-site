@@ -27,10 +27,11 @@
   }
   function shell(inner) {
     const name = S.me?.name || '', ini = name.trim().slice(0, 1).toUpperCase() || 'S';
-    return `<header class="sp-top"><a class="sp-home" href="#billing" aria-label="${esc(t('Billing'))}">${brand()}</a>
-      <nav class="sp-nav"><a href="#billing" class="sp-tab" aria-current="${S.page !== 'password' ? 'page' : 'false'}">${ICON.bill}<span>${t('Billing')}</span></a></nav>
-      <div class="sp-right">${langSwitch()}
+    return `<header class="sp-top"><a class="sp-home" href="#orders" aria-label="${esc(t('Billing'))}">${brand()}</a>
+      <nav class="sp-nav"><a href="#orders" class="sp-tab" aria-current="${S.page === 'orders' ? 'page' : 'false'}">${ICON.box}<span>${t('Orders')}</span>${S.alerts?.newOrders ? `<b class="sp-badge">${S.alerts.newOrders}</b>` : ''}</a><a href="#billing" class="sp-tab" aria-current="${['billing', 'client'].includes(S.page) ? 'page' : 'false'}">${ICON.bill}<span>${t('Billing')}</span></a></nav>
+      <div class="sp-right">${langSwitch()}${bellHTML()}
         <details class="sp-me"><summary aria-label="${esc(t('Supplier'))}"><span class="sp-ava">${esc(ini)}</span><span class="sp-who"><b>${esc(name)}</b><small>${t('Supplier')}</small></span></summary>
           <div class="sp-menu"><a href="#password">${t('Change password')}</a><button type="button" data-logout>${t('Log out')}</button></div></details></div></header>
-      <main class="sp-main" id="sp-main">${inner}</main>`;
+      <main class="sp-main${S.page === 'orders' ? ' wide' : ''}" id="sp-main">${inner}</main>
+      <nav class="sp-bottom"><a href="#orders" aria-current="${S.page === 'orders' ? 'page' : 'false'}">${ICON.box}<span>${t('Orders')}</span>${S.alerts?.newOrders ? `<b class="sp-badge">${S.alerts.newOrders}</b>` : ''}</a><a href="#billing" aria-current="${['billing', 'client'].includes(S.page) ? 'page' : 'false'}">${ICON.bill}<span>${t('Billing')}</span></a></nav>`;
   }
