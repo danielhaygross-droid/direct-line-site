@@ -23,6 +23,7 @@
       const a = await api('/supplier/alerts'), before = S.alerts?.newOrders ?? null;
       S.alerts = a; if (S.seenAt == null) S.seenAt = a.seenAt;
       const bell = $('.sp-bell'); if (bell && !bell.open) bell.outerHTML = bellHTML();
+      const nav = $('.sp-nav'); if (nav) nav.innerHTML = navItems('sp-tab'); const bot = $('.sp-bottom'); if (bot) bot.innerHTML = navItems('');
       if (first && a.newOrders) toast(newCountText(a.newOrders));
       if (!first && before != null && a.newOrders > before) {
         toast(newCountText(a.newOrders)); beep();

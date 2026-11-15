@@ -291,6 +291,21 @@ async function writeQuoteRow(DB, env, productId, fetchImpl) {
   return { enabled: true, added: true };
 }
 
+// Supplier portal (phase 3, 15 Nov 2026): an answer saved in the portal goes through applyQuoteRow like a sheet edit; then
+// the supplier's cells (J-M) are written into the product's row with what the website now holds, so the minute check
+// doesn't read the old cells back as a new answer.
+export async function writeQuoteCells(DB, env, productId, fetchImpl = fetch) {
+  if (!googleSheetsConfigured(env) || await setting(DB, 'supplier_sheet') !== '1') return { enabled: false };
+  return withOrderLock(DB, 'product-' + productId, async () => {
+    if (!await ensureQuoteTab(DB, env, fetchImpl)) return { enabled: true, waiting: true };
+    const p = await DB.prepare('SELECT sheet_price, sheet_shipping, sheet_status, sheet_note FROM portal_products WHERE id=?').bind(productId).first();
+    const row = p && (await rowsById(env, fetchImpl)).get(Number(productId));
+    if (!row) return { enabled: true, written: 0 };
+    const num = v => (/^\d+(\.\d+)?$/.test(norm(v)) ? Number(norm(v)) : txt(v));
+    await batchValues(env, [{ range: `${QT}!J${row}:M${row}`, values: [[num(p.sheet_price), num(p.sheet_shipping), txt(p.sheet_status), txt(p.sheet_note)]] }], fetchImpl);
+    return { enabled: true, written: 1 };
+  });
+}
 // Applies what the supplier typed. The client's price per item = supplier price + the client's fee per order.
 export async function applyQuoteRow(DB, p, cells, settings, t = Math.floor(Date.now() / 1000)) {
   const priceText = typeof cells.price === 'number' ? String(cells.price) : norm(cells.price), status = norm(cells.status), note = norm(cells.note).slice(0, 1000);
