@@ -9,7 +9,7 @@ import { paidOrders, paymentOrderIds } from './payment-orders.mjs';
 import { cancelledSummary, KEPT_FEE } from './cancellations.mjs';
 
 export const SUPPLIER_SCHEMA = [
-  // What the supplier paid Direct Line for the supplier share ($1 per bought order). Recorded by admins.
+  // What the supplier paid Direct Line for the supplier share ($1 per order that is not cancelled). Recorded by admins.
   `CREATE TABLE IF NOT EXISTS supplier_share_payments (
      id SERIAL PRIMARY KEY, amount DOUBLE PRECISION NOT NULL, paid_at INTEGER NOT NULL, note TEXT NOT NULL DEFAULT '',
      archived BOOLEAN NOT NULL DEFAULT FALSE, created_at INTEGER NOT NULL)`,
@@ -46,7 +46,8 @@ async function clientBilling(DB, u, summary, { detail = false } = {}) {
   const rows = (await DB.prepare('SELECT id, order_ref, item_title, status, price, commission, supplier_cost, created_at, order_date FROM client_orders WHERE client_id = ? AND NOT archived ORDER BY created_at, id').bind(u.id).all()).results || [];
   const paid = await paidOrders(DB, u.id);
   const live = rows.filter(r => r.status !== 'cancelled'), cancelledN = rows.length - live.length;
-  const counted = live.filter(r => paid.has(Number(r.id))).length;
+  // Every order counts except cancelled ones (Erwin, 15 Nov 2026: already in use before the portal, all orders but cancelled).
+  const counted = live.length;
   const out = {
     id: Number(u.id), name: clientLabel(u), ordersTotal: rows.length, cancelledCount: cancelledN,
     orders: r2(s.orders + s.other), cancelFees: r2(s.fees), paidForYourPart: r2(s.received), balance: r2(s.balance),

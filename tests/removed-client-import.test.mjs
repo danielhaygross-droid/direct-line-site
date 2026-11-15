@@ -23,13 +23,13 @@ test('retired import endpoint rejects clients and admins without writing orders'
     assert.match(sql, /SELECT active, archived,|portal_terms_versions|client_terms_acceptances/);
     return { bind() { return this; }, async first() { if (sql.includes('portal_terms_versions')) return { version: 1, english: '', hebrew: '' }; if (sql.includes('client_terms_acceptances')) return { version: 1, accepted_at: 1 }; return { active: true, archived: false }; } };
   } };
-  for (const role of ['client-7', 'admin']) {
+  for (const role of ['client-7', 'admin-env']) {
     const cookie = (await createSessionCookie(role, env.APP_SESSION_SECRET)).split(';')[0];
     const request = new Request('https://local.test/api/portal/orders/import', {
       method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ orders: [{ orderRef: 'unused' }] }),
     });
     const response = await handlePortal(request, new URL(request.url), { DB, env });
-    assert.equal(response.status, role === 'admin' ? 404 : 403);
+    assert.equal(response.status, role === 'admin-env' ? 404 : 403);
   }
 });
 

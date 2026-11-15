@@ -5,8 +5,8 @@
     : `<span class="sp-bal zero"><small>${t('All paid')}</small><b>${money(0)}</b></span>`;
   const countLine = c => `${c.ordersTotal} ${t(c.ordersTotal === 1 ? 'order' : 'orders')}${c.cancelledCount ? ` · ${c.cancelledCount} ${t('cancelled')}` : ''}`;
   const shareIntro = rate => lang === 'zh'
-    ? `每个已购买的订单您付给 Direct Line ${money(rate)}。已取消的订单不算。您付的款由 Direct Line 记录。`
-    : `You pay Direct Line ${money(rate)} for every order you bought. Cancelled orders don’t count. Direct Line records what you paid.`;
+    ? `每个订单您付给 Direct Line ${money(rate)}，已取消的订单不算。您付的款由 Direct Line 记录。`
+    : `You pay Direct Line ${money(rate)} for every order. Cancelled orders don’t count. Direct Line records what you paid.`;
   function tileList(rows, tone) {
     return `<ul class="sp-tile-list ${tone}">${rows.map(c => `<li><span>${esc(c.name)}</span><b>${money(Math.abs(c.balance))}</b></li>`).join('')}</ul>`;
   }
@@ -37,7 +37,7 @@
       </section>
       <section class="card sp-card"><div class="sp-card-h"><h2>${t('Your supplier share')}</h2><span class="sp-due">${t('Still to pay Direct Line')} · <b class="${sh.stillToPay > 0.004 ? 'red' : ''}">${money(sh.stillToPay)}</b></span></div>
         <p class="sp-sub">${shareIntro(sh.rate)}</p>
-        <div class="sp-mini"><div><small>${t('Orders counted')}</small><b>${sh.counted}</b><span>${t('Only orders the client has paid count (bought orders).')}</span></div>
+        <div class="sp-mini"><div><small>${t('Orders counted')}</small><b>${sh.counted}</b><span>${t('Every order counts, except cancelled ones.')}</span></div>
           <div><small>${money(sh.rate)} × ${t('orders')}</small><b>${money(sh.amount)}</b></div>
           <div><small>${t('Paid to Direct Line')}</small><b>${money(sh.paid)}</b><span>${sh.lastPaidAt ? t('Last payment') + ' ' + esc(fmtDay(sh.lastPaidAt)) : t('No payment yet')}</span></div>
           <div><small>${t('Still to pay Direct Line')}</small><b class="${sh.stillToPay > 0.004 ? 'red' : ''}">${money(sh.stillToPay)}</b></div></div>

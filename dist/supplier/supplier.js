@@ -25,9 +25,9 @@
     'Client': '客户', 'Orders': '订单', 'Cancellation fees': '取消费', 'Paid for your part': '您的部分已付', 'Still owes / credit': '还需付 / 余额',
     'Still owes': '还需付', 'order': '个订单', 'Credit': '余额', 'All paid': '已付清', 'orders': '个订单', 'cancelled': '已取消', 'All clients': '所有客户', 'Net still owed': '净欠款', 'Net credit': '净余额',
     'still owed': '还需付', 'credit': '余额', 'Your supplier share': '您的供应商分成', 'Still to pay Direct Line': '还需付给 Direct Line',
-    'for every order you bought. Cancelled orders don’t count. Direct Line records what you paid.': '每个已购买的订单。已取消的订单不算。您付的款由 Direct Line 记录。',
+    
     'You pay Direct Line': '您付给 Direct Line', 'Orders counted': '计入的订单', 'Paid to Direct Line': '已付给 Direct Line', 'Last payment': '最近付款', 'No payment yet': '还没有付款',
-    'Share': '分成', 'orders −': '个订单 −', 'Only orders the client has paid count (bought orders).': '只计入客户已付款的订单（已购买的订单）。',
+    'Share': '分成', 'orders −': '个订单 −', 'Every order counts, except cancelled ones.': '每个订单都计入，已取消的订单除外。',
     'All clients ': '所有客户', 'Loading…': '加载中…', 'No clients yet.': '还没有客户。', 'Something went wrong.': '出错了。', 'Try again': '重试',
     // one client
     'All clients': '所有客户', 'Account statement': '对账单', 'Orders and fees': '订单和费用', 'Other changes': '其他调整', 'Total': '合计', 'What the client paid for your part': '客户为您的部分已付',
@@ -117,8 +117,8 @@
     : `<span class="sp-bal zero"><small>${t('All paid')}</small><b>${money(0)}</b></span>`;
   const countLine = c => `${c.ordersTotal} ${t(c.ordersTotal === 1 ? 'order' : 'orders')}${c.cancelledCount ? ` · ${c.cancelledCount} ${t('cancelled')}` : ''}`;
   const shareIntro = rate => lang === 'zh'
-    ? `每个已购买的订单您付给 Direct Line ${money(rate)}。已取消的订单不算。您付的款由 Direct Line 记录。`
-    : `You pay Direct Line ${money(rate)} for every order you bought. Cancelled orders don’t count. Direct Line records what you paid.`;
+    ? `每个订单您付给 Direct Line ${money(rate)}，已取消的订单不算。您付的款由 Direct Line 记录。`
+    : `You pay Direct Line ${money(rate)} for every order. Cancelled orders don’t count. Direct Line records what you paid.`;
   function tileList(rows, tone) {
     return `<ul class="sp-tile-list ${tone}">${rows.map(c => `<li><span>${esc(c.name)}</span><b>${money(Math.abs(c.balance))}</b></li>`).join('')}</ul>`;
   }
@@ -149,7 +149,7 @@
       </section>
       <section class="card sp-card"><div class="sp-card-h"><h2>${t('Your supplier share')}</h2><span class="sp-due">${t('Still to pay Direct Line')} · <b class="${sh.stillToPay > 0.004 ? 'red' : ''}">${money(sh.stillToPay)}</b></span></div>
         <p class="sp-sub">${shareIntro(sh.rate)}</p>
-        <div class="sp-mini"><div><small>${t('Orders counted')}</small><b>${sh.counted}</b><span>${t('Only orders the client has paid count (bought orders).')}</span></div>
+        <div class="sp-mini"><div><small>${t('Orders counted')}</small><b>${sh.counted}</b><span>${t('Every order counts, except cancelled ones.')}</span></div>
           <div><small>${money(sh.rate)} × ${t('orders')}</small><b>${money(sh.amount)}</b></div>
           <div><small>${t('Paid to Direct Line')}</small><b>${money(sh.paid)}</b><span>${sh.lastPaidAt ? t('Last payment') + ' ' + esc(fmtDay(sh.lastPaidAt)) : t('No payment yet')}</span></div>
           <div><small>${t('Still to pay Direct Line')}</small><b class="${sh.stillToPay > 0.004 ? 'red' : ''}">${money(sh.stillToPay)}</b></div></div>
@@ -227,7 +227,7 @@
       <div class="sp-grid2">${statementHTML(c)}${addsHTML(c)}</div>
       ${paymentsHTML(c)}${cancelledHTML(c)}
       <div class="sp-grid2">${notPaidHTML(c)}${changedHTML(c)}</div>
-      <section class="card sp-card"><h2>${t('Your supplier share for this client')}</h2><p class="sp-sub">${t('Only orders the client has paid count (bought orders).')} ${t('Not part of the client’s balance.')} ${t('Shown in Billing for all clients together.')}</p>
+      <section class="card sp-card"><h2>${t('Your supplier share for this client')}</h2><p class="sp-sub">${t('Every order counts, except cancelled ones.')} ${t('Not part of the client’s balance.')} ${t('Shown in Billing for all clients together.')}</p>
         <div class="sp-mini two"><div><small>${t('Orders counted')}</small><b>${c.share.counted}</b></div><div><small>${money(c.share.rate)} × ${t('orders')}</small><b>${money(c.share.amount)}</b></div></div></section>`;
   }
 

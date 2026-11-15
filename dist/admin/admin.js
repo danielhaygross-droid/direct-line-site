@@ -768,7 +768,7 @@
   // Supplier logins (supplier portal, 14 Nov 2026): only admins add or remove them; a removed login is disabled, never deleted.
   function suppliersHTML() {
     const list = (S.ov.suppliers || []).filter(x => !x.archived);
-    return list.length ? list.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b><small><span data-no-i18n>@${esc(x.username)}</span>${x.active ? '' : ' · <span>disabled</span>'}${x.lastLogin ? ` · <span>last sign-in</span> <span data-no-i18n>${esc(fmtDay(new Date(x.lastLogin * 1000).toLocaleDateString('en-CA', { timeZone: window.DL.displayTimeZone() })))}</span>` : ''}</small></span></span><button type="button" class="btn btn-sm" data-edit-admin="${x.id}" style="margin-inline-start:auto">Edit</button></div>`).join('')
+    return list.length ? list.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b>${posTag(x, 'Supplier')}<small><span data-no-i18n>@${esc(x.username)}</span>${x.active ? '' : ' · <span>disabled</span>'}${x.lastLogin ? ` · <span>last sign-in</span> <span data-no-i18n>${esc(fmtDay(new Date(x.lastLogin * 1000).toLocaleDateString('en-CA', { timeZone: window.DL.displayTimeZone() })))}</span>` : ''}</small></span></span><button type="button" class="btn btn-sm" data-edit-admin="${x.id}" style="margin-inline-start:auto">Edit</button></div>`).join('')
       : '<p class="note" style="margin:0">No supplier logins yet.</p>';
   }
   // What the supplier paid us for the supplier share (their own amount per paid order).
@@ -799,9 +799,11 @@
       try { await api('/admin/supplier-share/' + r.dataset.shareRemove + '/archive', { method: 'POST' }); await loadShare(); } catch (ex) { toast(ex.message); }
     });
   }
+  // The position on the right of each team login (Erwin, 15 Nov 2026: "to know who is who"); empty = the login type.
+  function posTag(x, type) { return `<span class="tag${x.position ? ' tag-gold' : ''}" style="margin:3px 0 1px"${x.position ? ' data-no-i18n' : ''}>${esc(x.position || type)}</span>`; }
   function adminsHTML() {
-    return S.ov.admins.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b><small>@${esc(x.username)}${x.active ? '' : ' · disabled'}</small></span></span><button type="button" class="btn btn-sm" data-edit-admin="${x.id}" style="margin-inline-start:auto">Edit</button></div>`).join('')
-      + '<div><span class="ava">DL</span><span class="who"><span><b>Main admin login</b><small>set in Vercel</small></span></span></div>';
+    return S.ov.admins.map(x => `<div><span class="ava">${esc(initials(x.name))}</span><span class="who"><span><b>${esc(x.name)}</b>${posTag(x, 'Admin')}<small>@${esc(x.username)}${x.active ? '' : ' · disabled'}</small></span></span><button type="button" class="btn btn-sm" data-edit-admin="${x.id}" style="margin-inline-start:auto">Edit</button></div>`).join('')
+      + `<div><span class="ava">DL</span><span class="who"><span><b>Main admin login</b>${posTag({}, 'Admin')}<small>set in Vercel</small></span></span></div>`;
   }
   const BANK_UI = [['bank_currency', 'Currency'], ['bank_holder', 'Account holder name'], ['bank_account', 'Account number'], ['bank_ach', 'ACH routing number'],
     ['bank_wire', 'Wire routing number'], ['bank_swift', 'SWIFT/BIC'], ['bank_name', 'Bank name'], ['bank_address', 'Bank address'], ['bank_reference', 'Payment reference note']];
@@ -866,7 +868,7 @@
       <section class="card card-pad"><h3 class="form-sec">Supplier logins</h3><p class="muted" style="margin:0 0 10px;font-size:14px">The supplier (Ada, Ye) signs in at the same address and only sees the supplier portal: their costs, cancellation fees and what was paid for their part. Never our fee or client prices.</p>
         <div class="acc-list" data-suppliers>${suppliersHTML()}</div>
         <button type="button" class="btn" style="margin-top:12px" data-add-account="supplier">${ic('plus')}Add supplier login</button></section>
-      <section class="card card-pad"><h3 class="form-sec">Supplier share payments</h3><p class="muted" style="margin:0 0 10px;font-size:14px">What the supplier paid us for their amount per paid order (set in Fees). The supplier sees the total and what is still to pay.</p>
+      <section class="card card-pad"><h3 class="form-sec">Supplier share payments</h3><p class="muted" style="margin:0 0 10px;font-size:14px">What the supplier paid us for their amount per order, every order except cancelled ones (set in Fees). The supplier sees the total and what is still to pay.</p>
         <div data-share><p class="muted" style="margin:0">Loading…</p></div>
         <form id="share-form" class="form-grid" novalidate style="margin-top:12px"><label class="field"><span>Amount (USD)</span><span class="money"><input name="amount" type="number" min="0.01" step="0.01" required></span></label>
           <label class="field"><span>Paid on</span><input name="paidAt" type="date" required></label>
@@ -1670,12 +1672,14 @@
     if(ea){
       const sup=(S.ov.suppliers||[]).some(a=>a.id===Number(ea.dataset.editAdmin)),x=[...S.ov.admins,...(S.ov.suppliers||[])].find(a=>a.id===Number(ea.dataset.editAdmin)),row=ea.parentElement;if(!x)return;
       if(row.nextElementSibling?.matches('[data-admin-form]')){row.nextElementSibling.remove();return;}
-      row.insertAdjacentHTML('afterend',`<form class="form-grid" data-admin-form="${x.id}" novalidate style="padding:12px;border:1px solid var(--line);border-radius:12px">
+      row.insertAdjacentHTML('afterend',`<form class="form-grid" data-admin-form="${x.id}" data-was="${sup?'supplier':'admin'}" novalidate style="padding:12px;border:1px solid var(--line);border-radius:12px">
         <label class="field"><span>Name</span><input name="name" maxlength="120" value="${esc(x.name)}"></label>
         <label class="field"><span>Username</span><input name="username" maxlength="60" autocomplete="off" data-no-i18n value="${esc(x.username)}"></label>
+        <label class="field"><span>Position <small>shown next to the name, e.g. Owner, Developer, Supplier</small></span><input name="position" maxlength="60" data-no-i18n value="${esc(x.position||'')}"></label>
+        <label class="field"><span>Type</span><select name="role"><option value="admin"${sup?'':' selected'}>Admin (full access)</option><option value="supplier"${sup?' selected':''}>Supplier (supplier portal only)</option></select></label>
         <label class="field"><span>Status</span><select name="active"><option value="true"${x.active?' selected':''}>Active</option><option value="false"${x.active?'':' selected'}>Disabled (can’t sign in)</option></select></label>
         <label class="field"><span>New password <small>leave empty to keep the current one</small></span><input name="password" type="password" maxlength="128" autocomplete="new-password"></label>
-        <p class="note full" style="margin:0">${sup?'A disabled supplier login is signed out at once and can’t sign in again (nothing is deleted).':'A disabled admin can’t sign in again. If they are signed in right now, they stay signed in until that session ends.'}</p>
+        <p class="note full" style="margin:0">${sup?'A disabled supplier login is signed out at once and can’t sign in again (nothing is deleted).':'A disabled admin is signed out at once and can’t sign in again (nothing is deleted).'}</p>
         <div class="full" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="submit">${sup?'Save supplier login':'Save admin'}</button><button type="button" class="btn" data-admin-cancel>Cancel</button><p class="form-msg" data-admin-msg style="margin:0"></p></div></form>`);
       row.nextElementSibling.querySelector('[name=name]').focus();return;
     }
@@ -1876,8 +1880,9 @@
       e.preventDefault();
       const b = $('[type=submit]', adf), m = $('[data-admin-msg]', adf); if (b.disabled) return; m.textContent = ''; m.className = 'form-msg';
       if (adf.password.value && adf.password.value.length < 8) { m.textContent = 'Password must be at least 8 characters'; m.className = 'form-msg err'; return; }
+      if (adf.role.value !== adf.dataset.was && !confirm(adf.role.value === 'supplier' ? 'Make this login a supplier login? It is signed out at once and from then on only sees the supplier portal.' : 'Make this login an ADMIN? It gets full access, including our fees and client prices.')) return;
       b.disabled = true;
-      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Saved.'); }
+      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), position: adf.position.value, role: adf.role.value, active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Saved.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
       return;
     }

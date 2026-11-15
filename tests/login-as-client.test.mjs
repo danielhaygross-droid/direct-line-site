@@ -24,7 +24,7 @@ function database() {
 }
 async function setup() {
   const DB = database(), env = { APP_SESSION_SECRET: 'test-only' };
-  const cookie = (await createSessionCookie('admin', env.APP_SESSION_SECRET)).split(';')[0];
+  const cookie = (await createSessionCookie('admin-env', env.APP_SESSION_SECRET)).split(';')[0];
   const call = (path, { act = false, as = 7, body } = {}) => {
     const headers = { cookie, 'content-type': 'application/json', 'x-dl-view-as': String(as), ...(act ? { 'x-dl-act': '1' } : {}) };
     const r = new Request('https://local.test/api/portal' + path, { method: body ? 'POST' : 'GET', headers, ...(body ? { body: JSON.stringify(body) } : {}) });
