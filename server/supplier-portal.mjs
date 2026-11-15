@@ -153,7 +153,8 @@ export async function routeSupplier(request, path, ctx, who, deps, viewer = null
   if (rq) return rq;
   const q = await routeQueue(request, path, ctx, me);
   if (q) return q;
-  return json({ ok: false, error: 'Not found' }, 404);
+  // Anything else is not for a supplier login (often: an admin page still open in a browser that signed in as the supplier since).
+  return json({ ok: false, error: viewer ? 'Not found' : 'This browser is now signed in with a supplier login. Log out and sign in with your own login.' }, viewer ? 404 : 403);
 }
 
 // Admin side: supplier logins (Fees & settings > Team accounts) and the supplier share payments.
