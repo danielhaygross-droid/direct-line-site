@@ -195,10 +195,11 @@
       ${err ? `<p class="form-msg err">${esc(err)}</p>` : ''}
       <div class="pick-list">${clients.length ? clients.map(c => `<a class="pick-row" href="/portal/?as=${c.id}"><span class="avatar">${esc((c.name || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase())}</span><span><b>${esc(c.name)}</b><small>@${esc(c.username)} · ${c.orders} order${c.orders === 1 ? '' : 's'}${c.active ? '' : ' · disabled'}</small></span><em>See their portal →</em></a>`).join('')
         : '<p class="muted">No client accounts yet. Add one in the admin dashboard → Clients & orders.</p>'}</div>
-      <div class="pick-actions"><a class="btn btn-primary" href="/en/#client-orders">Go to admin dashboard</a><button type="button" class="btn" data-pick-logout>Sign out (to log in as a client)</button></div>
+      <div class="pick-actions"><a class="btn btn-primary" href="/en/#client-orders">Go to admin dashboard</a><button type="button" class="btn" data-pick-login>Sign in with a client login</button></div>
       <p class="note">Their portal opens view only. To add orders, photos, products or stores for them, press “Log in as client” at the top of their portal.</p>
     </div>`;
-    $('[data-pick-logout]').addEventListener('click', logout);
+    // The admin stays signed in on the admin pages; the client login gets its own sign-in for this portal.
+    $('[data-pick-login]').addEventListener('click', () => renderLogin(document.body, { title: 'Welcome back', subtitle: 'Sign in to add and track your orders.', portal: true }));
   }
   function previewBanner() {
     const bar = document.createElement('div');

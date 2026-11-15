@@ -34,7 +34,8 @@
   const rerenderOrders = () => { S.keepScroll = true; render(); };
   document.addEventListener('click', async e => {
     const l = e.target.closest('[data-lang]'); if (l) { setLang(l.dataset.lang); return; }
-    if (e.target.closest('[data-logout]')) { await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {}); location.href = '/'; return; }
+    if (e.target.closest('[data-supplier-login]')) { S.me = null; S.view = false; render(); return; }
+    if (e.target.closest('[data-logout]')) { await fetch('/api/auth/logout', { method: 'POST', headers: { 'x-dl-portal': S.view ? 'admin' : 'supplier' } }).catch(() => {}); location.href = S.view ? '/' : '/supplier/'; return; }
     if (e.target.closest('[data-retry]')) { load(); return; }
     if (e.target.closest('[data-see-new]')) { seeNew(); return; }
     const p = e.target.closest('[data-pay]'); if (p) { const id = Number(p.dataset.pay); S.open.has(id) ? S.open.delete(id) : S.open.add(id); S.keepScroll = true; render(); return; }

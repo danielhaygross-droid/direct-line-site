@@ -8,7 +8,7 @@ import { waitUntil } from '@vercel/functions';
 import worker from '../server/worker.mjs';
 import { createD1 } from '../server/d1-postgres.mjs';
 import { LOCK_MESSAGE } from '../server/login-limit.mjs';
-import { SCHEMA as PORTAL_SCHEMA, handlePortal, signIn, createSessionCookie, readSessionRole, parseRole, clientSession, adminSession } from '../server/portal.mjs';
+import { SCHEMA as PORTAL_SCHEMA, handlePortal, signIn, createSessionCookie, readSessionRole, logoutCookie, parseRole, clientSession, adminSession } from '../server/portal.mjs';
 import { supplierSession } from '../server/supplier-portal.mjs';
 import { syncFileStorage } from '../server/file-storage.mjs';
 import { runBackup } from '../server/backup.mjs';
@@ -84,6 +84,8 @@ export async function route(request, { db = DB, env: baseEnv = process.env } = {
       return json({ ok: true, role: who.admin ? 'admin' : who.supplier ? 'supplier' : 'client', ...(who.admin ? {} : { redirect: who.supplier ? '/supplier/' : '/portal/' }) }, 200,
         { 'set-cookie': await createSessionCookie(role, env.APP_SESSION_SECRET, { remember: body.remember === true }) });
     }
+    // Log out ends only the sign-in of the portal it was pressed in (admin, client or supplier).
+    if (path === '/api/auth/logout') return json({ ok: true }, 200, { 'set-cookie': await logoutCookie(request, env.APP_SESSION_SECRET), 'cache-control': 'no-store' });
     if (path === '/api/auth/session') {
       const who = parseRole(await readSessionRole(request, env.APP_SESSION_SECRET));
       if (!who) return json({ ok: false }, 401);
