@@ -34,6 +34,7 @@
   async function seeNew() {
     S.page = 'orders'; S.tab = 'new'; S.onlyCancelReq = false;
     if (location.hash !== '#orders') location.hash = 'orders'; else render();
+    if (S.view) return;
     try { await api('/supplier/alerts/seen', { method: 'POST' }); S.alerts = { ...(S.alerts || {}), newOrders: 0 }; } catch (e) { /* later */ }
     const bell = $('.sp-bell'); if (bell) bell.outerHTML = bellHTML();
   }

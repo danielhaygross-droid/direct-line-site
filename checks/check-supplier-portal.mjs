@@ -116,6 +116,14 @@ try {
     assert.match(await ui.locator('[data-admins]').innerText(), /Developer/);
     await ui.locator('[data-suppliers]').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(out, `admin-${lang}-${w}-team.png`) });
+    // "Open supplier portal": the admin sees the supplier's Billing with a read-only banner.
+    assert.equal(await ui.locator('a[href="/supplier/"]').count(), 1, 'Open supplier portal button');
+    await ui.locator('a[href="/supplier/"]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `admin-${lang}-${w}-open-supplier.png`) });
+    const sv = await ctx.newPage(); await sv.goto(`${base}/supplier/?lang=en#billing`); await sv.waitForSelector('.sp-tiles'); await sv.waitForSelector('.sp-view');
+    assert.equal(await sv.locator('a[href="#password"]').count(), 0, 'admin view: no Change password');
+    await sv.screenshot({ path: path.join(out, `admin-view-${w}-billing.png`) });
+    await sv.goto(`${base}/supplier/?lang=zh#orders`); await sv.waitForSelector('.sp-view'); await sv.waitForTimeout(600);
+    await sv.screenshot({ path: path.join(out, `admin-view-zh-${w}-orders.png`) }); await sv.close();
     await ui.locator(`[data-edit-admin="${globalThis.shaharId}"]`).click(); await ui.waitForSelector('[data-admin-remove]');
     await ui.locator('[data-admin-form]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `admin-${lang}-${w}-team-edit.png`) });
     await ui.locator('[data-admin-cancel]').click();

@@ -107,10 +107,10 @@ async function clientsFor(DB) {
 
 // All supplier routes. Nothing else in the portal API is reachable with a supplier login (routePortal hands every
 // supplier request to this function and returns its answer).
-export async function routeSupplier(request, path, ctx, who, deps) {
+export async function routeSupplier(request, path, ctx, who, deps, viewer = null) {
   const { DB, env } = ctx, method = request.method;
   const { clientSummary, getSettings, hashPassword, verifyPassword, createSessionCookie } = deps;
-  const me = await supplierSession(DB, who);
+  const me = viewer || await supplierSession(DB, who); // viewer: an admin looking at the portal (GET only, see portal.mjs)
   if (!me) return json({ ok: false, error: 'Please sign in again.' }, 401);
   if (path === '/me' && method === 'GET') return json({ ok: true, role: 'supplier', redirect: '/supplier/', id: Number(me.id), username: me.username, name: me.display_name });
   if (path === '/supplier/billing' && method === 'GET') {

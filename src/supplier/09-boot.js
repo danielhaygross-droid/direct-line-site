@@ -88,7 +88,9 @@
     readHash();
     try { S.me = await api('/me'); }
     catch (e) { S.me = null; return render(); }
-    if (S.me.role !== 'supplier') { location.href = S.me.role === 'admin' ? '/admin/' : '/portal/'; return; }
+    // An admin sees what the supplier sees, read-only (the server refuses every change).
+    if (S.me.role === 'admin') { S.view = true; S.me = { ...S.me, name: t('Admin view') }; }
+    else if (S.me.role !== 'supplier') { location.href = '/portal/'; return; }
     S.billing = null; S.client = null; S.queue = null;
     await pollAlerts(true);
     load();
