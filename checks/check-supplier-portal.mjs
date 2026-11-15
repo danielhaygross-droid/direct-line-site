@@ -116,6 +116,12 @@ try {
     assert.match(await ui.locator('[data-admins]').innerText(), /Developer/);
     await ui.locator('[data-suppliers]').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(out, `admin-${lang}-${w}-team.png`) });
+    // Phase 3b switch (Fees & settings > Supplier): shown to owners when the sheet is on (the sheet answer is stubbed here).
+    await page.route('**/api/portal/admin/supplier-sheet', r => r.fulfill({ json: { ok: true, configured: true, enabled: true, portalOnly: false, last: null } }));
+    await ui.locator('[data-tab=overview]').click(); await ui.locator('[data-tab=settings]').click(); await ui.waitForSelector('.set-tabs'); await ui.locator('[data-set-tab=supplier]').click();
+    await ui.waitForSelector('[data-portal-only]:not([hidden])'); assert.match(await ui.locator('[data-portal-only-btn]').innerText(), lang === 'en' ? /Switch to portal only/ : /פורטל בלבד/);
+    await ui.locator('[data-portal-only]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `admin-${lang}-${w}-portal-only.png`) });
+    await page.unroute('**/api/portal/admin/supplier-sheet'); await ui.locator('[data-set-tab=team]').click();
     // "Open supplier portal": the admin sees the supplier's Billing with a read-only banner.
     assert.equal(await ui.locator('a[href="/supplier/"]').count(), 1, 'Open supplier portal button');
     await ui.locator('a[href="/supplier/"]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `admin-${lang}-${w}-open-supplier.png`) });

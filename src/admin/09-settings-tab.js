@@ -87,6 +87,9 @@
       </section>`) + panel('supplier', '', `
       <section class="card card-pad"><h3 class="form-sec">Supplier sheet</h3><div data-supplier-sheet><p class="muted" style="margin:0">Loading…</p></div>
         <div class="row-actions" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-supplier-setup>Set up supplier sheet</button><button type="button" class="btn btn-sm" data-supplier-check hidden>Check sheet now</button></div>
+        <div data-portal-only hidden style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line,#e7e1d6)"><h3 class="form-sec" style="margin-top:0">Where the supplier works</h3>
+          <p class="muted" style="margin:0 0 10px;font-size:14px" data-portal-only-text></p>
+          <button type="button" class="btn btn-sm" data-portal-only-btn></button></div>
         <p class="form-msg" data-supplier-msg role="status"></p></section>
       <section class="card card-pad"><h3 class="form-sec">Couriers</h3>
         <form class="form-grid" id="couriers-form" novalidate>
@@ -170,11 +173,14 @@
     if (!d.configured) return '<p class="note" style="margin:0">The Google Sheet isn’t connected.</p>';
     if (!d.enabled) return '<p class="note" style="margin:0">Set up adds three yellow columns to the Orders tab for the supplier: Total cost (whole order, USD), Tracking number and Shipping status. The website then bills clients (total + fee), adds tracking and marks orders Shipped within a minute. The current tab is kept as a hidden backup tab.</p>';
     const l = d.last;
-    return `<p style="margin:0 0 6px"><b>On.</b> <span>The website reads the supplier columns every minute.</span></p>${l ? `<p class="note" style="margin:0"><span>Last check</span> <span data-no-i18n>${esc(fullDate(l.at))}</span>: ${l.ok ? `<span data-no-i18n>${l.checked}</span> <span>orders checked</span>, <span data-no-i18n>${l.changed}</span> <span>updated</span>` : `<span>error</span> <span data-no-i18n>${esc(l.error)}</span>`}</p>${(l.skipped || []).length ? `<p class="note" style="margin:6px 0 0"><b>Needs a look:</b> <span data-no-i18n>${l.skipped.map(s => esc((s.ref || '#' + s.orderId) + ' — ' + s.why.join(', '))).join('; ')}</span></p>` : ''}` : ''}`;
+    return `<p style="margin:0 0 6px"><b>On.</b> <span>${d.portalOnly ? 'Backup only: the supplier works in the supplier portal. The website keeps the sheet up to date and does not read what is typed in it.' : 'The website reads the supplier columns every minute.'}</span></p>${l ? `<p class="note" style="margin:0"><span>Last check</span> <span data-no-i18n>${esc(fullDate(l.at))}</span>: ${l.ok ? `<span data-no-i18n>${l.checked}</span> <span>orders checked</span>, <span data-no-i18n>${l.changed}</span> <span>updated</span>` : `<span>error</span> <span data-no-i18n>${esc(l.error)}</span>`}</p>${(l.skipped || []).length ? `<p class="note" style="margin:6px 0 0"><b>Needs a look:</b> <span data-no-i18n>${l.skipped.map(s => esc((s.ref || '#' + s.orderId) + ' — ' + s.why.join(', '))).join('; ')}</span></p>` : ''}` : ''}`;
   }
   async function loadSupplierSheet() {
     const box = $('[data-supplier-sheet]'); if (!box) return;
-    try { const d = await api('/admin/supplier-sheet'); box.innerHTML = supplierSheetHTML(d); const setupBtn = $('[data-supplier-setup]'); setupBtn.hidden = !d.configured; setupBtn.textContent = d.enabled ? 'Rebuild supplier sheet' : 'Set up supplier sheet'; $('[data-supplier-check]').hidden = !d.enabled; }
+    try { const d = await api('/admin/supplier-sheet'); box.innerHTML = supplierSheetHTML(d); const setupBtn = $('[data-supplier-setup]'); setupBtn.hidden = !d.configured; setupBtn.textContent = d.enabled ? 'Rebuild supplier sheet' : 'Set up supplier sheet'; $('[data-supplier-check]').hidden = !d.enabled;
+      const po = $('[data-portal-only]'); po.hidden = !d.enabled || !canManage(); S.portalOnly = !!d.portalOnly;
+      $('[data-portal-only-text]').textContent = d.portalOnly ? 'Portal only. The Google Sheet is a backup: anything typed in its supplier columns is put back within a few minutes.' : 'Sheet and portal. The supplier can type in the Google Sheet or in the supplier portal; both are read. Switch to portal only when Ada and Ye have stopped using the sheet.';
+      $('[data-portal-only-btn]').textContent = d.portalOnly ? 'Let the supplier use the sheet again' : 'Switch to portal only'; }
     catch (ex) { box.innerHTML = `<p class="note" style="margin:0">${esc(ex.message)}</p>`; }
   }
   function bindSupplierSheet() {
@@ -187,7 +193,15 @@
       b.disabled = false;
     }); };
     run('[data-supplier-setup]', '/admin/supplier-sheet/setup', r => `Supplier sheet is set up with ${r.rows} orders.`);
-    run('[data-supplier-check]', '/admin/supplier-sheet/check', r => r.ok ? `${r.changed.length} orders updated from the sheet.` : r.error);
+    run('[data-supplier-check]', '/admin/supplier-sheet/check', r => r.ok ? (r.portalOnly ? `Backup checked: ${r.restored.length} rows put back.` : `${r.changed.length} orders updated from the sheet.`) : r.error);
+    const pb = $('[data-portal-only-btn]'); if (pb) pb.addEventListener('click', async () => {
+      const on = !S.portalOnly;
+      if (on && !confirm('Switch to portal only? From now on the website no longer reads what the supplier types in the Google Sheet. Ada and Ye must work in the supplier portal.')) return;
+      pb.disabled = true;
+      try { await api('/admin/supplier-sheet/portal-only', { method: 'POST', body: { on } }); m.textContent = on ? 'The supplier now works in the portal only.' : 'The sheet is read again.'; m.className = 'form-msg ok'; await loadSupplierSheet(); }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+      pb.disabled = false;
+    });
   }
   function bindSettings() {
     bindSetTabs();

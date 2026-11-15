@@ -36,7 +36,7 @@ import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, client
 
 import { STORAGE_SCHEMA, photoBytes, syncFileStorage, fileStorageStatus } from './file-storage.mjs';
 import { splitNotes } from './order-notes.mjs';
-import { SUPPLIER_SHEET_SCHEMA, markPaidDirty, setupSupplierWorkQueue, pollSupplierSheet, supplierSheetStatus, DEFAULT_COURIERS, courierList, updateCourierDropdown } from './supplier-sheet.mjs';
+import { SUPPLIER_SHEET_SCHEMA, markPaidDirty, setupSupplierWorkQueue, pollSupplierSheet, supplierSheetStatus, PORTAL_ONLY, DEFAULT_COURIERS, courierList, updateCourierDropdown } from './supplier-sheet.mjs';
 import { runBackup, listBackups, downloadBackup } from './backup.mjs';
 import { repairSwitchOrders } from './repair-2026-10-29.mjs';
 import { LOGIN_LIMIT_SCHEMA, LOCK_MESSAGE, clientIp, loginKeys, lockedFor, recordFailure, clearFailures } from './login-limit.mjs';
@@ -1185,6 +1185,13 @@ async function routePortal(request, url, ctx, meta) {
     try { return json(await setupSupplierWorkQueue(DB, env)); } catch (e) { console.error('Supplier sheet setup failed', e); return json({ ok: false, error: 'Setup failed: ' + e.message }, 500); }
   }
   if (path === '/admin/supplier-sheet/check' && method === 'POST') return json(await pollSupplierSheet(DB, env, { waitUntil }));
+  // Supplier portal phase 3b: owners switch the supplier to the portal only (the sheet becomes a backup) and back.
+  if (path === '/admin/supplier-sheet/portal-only' && method === 'POST') {
+    if (!await isOwner(DB, who)) return json({ ok: false, error: 'Only the owners (Erwin, Shahar, Daniel) can change this.' }, 403);
+    const on = (await request.json().catch(() => ({}))).on === true;
+    await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PORTAL_ONLY, on ? '1' : '0').run();
+    return json({ ok: true, portalOnly: on });
+  }
   // One-time repair of 9 orders after the 29 Oct 2026 sheet switch (see repair-2026-10-29.mjs).
   if (path === '/admin/repair/2026-10-29' && method === 'POST') return json(await repairSwitchOrders(DB));
   if (path === '/admin/storage' && method === 'GET') {

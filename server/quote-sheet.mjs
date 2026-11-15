@@ -336,7 +336,7 @@ export async function applyQuoteRow(DB, p, cells, settings, t = Math.floor(Date.
 }
 
 // Cron: read the supplier's columns and apply changes.
-export async function pollQuoteTab(DB, env, settings, fetchImpl = fetch) {
+export async function pollQuoteTab(DB, env, settings, fetchImpl = fetch, { backup = false } = {}) {
   if (!await ensureQuoteTab(DB, env, fetchImpl)) return { waiting: true, changed: 0 };
   await ensureQuoteOptionsFormat(DB, env, fetchImpl);
   await ensureQuoteRevisionAlerts(DB, env, fetchImpl);
@@ -353,6 +353,13 @@ export async function pollQuoteTab(DB, env, settings, fetchImpl = fetch) {
     const id = Number(r?.[0]); if (!(id > 0)) continue;
     const p = await DB.prepare('SELECT p.*, u.commission_per_order FROM portal_products p JOIN users u ON u.id=p.client_id WHERE p.id=? AND NOT u.archived').bind(id).first();
     if (!p) continue;
+    if (backup) {
+      // Portal only (phase 3b): the tab is a backup. Cells that differ from what the website holds are put back, never read.
+      const tx = v => (typeof v === 'number' ? String(v) : norm(v)), c = inputs?.[i] || [];
+      const same = (a, b) => { const x = tx(a), y = norm(b); return x === y || (x !== '' && y !== '' && Number(x) === Number(y)); };
+      if (!(same(c[0], p.sheet_price) && same(c[1], p.sheet_shipping) && tx(c[2]) === norm(p.sheet_status) && tx(c[3]).slice(0, 1000) === norm(p.sheet_note)) && changed < 5) { await writeQuoteCells(DB, env, id, fetchImpl); changed++; }
+      continue;
+    }
     const out = await applyQuoteRow(DB, p, { price: inputs?.[i]?.[0] ?? '', shipping: inputs?.[i]?.[1] ?? '', status: inputs?.[i]?.[2] ?? '', note: inputs?.[i]?.[3] ?? '' }, settings);
     if (out === 'approved' || out === 'not_available') { changed++; await productRequoted(DB, id); await syncQuoteRow(DB, env, id, fetchImpl); }
     else if (out) {
@@ -362,5 +369,5 @@ export async function pollQuoteTab(DB, env, settings, fetchImpl = fetch) {
       await batchValues(env, [{ range: `${QT}!O${row}`, values: [[out.startsWith('shipping') ? SHIPPING_UNCLEAR : PRICE_UNCLEAR]] }], fetchImpl);
     }
   }
-  return { changed, skipped };
+  return backup ? { restored: changed, changed: 0, skipped } : { changed, skipped };
 }

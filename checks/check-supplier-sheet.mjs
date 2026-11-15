@@ -796,6 +796,23 @@ for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 36, t
   const o2 = await order(P2.id);
   assert.deepEqual([o2.status, o2.tracking_number, o2.domestic_tracking, Number(o2.supplier_cost)], ['shipped', 'PT123', 'SF99', 35], 'nothing undone by the next check');
   console.log('PASS supplier portal edits reach the sheet and are not undone by the minute check; sheet edits still count');
+  // Phase 3b (portal only): owners switch it on; the sheet is then a backup. What is typed in it is not read, it is put back.
+  const P3 = await mk('P3-BACKUP'); await settle();
+  const put3 = async (field, value) => { const r = await call('/supplier/orders/' + P3.id, 'PUT', { field, value }, sup); assert.equal(r.status, 200, field + ' ' + JSON.stringify(r.data)); await settle(); };
+  await put3('cost', '40');
+  assert.ok([403, 404].includes((await call('/admin/supplier-sheet/portal-only', 'POST', { on: true }, sup)).status), 'a supplier cannot switch it');
+  assert.equal((await call('/admin/supplier-sheet/portal-only', 'POST', { on: true }, admin)).status, 200);
+  assert.equal((await call('/admin/supplier-sheet', 'GET', null, admin)).data.portalOnly, true);
+  supplierTypes(P3.id, N, 99); later(); const b1 = await cron();
+  assert.equal(b1.ok, true, JSON.stringify(b1).slice(0, 300)); assert.equal(b1.portalOnly, true); assert.deepEqual(b1.changed, []); assert.ok(b1.restored.includes(P3.id), 'the typed row is put back');
+  assert.equal(Number((await order(P3.id)).supplier_cost), 40, 'portal only: a cost typed in the sheet is not read');
+  assert.equal(cell(P3.id, N), 40, 'and the sheet shows the website value again');
+  later(); assert.deepEqual((await cron()).restored, [], 'nothing left to put back');
+  await put3('cost', '41'); assert.equal(cell(P3.id, N), 41, 'portal edits still reach the backup sheet');
+  assert.equal((await call('/admin/supplier-sheet/portal-only', 'POST', { on: false }, admin)).status, 200);
+  supplierTypes(P3.id, N, 42); later(); await cron();
+  assert.equal(Number((await order(P3.id)).supplier_cost), 42, 'switched back: the sheet is read again');
+  console.log('PASS portal only (phase 3b): the sheet is a backup, typed cells are put back, owners switch it on and off');
 }
 const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 22))])));
 const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);

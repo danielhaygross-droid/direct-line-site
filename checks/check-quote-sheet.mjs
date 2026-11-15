@@ -123,5 +123,13 @@ console.log('PASS supplier price -> client quote (+ fee), not available with rea
   qt[k][9] = 6.8; poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
   assert.equal(Number((await DB.prepare('SELECT supplier_price FROM portal_products WHERE id = ?').bind(np.id).first()).supplier_price), 6.8, 'a later sheet edit still counts');
   console.log('PASS supplier portal quotes reach the Product Quotes tab and are not undone; sheet edits still count');
+  // Phase 3b (portal only): a price typed in the Product Quotes tab is not read; the row gets the website's price back.
+  await DB.prepare("INSERT INTO portal_settings (key, value) VALUES ('supplier_portal_only', '1') ON CONFLICT(key) DO UPDATE SET value='1'").run();
+  qt[k][9] = 1.11; poll = await pollSupplierSheet(DB, env, { fetchImpl: fakeFetch });
+  assert.equal(poll.ok, true, JSON.stringify(poll).slice(0, 300)); assert.equal(poll.quotes.restored, 1);
+  assert.equal(Number((await DB.prepare('SELECT supplier_price FROM portal_products WHERE id = ?').bind(np.id).first()).supplier_price), 6.8, 'portal only: the typed price is not read');
+  assert.equal(qt[rowOf(np.id)][9], 6.8, 'and the tab shows the website price again');
+  await DB.prepare("UPDATE portal_settings SET value='0' WHERE key='supplier_portal_only'").run();
+  console.log('PASS portal only (phase 3b): the Product Quotes tab is a backup too');
 }
 await pg.close();
