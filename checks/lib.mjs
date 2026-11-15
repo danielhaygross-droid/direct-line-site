@@ -77,7 +77,7 @@ export async function checks() {
   assert.equal((await call('/login','POST',{username:'localclient',password:temporary})).status,401);
   const request=new Request('http://localhost/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:'localclient',password:'new-client-password'})});
   const unified=await route(request,{db:DB,env});assert.equal(unified.status,200);
-  const session=await route(new Request('http://localhost/api/auth/session',{headers:{cookie:unified.headers.get('set-cookie').split(';')[0]}}),{db:DB,env});
+  const session=await route(new Request('http://localhost/api/auth/session',{headers:{'x-dl-portal':'client',cookie:unified.headers.get('set-cookie').split(';')[0]}}),{db:DB,env});
   assert.equal(session.status,200);
   const overview=await call('/admin/overview','GET',null,admin);
   assert.ok(overview.data.clients[0].lastLogin>0);

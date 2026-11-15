@@ -36,7 +36,7 @@ assert.equal(login.status, 200); assert.equal(login.data.redirect, '/supplier/')
 const me = ok(await call('/me', 'GET', null, sup)); assert.equal(me.role, 'supplier');
 for (const [p, m] of [['/orders', 'GET'], ['/payments', 'GET'], ['/admin/overview', 'GET'], ['/admin/orders', 'GET'], ['/products', 'GET'], ['/admin/users', 'POST'], ['/client-stores', 'GET'], ['/terms', 'GET']])
   assert.ok([403, 404].includes((await call(p, m, m === 'POST' ? { username: 'evil', password: 'evilpass123', role: 'admin' } : null, sup)).status), 'supplier blocked: ' + p);
-assert.ok([403, 404].includes((await call('/orders/' + A, 'GET', null, sup, { 'x-dl-view-as': String(id) })).status), 'no client preview');
+assert.ok([401, 403, 404].includes((await call('/orders/' + A, 'GET', null, sup, { 'x-dl-view-as': String(id) })).status), 'no client preview');
 assert.ok([401, 403, 404].includes((await call('/supplier/billing', 'GET', null, client)).status), 'clients get no supplier billing');
 const rt = (p, cookie) => route(new Request('http://localhost' + p, { headers: { cookie } }), { db: DB, env });
 assert.equal((await (await rt('/api/auth/session', sup)).json()).redirect, '/supplier/');

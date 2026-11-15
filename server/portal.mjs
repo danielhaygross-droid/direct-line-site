@@ -400,14 +400,46 @@ export async function createSessionCookie(role, secret, { remember = false } = {
   const seconds = remember ? REMEMBER_SECONDS : SESSION_SECONDS;
   const payload = role + '.' + (now() + seconds);
   const token = payload + '.' + await sign(payload, secret);
-  return 'dl_session=' + encodeURIComponent(token) + `; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${seconds}`;
+  return cookieFor(role) + '=' + encodeURIComponent(token) + `; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${seconds}`;
 }
-export async function readSessionRole(request, secret) {
-  const match = (request.headers.get('cookie') || '').match(/(?:^|;\s*)dl_session=([^;]+)/);
-  if (!match || !secret) return null;
-  const parts = decodeURIComponent(match[1]).split('.');
-  if (parts.length !== 3 || Number(parts[1]) < now()) return null;
-  return (await sign(parts[0] + '.' + parts[1], secret)) === parts[2] ? parts[0] : null;
+// One sign-in per portal in the same browser (Erwin, 16 Nov 2026: signing in as the supplier or a client signed him out of
+// admin). Admin logins live in dl_session (the cookie the store dashboard reads), clients in dl_client, suppliers in
+// dl_supplier. Each request reads the cookie of the portal it comes from; older sign-ins (everything in dl_session) keep working.
+export const COOKIES = { admin: 'dl_session', client: 'dl_client', supplier: 'dl_supplier' };
+export const cookieFor = role => (/^supplier-/.test(role || '') ? COOKIES.supplier : /^client-/.test(role || '') ? COOKIES.client : COOKIES.admin);
+// Which portal a request comes from: the page says so (x-dl-portal), else the page's address (Referer), else the API path.
+export function portalOf(request) {
+  const h = (request.headers.get('x-dl-portal') || '').toLowerCase();
+  if (h === 'admin' || h === 'client' || h === 'supplier') return h;
+  if (request.headers.get('x-dl-view-as')) return 'admin';
+  try {
+    const ref = request.headers.get('referer'); const r = ref ? new URL(ref) : null;
+    if (r && r.pathname.startsWith('/supplier')) return 'supplier';
+    if (r && r.pathname.startsWith('/portal')) return r.searchParams.get('as') ? 'admin' : 'client'; // ?as= is the admin's preview of a client
+    if (r && r.pathname.startsWith('/admin')) return 'admin';
+  } catch (e) { /* no usable Referer */ }
+  try { const u = new URL(request.url), p = u.searchParams.get('__path') != null ? '/api/' + u.searchParams.get('__path') : u.pathname; if (!p.startsWith('/api/portal')) return 'admin'; } catch (e) { /* fall through */ }
+  return '';
+}
+const ORDER = { admin: ['admin'], client: ['client', 'admin'], supplier: ['supplier', 'admin'], '': ['admin', 'client', 'supplier'] };
+// The signed role for this request and the cookie it came from ({ role, name }), or null.
+export async function readSession(request, secret) {
+  if (!secret) return null;
+  const header = request.headers.get('cookie') || '';
+  for (const k of ORDER[portalOf(request)]) {
+    const match = header.match(new RegExp('(?:^|;\\s*)' + COOKIES[k] + '=([^;]+)'));
+    if (!match) continue;
+    let parts; try { parts = decodeURIComponent(match[1]).split('.'); } catch (e) { continue; }
+    if (parts.length !== 3 || Number(parts[1]) < now()) continue;
+    if ((await sign(parts[0] + '.' + parts[1], secret)) === parts[2]) return { role: parts[0], name: COOKIES[k] };
+  }
+  return null;
+}
+export async function readSessionRole(request, secret) { return (await readSession(request, secret))?.role ?? null; }
+// Log out: ends the sign-in of the portal the request comes from, and only that one.
+export async function logoutCookie(request, secret) {
+  const s = await readSession(request, secret), name = s?.name || COOKIES[portalOf(request) || 'admin'];
+  return name + '=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0';
 }
 export function parseRole(role) {
   if (role === ENV_ADMIN_ROLE) return { admin: true };
