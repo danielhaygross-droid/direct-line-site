@@ -129,6 +129,10 @@ export function parseCost(value) {
   return n < 1e7 ? round2(n) : null;
 }
 
+// Phase 3b of the supplier portal (15 Nov 2026): when on, the supplier works in the portal only. The sheet stays as a
+// backup the website writes; what somebody types in the supplier columns is NOT read, it is put back to what the website holds.
+export const PORTAL_ONLY = 'supplier_portal_only';
+export async function portalOnly(DB) { return (await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(PORTAL_ONLY).first())?.value === '1'; }
 export async function supplierSheetEnabled(DB) {
   const r = await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(SETTING).first();
   return r?.value === '1';
@@ -1479,6 +1483,16 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
       rows = rows.filter(r => !split.includes(r));
     }
     const cellText = v => (typeof v === 'number' || typeof v === 'boolean' ? String(v) : norm(v));
+    const backup = await portalOnly(DB);
+    if (backup) {
+      // Backup mode: nothing is read. Rows whose supplier cells differ from the website get the website's values back (a few a minute).
+      result.portalOnly = true; result.restored = [];
+      const same = (a, b) => { const x = cellText(a), y = norm(b); return x === y || (x !== '' && y !== '' && Number(x) === Number(y)); };
+      const off = rows.filter(r => { const s = seen.get(r.orderId); return s && !(same(r.cost, s.sheet_cost) && same(r.tracking, s.sheet_tracking) && same(r.courier, s.sheet_courier) && same(r.shipped, s.sheet_shipped)
+        && same(r.delayed, s.sheet_delayed) && cellText(r.reason).slice(0, 300) === norm(s.sheet_delay_reason) && same(r.cancelFee, s.sheet_cancel_fee) && norm(r.domestic) === norm(s.domestic_tracking) && same(r.itemCosts, s.item_costs)); });
+      for (const r of off.slice(0, 5)) { await writeSupplierCells(DB, env, r.orderId, fetchImpl); result.restored.push(r.orderId); }
+      rows = [];
+    }
     for (const r of rows) {
       const s = seen.get(r.orderId);
       if (!s || (cellText(r.cost) === norm(s.sheet_cost) && cellText(r.tracking) === norm(s.sheet_tracking) && cellText(r.courier) === norm(s.sheet_courier) && cellText(r.shipped) === norm(s.sheet_shipped)
@@ -1512,7 +1526,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     result.savedPrices = await backfillSavedPrices(DB);
     // Product price checks (Product Quotes tab).
     const fee = await getSetting(DB, 'commission_per_order');
-    result.quotes = await pollQuoteTab(DB, env, { commission_per_order: fee ?? '2' }, fetchImpl);
+    result.quotes = await pollQuoteTab(DB, env, { commission_per_order: fee ?? '2' }, fetchImpl, { backup });
     // The Billing tab's balance per client, after the costs above were read.
     result.balances = await balancesSafely(DB, env, fetchImpl, { force: paidChanged || result.changed.length > 0 });
   } catch (e) { result.ok = false; result.error = String(e.message || e).slice(0, 300); }
@@ -1524,7 +1538,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
 export async function supplierSheetStatus(DB, env) {
   const last = await DB.prepare('SELECT value FROM portal_settings WHERE key=?').bind(LAST).first();
   let parsed = null; try { parsed = last ? JSON.parse(last.value) : null; } catch (e) { parsed = null; }
-  return { configured: googleSheetsConfigured(env), enabled: await supplierSheetEnabled(DB), last: parsed };
+  return { configured: googleSheetsConfigured(env), enabled: await supplierSheetEnabled(DB), portalOnly: await portalOnly(DB), last: parsed };
 }
 
 // ---------- one-time setup ----------
