@@ -210,7 +210,9 @@ async function idRows(env, fetchImpl, tabs) {
 // for the order in AE. If not, the row is out of line: nothing is read from it or written to it, and the admin is told.
 const cellStr = v => (typeof v === 'number' || typeof v === 'boolean' ? String(v) : norm(v));
 const refOf = o => norm(o.order_ref || '#' + o.id);
-export const rowOutOfLine = (row, o) => !!norm(o?.sheet_ref) && cellStr(row.ref) !== norm(o.sheet_ref);
+// A row that shows the order's current number is in line too (16 Nov 2026: an order renamed on the website to what somebody
+// had already typed in the sheet stayed "out of line" for good).
+export const rowOutOfLine = (row, o) => !!norm(o?.sheet_ref) && cellStr(row.ref) !== norm(o.sheet_ref) && !(norm(o.order_ref) && cellStr(row.ref) === norm(o.order_ref));
 // The filter (header arrows) covers every column, so sorting in the sheet always moves whole rows.
 const fullFilter = (sheetId, c = C) => ({ setBasicFilter: { filter: { range: { sheetId, startRowIndex: 4, startColumnIndex: 0, endColumnIndex: c.END } } } });
 const batchValues = (env, data, fetchImpl) => sheetsRequest(env, '/values:batchUpdate', { method: 'POST', body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data }) }, fetchImpl);
@@ -609,7 +611,7 @@ async function refreshPaidNow(DB, env, fetchImpl) {
   const cancelled = rows.filter(r => r.tab === CANCELLED_TAB && r.orderId > 0), fix = [];
   for (let i = 0; i < cancelled.length; i += 200) {
     const part = cancelled.slice(i, i + 200), seen = new Map();
-    for (const o of (await DB.prepare(`SELECT id, status, sheet_shipped, sheet_ref FROM client_orders WHERE id IN (${part.map(() => '?').join(',')})`).bind(...part.map(r => r.orderId)).all()).results || []) seen.set(Number(o.id), o);
+    for (const o of (await DB.prepare(`SELECT id, status, sheet_shipped, sheet_ref, order_ref FROM client_orders WHERE id IN (${part.map(() => '?').join(',')})`).bind(...part.map(r => r.orderId)).all()).results || []) seen.set(Number(o.id), o);
     for (const r of part) { const o = seen.get(r.orderId), want = labels.get(r.orderId) === PAID ? REFUNDED_SHIP : CANCELLED_SHIP; if (o?.status === 'cancelled' && !rowOutOfLine(r, o) && norm(o.sheet_shipped) !== want) fix.push([r, want]); }
   }
   if (fix.length) {

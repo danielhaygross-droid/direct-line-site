@@ -814,6 +814,19 @@ for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 36, t
   assert.equal(Number((await order(P3.id)).supplier_cost), 42, 'switched back: the sheet is read again');
   console.log('PASS portal only (phase 3b): the sheet is a backup, typed cells are put back, owners switch it on and off');
 }
+// 16 Nov 2026: somebody typed a new order number over B in the sheet (row out of line); renaming the order on the website
+// to that same number brings the row back in line (before, it stayed out of line for good).
+{
+  const RN = await mk('N/A'); await settle();
+  supplierTypes(RN.id, 1, 'BULK-3000'); later();
+  const r1 = await cron(); assert.ok(r1.skipped.some(x => x.orderId === RN.id && /out of line/.test(x.why.join())), 'typed-over order number: out of line');
+  assert.equal((await call('/orders/' + RN.id, 'PUT', { orderRef: 'BULK-3000' }, admin)).status, 200); await settle();
+  supplierTypes(RN.id, N, 12.5); later();
+  const r2 = await cron(); assert.ok(!r2.skipped.some(x => x.orderId === RN.id), 'renamed on the website: in line again ' + JSON.stringify(r2.skipped));
+  assert.equal(Number((await order(RN.id)).supplier_cost), 12.5, 'and its supplier cells are read again');
+  assert.equal((await order(RN.id)).sheet_ref, 'BULK-3000');
+  console.log('PASS an order renamed on the website to the number typed in the sheet is in line again');
+}
 const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 22))])));
 const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);
 const before0 = supplierPart(), costs0 = await costs();
