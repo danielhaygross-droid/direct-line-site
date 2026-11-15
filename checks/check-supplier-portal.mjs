@@ -33,7 +33,7 @@ const server = http.createServer(async (req, res) => {
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined, headless: true });
-const session = async (cookie, width) => { const ctx = await browser.newContext({ viewport: { width, height: 950 }, reducedMotion: 'reduce' }); if (cookie) await ctx.addCookies([{ name: 'dl_session', value: decodeURIComponent(cookie.split('=').slice(1).join('=')), url: base, httpOnly: true, sameSite: 'Lax' }]); return ctx; };
+const session = async (cookie, width) => { const ctx = await browser.newContext({ viewport: { width, height: 950 }, reducedMotion: 'reduce' }); if (cookie) await ctx.addCookies([{ name: cookie.split('=')[0], value: decodeURIComponent(cookie.split('=').slice(1).join('=')), url: base, httpOnly: true, sameSite: 'Lax' }]); return ctx; };
 const ok = r => { assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data; };
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6kQQAAAAASUVORK5CYII=';
 
@@ -109,7 +109,7 @@ try {
   // Admin: Supplier logins + Supplier share payments (English + Hebrew).
   for (const [lang, w] of [['en', 1440], ['he', 1440], ['en', 390], ['he', 390]]) {
     const ctx = await session(admin, w), page = await ctx.newPage();
-    await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=settings]');
+    await page.goto(`${base}/test-admin.html?lang=${lang}`); let ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=settings]');
     await ui.locator('[data-tab=settings]').click(); await ui.waitForSelector('.set-tabs'); await ui.locator('[data-set-tab=team]').click();
     await ui.waitForSelector('[data-suppliers]'); await ui.waitForSelector('[data-share] .acc-list');
     assert.match(await ui.locator('[data-suppliers]').innerText(), /@sup-ada/);
@@ -129,7 +129,25 @@ try {
     assert.equal(await sv.locator('a[href="#password"]').count(), 0, 'admin view: no Change password');
     await sv.screenshot({ path: path.join(out, `admin-view-${w}-billing.png`) });
     await sv.goto(`${base}/supplier/?lang=zh#orders`); await sv.waitForSelector('.sp-view'); await sv.waitForTimeout(600);
-    await sv.screenshot({ path: path.join(out, `admin-view-zh-${w}-orders.png`) }); await sv.close();
+    await sv.screenshot({ path: path.join(out, `admin-view-zh-${w}-orders.png`) });
+    // One sign-in per portal (16 Nov 2026): from the admin view, sign in as the supplier in the same browser; the admin stays signed in.
+    if (lang === 'en' && w === 1440) { // before the supplier login is disabled below
+      await sv.goto(`${base}/supplier/?lang=en#billing`); await sv.waitForSelector('.sp-view');
+      await sv.locator('.sp-me summary').click(); await sv.locator('[data-supplier-login]').click(); await sv.waitForSelector('#sp-login');
+      await sv.fill('[name=username]', 'sup-ada'); await sv.fill('[name=password]', 'supplierpass1'); await sv.click('#sp-login [type=submit]');
+      await sv.waitForSelector('.sp-tiles, .sp-table, .sp-ocard'); assert.equal(await sv.locator('.sp-view').count(), 0, 'signed in as the supplier: no admin banner');
+      assert.match(await sv.locator('.sp-who b').innerText(), /Ada/);
+      const names = (await ctx.cookies()).map(c => c.name).sort(); assert.ok(names.includes('dl_session') && names.includes('dl_supplier'), 'both sign-ins kept: ' + names);
+      await page.reload(); const ui2 = page.frame({ name: 'admin' }); await ui2.waitForSelector('[data-tab=settings]');
+      assert.equal((await ui2.evaluate(() => fetch('/api/portal/me', { headers: { 'x-dl-portal': 'admin' } }).then(r => r.json()))).role, 'admin', 'the admin is still signed in');
+      await sv.locator('.sp-me summary').click(); await sv.locator('[data-logout]').click(); await sv.waitForSelector('.sp-view'); // back to the admin view: the admin is still signed in
+      assert.ok(!(await ctx.cookies()).some(c => c.name === 'dl_supplier'), 'supplier log out ends only the supplier sign-in');
+      assert.equal((await ui2.evaluate(() => fetch('/api/portal/me', { headers: { 'x-dl-portal': 'admin' } }).then(r => r.json()))).role, 'admin', 'admin still signed in after the supplier logs out');
+      await sv.goto(`${base}/portal/?lang=en`); await sv.waitForSelector('[data-pick-login]'); await sv.screenshot({ path: path.join(out, `admin-${w}-client-picker.png`) });
+      await ui2.locator('[data-tab=settings]').click(); await ui2.waitForSelector('.set-tabs'); await ui2.locator('[data-set-tab=team]').click(); await ui2.waitForSelector('[data-suppliers]');
+      ui = ui2;
+    }
+    await sv.close();
     await ui.locator(`[data-edit-admin="${globalThis.shaharId}"]`).click(); await ui.waitForSelector('[data-admin-remove]');
     await ui.locator('[data-admin-form]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `admin-${lang}-${w}-team-edit.png`) });
     await ui.locator('[data-admin-cancel]').click();
