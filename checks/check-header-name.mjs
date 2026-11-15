@@ -62,5 +62,15 @@ for (const [lang, url] of [['en', '/en/'], ['he', '/']]) {
   assert.equal(r.ini, 'DL', 'main login keeps DL'); assert.ok(/Daniel|דניאל/.test(r.who), 'main login keeps Daniel');
   await ctx.close();
 }
+// 16 Nov 2026: signed in on the sign-in form (no reload): the header must switch to the person who signed in.
+for (const [lang, url] of [['en', '/en/'], ['he', '/']]) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 950 }, reducedMotion: 'reduce' }), page = await ctx.newPage();
+  await page.goto(base + url, { waitUntil: 'domcontentloaded' }); await page.waitForSelector('#login-form');
+  await page.fill('#login-form [name=username]', 'erwin-test'); await page.fill('#login-form [name=password]', 'testpass1234');
+  await page.locator('#login-form [type=submit]').click();
+  await page.waitForFunction(() => document.querySelector('.profile strong')?.textContent === 'Erwin Test', null, { timeout: 15000 });
+  assert.deepEqual(await read(page), { who: 'Erwin Test', role: 'Assistant', ini: 'ET' }, 'after signing in on the form: ' + lang);
+  await ctx.close();
+}
 console.log('PASS header-name: team admin sees own name/position (EN+HE, 1440+390); main login keeps Daniel. Screens:', out);
 await browser.close(); server.close(); await pg.close();
