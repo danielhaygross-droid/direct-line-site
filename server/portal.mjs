@@ -32,7 +32,6 @@ import { PRODUCT_SCHEMA, products, addProduct, quoteProduct, productPhoto, produ
 import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from './claims.mjs';
 import { SUPPLIER_SCHEMA, supplierSession, routeSupplier, routeSupplierAdmin } from './supplier-portal.mjs';
 import { RECEIPT_SCHEMA, routeReceiptsAdmin, ISSUER, ISSUER_DETAILS } from './supplier-receipts.mjs';
-import { ALERT_SCHEMA, alertStatus, validEmail } from './supplier-alerts.mjs';
 
 import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance } from './client-stores.mjs';
 
@@ -215,8 +214,6 @@ SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA
 SCHEMA.push(...QUOTE_SHEET_SCHEMA, ...SAVED_PRICE_SCHEMA);
 // Supplier receipts (16 Nov 2026), after portal_files and client_payments exist.
 SCHEMA.push(...RECEIPT_SCHEMA);
-// Supplier email alerts (16 Nov 2026).
-SCHEMA.push(...ALERT_SCHEMA);
 // "Log in as client": every change an admin makes while logged in as a client is kept here (who it was for, what, when).
 SCHEMA.push(`CREATE TABLE IF NOT EXISTS admin_impersonation_log (
   id SERIAL PRIMARY KEY, client_id INTEGER NOT NULL REFERENCES users(id), method TEXT NOT NULL, path TEXT NOT NULL,
@@ -1190,8 +1187,6 @@ async function routePortal(request, url, ctx, meta) {
   // ----- admin-only routes -----
   if (!who.admin) return json({ ok: false, error: 'Forbidden' }, 403);
   { const r = await routeSupplierAdmin(request, path, ctx); if (r) return r; }
-  // Supplier email alerts: connected or not, last run, who gets them (Fees & settings > Supplier).
-  if (path === '/admin/supplier-alerts' && method === 'GET') return json({ ok: true, ...(await alertStatus(DB, env)) });
   // Receipts made in the supplier portal: preview, approve (sent to the client) or send back.
   if (path.startsWith('/admin/receipts')) {
     const a = who.adminId ? await DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(who.adminId).first() : null;
@@ -1264,7 +1259,7 @@ async function routePortal(request, url, ctx, meta) {
     const termsPolicy = await currentTerms(DB);
     const termsRows = (await DB.prepare('SELECT DISTINCT ON (client_id) client_id,version,accepted_at FROM client_terms_acceptances ORDER BY client_id,version DESC').all()).results || [];
     const acceptedTerms = new Map(termsRows.map(r => [r.client_id, { version: Number(r.version), acceptedAt: Number(r.accepted_at) }]));
-    const users = (await DB.prepare('SELECT id, username, role, display_name, position, owner, alert_email, alerts_on, commission_per_order, supplier_share_per_order, active, archived, created_at, trial_start, trial_end, sub_status, sub_last_payment, last_login, password_reset_required FROM users ORDER BY role, display_name').all()).results || [];
+    const users = (await DB.prepare('SELECT id, username, role, display_name, position, owner, commission_per_order, supplier_share_per_order, active, archived, created_at, trial_start, trial_end, sub_status, sub_last_payment, last_login, password_reset_required FROM users ORDER BY role, display_name').all()).results || [];
     const pendingTransfers = new Map(((await DB.prepare("SELECT f.client_id,COUNT(*) AS n FROM portal_files f LEFT JOIN client_payments p ON p.confirmation_id=f.id WHERE f.kind='confirmation' AND NOT f.archived AND p.id IS NULL GROUP BY f.client_id").all()).results || []).map(r=>[r.client_id,Number(r.n)]));
     const clients = [];
     const archived = [];
@@ -1275,7 +1270,7 @@ async function routePortal(request, url, ctx, meta) {
       { orders: 0, ...Object.fromEntries(keys.map(k => [k, 0])) });
     const admins = users.filter(u => u.role === 'admin' && !u.archived).map(u => ({ id: u.id, username: u.username, name: u.display_name, position: u.position || '', role: 'admin', owner: !!u.owner, active: u.active }));
     const me = { id: who.adminId || null, owner: await isOwner(DB, who) };
-    const suppliers = users.filter(u => u.role === 'supplier').map(u => ({ id: u.id, username: u.username, name: u.display_name, position: u.position || '', role: 'supplier', active: u.active, archived: !!u.archived, lastLogin: u.last_login == null ? null : Number(u.last_login), alertEmail: u.alert_email || '', alertsOn: u.alerts_on !== false }));
+    const suppliers = users.filter(u => u.role === 'supplier').map(u => ({ id: u.id, username: u.username, name: u.display_name, position: u.position || '', role: 'supplier', active: u.active, archived: !!u.archived, lastLogin: u.last_login == null ? null : Number(u.last_login) }));
     // All clients together for the Overview: cancelled-order money and money per month (Erwin, 27 Oct 2026).
     const cancelled = await cancelledTotals(DB, clients), months = await moneyMonths(DB);
     return json({ ok: true, settings, termsPolicy, totals, clients, admins, suppliers, me, archived, cancelled, months, rates: SHIPPING_RATES, googleSheets: { configured: googleSheetsConfigured(env) } });
@@ -1531,12 +1526,6 @@ async function routePortal(request, url, ctx, meta) {
     await DB.prepare('UPDATE users SET display_name=?, active=?, commission_per_order=?, password_hash=CASE WHEN ? THEN ? ELSE password_hash END, archived=?, trial_start=?, trial_end=?, sub_status=?, sub_last_payment=?, password_reset_required=CASE WHEN ? THEN ? ELSE password_reset_required END, session_version=session_version+? WHERE id = ?').bind(name, active, cpo, !!body.password, hash, archived, trialStart, trialEnd, subStatus, lastPay, !!body.password, u.role === 'client', body.password ? 1 : 0, id).run();
     if (username !== u.username) await DB.prepare('UPDATE users SET username=? WHERE id=?').bind(username, id).run();
     if (body.position !== undefined) await DB.prepare('UPDATE users SET position=? WHERE id=?').bind(text(body.position, 60), id).run();
-    // A supplier login's email for alerts (16 Nov 2026); the supplier can also change it in the supplier portal.
-    if (body.alertEmail !== undefined && u.role === 'supplier') {
-      const e = String(body.alertEmail || '').trim().toLowerCase();
-      if (e && !validEmail(e)) return json({ ok: false, error: 'Check the email address for alerts.' }, 400);
-      await DB.prepare('UPDATE users SET alert_email=? WHERE id=?').bind(e || null, id).run();
-    }
     // Change a team login's type (admin <-> supplier); clients can't be changed. Signs the person out at once.
     if (body.role !== undefined && body.role !== u.role) {
       if (!['admin', 'supplier'].includes(u.role) || !['admin', 'supplier'].includes(body.role)) return json({ ok: false, error: 'Only admin and supplier logins can change type.' }, 400);

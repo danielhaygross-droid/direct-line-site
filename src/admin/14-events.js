@@ -23,7 +23,7 @@
       row.insertAdjacentHTML('afterend',`<form class="form-grid" data-admin-form="${x.id}" data-was="${sup?'supplier':'admin'}" novalidate style="padding:12px;border:1px solid var(--line);border-radius:12px">
         <label class="field"><span>Name</span><input name="name" maxlength="120" value="${esc(x.name)}"></label>
         <label class="field"><span>Username</span><input name="username" maxlength="60" autocomplete="off" data-no-i18n value="${esc(x.username)}"></label>
-        <label class="field"><span>Position <small>shown next to the name, e.g. Owner, Developer, Supplier</small></span><input name="position" maxlength="60" data-no-i18n value="${esc(x.position||'')}"></label>${sup?`<label class="field"><span>Email for alerts <small>new orders, cancel requests, quotes; at most one email every 30 minutes</small></span><input name="alertEmail" type="email" maxlength="160" data-no-i18n value="${esc(x.alertEmail||'')}" placeholder="name@example.com"></label>`:''}
+        <label class="field"><span>Position <small>shown next to the name, e.g. Owner, Developer, Supplier</small></span><input name="position" maxlength="60" data-no-i18n value="${esc(x.position||'')}"></label>
         <label class="field"><span>Type</span><select name="role"><option value="admin"${sup?'':' selected'}>Admin (full access)</option><option value="supplier"${sup?' selected':''}>Supplier (supplier portal only)</option></select></label>
         <label class="field"><span>Status</span><select name="active"><option value="true"${x.active?' selected':''}>Active</option><option value="false"${x.active?'':' selected'}>Disabled (can’t sign in)</option></select></label>
         <label class="field"><span>New password <small>leave empty to keep the current one</small></span><input name="password" type="password" maxlength="128" autocomplete="new-password"></label>
@@ -246,7 +246,7 @@
       if (adf.password.value && adf.password.value.length < 8) { m.textContent = 'Password must be at least 8 characters'; m.className = 'form-msg err'; return; }
       if (adf.role.value !== adf.dataset.was && !confirm(adf.role.value === 'supplier' ? 'Make this login a supplier login? It is signed out at once and from then on only sees the supplier portal.' : 'Make this login an ADMIN? It gets full access, including our fees and client prices.')) return;
       b.disabled = true;
-      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), position: adf.position.value, role: adf.role.value, ...(adf.alertEmail ? { alertEmail: adf.alertEmail.value } : {}), ...(adf.owner && !adf.owner.disabled ? { owner: adf.owner.checked } : {}), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Saved.'); }
+      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), position: adf.position.value, role: adf.role.value, ...(adf.owner && !adf.owner.disabled ? { owner: adf.owner.checked } : {}), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Saved.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
       return;
     }
