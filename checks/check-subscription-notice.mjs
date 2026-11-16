@@ -53,6 +53,7 @@ try {
     const banner = await page.locator('.sub-banner.due').innerText();
     assert.match(banner, lang === 'he' ? /החודש החינמי/ : /Your free month ended on 13 Nov 2026/);
     assert.equal(await page.locator('.sub-banner.due a[href="#/messages"]').count(), 1, 'Message us link');
+    assert.ok(await page.evaluate(() => { const b = document.querySelector('.sub-banner.due'), h = document.querySelector('[data-home-hello]'); return !!(h && h.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) && b.getBoundingClientRect().top < innerHeight; }), 'at the top of Home, seen without scrolling');
     await page.screenshot({ path: path.join(out, `${lang}-${w}-home.png`) });
     await page.locator('[data-bell]').click(); await page.waitForTimeout(400);
     const panel = await page.locator('.dln-panel').innerText();

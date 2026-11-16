@@ -26,11 +26,11 @@
     return `
       <section data-home-hello class="tw:flex tw:items-end tw:justify-between tw:gap-5 tw:flex-wrap"><div><h2 class="tw:mt-2 tw:text-[clamp(26px,3vw,36px)] tw:font-semibold tw:tracking-[-.02em]">${hello}, <span class="tw:text-gold">${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p class="tw:m-0 tw:mt-1 tw:text-muted">${all.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Send us your first order to get started.'}</p></div>
         <div class="hello-actions tw:flex tw:gap-2 tw:flex-wrap tw:max-md:hidden"><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a></div></section>
+      ${subBanner(me.subscription)}
       ${payStrip()}
       ${moneyNow()}
       ${window.DLClientStoreUI.periodFields(S.period,S.from,S.to,window.DLClientStoreMath.monthsOf(S.orders))}
       ${!S.storeId&&S.stores.length>1?`<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>`:''}
-      ${subBanner(me.subscription)}
       ${newbie ? `<section class="card card-pad"><h3 class="tw:m-0 tw:mb-3.5 tw:text-17">How it works</h3>
         <ol class="tw:grid tw:grid-cols-3 tw:gap-3.5 tw:m-0 tw:p-0 tw:list-none tw:max-[901px]:grid-cols-1">
           <li class="tw:flex tw:gap-3 tw:items-start tw:p-3.5 tw:border tw:border-solid tw:border-line tw:rounded-2xl tw:bg-surface-2"><b class="tw:flex-none tw:grid tw:place-items-center tw:size-[30px] tw:rounded-full tw:bg-gold tw:text-white tw:text-14">1</b><div><strong class="tw:block tw:mb-[3px] tw:text-[14.5px]">Send us the order</strong><span class="tw:text-muted tw:text-[13.5px] tw:leading-[1.45]">Had a sale in your store? Click “Send a new order” and fill in what your customer bought and where to ship it.</span></div></li>
