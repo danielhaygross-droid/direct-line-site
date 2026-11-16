@@ -9,6 +9,7 @@ import { paidOrders, paymentOrderIds } from './payment-orders.mjs';
 import { cancelledSummary, KEPT_FEE } from './cancellations.mjs';
 import { QUEUE_SCHEMA, routeQueue, alerts } from './supplier-queue.mjs';
 import { routeRequests, requestCounts } from './supplier-requests.mjs';
+import { routeReceipts, receiptCount } from './supplier-receipts.mjs';
 
 export const SUPPLIER_SCHEMA = [
   // What the supplier paid Direct Line for the supplier share ($1 per order that is not cancelled). Recorded by admins.
@@ -148,7 +149,9 @@ export async function routeSupplier(request, path, ctx, who, deps, viewer = null
     if (!changed) return json({ ok: false, error: 'Please sign in again.' }, 401);
     return json({ ok: true }, 200, { 'set-cookie': await createSessionCookie('supplier-' + me.id + '-v' + changed.session_version, env.APP_SESSION_SECRET) });
   }
-  if (path === '/supplier/alerts' && method === 'GET') return json({ ok: true, ...(await alerts(DB, me)), ...(await requestCounts(DB)) });
+  if (path === '/supplier/alerts' && method === 'GET') return json({ ok: true, ...(await alerts(DB, me)), ...(await requestCounts(DB)), receiptsSentBack: await receiptCount(DB) });
+  const rc = await routeReceipts(request, path, ctx, me, { clientsFor, clientBilling, clientSummary, getSettings });
+  if (rc) return rc;
   const rq = await routeRequests(request, path, ctx, me);
   if (rq) return rq;
   const q = await routeQueue(request, path, ctx, me);

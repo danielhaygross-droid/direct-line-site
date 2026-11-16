@@ -27,7 +27,7 @@
     'Balance per client': '每个客户的余额', 'Open a client to see every payment and order': '点开客户查看每笔付款和订单',
     'Client': '客户', 'Orders': '订单', 'Cancellation fees': '取消费', 'Paid for your part': '您的部分已付', 'Still owes / credit': '还需付 / 余额',
     'Still owes': '还需付', 'order': '个订单', 'Credit': '余额', 'All paid': '已付清', 'orders': '个订单', 'cancelled': '已取消', 'All clients': '所有客户', 'Net still owed': '净欠款', 'Net credit': '净余额',
-    'still owed': '还需付', 'credit': '余额', 'Your supplier share': '您的供应商分成', 'Still to pay Direct Line': '还需付给 Direct Line',
+    'still owed': '还需付', 'credit': '余额', 'Your supplier share': '您的供应商分成', 'Still to pay Direct Line': '还需付给 Direct Line', 'Paid ahead': '已预付', 'Counts toward your next orders.': '计入您之后的订单。',
     
     'You pay Direct Line': '您付给 Direct Line', 'Orders counted': '计入的订单', 'Paid to Direct Line': '已付给 Direct Line', 'Last payment': '最近付款', 'No payment yet': '还没有付款',
     'Share': '分成', 'orders −': '个订单 −', 'Every order counts, except cancelled ones.': '每个订单都计入，已取消的订单除外。',
@@ -109,7 +109,7 @@
   }
   // Orders · Quotes · Price requests · Billing, each with what waits for the supplier.
   function navItems(cls) {
-    const A = S.alerts || {}, items = [['orders', 'Orders', ICON.box, A.newOrders, ['orders']], ['quotes', 'Quotes', ICON.tag, A.quotes, ['quotes']], ['requests', 'Price requests', ICON.swap, A.requests, ['requests']], ['billing', 'Billing', ICON.bill, 0, ['billing', 'client']]];
+    const A = S.alerts || {}, items = [['orders', 'Orders', ICON.box, A.newOrders, ['orders']], ['quotes', 'Quotes', ICON.tag, A.quotes, ['quotes']], ['requests', 'Price requests', ICON.swap, A.requests, ['requests']], ['receipts', 'Receipts', ICON.receipt, A.receiptsSentBack, ['receipts']], ['billing', 'Billing', ICON.bill, 0, ['billing', 'client']]];
     return items.map(([h, l, ic, n, pages]) => `<a href="#${h}"${cls ? ` class="${cls}"` : ''} aria-current="${pages.includes(S.page) ? 'page' : 'false'}">${ic}<span>${t(l)}</span>${n ? `<b class="sp-badge">${n}</b>` : ''}</a>`).join('');
   }
   function shell(inner) {
@@ -136,7 +136,7 @@
     return `<ul class="sp-tile-list ${tone}">${rows.map(c => `<li><span>${esc(c.name)}</span><b>${money(Math.abs(c.balance))}</b></li>`).join('')}</ul>`;
   }
   function billingHTML(d) {
-    const T = d.totals, owe = d.clients.filter(c => c.balance > 0.004), cred = d.clients.filter(c => c.balance < -0.004), sh = d.share;
+    const T = d.totals, owe = d.clients.filter(c => c.balance > 0.004), cred = d.clients.filter(c => c.balance < -0.004), sh = d.share, ahead = sh.stillToPay < -0.004; // the supplier paid more share than the orders so far (16 Nov 2026: $80 paid, 70 orders)
     const bar = owe.length > 1 ? `<div class="sp-split" aria-hidden="true">${owe.map(c => `<span style="flex:${Math.max(1, Math.round(c.balance * 100))}"></span>`).join('')}</div>` : '';
     const net = T.net;
     const rows = d.clients.map(c => `<tr data-client="${c.id}" tabindex="0">
@@ -160,12 +160,12 @@
           <div class="sp-cards">${cards}</div>
           <p class="sp-foot">${net >= 0 ? t('Net still owed') : t('Net credit')} ${money(Math.abs(net))} = ${money(T.stillOwed)} ${t('still owed')} − ${money(T.credit)} ${t('credit')}</p>` : `<p class="sp-empty">${t('No clients yet.')}</p>`}
       </section>
-      <section class="card sp-card"><div class="sp-card-h"><h2>${t('Your supplier share')}</h2><span class="sp-due">${t('Still to pay Direct Line')} · <b class="${sh.stillToPay > 0.004 ? 'red' : ''}">${money(sh.stillToPay)}</b></span></div>
+      <section class="card sp-card"><div class="sp-card-h"><h2>${t('Your supplier share')}</h2><span class="sp-due">${t(ahead ? 'Paid ahead' : 'Still to pay Direct Line')} · <b class="${sh.stillToPay > 0.004 ? 'red' : ahead ? 'mint' : ''}">${money(Math.abs(sh.stillToPay))}</b></span></div>
         <p class="sp-sub">${shareIntro(sh.rate)}</p>
         <div class="sp-mini"><div><small>${t('Orders counted')}</small><b>${sh.counted}</b><span>${t('Every order counts, except cancelled ones.')}</span></div>
           <div><small>${money(sh.rate)} × ${t('orders')}</small><b>${money(sh.amount)}</b></div>
           <div><small>${t('Paid to Direct Line')}</small><b>${money(sh.paid)}</b><span>${sh.lastPaidAt ? t('Last payment') + ' ' + esc(fmtDay(sh.lastPaidAt)) : t('No payment yet')}</span></div>
-          <div><small>${t('Still to pay Direct Line')}</small><b class="${sh.stillToPay > 0.004 ? 'red' : ''}">${money(sh.stillToPay)}</b></div></div>
+          <div><small>${t(ahead ? 'Paid ahead' : 'Still to pay Direct Line')}</small><b class="${sh.stillToPay > 0.004 ? 'red' : ahead ? 'mint' : ''}">${money(Math.abs(sh.stillToPay))}</b>${ahead ? `<span>${t('Counts toward your next orders.')}</span>` : ''}</div></div>
         ${shareRows ? `<div class="sp-table-wrap"><table class="sp-table"><thead><tr><th>${t('Client')}</th><th class="num">${t('Orders counted')}</th><th class="num">${t('Share')}</th></tr></thead><tbody>${shareRows}</tbody>
           <tfoot><tr><td><b>${t('All clients')}</b></td><td class="num">${sh.counted}</td><td class="num">${money(sh.amount)}</td></tr></tfoot></table></div>` : ''}
       </section>`;
@@ -512,6 +512,45 @@
     const bell = $('.sp-bell'); if (bell) bell.outerHTML = bellHTML();
   }
   setInterval(() => { if (S.me) pollAlerts(); }, 60000);
+  // ---------- receipts (16 Nov 2026): the supplier makes the receipt for a payment, Direct Line approves, the client gets it ----------
+  // The supplier sees only its own part; the PDF with the client's amounts is made when Direct Line approves it.
+  Object.assign(ZH, {
+    'Receipts': '收据', 'To make': '待开收据', 'Sent to the client': '已发给客户',
+    'Make the receipt for a client payment. Direct Line checks it and sends it to the client.': '为客户的付款开收据。Direct Line 核对后发给客户。',
+    'Paid on': '付款日期', 'Paid for your part': '您的部分已付', 'Orders it paid': '这笔付款包含的订单',
+    'Note on the receipt': '收据备注', 'optional, e.g. bank reference': '选填，例如银行流水号', 'Send to Direct Line': '提交给 Direct Line',
+    'Sent back by Direct Line': 'Direct Line 退回', 'Fix it and send it again.': '请修改后重新提交。', 'Send again': '重新提交',
+    'Waiting for Direct Line since': '等待 Direct Line 确认，提交于', 'Sent to the client on': '已于此日期发给客户：', 'Receipt': '收据',
+    'Nothing to make.': '没有需要开的收据。', 'Payment towards the balance': '付款计入余额', 'by': '提交人',
+  });
+  ICON.receipt = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>';
+  S.receipts = null; S.rcTab = 'make';
+  const rcOrders = r => (r.orders.length ? `<ul class="sp-rclist">${r.orders.map(o => `<li><b>${esc(o.ref)}</b><span>${esc(o.item || '')}${o.cancelled ? ` · ${t('Cancelled')}` : ''}</span><span class="num">${money(o.cost)}</span></li>`).join('')}</ul>`
+    : `<p class="muted">${t('Payment towards the balance')}</p>`);
+  function receiptCard(r) {
+    const head = `<div class="sp-rctop"><div><small class="muted">${esc(r.client)} · ${t('Paid on')} ${esc(fmtDay(r.paidAt))}</small><h3>${t('Paid for your part')} <b>${money(r.yourPart)}</b></h3></div>${r.number ? `<span class="sp-tag">${esc(r.number)}</span>` : ''}</div>
+      <p class="sp-rcsub">${t('Orders it paid')} (${r.orders.length})</p>${rcOrders(r)}`;
+    if (r.status === 'submitted') return `<article class="card sp-rcard" data-rc="${r.paymentId}">${head}<p class="sp-wait">${t('Waiting for Direct Line since')} ${esc(fmtDay(r.submittedAt))}${r.submittedBy ? ` · ${t('by')} ${esc(r.submittedBy)}` : ''}</p>${r.note ? `<p class="muted">${t('Note')}: ${esc(r.note)}</p>` : ''}</article>`;
+    if (r.status === 'approved') return `<article class="card sp-rcard" data-rc="${r.paymentId}">${head}<p class="sp-done">✓ ${t('Sent to the client on')} ${esc(fmtDay(r.decidedAt))}</p></article>`;
+    return `<article class="card sp-rcard" data-rc="${r.paymentId}">${head}
+      ${r.status === 'rejected' ? `<div class="sp-back"><b>${t('Sent back by Direct Line')}:</b> ${esc(r.reason)}<br><span>${t('Fix it and send it again.')}</span></div>` : ''}
+      <form class="sp-rcform" data-receipt="${r.paymentId}" novalidate><label class="sp-f"><span>${t('Note on the receipt')} <small>${t('optional, e.g. bank reference')}</small></span><input name="note" maxlength="500" value="${esc(r.note || '')}"></label>
+        ${formErr('rc' + r.paymentId)}<div><button type="submit" class="btn btn-primary">${ICON.receipt} ${t(r.status === 'rejected' ? 'Send again' : 'Send to Direct Line')}</button></div></form></article>`;
+  }
+  function receiptsHTML() {
+    const R = S.receipts; if (!R) return S.error || `<p class="sp-empty">${t('Loading…')}</p>`;
+    const list = S.rcTab === 'waiting' ? R.waiting : S.rcTab === 'sent' ? R.sent : R.toMake;
+    return `<div class="sp-head"><div><h1>${t('Receipts')}</h1><p class="sp-intro">${t('Make the receipt for a client payment. Direct Line checks it and sends it to the client.')}</p></div></div>
+      ${subTabs('rcTab', [['make', 'To make', R.toMake.length, true], ['waiting', 'Waiting for Direct Line', R.waiting.length], ['sent', 'Sent to the client', R.sent.length]])}
+      <div class="sp-rlist">${list.length ? list.map(receiptCard).join('') : `<p class="sp-empty">${t(S.rcTab === 'make' ? 'Nothing to make.' : 'Nothing here yet.')}</p>`}</div>`;
+  }
+  async function sendReceipt(form) {
+    const id = Number(form.dataset.receipt), b = $('[type=submit]', form);
+    if (b.disabled) return; b.disabled = true; delete S.formErr['rc' + id];
+    try { S.receipts = await api('/supplier/receipts', { method: 'POST', body: { paymentId: id, note: form.note.value } }); toast(t('Waiting for Direct Line')); pollAlerts(); }
+    catch (e) { S.formErr['rc' + id] = e.message; }
+    rerenderOrders();
+  }
 
   // ---------- phase 3: product quotes and price requests ----------
   Object.assign(ZH, {
@@ -619,7 +658,7 @@
   // ---------- pages, events, boot ----------
   function readHash() {
     const h = location.hash.replace(/^#/, ''), m = /^client\/(\d+)$/.exec(h);
-    if (m) { S.page = 'client'; S.clientId = Number(m[1]); } else if (h === 'password') S.page = 'password'; else if (['billing', 'quotes', 'requests'].includes(h)) S.page = h; else S.page = 'orders';
+    if (m) { S.page = 'client'; S.clientId = Number(m[1]); } else if (h === 'password') S.page = 'password'; else if (['billing', 'quotes', 'requests', 'receipts'].includes(h)) S.page = h; else S.page = 'orders';
   }
   const loading = () => `<p class="sp-empty">${t('Loading…')}</p>`;
   const failed = e => `<div class="sp-empty"><p>${esc(e.message)}</p><button type="button" class="btn" data-retry>${t('Try again')}</button></div>`;
@@ -627,11 +666,11 @@
     if (!S.me) return loginScreen();
     const body = S.page === 'password' ? passwordHTML()
       : S.page === 'client' ? (S.client && S.client.id === S.clientId ? clientHTML(S.client) : S.error || loading())
-      : S.page === 'orders' ? ordersHTML() : S.page === 'quotes' ? quotesHTML() : S.page === 'requests' ? requestsHTML()
+      : S.page === 'orders' ? ordersHTML() : S.page === 'quotes' ? quotesHTML() : S.page === 'requests' ? requestsHTML() : S.page === 'receipts' ? receiptsHTML()
       : S.billing ? billingHTML(S.billing) : S.error || loading();
     const y = window.scrollY, drawer = S.drawer;
     document.body.innerHTML = shell(body);
-    document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t({ orders: 'Orders', quotes: 'Quotes', requests: 'Price requests' }[S.page] || 'Billing');
+    document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t({ orders: 'Orders', quotes: 'Quotes', requests: 'Price requests', receipts: 'Receipts' }[S.page] || 'Billing');
     if (S.keepScroll) window.scrollTo(0, y);
     S.keepScroll = false;
     bindPassword();
@@ -645,6 +684,7 @@
       else if (S.page === 'orders') { if (!S.queue) render(); S.queue = await api('/supplier/orders'); S.pinned.clear(); }
       else if (S.page === 'quotes') { if (!S.quotes) render(); S.quotes = await api('/supplier/quotes'); }
       else if (S.page === 'requests') { if (!S.requests) render(); S.requests = await api('/supplier/price-requests'); }
+      else if (S.page === 'receipts') { if (!S.receipts) render(); S.receipts = await api('/supplier/receipts'); }
     } catch (e) { if (e.status === 401) { S.me = null; return render(); } S.error = failed(e); }
     render();
   }
@@ -660,6 +700,7 @@
     // Orders
     const qt = e.target.closest('[data-qtab]'); if (qt) { S.qtab = qt.dataset.qtab; rerenderOrders(); return; }
     const rt = e.target.closest('[data-rtab]'); if (rt) { S.rtab = rt.dataset.rtab; rerenderOrders(); return; }
+    const rct = e.target.closest('[data-rctab]'); if (rct) { S.rcTab = rct.dataset.rctab; rerenderOrders(); return; }
     const qe = e.target.closest('[data-qedit]'); if (qe) { S.qEdit.add(Number(qe.dataset.qedit)); rerenderOrders(); return; }
     const av = e.target.closest('[data-avail]'); if (av) { const [pid, v] = av.dataset.avail.split(':'); S.qAvail[pid] = v === '1'; rerenderOrders(); return; }
     const tb = e.target.closest('[data-tab]'); if (tb) { S.tab = tb.dataset.tab; S.onlyCancelReq = false; S.pinned.clear(); S.limit = 50; rerenderOrders(); return; }
@@ -699,7 +740,8 @@
   });
   document.addEventListener('submit', e => {
     const q = e.target.closest('form[data-quote]'); if (q) { e.preventDefault(); sendQuote(q); return; }
-    const r = e.target.closest('form[data-req]'); if (r) { e.preventDefault(); sendRequest(r); }
+    const r = e.target.closest('form[data-req]'); if (r) { e.preventDefault(); sendRequest(r); return; }
+    const rc = e.target.closest('form[data-receipt]'); if (rc) { e.preventDefault(); sendReceipt(rc); }
   });
   window.addEventListener('hashchange', () => { readHash(); closeDrawer(); window.scrollTo(0, 0); load(); });
   async function boot() {

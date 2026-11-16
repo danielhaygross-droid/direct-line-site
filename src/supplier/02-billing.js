@@ -11,7 +11,7 @@
     return `<ul class="sp-tile-list ${tone}">${rows.map(c => `<li><span>${esc(c.name)}</span><b>${money(Math.abs(c.balance))}</b></li>`).join('')}</ul>`;
   }
   function billingHTML(d) {
-    const T = d.totals, owe = d.clients.filter(c => c.balance > 0.004), cred = d.clients.filter(c => c.balance < -0.004), sh = d.share;
+    const T = d.totals, owe = d.clients.filter(c => c.balance > 0.004), cred = d.clients.filter(c => c.balance < -0.004), sh = d.share, ahead = sh.stillToPay < -0.004; // the supplier paid more share than the orders so far (16 Nov 2026: $80 paid, 70 orders)
     const bar = owe.length > 1 ? `<div class="sp-split" aria-hidden="true">${owe.map(c => `<span style="flex:${Math.max(1, Math.round(c.balance * 100))}"></span>`).join('')}</div>` : '';
     const net = T.net;
     const rows = d.clients.map(c => `<tr data-client="${c.id}" tabindex="0">
@@ -35,12 +35,12 @@
           <div class="sp-cards">${cards}</div>
           <p class="sp-foot">${net >= 0 ? t('Net still owed') : t('Net credit')} ${money(Math.abs(net))} = ${money(T.stillOwed)} ${t('still owed')} − ${money(T.credit)} ${t('credit')}</p>` : `<p class="sp-empty">${t('No clients yet.')}</p>`}
       </section>
-      <section class="card sp-card"><div class="sp-card-h"><h2>${t('Your supplier share')}</h2><span class="sp-due">${t('Still to pay Direct Line')} · <b class="${sh.stillToPay > 0.004 ? 'red' : ''}">${money(sh.stillToPay)}</b></span></div>
+      <section class="card sp-card"><div class="sp-card-h"><h2>${t('Your supplier share')}</h2><span class="sp-due">${t(ahead ? 'Paid ahead' : 'Still to pay Direct Line')} · <b class="${sh.stillToPay > 0.004 ? 'red' : ahead ? 'mint' : ''}">${money(Math.abs(sh.stillToPay))}</b></span></div>
         <p class="sp-sub">${shareIntro(sh.rate)}</p>
         <div class="sp-mini"><div><small>${t('Orders counted')}</small><b>${sh.counted}</b><span>${t('Every order counts, except cancelled ones.')}</span></div>
           <div><small>${money(sh.rate)} × ${t('orders')}</small><b>${money(sh.amount)}</b></div>
           <div><small>${t('Paid to Direct Line')}</small><b>${money(sh.paid)}</b><span>${sh.lastPaidAt ? t('Last payment') + ' ' + esc(fmtDay(sh.lastPaidAt)) : t('No payment yet')}</span></div>
-          <div><small>${t('Still to pay Direct Line')}</small><b class="${sh.stillToPay > 0.004 ? 'red' : ''}">${money(sh.stillToPay)}</b></div></div>
+          <div><small>${t(ahead ? 'Paid ahead' : 'Still to pay Direct Line')}</small><b class="${sh.stillToPay > 0.004 ? 'red' : ahead ? 'mint' : ''}">${money(Math.abs(sh.stillToPay))}</b>${ahead ? `<span>${t('Counts toward your next orders.')}</span>` : ''}</div></div>
         ${shareRows ? `<div class="sp-table-wrap"><table class="sp-table"><thead><tr><th>${t('Client')}</th><th class="num">${t('Orders counted')}</th><th class="num">${t('Share')}</th></tr></thead><tbody>${shareRows}</tbody>
           <tfoot><tr><td><b>${t('All clients')}</b></td><td class="num">${sh.counted}</td><td class="num">${money(sh.amount)}</td></tr></tfoot></table></div>` : ''}
       </section>`;

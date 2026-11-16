@@ -125,7 +125,7 @@
   }
 
   async function loadAll() {
-    const [ov, o, p, c, stores, archived] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores'),api('/admin/orders?archived=1')]);
+    const [ov, o, p, c, stores, archived] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores'),api('/admin/orders?archived=1'), loadReceipts()]);
     S.ov = ov; S.orders = o.orders;
     // Orders the client's credit already covers are not owed (12 Nov 2026): flagged once here, read by tags and filters.
     window.DLPayOrders.markCovered(S.orders, id => ov.clients.find(c => c.id === id)?.outstanding ?? Infinity, () => [], id => Math.round(((ov.cancelled?.clients || []).find(r => r.clientId === id)?.feesOwed || 0) * 100)); S.archivedOrders = archived.orders; S.products=p.products; S.claims=c.claims;S.stores=stores.stores; window.DL.setRates(ov.rates);
@@ -428,7 +428,7 @@
         <section class="card" data-list></section>`;
     } else if (S.tab === 'clients') {
       body.innerHTML = `<div class="bar"><label class="search"><span class="sr">Search clients</span>${ic('search')}<input type="search" placeholder="Search clients…" value="${esc(S.cq)}" data-cq></label>${sortPick('admin-clients', CLIENT_SORTS)}</div>
-        <section class="card" data-list></section><div data-cancelled-slot></div>`;
+        <div data-receipts-slot></div><section class="card" data-list></section><div data-cancelled-slot></div>`;
     } else if (S.tab === 'overview') body.innerHTML = '<div class="ovw" data-overview></div>';
     else body.innerHTML = settingsHTML();
     renderList();
@@ -577,6 +577,7 @@
     const pending = os.filter(o => o.status === 'pending'), follow = os.filter(o => o.unreadMessages > 0);
     const noTrack = os.filter(o => o.status === 'processing' && !o.trackingNumber), noCost = os.filter(needsCost), revs = os.filter(o => ['open', 'offered'].includes(o.revision?.status)), revProducts = (S.products || []).filter(p => ['open', 'offered'].includes(p.revision?.status));
     const trialSoon = cl.filter(c => c.subscription?.status === 'trial' && c.subscription.trialDaysLeft !== null && c.subscription.trialDaysLeft >= 0 && c.subscription.trialDaysLeft <= 7);
+    const rcs = typeof rcWaiting === 'function' ? rcWaiting() : [];
     const subDue = cl.filter(c => (c.subscription?.status === 'trial' && c.subscription.trialEnded) || c.subscription?.status === 'overdue');
     return [
       [pending, `${n(pending, 'order')} waiting to be processed`, 'data-go-filter="pending"', 'var(--orange)', 'job:pending'],
@@ -585,6 +586,7 @@
       [revProducts, `${n(revProducts, 'product')} with a cost revision request`, 'data-go-tab="products"', 'var(--orange)', 'job:product-revision'],
       [noCost, `${n(noCost, 'order')} still need product + shipping cost`, 'data-go-filter="needscost"', 'var(--gold)', 'job:needscost'],
       [noTrack, `${n(noTrack, 'order')} in processing without tracking`, 'data-go-filter="processing"', 'var(--blue)', 'job:notrack'],
+      [rcs, `${n(rcs, 'receipt')} from the supplier to check and send`, 'data-go-tab="clients"', 'var(--violet)', 'job:receipts'],
       [trialSoon, `${n(trialSoon, 'client')} with the free month ending in the next 7 days`, 'data-go-tab="clients"', 'var(--gold)', 'job:plans'],
       [subDue, `${n(subDue, 'client')} with the free month over or the subscription overdue`, 'data-go-tab="clients"', 'var(--red)', 'job:plans'],
     ].filter(x => x[0].length > 0).map(([list, text, attrs, tone, key]) => ({ n: list.length, text, attrs, tone, key }));
@@ -762,8 +764,37 @@
         <td data-label="Status"${c.active ? ' class="hide-sm"' : ''}>${c.active ? '<span class="st st-delivered">Active</span>' : '<span class="st st-cancelled">Disabled</span>'}</td></tr>`).join('')}
       </tbody></table></div>${listMore('clients', list.length, all.length)}${archivedHTML()}` : empty(S.ov.clients.length ? 'No clients match' : 'No clients yet', S.ov.clients.length ? 'Try another search.' : 'Add a client account, then share the username and password with them.', '<button type="button" class="btn btn-primary" data-add-account="client">Add client</button>') + (list.length ? '' : archivedHTML());
     const slot = $('[data-cancelled-slot]'); if (slot) slot.innerHTML = cancelledBoxHTML();
+    renderReceipts();
   }
 
+  // ---------- receipts made in the supplier portal (16 Nov 2026) ----------
+  // Supplier makes it -> an admin opens the PDF (the client's amounts), then sends it to the client or sends it back with a
+  // reason. Shown at the top of Clients & payments, and as a job in "Needs your attention".
+  const rcWaiting = () => (S.receipts || []).filter(r => r.status === 'submitted');
+  function receiptsBoxHTML() {
+    const all = S.receipts || [], wait = rcWaiting(), done = all.filter(r => r.status !== 'submitted').slice(0, 6);
+    if (!all.length) return '';
+    const row = r => `<div class="rc-row" data-rc-row="${r.id}"><div class="rc-main"><div><b data-no-i18n>${esc(r.number)}</b> · <bdi data-no-i18n>${esc(r.client)}</bdi></div>
+        <small><span>Paid</span> <span data-no-i18n>${esc(fullDate(r.paidAt).split(',')[0])}</span> · <b data-no-i18n>${money(r.amount)}</b> · <span data-no-i18n>${r.orders}</span> <span>${r.orders === 1 ? 'order' : 'orders'}</span> · <span>made by</span> <span data-no-i18n>${esc(r.submittedBy || 'supplier')}</span></small>
+        ${r.note ? `<small><span>Note</span>: <span data-no-i18n>${esc(r.note)}</span></small>` : ''}
+        ${r.status === 'submitted' && !r.billingReady ? '<small class="neg">The client has no billing details for receipts yet: ask them to fill them in on their Payments page.</small>' : ''}
+        ${r.status === 'rejected' ? `<small class="neg"><span>Sent back</span>: <span data-no-i18n>${esc(r.reason)}</span></small>` : ''}
+        ${r.status === 'approved' ? `<small class="pos"><span>Sent to the client</span> · <span data-no-i18n>${esc(fullDate(r.decidedAt).split(',')[0])}</span></small>` : ''}</div>
+      <div class="rc-actions"><a class="btn btn-sm" href="/api/portal/admin/receipts/${r.id}/preview.pdf" target="_blank" rel="noopener">${ic('doc')}Open PDF</a>
+        ${r.status === 'submitted' ? `<button type="button" class="btn btn-sm btn-primary" data-rc-approve="${r.id}"${r.billingReady ? '' : ' disabled'}>Send to the client</button><button type="button" class="btn btn-sm" data-rc-reject="${r.id}">Send back</button>` : ''}</div>
+      ${S.rcReject === r.id ? `<form class="rc-reject" data-rc-reject-form="${r.id}"><label class="field"><span>Why? The supplier sees this</span><input name="reason" maxlength="500" required placeholder="e.g. wrong payment date"></label><div><button class="btn btn-sm" type="submit">Send back</button> <button class="btn btn-sm" type="button" data-rc-cancel>Cancel</button></div></form>` : ''}</div>`;
+    return `<section class="card card-pad rc-box" data-receipts-box><div class="mc-head"><h3 class="sec-title">Receipts from the supplier</h3><span class="muted">${wait.length ? `<span data-no-i18n>${wait.length}</span> <span>waiting for you</span>` : 'Nothing waiting'}</span></div>
+      <p class="muted" style="margin:0 0 10px;font-size:14px">Made in the supplier portal for a client payment. Open the PDF (what the client will get), then send it to the client or send it back.</p>
+      ${wait.length ? `<div class="rc-list">${wait.map(row).join('')}</div>` : ''}
+      ${done.length ? `<details class="rc-done"><summary><span>Recent</span> (<span data-no-i18n>${done.length}</span>)</summary><div class="rc-list">${done.map(row).join('')}</div></details>` : ''}</section>`;
+  }
+  function renderReceipts() { const slot = $('[data-receipts-slot]'); if (slot) slot.innerHTML = receiptsBoxHTML(); }
+  async function loadReceipts() { try { S.receipts = (await api('/admin/receipts')).receipts; } catch (e) { S.receipts = S.receipts || []; } }
+  async function receiptAction(path, body, msg) {
+    try { S.receipts = (await api(path, { method: 'POST', body: body || {} })).receipts; S.rcReject = null; toast(msg); }
+    catch (ex) { toast(ex.message); }
+    renderReceipts(); if (S.tab === 'overview') renderOverview();
+  }
   // ---------- settings tab ----------
   // Supplier logins (supplier portal, 14 Nov 2026): only admins add or remove them; a removed login is disabled, never deleted.
   function suppliersHTML() {
@@ -863,6 +894,14 @@
           <div class="full set-actions"><button class="btn btn-primary" type="submit">Save couriers</button><p class="form-msg" data-couriers-msg></p></div>
         </form>
         <p class="note set-note">These show as a dropdown in the Courier column of the supplier sheet. The supplier can also type a name that isn’t listed. Clients see the courier next to the tracking number.</p>
+      </section>
+      <section class="card card-pad"><h3 class="form-sec">Receipts</h3>
+        <form class="form-grid" id="issuer-form" novalidate>
+          <label class="field full"><span>Name at the top of every receipt</span><input name="name" maxlength="120" placeholder="Direct Line" data-issuer-name></label>
+          <label class="field full"><span>Details under the name <small>optional, e.g. address or company number</small></span><textarea name="details" rows="2" maxlength="400" data-issuer-details></textarea></label>
+          <div class="full set-actions"><button class="btn btn-primary" type="submit">Save</button><p class="form-msg" data-issuer-msg></p></div>
+        </form>
+        <p class="note set-note">The supplier makes a receipt for a client payment in the supplier portal. You check it under Clients &amp; payments and send it to the client. Empty: the receipt says Direct Line.</p>
       </section>`) + panel('terms', ' one', `
       <section class="card card-pad"><h3 class="form-sec">Terms of Service</h3><p class="note">Publishing a new version requires every client to accept again. Previous versions and acceptance records are preserved.</p>
         <form id="terms-publish" class="form-grid"><label class="field set-ver"><span>New version number</span><input name="version" type="number" min="${S.ov.termsPolicy.version + 1}" value="${S.ov.termsPolicy.version + 1}" required></label>
@@ -986,6 +1025,16 @@
       const m = $('[data-bank-msg]');
       try { await api('/admin/settings', { method: 'POST', body: Object.fromEntries(BANK_UI.map(([k]) => [k, bf[k].value])) }); m.textContent = 'Saved. Clients see the new details right away.'; m.className = 'form-msg ok'; await loadAll(); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+    });
+    // Name and details printed at the top of every receipt (supplier receipts, 16 Nov 2026).
+    const isf = $('#issuer-form');
+    if (isf) api('/admin/receipt-issuer').then(d => { isf.name.value = d.name || ''; isf.details.value = d.details || ''; }).catch(() => {});
+    isf?.addEventListener('submit', async e => {
+      e.preventDefault();
+      const m = $('[data-issuer-msg]'), b = $('[type=submit]', isf); if (b.disabled) return; b.disabled = true;
+      try { await api('/admin/receipt-issuer', { method: 'POST', body: { name: isf.name.value, details: isf.details.value } }); m.textContent = 'Saved. New receipts use it.'; m.className = 'form-msg ok'; }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+      finally { b.disabled = false; }
     });
     const cf = $('#couriers-form');
     cf?.addEventListener('submit', async e => {
@@ -1768,6 +1817,10 @@
   // Clicks inside the side panel (it lives outside #app), plus copy buttons anywhere.
   document.addEventListener('click', async e => {
     const t = e.target, d = UI.getDrawer();
+    // Receipts from the supplier: send to the client, or send back with a reason.
+    const rcA = t.closest('[data-rc-approve]'); if (rcA) { rcA.disabled = true; await receiptAction('/admin/receipts/' + rcA.dataset.rcApprove + '/approve', null, 'Sent to the client. They see it under Payments.'); return; }
+    const rcR = t.closest('[data-rc-reject]'); if (rcR) { S.rcReject = Number(rcR.dataset.rcReject); renderReceipts(); $('[data-rc-reject-form] input')?.focus(); return; }
+    if (t.closest('[data-rc-cancel]')) { S.rcReject = null; renderReceipts(); return; }
     const reset = t.closest('[data-reset-password]');
     if (reset) {
       reset.disabled = true;
@@ -1891,6 +1944,8 @@
     }
   });
   document.addEventListener('submit', async e => {
+    const rcf = e.target.closest('[data-rc-reject-form]');
+    if (rcf) { e.preventDefault(); const reason = rcf.reason.value.trim(); if (!reason) { rcf.reason.focus(); return; } await receiptAction('/admin/receipts/' + rcf.dataset.rcRejectForm + '/reject', { reason }, 'Sent back to the supplier.'); return; }
     // Cost revision: approve the new supplier cost (bill = cost + our fee); the client is told.
     const ra = e.target.closest('[data-rev-answer]');
     if (ra) { e.preventDefault(); const b = $('[type=submit]', ra), cost = ra.cost.value; if (cost === '' || !(Number(cost) >= 0)) { toast('Enter the new supplier cost.'); ra.cost.focus(); return; } b.disabled = true;

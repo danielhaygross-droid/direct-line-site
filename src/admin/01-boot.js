@@ -19,7 +19,7 @@
   }
 
   async function loadAll() {
-    const [ov, o, p, c, stores, archived] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores'),api('/admin/orders?archived=1')]);
+    const [ov, o, p, c, stores, archived] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores'),api('/admin/orders?archived=1'), loadReceipts()]);
     S.ov = ov; S.orders = o.orders;
     // Orders the client's credit already covers are not owed (12 Nov 2026): flagged once here, read by tags and filters.
     window.DLPayOrders.markCovered(S.orders, id => ov.clients.find(c => c.id === id)?.outstanding ?? Infinity, () => [], id => Math.round(((ov.cancelled?.clients || []).find(r => r.clientId === id)?.feesOwed || 0) * 100)); S.archivedOrders = archived.orders; S.products=p.products; S.claims=c.claims;S.stores=stores.stores; window.DL.setRates(ov.rates);

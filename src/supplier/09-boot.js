@@ -2,7 +2,7 @@
   // ---------- pages, events, boot ----------
   function readHash() {
     const h = location.hash.replace(/^#/, ''), m = /^client\/(\d+)$/.exec(h);
-    if (m) { S.page = 'client'; S.clientId = Number(m[1]); } else if (h === 'password') S.page = 'password'; else if (['billing', 'quotes', 'requests'].includes(h)) S.page = h; else S.page = 'orders';
+    if (m) { S.page = 'client'; S.clientId = Number(m[1]); } else if (h === 'password') S.page = 'password'; else if (['billing', 'quotes', 'requests', 'receipts'].includes(h)) S.page = h; else S.page = 'orders';
   }
   const loading = () => `<p class="sp-empty">${t('Loading…')}</p>`;
   const failed = e => `<div class="sp-empty"><p>${esc(e.message)}</p><button type="button" class="btn" data-retry>${t('Try again')}</button></div>`;
@@ -10,11 +10,11 @@
     if (!S.me) return loginScreen();
     const body = S.page === 'password' ? passwordHTML()
       : S.page === 'client' ? (S.client && S.client.id === S.clientId ? clientHTML(S.client) : S.error || loading())
-      : S.page === 'orders' ? ordersHTML() : S.page === 'quotes' ? quotesHTML() : S.page === 'requests' ? requestsHTML()
+      : S.page === 'orders' ? ordersHTML() : S.page === 'quotes' ? quotesHTML() : S.page === 'requests' ? requestsHTML() : S.page === 'receipts' ? receiptsHTML()
       : S.billing ? billingHTML(S.billing) : S.error || loading();
     const y = window.scrollY, drawer = S.drawer;
     document.body.innerHTML = shell(body);
-    document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t({ orders: 'Orders', quotes: 'Quotes', requests: 'Price requests' }[S.page] || 'Billing');
+    document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t({ orders: 'Orders', quotes: 'Quotes', requests: 'Price requests', receipts: 'Receipts' }[S.page] || 'Billing');
     if (S.keepScroll) window.scrollTo(0, y);
     S.keepScroll = false;
     bindPassword();
@@ -28,6 +28,7 @@
       else if (S.page === 'orders') { if (!S.queue) render(); S.queue = await api('/supplier/orders'); S.pinned.clear(); }
       else if (S.page === 'quotes') { if (!S.quotes) render(); S.quotes = await api('/supplier/quotes'); }
       else if (S.page === 'requests') { if (!S.requests) render(); S.requests = await api('/supplier/price-requests'); }
+      else if (S.page === 'receipts') { if (!S.receipts) render(); S.receipts = await api('/supplier/receipts'); }
     } catch (e) { if (e.status === 401) { S.me = null; return render(); } S.error = failed(e); }
     render();
   }
@@ -43,6 +44,7 @@
     // Orders
     const qt = e.target.closest('[data-qtab]'); if (qt) { S.qtab = qt.dataset.qtab; rerenderOrders(); return; }
     const rt = e.target.closest('[data-rtab]'); if (rt) { S.rtab = rt.dataset.rtab; rerenderOrders(); return; }
+    const rct = e.target.closest('[data-rctab]'); if (rct) { S.rcTab = rct.dataset.rctab; rerenderOrders(); return; }
     const qe = e.target.closest('[data-qedit]'); if (qe) { S.qEdit.add(Number(qe.dataset.qedit)); rerenderOrders(); return; }
     const av = e.target.closest('[data-avail]'); if (av) { const [pid, v] = av.dataset.avail.split(':'); S.qAvail[pid] = v === '1'; rerenderOrders(); return; }
     const tb = e.target.closest('[data-tab]'); if (tb) { S.tab = tb.dataset.tab; S.onlyCancelReq = false; S.pinned.clear(); S.limit = 50; rerenderOrders(); return; }
@@ -82,7 +84,8 @@
   });
   document.addEventListener('submit', e => {
     const q = e.target.closest('form[data-quote]'); if (q) { e.preventDefault(); sendQuote(q); return; }
-    const r = e.target.closest('form[data-req]'); if (r) { e.preventDefault(); sendRequest(r); }
+    const r = e.target.closest('form[data-req]'); if (r) { e.preventDefault(); sendRequest(r); return; }
+    const rc = e.target.closest('form[data-receipt]'); if (rc) { e.preventDefault(); sendReceipt(rc); }
   });
   window.addEventListener('hashchange', () => { readHash(); closeDrawer(); window.scrollTo(0, 0); load(); });
   async function boot() {
