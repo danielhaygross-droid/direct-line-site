@@ -66,6 +66,21 @@ assert.equal(m('2026-09').billed, A.price); assert.equal(m('2026-10').billed, C.
 assert.equal(m('2026-10').paid, Math.round((A.price + B.price + E.price) * 100) / 100); assert.equal(m(new Date().toISOString().slice(0, 7)).fees, 5, 'cancellation fees count in the month the cancellation was approved (today)'); assert.equal(m('2026-10').refunds, 10);
 assert.equal(m('2026-10').cancelled, 2); assert.ok(m('2026-09').earned > 0, 'our earnings');
 console.log('PASS overview API: cancelled totals = sum of clients; months: billed, paid, fees, refunds, earned');
+// Our earnings (16 Nov 2026): client fees + the supplier share on every order that isn't cancelled, minus what the supplier
+// already paid us (all money goes to the supplier first). The numbers on the card add up.
+ok(await call('/admin/supplier-share', 'POST', { amount: 3, paidAt: '2026-11-06', note: 'test' }, admin));
+{
+  const ctx = await session(admin, 1440), page = await ctx.newPage();
+  await page.goto(`${base}/test-admin.html?lang=en`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-kpi-card=earnings]');
+  const card = await ui.locator('[data-kpi-card=earnings]').innerText(), n = re => Number((re.exec(card)?.[1] || 'NaN').replace(/,/g, ''));
+  const total = n(/Our earnings\s*\$([\d,.]+)/), fees = n(/\$([\d,.]+) client fees/), share = n(/\$([\d,.]+) supplier share/), paid = n(/\$([\d,.]+) paid to us by the supplier/), left = n(/\$([\d,.]+) still to receive/);
+  const live = (await DB.prepare("SELECT COUNT(*) AS n FROM client_orders WHERE NOT archived AND status <> 'cancelled'").first()).n;
+  assert.equal(share, Number(live) * 1, 'share = $1 × every order that is not cancelled: ' + card);
+  assert.equal(Math.round((fees + share) * 100), Math.round(total * 100), 'fees + share = total: ' + card);
+  assert.equal(paid, 3); assert.equal(Math.round((total - paid) * 100), Math.round(left * 100), 'total − paid = still to receive: ' + card);
+  await ui.locator('[data-kpi-card=earnings]').click(); await ui.waitForSelector('.kw-row, [data-kw]'); await page.waitForTimeout(300); await page.screenshot({ path: path.join(out, 'en-1440-earnings-window.png') });
+  await ctx.close(); console.log('PASS our earnings: fees + share (every order not cancelled) = total; total − paid by the supplier = still to receive');
+}
 try {
   for (const lang of ['en', 'he']) for (const width of [1440, 390]) {
     const tag = `${lang}-${width}`;
