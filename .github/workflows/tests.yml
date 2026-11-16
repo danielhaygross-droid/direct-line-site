@@ -26,9 +26,15 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  # The behaviour checks in 4 groups side by side, balanced by run time (17 Nov 2026: in one line they took ~25 minutes).
   checks:
+    name: checks (${{ matrix.group }}/4)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3, 4]
     env:
       TZ: Asia/Jerusalem
     steps:
@@ -40,17 +46,15 @@ jobs:
       - run: npm ci
       - name: Chromium for the screen checks
         run: npx playwright-core install --with-deps chromium
-      - name: Behaviour checks (no browser)
-        run: node scripts/run-checks.mjs --api
-      - name: Screen checks (Chrome)
-        run: node scripts/run-checks.mjs --ui
+      - name: Behaviour and screen checks, group ${{ matrix.group }} of 4
+        run: node scripts/run-checks.mjs --group=${{ matrix.group }}/4
         env:
           CHECKS_OUT: ${{ runner.temp }}/checks
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: check-screenshots
+          name: check-screenshots-${{ matrix.group }}
           path: ${{ runner.temp }}/checks
           if-no-files-found: ignore
           retention-days: 7

@@ -9,6 +9,8 @@ These checks test what the site **does**, not how the code is written: real data
 npm run checks          # all of them
 npm run checks:api      # only the ones without a browser
 node scripts/run-checks.mjs my-products   # one check (by name)
+node scripts/run-checks.mjs --parallel=3 supplier receipts   # the checks for what you changed, 3 at a time
+node scripts/run-checks.mjs --group=2/4   # one of the 4 groups GitHub runs side by side (balanced by scripts/check-times.json)
 ```
 
 - Browser checks use Chrome from `CHROME_PATH`, else playwright-core's own Chromium
