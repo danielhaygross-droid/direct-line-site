@@ -17,7 +17,7 @@
       if (S.route !== 'new' && S.route !== 'edit') renderView(true);
       refreshDrawer();
       fresh.slice(0, 3).reverse().map(noteItem).filter(x => x.unread)
-        .forEach(x => N.popup(x, { onClick: () => { markRead(x); x.product ? go('products') : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); }, duration: 10000 }));
+        .forEach(x => N.popup(x, { onClick: () => { markRead(x); x.go ? go(x.go) : x.product ? go('products') : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); }, duration: 10000 }));
     }
   }
 

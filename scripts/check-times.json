@@ -62,6 +62,7 @@
  "check-status-api.mjs": 3,
  "check-store-api.mjs": 4,
  "check-store-migration.mjs": 3,
+ "check-subscription-notice.mjs": 25,
  "check-supplier-api.mjs": 14,
  "check-supplier-notify-ui.mjs": 16,
  "check-supplier-portal.mjs": 35,

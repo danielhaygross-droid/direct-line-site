@@ -975,6 +975,16 @@ async function routePortal(request, url, ctx, meta) {
     // A receipt: "amount|YYYY-MM-DD" of its payment (the portal shows "For your $1301.00 payment of 21 Oct 2026"), else the file name.
     const pays = new Map((((await DB.prepare('SELECT id, amount, paid_at FROM client_payments WHERE client_id = ? AND NOT archived').bind(who.clientId).all()).results) || []).map(p => [Number(p.id), p]));
     for(const f of await invoices(DB,who.clientId)) { const p = pays.get(f.paymentId); rows.push({id:'invoice-'+f.id,order_id:f.orderIds[0]||null,client_id:who.clientId,kind:'invoice',actor:'admin',detail:p ? Number(p.amount).toFixed(2) + '|' + new Date(Number(p.paid_at) * 1000).toISOString().slice(0, 10) : f.filename,created_at:f.createdAt}); }
+    // Free month over / subscription due (17 Nov 2026, Erwin: Yehuda's free month ended and he didn't know): one bell item,
+    // dated the first time the bell is read after that, so it shows as new once.
+    const subU = await DB.prepare('SELECT trial_start, trial_end, sub_status, sub_last_payment FROM users WHERE id = ?').bind(who.clientId).first();
+    const sub = subU ? subscriptionOut(subU, await getSettings(DB)) : null;
+    if (sub && ((sub.status === 'trial' && sub.trialEnded) || sub.status === 'overdue')) {
+      const key = `sub_notice_${who.clientId}_${sub.status === 'overdue' ? 'overdue' : sub.trialEnd}`;
+      await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING').bind(key, String(now())).run();
+      const at = Number((await DB.prepare('SELECT value FROM portal_settings WHERE key = ?').bind(key).first())?.value || now());
+      rows.push({ id: 'sub-' + who.clientId, order_id: null, client_id: who.clientId, kind: 'subscription', actor: 'admin', detail: [sub.status, sub.trialEnd || '', sub.price].join('|'), created_at: at });
+    }
     rows.sort((a,b)=>Number(b.created_at)-Number(a.created_at));
     const u = await DB.prepare('SELECT notif_seen_at FROM users WHERE id = ?').bind(who.clientId).first();
     return json({ ok: true, items: [...rows.map(eventOut),...await productEvents(DB,who.clientId)].sort((a,b)=>b.createdAt-a.createdAt).slice(0,50), seenAt: Number(u?.notif_seen_at || 0), now: now() });
