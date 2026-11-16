@@ -15,7 +15,7 @@
     'Export to Excel': '导出 Excel', 'Money is only your part.': '金额只包含您的部分。', 'Show more': '显示更多',
     'Product': '商品', 'Variation': '款式', 'Open': '打开', 'Copy link': '复制链接', 'Copied': '已复制', 'Download all photos (zip)': '下载全部图片（zip）', 'All photos (zip)': '全部图片（zip）',
     'Customer': '收件人', 'Delivery address & phone': '收货地址和电话', 'Copy address': '复制地址', 'Tax number': '税号', 'Gift message': '礼物留言', 'Notes from Direct Line': 'Direct Line 备注',
-    'Your part': '您的部分', 'Close': '关闭', 'Next order': '下一个订单', 'Client paid': '客户付款', 'Paid': '已付款', 'Not paid': '未付款', 'No bill yet': '还没有账单',
+    'Your part': '您的部分', 'Close': '关闭', 'Next order': '下一个订单', 'Client paid': '客户付款', 'Paid': '已付款', 'Client paid: all': '客户付款：全部', 'Not paid': '未付款', 'No bill yet': '还没有账单',
     'No photos': '没有图片', 'Client': '客户', 'Shop': '店铺', 'Cost revision requested': '客户请求降价',
     'new orders': '个新订单', 'new order': '个新订单', 'Sound for new orders': '新订单提示音', 'No new orders.': '没有新订单。', 'See new orders': '查看新订单',
     'Type one cost per product, separated by commas, e.g. 10.90, 9.00.': '每件商品一个成本，用逗号分开，例如 10.90, 9.00。',
@@ -44,6 +44,7 @@
       if (f.client && o.client !== f.client) return false;
       if (f.country && o.country !== f.country) return false;
       if (f.noCost && o.cells.cost !== '') return false;
+      if (f.paid && o.clientPaid !== f.paid) return false;
       return true;
     });
   }
@@ -75,7 +76,10 @@
   const warnLine = o => { const w = S.warn[o.id]; return w?.length ? `<p class="sp-warn">${t('Also on')} ${w.map(esc).join(', ')}. ${t('Check the number.')}</p>` : ''; };
   const errLine = o => (S.err[o.id] ? `<p class="sp-warn">${esc(S.err[o.id])}</p>` : '');
   const thumb = o => (o.photos[0] ? `<img class="sp-thumb" src="${esc(o.photos[0].thumb)}" alt="" loading="lazy">` : '<span class="sp-thumb none"></span>');
-  const orderHead = o => `<button type="button" class="sp-ref" data-open="${o.id}">${esc(o.ref)}${ICON.next}</button>${isNew(o) ? ` <span class="sp-tag gold">${t('New')}</span>` : ''}
+  // Client paid (Erwin, 16 Nov 2026: the supplier confirms which orders are paid already). Cancelled orders don't need it.
+  const PAID = { paid: ['Paid', 'mint'], not_paid: ['Not paid', 'red'], no_bill: ['No bill yet', ''] };
+  const paidTag = o => (o.status === 'cancelled' || !PAID[o.clientPaid] ? '' : ` <span class="sp-tag ${PAID[o.clientPaid][1]}" data-paid="${o.clientPaid}">${t(PAID[o.clientPaid][0])}</span>`);
+  const orderHead = o => `<button type="button" class="sp-ref" data-open="${o.id}">${esc(o.ref)}${ICON.next}</button>${isNew(o) ? ` <span class="sp-tag gold">${t('New')}</span>` : ''}${paidTag(o)}
     <small>${esc(o.client)}${o.shop ? ' · ' + esc(o.shop) : ''}</small><small>${esc(fmtDay(o.createdAt))}</small>${savedLine(o)}`;
   const cancelNote = o => (o.cancelRequested ? `<span class="sp-tag red">${t('Cancel requested')}</span><p class="sp-warn">${t('don’t buy or ship them. Wait for Direct Line.')}</p>` : o.revision ? `<span class="sp-tag orange">${t('Cost revision requested')}</span>` : '');
   function rowHTML(o) {
@@ -103,7 +107,7 @@
     const Q = S.queue; if (!Q) return S.error || `<p class="sp-empty">${t('Loading…')}</p>`;
     const req = Q.orders.filter(o => o.cancelRequested), list = visibleOrders(), shown = list.slice(0, S.limit), f = S.f || {};
     const clients = [...new Set(Q.orders.map(o => o.client))].sort(), countries = [...new Set(Q.orders.map(o => o.country).filter(Boolean))].sort();
-    const filtered = !!(S.q || f.client || f.country || f.noCost || S.onlyCancelReq);
+    const filtered = !!(S.q || f.client || f.country || f.noCost || f.paid || S.onlyCancelReq);
     const tabs = [['new', 'New'], ['bought', 'Bought'], ['shipped', 'Shipped'], ['cancelled', 'Cancelled']].map(([k, l]) => {
       const n = tabCount(k), extra = k === 'new' ? Q.orders.filter(isNew).length : k === 'cancelled' ? 0 : 0;
       return `<button type="button" class="sp-chip" data-tab="${k}" aria-pressed="${S.tab === k && !S.onlyCancelReq}">${t(l)} <span>${n}</span>${extra ? `<b class="sp-badge">${extra}</b>` : ''}</button>`; }).join('');
@@ -115,9 +119,10 @@
       ${req.length ? `<div class="sp-alert"><b>${req.length} ${t(req.length === 1 ? 'cancel request' : 'cancel requests')}</b><span>${req.slice(0, 4).map(o => esc(o.ref)).join(', ')}${req.length > 4 ? '…' : ''}: ${t('don’t buy or ship them. Wait for Direct Line.')}</span><button type="button" class="btn btn-sm" data-cxreq>${t(S.onlyCancelReq ? 'Show all' : 'Show them')}</button></div>` : ''}
       <div class="sp-bar"><div class="sp-chips">${tabs}</div>
         <div class="sp-tools"><label class="sp-search"><input type="search" data-q value="${esc(S.q || '')}" placeholder="${esc(t('Order number, shop, product or tracking'))}" aria-label="${esc(t('Order number, shop, product or tracking'))}"></label>
-          <button type="button" class="btn" data-filters aria-expanded="${!!S.showFilters}">${t('Filters')}${f.client || f.country || f.noCost ? ' •' : ''}</button></div></div>
+          <button type="button" class="btn" data-filters aria-expanded="${!!S.showFilters}">${t('Filters')}${f.client || f.country || f.noCost || f.paid ? ' •' : ''}</button></div></div>
       ${S.showFilters ? `<div class="sp-filters"><select data-fl="client"><option value="">${t('All clients')}</option>${clients.map(c => `<option${f.client === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
         <select data-fl="country"><option value="">${t('All countries')}</option>${countries.map(c => `<option${f.country === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
+        <select data-fl="paid"><option value="">${t('Client paid: all')}</option>${['paid', 'not_paid', 'no_bill'].map(k => `<option value="${k}"${f.paid === k ? ' selected' : ''}>${t(PAID[k][0])}</option>`).join('')}</select>
         <label class="sp-check"><input type="checkbox" data-fl="noCost"${f.noCost ? ' checked' : ''}> <span>${t('Only orders without a total cost')}</span></label>
         ${filtered ? `<button type="button" class="btn btn-sm" data-clear>${t('Clear filters')}</button>` : ''}</div>` : ''}
       <section class="card sp-qcard">${list.length ? `<div class="sp-qwrap"><table class="sp-q"><thead>${head}</thead><tbody>${shown.map(rowHTML).join('')}</tbody></table></div>

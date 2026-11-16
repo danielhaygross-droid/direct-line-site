@@ -33,7 +33,7 @@ const server = http.createServer(async (req, res) => {
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined, headless: true });
-const session = async (cookie, width) => { const ctx = await browser.newContext({ viewport: { width, height: 950 }, reducedMotion: 'reduce' }); if (cookie) await ctx.addCookies([{ name: 'dl_session', value: decodeURIComponent(cookie.split('=').slice(1).join('=')), url: base, httpOnly: true, sameSite: 'Lax' }]); return ctx; };
+const session = async (cookie, width) => { const ctx = await browser.newContext({ viewport: { width, height: 950 }, reducedMotion: 'reduce' }); if (cookie) await ctx.addCookies([{ name: cookie.split('=')[0], value: decodeURIComponent(cookie.split('=').slice(1).join('=')), url: base, httpOnly: true, sameSite: 'Lax' }]); return ctx; };
 const ok = r => { assert.equal(r.status, 200, JSON.stringify(r.data)); return r.data; };
 const photo = { filename: 'p.png', data: 'data:image/png;base64,' + (await readFile(new URL('./fixtures/en-1440-light-agreement.png', import.meta.url))).toString('base64') };
 const FEE = 0.37;
@@ -100,6 +100,24 @@ try {
     assert.deepEqual(errors, [], tag + ': no page errors');
     await ctx.close();
   }
+  // Client paid on every order (16 Nov 2026): the supplier confirms which orders are paid. Tag in the list + filter.
+  for (const w of [1440, 390]) {
+    const ctx = await session(sup, w), page = await ctx.newPage();
+    await page.goto(`${base}/supplier/?lang=en#orders`); await page.waitForSelector('[data-paid] >> visible=true'); // phone: the table copy is hidden, the cards show
+    assert.ok(await page.locator('[data-paid=no_bill]').count() > 0, 'New orders without a bill say No bill yet');
+    await page.locator('[data-tab=bought]').click(); await page.waitForTimeout(300);
+    assert.ok(await page.locator('[data-paid=not_paid]').count() > 0, 'a billed order not paid yet says Not paid');
+    await page.screenshot({ path: path.join(out, `en-${w}-paid-tags.png`) });
+    await page.locator('[data-filters]').click(); await page.selectOption('[data-fl=paid]', 'paid'); await page.waitForTimeout(300);
+    assert.equal(await page.locator('[data-paid=not_paid]').count(), 0, 'filter Paid hides not paid orders');
+    await page.selectOption('[data-fl=paid]', 'not_paid'); await page.waitForTimeout(300);
+    assert.ok(await page.locator('[data-paid=not_paid]').count() > 0 && await page.locator('[data-paid=paid]').count() === 0, 'filter Not paid');
+    await page.screenshot({ path: path.join(out, `en-${w}-paid-filter.png`) });
+    await ctx.close();
+  }
+  { const ctx = await session(sup, 1440), page = await ctx.newPage(); await page.goto(`${base}/supplier/?lang=zh#orders`); await page.waitForSelector('[data-paid] >> visible=true');
+    assert.match(await page.locator('[data-paid]').first().innerText(), /还没有账单|未付款|已付款/); await ctx.close(); }
+  console.log('PASS client paid tag on every order and a Client paid filter (EN, 中文, 1440, 390)');
   console.log('PASS work queue screens (EN, 中文, 1440, 390): tabs, cancel request banner, typing saves + Enter jumps, duplicate warning, Bought stays in view, export, drawer, cancelled tab; no fee on screen');
 } finally { await browser.close(); server.close(); }
 console.log('Screenshots:', out);
