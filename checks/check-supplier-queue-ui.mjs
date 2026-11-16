@@ -103,7 +103,7 @@ try {
   // Client paid on every order (16 Nov 2026): the supplier confirms which orders are paid. Tag in the list + filter.
   for (const w of [1440, 390]) {
     const ctx = await session(sup, w), page = await ctx.newPage();
-    await page.goto(`${base}/supplier/?lang=en#orders`); await page.waitForSelector('[data-paid]');
+    await page.goto(`${base}/supplier/?lang=en#orders`); await page.waitForSelector('[data-paid] >> visible=true'); // phone: the table copy is hidden, the cards show
     assert.ok(await page.locator('[data-paid=no_bill]').count() > 0, 'New orders without a bill say No bill yet');
     await page.locator('[data-tab=bought]').click(); await page.waitForTimeout(300);
     assert.ok(await page.locator('[data-paid=not_paid]').count() > 0, 'a billed order not paid yet says Not paid');
@@ -115,7 +115,7 @@ try {
     await page.screenshot({ path: path.join(out, `en-${w}-paid-filter.png`) });
     await ctx.close();
   }
-  { const ctx = await session(sup, 1440), page = await ctx.newPage(); await page.goto(`${base}/supplier/?lang=zh#orders`); await page.waitForSelector('[data-paid]');
+  { const ctx = await session(sup, 1440), page = await ctx.newPage(); await page.goto(`${base}/supplier/?lang=zh#orders`); await page.waitForSelector('[data-paid] >> visible=true');
     assert.match(await page.locator('[data-paid]').first().innerText(), /还没有账单|未付款|已付款/); await ctx.close(); }
   console.log('PASS client paid tag on every order and a Client paid filter (EN, 中文, 1440, 390)');
   console.log('PASS work queue screens (EN, 中文, 1440, 390): tabs, cancel request banner, typing saves + Enter jumps, duplicate warning, Bought stays in view, export, drawer, cancelled tab; no fee on screen');
