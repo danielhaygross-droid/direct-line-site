@@ -106,9 +106,7 @@
         </form>
         <p class="note set-note">The supplier makes a receipt for a client payment in the supplier portal. You check it under Clients &amp; payments and send it to the client. Empty: the receipt says Direct Line.</p>
       </section>
-      <section class="card card-pad"><h3 class="form-sec">Email alerts to the supplier</h3><div data-alerts-status><p class="muted" style="margin:0">Loading…</p></div>
-        <p class="note set-note">New orders, cancel requests, quotes, price requests and receipts sent back: one summary email at most every 30 minutes. Set each supplier’s email under Team &amp; tools › Supplier logins › Edit (the supplier can change it in the supplier portal).</p>
-      </section>`) + panel('terms', ' one', `
+`) + panel('terms', ' one', `
       <section class="card card-pad"><h3 class="form-sec">Terms of Service</h3><p class="note">Publishing a new version requires every client to accept again. Previous versions and acceptance records are preserved.</p>
         <form id="terms-publish" class="form-grid"><label class="field set-ver"><span>New version number</span><input name="version" type="number" min="${S.ov.termsPolicy.version + 1}" value="${S.ov.termsPolicy.version + 1}" required></label>
           <label class="field full-sm"><span>English policy text</span><textarea name="english" rows="12" maxlength="18000" required>${esc(S.ov.termsPolicy.english)}</textarea></label>
@@ -232,13 +230,6 @@
       try { await api('/admin/settings', { method: 'POST', body: Object.fromEntries(BANK_UI.map(([k]) => [k, bf[k].value])) }); m.textContent = 'Saved. Clients see the new details right away.'; m.className = 'form-msg ok'; await loadAll(); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
     });
-    // Supplier email alerts status (16 Nov 2026).
-    const als = $('[data-alerts-status]');
-    if (als) api('/admin/supplier-alerts').then(d => {
-      const who = d.suppliers.length ? `<ul class="al-list">${d.suppliers.map(p => `<li><b data-no-i18n>${esc(p.name)}</b> <span data-no-i18n>${esc(p.email || '—')}</span>${p.email ? (p.on ? '' : ' <small>(off)</small>') : ' <small>no email yet</small>'}</li>`).join('')}</ul>` : '';
-      const last = d.last ? `<p class="note" style="margin:6px 0 0"><span>Last check</span> <span data-no-i18n>${esc(fullDate(d.last.at))}</span>: ${d.last.ok ? `<span data-no-i18n>${d.last.sent}</span> <span>sent</span>` : `<span>error</span> <span data-no-i18n>${esc(d.last.error || '')}</span>`}</p>` : '';
-      als.innerHTML = (d.configured ? '<p style="margin:0 0 6px"><b>On.</b> <span>Emails go out every 5 minutes when something is new.</span></p>' : '<p class="note" style="margin:0 0 6px"><b>Not connected yet.</b> <span>An email-sending account and its key must be added in Vercel first.</span></p>') + who + last;
-    }).catch(ex => { als.innerHTML = `<p class="note" style="margin:0">${esc(ex.message)}</p>`; });
     // Name and details printed at the top of every receipt (supplier receipts, 16 Nov 2026).
     const isf = $('#issuer-form');
     if (isf) api('/admin/receipt-issuer').then(d => { isf.name.value = d.name || ''; isf.details.value = d.details || ''; }).catch(() => {});

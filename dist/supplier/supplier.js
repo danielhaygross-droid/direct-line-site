@@ -118,7 +118,7 @@
       <nav class="sp-nav">${navItems('sp-tab')}</nav>
       <div class="sp-right">${langSwitch()}${bellHTML()}
         <details class="sp-me"><summary aria-label="${esc(t('Supplier'))}"><span class="sp-ava">${esc(ini)}</span><span class="sp-who"><b>${esc(name)}</b><small>${t('Supplier')}</small></span></summary>
-          <div class="sp-menu">${S.view ? `<a href="/admin/">${t('Back to admin')}</a><button type="button" data-supplier-login>${t('Sign in with a supplier login')}</button>` : `<a href="#password">${t('Change password')}</a><a href="#alerts">${t('Email alerts')}</a>`}<button type="button" data-logout>${t('Log out')}</button></div></details></div></header>
+          <div class="sp-menu">${S.view ? `<a href="/admin/">${t('Back to admin')}</a><button type="button" data-supplier-login>${t('Sign in with a supplier login')}</button>` : `<a href="#password">${t('Change password')}</a>`}<button type="button" data-logout>${t('Log out')}</button></div></details></div></header>
       ${S.view ? `<div class="sp-view" role="status"><span>${t('Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.')}</span><a href="/admin/">${t('Back to admin')}</a></div>` : ''}
       <main class="sp-main${S.page === 'orders' ? ' wide' : ''}" id="sp-main">${inner}</main>
       <nav class="sp-bottom">${navItems('')}</nav>`;
@@ -266,39 +266,6 @@
       b.disabled = false;
     });
   }
-  // ---------- email alerts (16 Nov 2026): the supplier's own email for the 30-minute summary ----------
-  Object.assign(ZH, {
-    'Email alerts': '邮件提醒', 'Get an email when there is something new: new orders, cancel requests, quotes, price requests, receipts sent back. At most one email every 30 minutes.': '有新内容时收到邮件：新订单、取消申请、询价、降价请求、被退回的收据。每30分钟最多一封。',
-    'Your email': '您的邮箱', 'Send me email alerts': '给我发送邮件提醒', 'Save': '保存', 'Saved.': '已保存。', 'Send a test email': '发送测试邮件', 'Test email sent. Check your inbox (and spam).': '测试邮件已发送，请查看收件箱（和垃圾邮件）。',
-    'Email is not connected yet. Direct Line will tell you when it is.': '邮件功能还未开通，Direct Line 开通后会通知您。',
-    'Each supplier login sets its own email. Change it in Fees & settings > Team & tools > Supplier logins > Edit.': '每个供应商账号设置自己的邮箱。管理员可在 Fees & settings > Team & tools > Supplier logins > Edit 中修改。',
-  });
-  S.alertsCfg = null; S.alertsMsg = null;
-  function emailAlertsHTML() {
-    const c = S.alertsCfg;
-    if (S.view) return `<div class="sp-head"><div><h1>${t('Email alerts')}</h1><p class="sp-intro">${t('Each supplier login sets its own email. Change it in Fees & settings > Team & tools > Supplier logins > Edit.')}</p></div></div>`;
-    if (!c) return S.error || `<p class="sp-empty">${t('Loading…')}</p>`;
-    const msg = S.alertsMsg ? `<p class="form-msg ${S.alertsMsg.ok ? 'ok' : 'err'}">${esc(S.alertsMsg.text)}</p>` : '';
-    return `<div class="sp-head"><div><h1>${t('Email alerts')}</h1><p class="sp-intro">${t('Get an email when there is something new: new orders, cancel requests, quotes, price requests, receipts sent back. At most one email every 30 minutes.')}</p></div></div>
-      <section class="card sp-card sp-narrow"><form id="sp-alerts" class="sp-rcform" novalidate>
-        <label class="field"><span>${t('Your email')}</span><input name="email" type="email" maxlength="160" value="${esc(c.email)}" placeholder="name@example.com" autocomplete="email"></label>
-        <label class="sp-check"><input type="checkbox" name="on"${c.on ? ' checked' : ''}> <span>${t('Send me email alerts')}</span></label>
-        ${c.connected ? '' : `<p class="sp-wait">${t('Email is not connected yet. Direct Line will tell you when it is.')}</p>`}
-        ${msg}<div class="sp-btnrow"><button type="submit" class="btn btn-primary">${t('Save')}</button>${c.connected && c.email ? `<button type="button" class="btn" data-alert-test>${t('Send a test email')}</button>` : ''}</div>
-      </form></section>`;
-  }
-  async function saveAlerts(form) {
-    const b = $('[type=submit]', form); if (b.disabled) return; b.disabled = true;
-    try { S.alertsCfg = await api('/supplier/email-alerts', { method: 'PUT', body: { email: form.email.value.trim(), on: form.on.checked } }); S.alertsMsg = { ok: true, text: t('Saved.') }; }
-    catch (e) { S.alertsMsg = { ok: false, text: e.message }; }
-    rerenderOrders();
-  }
-  async function testAlert(btn) {
-    btn.disabled = true;
-    try { await api('/supplier/email-alerts/test', { method: 'POST' }); S.alertsMsg = { ok: true, text: t('Test email sent. Check your inbox (and spam).') }; }
-    catch (e) { S.alertsMsg = { ok: false, text: e.message }; }
-    rerenderOrders();
-  }
 
   // ---------- Orders: the work queue (phase 2) ----------
   Object.assign(ZH, {
@@ -417,6 +384,7 @@
       ${cx ? `<th class="g">${t('Cancellation fee (USD)')}</th><th class="g">${t('Tracking number')}</th>` : `<th class="g">${t('Shipping status')}</th><th class="g">${t('Tracking number')}</th><th class="g">${t('Courier')}</th><th class="g">${t('Delayed? + reason')}</th>`}<th class="g">${t('Domestic express tracking')}</th></tr>`;
     return `<div class="sp-head"><div><h1>${t('Orders')}</h1><p class="sp-intro">${t('Newest first. Type in the gold columns: each change saves by itself.')}</p></div>
         <button type="button" class="btn" data-export-orders>${t('Export to Excel')}</button></div>
+      ${notifyBannerHTML()}
       ${req.length ? `<div class="sp-alert"><b>${req.length} ${t(req.length === 1 ? 'cancel request' : 'cancel requests')}</b><span>${req.slice(0, 4).map(o => esc(o.ref)).join(', ')}${req.length > 4 ? '…' : ''}: ${t('don’t buy or ship them. Wait for Direct Line.')}</span><button type="button" class="btn btn-sm" data-cxreq>${t(S.onlyCancelReq ? 'Show all' : 'Show them')}</button></div>` : ''}
       <div class="sp-bar"><div class="sp-chips">${tabs}</div>
         <div class="sp-tools"><label class="sp-search"><input type="search" data-q value="${esc(S.q || '')}" placeholder="${esc(t('Order number, shop, product or tracking'))}" aria-label="${esc(t('Order number, shop, product or tracking'))}"></label>
@@ -509,10 +477,50 @@
   }
   function closeDrawer() { S.drawer = null; $('#sp-drawer')?.remove(); $('.sp-scrim')?.remove(); document.body.classList.remove('sp-noscroll'); }
   function nextOrder() { const list = visibleOrders(), i = list.findIndex(o => o.id === S.drawer); if (list[i + 1]) { S.drawer = list[i + 1].id; S.photo = 0; drawerFill(); } else closeDrawer(); }
-
-  // ---------- new-order alerts: badge on the bell, a short message, an optional sound ----------
+  // ---------- alerts: badge on the bell, a short message, an optional sound, and a notification on this computer / phone ----------
+  // Device notifications (16 Nov 2026, Erwin: no email, "just send a notification on their pc or phone when they use the
+  // portal"). While the portal is open (also in a background tab), it checks every minute; when something new waits (new
+  // orders, cancel requests, quotes, price requests, receipts sent back) the computer or phone shows a notification. No push
+  // service: Google's push servers are blocked in China, so nothing arrives when the portal is closed.
+  Object.assign(ZH, {
+    'Notifications on this device': '在此设备上通知', 'Notifications are on for this device.': '此设备已开启通知。',
+    'Notifications are blocked in this browser. Allow them in the browser settings (the lock icon next to the address).': '此浏览器已阻止通知。请在浏览器设置中允许（地址栏旁的锁形图标）。',
+    'This browser can’t show notifications. On iPhone: Share, Add to Home Screen, then open the portal from the Home Screen.': '此浏览器无法显示通知。iPhone：点“分享”→“添加到主屏幕”，再从主屏幕打开门户。',
+    'Get a notification on this computer or phone when a new order, cancel request, quote or price request comes in (while the portal is open).': '有新订单、取消申请、询价或降价请求时，在此电脑或手机上收到通知（门户打开时）。',
+    'Turn on': '开启', 'Not now': '以后再说',
+    'quote to answer': '个询价待回复', 'quotes to answer': '个询价待回复',
+    'price request': '个降价请求', 'price requests': '个降价请求', 'receipt sent back': '张收据被退回', 'receipts sent back': '张收据被退回',
+  });
   let soundOn = false;
   try { soundOn = localStorage.getItem('dl_supplier_sound') === '1'; } catch (e) { /* private mode */ }
+  const canNotify = 'Notification' in window;
+  const notifyWanted = () => { try { return localStorage.getItem('dl_supplier_notify') === '1'; } catch (e) { return false; } };
+  const notifyOn = () => canNotify && Notification.permission === 'granted' && notifyWanted();
+  let swReg = null;
+  async function registerWorker() {
+    if (swReg || !('serviceWorker' in navigator)) return swReg;
+    try { swReg = await navigator.serviceWorker.register('/supplier/sw.js', { scope: '/supplier/' }); await navigator.serviceWorker.ready; } catch (e) { swReg = null; }
+    return swReg;
+  }
+  // A click on the notification (handled in sw.js) brings the portal forward and opens the page it is about.
+  navigator.serviceWorker?.addEventListener('message', e => { if (e.data?.hash) location.hash = e.data.hash; });
+  async function deviceNotify(body, hash) {
+    if (!notifyOn()) return;
+    const opts = { body, tag: 'dl-supplier', renotify: true, data: { hash } };
+    try {
+      const reg = await registerWorker();
+      if (reg) { await reg.showNotification('Direct Line', opts); return; }
+      const n = new Notification('Direct Line', opts); n.onclick = () => { window.focus(); location.hash = hash; n.close(); };
+    } catch (e) { /* the phone's browser can't: the bell and the message still show it */ }
+  }
+  async function setNotify(on) {
+    if (!on) { try { localStorage.setItem('dl_supplier_notify', '0'); } catch (e) { /* private mode */ } return; }
+    if (!canNotify) { toast(t('This browser can’t show notifications. On iPhone: Share, Add to Home Screen, then open the portal from the Home Screen.')); return; }
+    const p = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    if (p !== 'granted') { toast(t('Notifications are blocked in this browser. Allow them in the browser settings (the lock icon next to the address).')); return; }
+    try { localStorage.setItem('dl_supplier_notify', '1'); } catch (e) { /* private mode */ }
+    await registerWorker(); toast(t('Notifications are on for this device.')); deviceNotify(t('Notifications are on for this device.'), 'orders');
+  }
   function beep() {
     if (!soundOn) return;
     try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain(); o.type = 'sine'; o.frequency.value = 880; g.gain.setValueAtTime(0.0001, a.currentTime); g.gain.exponentialRampToValueAtTime(0.2, a.currentTime + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + 0.4); o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + 0.45); } catch (e) { /* no sound */ }
@@ -523,22 +531,41 @@
     setTimeout(() => $('.sp-toast')?.remove(), 4000);
   }
   const newCountText = n => `${n} ${t(n === 1 ? 'new order' : 'new orders')}`;
+  // What became new since the last check, e.g. "2 new orders · 1 cancel request", and the page to open for it.
+  const KINDS = [['newOrders', 'new order', 'new orders', 'orders'], ['cancelRequests', 'cancel request', 'cancel requests', 'orders'], ['quotes', 'quote to answer', 'quotes to answer', 'quotes'], ['requests', 'price request', 'price requests', 'requests'], ['receiptsSentBack', 'receipt sent back', 'receipts sent back', 'receipts']];
+  function whatIsNew(before, now) {
+    const parts = [], pages = [];
+    for (const [k, one, many, page] of KINDS) { const d = Number(now[k] || 0) - Number(before[k] || 0); if (d > 0) { parts.push(`${d} ${t(d === 1 ? one : many)}`); pages.push(page); } }
+    return { text: parts.join(' · '), page: pages[0] || 'orders' };
+  }
   function bellHTML() {
     const n = S.alerts?.newOrders || 0;
     return `<details class="sp-bell"><summary class="icon-btn" aria-label="${esc(newCountText(n))}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>${n ? `<b class="sp-badge">${n}</b>` : ''}</summary>
       <div class="sp-menu"><p class="sp-menu-h">${n ? esc(newCountText(n)) : t('No new orders.')}</p>${n ? `<button type="button" data-see-new>${t('See new orders')}</button>` : ''}
+        <label class="sp-check"><input type="checkbox" data-notify${notifyOn() ? ' checked' : ''}> <span>${t('Notifications on this device')}</span></label>
         <label class="sp-check"><input type="checkbox" data-sound${soundOn ? ' checked' : ''}> <span>${t('Sound for new orders')}</span></label></div></details>`;
+  }
+  // Shown on Orders until the supplier turns notifications on or says not now (per browser).
+  function notifyBannerHTML() {
+    let dismissed = false; try { dismissed = localStorage.getItem('dl_supplier_notify_ask') === 'no'; } catch (e) { /* private mode */ }
+    if (S.view || !canNotify || dismissed || notifyOn() || Notification.permission === 'denied') return '';
+    return `<div class="sp-notify" role="region" aria-label="${esc(t('Notifications on this device'))}"><p>${t('Get a notification on this computer or phone when a new order, cancel request, quote or price request comes in (while the portal is open).')}</p>
+      <div class="sp-btnrow"><button type="button" class="btn btn-primary btn-sm" data-notify-on>${t('Turn on')}</button><button type="button" class="btn btn-sm" data-notify-later>${t('Not now')}</button></div></div>`;
   }
   async function pollAlerts(first = false) {
     try {
-      const a = await api('/supplier/alerts'), before = S.alerts?.newOrders ?? null;
+      const a = await api('/supplier/alerts'), before = S.alerts;
       S.alerts = a; if (S.seenAt == null) S.seenAt = a.seenAt;
       const bell = $('.sp-bell'); if (bell && !bell.open) bell.outerHTML = bellHTML();
       const nav = $('.sp-nav'); if (nav) nav.innerHTML = navItems('sp-tab'); const bot = $('.sp-bottom'); if (bot) bot.innerHTML = navItems('');
       if (first && a.newOrders) toast(newCountText(a.newOrders));
-      if (!first && before != null && a.newOrders > before) {
-        toast(newCountText(a.newOrders)); beep();
-        if (S.page === 'orders' && !document.activeElement?.dataset?.f) { const d = await api('/supplier/orders'); S.queue = d; render(); }
+      if (!first && before) {
+        const fresh = whatIsNew(before, a);
+        if (fresh.text) {
+          toast(fresh.text); beep();
+          if (document.hidden || !document.hasFocus()) deviceNotify(fresh.text, fresh.page);
+        }
+        if (a.newOrders > (before.newOrders || 0) && S.page === 'orders' && !document.activeElement?.dataset?.f) { const d = await api('/supplier/orders'); S.queue = d; render(); }
       }
     } catch (e) { /* try again next minute */ }
   }
@@ -549,6 +576,7 @@
     try { await api('/supplier/alerts/seen', { method: 'POST' }); S.alerts = { ...(S.alerts || {}), newOrders: 0 }; } catch (e) { /* later */ }
     const bell = $('.sp-bell'); if (bell) bell.outerHTML = bellHTML();
   }
+  if (notifyOn()) registerWorker();
   setInterval(() => { if (S.me) pollAlerts(); }, 60000);
   // ---------- receipts (16 Nov 2026): the supplier makes the receipt for a payment, Direct Line approves, the client gets it ----------
   // The supplier sees only its own part; the PDF with the client's amounts is made when Direct Line approves it.
@@ -697,19 +725,19 @@
   // ---------- pages, events, boot ----------
   function readHash() {
     const h = location.hash.replace(/^#/, ''), m = /^client\/(\d+)$/.exec(h);
-    if (m) { S.page = 'client'; S.clientId = Number(m[1]); } else if (h === 'password') S.page = 'password'; else if (h === 'alerts') S.page = 'alerts'; else if (['billing', 'quotes', 'requests', 'receipts'].includes(h)) S.page = h; else S.page = 'orders';
+    if (m) { S.page = 'client'; S.clientId = Number(m[1]); } else if (h === 'password') S.page = 'password'; else if (['billing', 'quotes', 'requests', 'receipts'].includes(h)) S.page = h; else S.page = 'orders';
   }
   const loading = () => `<p class="sp-empty">${t('Loading…')}</p>`;
   const failed = e => `<div class="sp-empty"><p>${esc(e.message)}</p><button type="button" class="btn" data-retry>${t('Try again')}</button></div>`;
   function render() {
     if (!S.me) return loginScreen();
-    const body = S.page === 'password' ? passwordHTML() : S.page === 'alerts' ? emailAlertsHTML()
+    const body = S.page === 'password' ? passwordHTML()
       : S.page === 'client' ? (S.client && S.client.id === S.clientId ? clientHTML(S.client) : S.error || loading())
       : S.page === 'orders' ? ordersHTML() : S.page === 'quotes' ? quotesHTML() : S.page === 'requests' ? requestsHTML() : S.page === 'receipts' ? receiptsHTML()
       : S.billing ? billingHTML(S.billing) : S.error || loading();
     const y = window.scrollY, drawer = S.drawer;
     document.body.innerHTML = shell(body);
-    document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t({ orders: 'Orders', quotes: 'Quotes', requests: 'Price requests', receipts: 'Receipts', alerts: 'Email alerts' }[S.page] || 'Billing');
+    document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t({ orders: 'Orders', quotes: 'Quotes', requests: 'Price requests', receipts: 'Receipts' }[S.page] || 'Billing');
     if (S.keepScroll) window.scrollTo(0, y);
     S.keepScroll = false;
     bindPassword();
@@ -724,7 +752,6 @@
       else if (S.page === 'quotes') { if (!S.quotes) render(); S.quotes = await api('/supplier/quotes'); }
       else if (S.page === 'requests') { if (!S.requests) render(); S.requests = await api('/supplier/price-requests'); }
       else if (S.page === 'receipts') { if (!S.receipts) render(); S.receipts = await api('/supplier/receipts'); }
-      else if (S.page === 'alerts' && !S.view) { S.alertsMsg = null; if (!S.alertsCfg) render(); S.alertsCfg = await api('/supplier/email-alerts'); }
     } catch (e) { if (e.status === 401) { S.me = null; return render(); } S.error = failed(e); }
     render();
   }
@@ -735,13 +762,14 @@
     if (e.target.closest('[data-logout]')) { await fetch('/api/auth/logout', { method: 'POST', headers: { 'x-dl-portal': S.view ? 'admin' : 'supplier' } }).catch(() => {}); location.href = S.view ? '/' : '/supplier/'; return; }
     if (e.target.closest('[data-retry]')) { load(); return; }
     if (e.target.closest('[data-see-new]')) { seeNew(); return; }
+    if (e.target.closest('[data-notify-on]')) { setNotify(true).then(() => { $('.sp-notify')?.remove(); const b = $('.sp-bell'); if (b && !b.open) b.outerHTML = bellHTML(); }); return; }
+    if (e.target.closest('[data-notify-later]')) { try { localStorage.setItem('dl_supplier_notify_ask', 'no'); } catch (x) { /* private mode */ } $('.sp-notify')?.remove(); return; }
     const p = e.target.closest('[data-pay]'); if (p) { const id = Number(p.dataset.pay); S.open.has(id) ? S.open.delete(id) : S.open.add(id); S.keepScroll = true; render(); return; }
     const c = e.target.closest('[data-client]'); if (c) { location.hash = 'client/' + c.dataset.client; return; }
     // Orders
     const qt = e.target.closest('[data-qtab]'); if (qt) { S.qtab = qt.dataset.qtab; rerenderOrders(); return; }
     const rt = e.target.closest('[data-rtab]'); if (rt) { S.rtab = rt.dataset.rtab; rerenderOrders(); return; }
     const rct = e.target.closest('[data-rctab]'); if (rct) { S.rcTab = rct.dataset.rctab; rerenderOrders(); return; }
-    const at = e.target.closest('[data-alert-test]'); if (at) { testAlert(at); return; }
     const qe = e.target.closest('[data-qedit]'); if (qe) { S.qEdit.add(Number(qe.dataset.qedit)); rerenderOrders(); return; }
     const av = e.target.closest('[data-avail]'); if (av) { const [pid, v] = av.dataset.avail.split(':'); S.qAvail[pid] = v === '1'; rerenderOrders(); return; }
     const tb = e.target.closest('[data-tab]'); if (tb) { S.tab = tb.dataset.tab; S.onlyCancelReq = false; S.pinned.clear(); S.limit = 50; rerenderOrders(); return; }
@@ -760,6 +788,7 @@
   // Gold boxes save when they change (selects) or when you leave them (text); Enter saves and jumps to the same box in the next order.
   document.addEventListener('change', e => {
     const el = e.target;
+    if (el.matches('[data-notify]')) { setNotify(el.checked).then(() => { el.checked = notifyOn(); }); return; }
     if (el.matches('[data-sound]')) { soundOn = el.checked; try { localStorage.setItem('dl_supplier_sound', soundOn ? '1' : '0'); } catch (x) { /* private mode */ } if (soundOn) beep(); return; }
     if (el.matches('[data-fl]')) { S.f = { ...S.f, [el.dataset.fl]: el.type === 'checkbox' ? el.checked : el.value }; S.limit = 50; rerenderOrders(); return; }
     if (el.matches('[data-rchoice]')) { S.rChoice[el.dataset.rchoice] = el.value; rerenderOrders(); return; }
@@ -783,7 +812,6 @@
     const q = e.target.closest('form[data-quote]'); if (q) { e.preventDefault(); sendQuote(q); return; }
     const r = e.target.closest('form[data-req]'); if (r) { e.preventDefault(); sendRequest(r); return; }
     const rc = e.target.closest('form[data-receipt]'); if (rc) { e.preventDefault(); sendReceipt(rc); return; }
-    if (e.target.id === 'sp-alerts') { e.preventDefault(); saveAlerts(e.target); }
   });
   window.addEventListener('hashchange', () => { readHash(); closeDrawer(); window.scrollTo(0, 0); load(); });
   async function boot() {

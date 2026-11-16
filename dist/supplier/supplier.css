@@ -287,3 +287,6 @@ a.sp-add:hover u{color:var(--gold-2)}
 .sp-tag.mint{background:color-mix(in srgb,var(--mint) 16%,transparent);color:var(--mint-ink)}.sp-tag:not(.gold):not(.red):not(.orange):not(.mint){background:var(--surface-3);color:var(--muted)}
 /* Email alerts page (16 Nov 2026). */
 .sp-btnrow{display:flex;gap:10px;flex-wrap:wrap}
+/* Device notifications offer on Orders (16 Nov 2026) */
+.sp-notify{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;margin:0 0 14px;padding:12px 16px;border:1px solid color-mix(in srgb,var(--gold-2) 40%,transparent);border-radius:12px;background:color-mix(in srgb,var(--gold-2) 9%,var(--surface))}
+.sp-notify p{flex:1 1 320px;margin:0;font-size:14px;color:var(--text)}

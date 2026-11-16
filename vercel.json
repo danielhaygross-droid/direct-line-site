@@ -19,10 +19,6 @@
     {
       "path": "/api/cron/supplier-sheet",
       "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/supplier-alerts",
-      "schedule": "*/5 * * * *"
     }
   ],
   "rewrites": [

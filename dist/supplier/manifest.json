@@ -1,0 +1,9 @@
+{
+  "name": "Direct Line Supplier Portal",
+  "short_name": "Direct Line",
+  "start_url": "/supplier/",
+  "scope": "/supplier/",
+  "display": "standalone",
+  "background_color": "#f6f3ee",
+  "theme_color": "#f6f3ee"
+}
