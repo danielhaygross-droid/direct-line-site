@@ -57,7 +57,8 @@ const spy = () => {
   window.Notification = function (title, o) { rec(title, o); return { close() {} }; };
   Object.defineProperty(window.Notification, 'permission', { get: () => localStorage.getItem('__perm') || 'default' });
   window.Notification.requestPermission = async () => { localStorage.setItem('__perm', 'granted'); return 'granted'; };
-  const hf = Document.prototype.hasFocus; Document.prototype.hasFocus = function () { return window.__away ? false : hf.call(this); };
+  // In front or not is played too (a headless window may never count as focused).
+  Document.prototype.hasFocus = function () { return !window.__away; };
 };
 const session = async (width, lang) => {
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
@@ -89,7 +90,7 @@ try {
       for (const leak of ['Jane Buyer', '555 0100', '0.37']) assert.ok(!n.body.includes(leak), 'notification holds ' + leak);
       // In front: only the message on the page, no notification.
       await page.evaluate(() => { window.__away = false; }); await mk('NT-3'); await page.clock.runFor(61_000);
-      await page.waitForFunction(() => /new order/.test(document.querySelector('.sp-toast')?.textContent || ''));
+      await page.waitForFunction(() => document.querySelector('.sp-bell .sp-badge')?.textContent === '3');
       assert.equal(await page.evaluate(() => window.__notes.length), 2, 'portal in front: no notification');
       // The bell switch is on; the offer doesn't come back.
       await page.reload(); await page.waitForSelector('.sp-bell');
