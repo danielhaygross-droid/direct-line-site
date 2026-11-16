@@ -66,7 +66,7 @@
         <section class="card" data-list></section>`;
     } else if (S.tab === 'clients') {
       body.innerHTML = `<div class="bar"><label class="search"><span class="sr">Search clients</span>${ic('search')}<input type="search" placeholder="Search clients…" value="${esc(S.cq)}" data-cq></label>${sortPick('admin-clients', CLIENT_SORTS)}</div>
-        <section class="card" data-list></section><div data-cancelled-slot></div>`;
+        <div data-receipts-slot></div><section class="card" data-list></section><div data-cancelled-slot></div>`;
     } else if (S.tab === 'overview') body.innerHTML = '<div class="ovw" data-overview></div>';
     else body.innerHTML = settingsHTML();
     renderList();

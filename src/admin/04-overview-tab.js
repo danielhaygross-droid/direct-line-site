@@ -6,6 +6,7 @@
     const pending = os.filter(o => o.status === 'pending'), follow = os.filter(o => o.unreadMessages > 0);
     const noTrack = os.filter(o => o.status === 'processing' && !o.trackingNumber), noCost = os.filter(needsCost), revs = os.filter(o => ['open', 'offered'].includes(o.revision?.status)), revProducts = (S.products || []).filter(p => ['open', 'offered'].includes(p.revision?.status));
     const trialSoon = cl.filter(c => c.subscription?.status === 'trial' && c.subscription.trialDaysLeft !== null && c.subscription.trialDaysLeft >= 0 && c.subscription.trialDaysLeft <= 7);
+    const rcs = typeof rcWaiting === 'function' ? rcWaiting() : [];
     const subDue = cl.filter(c => (c.subscription?.status === 'trial' && c.subscription.trialEnded) || c.subscription?.status === 'overdue');
     return [
       [pending, `${n(pending, 'order')} waiting to be processed`, 'data-go-filter="pending"', 'var(--orange)', 'job:pending'],
@@ -14,6 +15,7 @@
       [revProducts, `${n(revProducts, 'product')} with a cost revision request`, 'data-go-tab="products"', 'var(--orange)', 'job:product-revision'],
       [noCost, `${n(noCost, 'order')} still need product + shipping cost`, 'data-go-filter="needscost"', 'var(--gold)', 'job:needscost'],
       [noTrack, `${n(noTrack, 'order')} in processing without tracking`, 'data-go-filter="processing"', 'var(--blue)', 'job:notrack'],
+      [rcs, `${n(rcs, 'receipt')} from the supplier to check and send`, 'data-go-tab="clients"', 'var(--violet)', 'job:receipts'],
       [trialSoon, `${n(trialSoon, 'client')} with the free month ending in the next 7 days`, 'data-go-tab="clients"', 'var(--gold)', 'job:plans'],
       [subDue, `${n(subDue, 'client')} with the free month over or the subscription overdue`, 'data-go-tab="clients"', 'var(--red)', 'job:plans'],
     ].filter(x => x[0].length > 0).map(([list, text, attrs, tone, key]) => ({ n: list.length, text, attrs, tone, key }));

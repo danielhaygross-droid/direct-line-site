@@ -2,6 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "node scripts/build-worker.mjs",
   "outputDirectory": "dist",
+  "functions": {
+    "api/index.mjs": {
+      "includeFiles": "server/fonts/**"
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/file-storage",

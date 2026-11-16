@@ -96,6 +96,10 @@
   // Clicks inside the side panel (it lives outside #app), plus copy buttons anywhere.
   document.addEventListener('click', async e => {
     const t = e.target, d = UI.getDrawer();
+    // Receipts from the supplier: send to the client, or send back with a reason.
+    const rcA = t.closest('[data-rc-approve]'); if (rcA) { rcA.disabled = true; await receiptAction('/admin/receipts/' + rcA.dataset.rcApprove + '/approve', null, 'Sent to the client. They see it under Payments.'); return; }
+    const rcR = t.closest('[data-rc-reject]'); if (rcR) { S.rcReject = Number(rcR.dataset.rcReject); renderReceipts(); $('[data-rc-reject-form] input')?.focus(); return; }
+    if (t.closest('[data-rc-cancel]')) { S.rcReject = null; renderReceipts(); return; }
     const reset = t.closest('[data-reset-password]');
     if (reset) {
       reset.disabled = true;
@@ -219,6 +223,8 @@
     }
   });
   document.addEventListener('submit', async e => {
+    const rcf = e.target.closest('[data-rc-reject-form]');
+    if (rcf) { e.preventDefault(); const reason = rcf.reason.value.trim(); if (!reason) { rcf.reason.focus(); return; } await receiptAction('/admin/receipts/' + rcf.dataset.rcRejectForm + '/reject', { reason }, 'Sent back to the supplier.'); return; }
     // Cost revision: approve the new supplier cost (bill = cost + our fee); the client is told.
     const ra = e.target.closest('[data-rev-answer]');
     if (ra) { e.preventDefault(); const b = $('[type=submit]', ra), cost = ra.cost.value; if (cost === '' || !(Number(cost) >= 0)) { toast('Enter the new supplier cost.'); ra.cost.focus(); return; } b.disabled = true;

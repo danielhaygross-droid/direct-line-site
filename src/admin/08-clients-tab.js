@@ -32,5 +32,6 @@
         <td data-label="Status"${c.active ? ' class="hide-sm"' : ''}>${c.active ? '<span class="st st-delivered">Active</span>' : '<span class="st st-cancelled">Disabled</span>'}</td></tr>`).join('')}
       </tbody></table></div>${listMore('clients', list.length, all.length)}${archivedHTML()}` : empty(S.ov.clients.length ? 'No clients match' : 'No clients yet', S.ov.clients.length ? 'Try another search.' : 'Add a client account, then share the username and password with them.', '<button type="button" class="btn btn-primary" data-add-account="client">Add client</button>') + (list.length ? '' : archivedHTML());
     const slot = $('[data-cancelled-slot]'); if (slot) slot.innerHTML = cancelledBoxHTML();
+    renderReceipts();
   }
 

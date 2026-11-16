@@ -27,7 +27,7 @@
   }
   // Orders · Quotes · Price requests · Billing, each with what waits for the supplier.
   function navItems(cls) {
-    const A = S.alerts || {}, items = [['orders', 'Orders', ICON.box, A.newOrders, ['orders']], ['quotes', 'Quotes', ICON.tag, A.quotes, ['quotes']], ['requests', 'Price requests', ICON.swap, A.requests, ['requests']], ['billing', 'Billing', ICON.bill, 0, ['billing', 'client']]];
+    const A = S.alerts || {}, items = [['orders', 'Orders', ICON.box, A.newOrders, ['orders']], ['quotes', 'Quotes', ICON.tag, A.quotes, ['quotes']], ['requests', 'Price requests', ICON.swap, A.requests, ['requests']], ['receipts', 'Receipts', ICON.receipt, A.receiptsSentBack, ['receipts']], ['billing', 'Billing', ICON.bill, 0, ['billing', 'client']]];
     return items.map(([h, l, ic, n, pages]) => `<a href="#${h}"${cls ? ` class="${cls}"` : ''} aria-current="${pages.includes(S.page) ? 'page' : 'false'}">${ic}<span>${t(l)}</span>${n ? `<b class="sp-badge">${n}</b>` : ''}</a>`).join('');
   }
   function shell(inner) {

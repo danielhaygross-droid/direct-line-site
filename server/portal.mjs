@@ -31,6 +31,7 @@ import { PRODUCT_SCHEMA, products, addProduct, quoteProduct, productPhoto, produ
 
 import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from './claims.mjs';
 import { SUPPLIER_SCHEMA, supplierSession, routeSupplier, routeSupplierAdmin } from './supplier-portal.mjs';
+import { RECEIPT_SCHEMA, routeReceiptsAdmin, ISSUER, ISSUER_DETAILS } from './supplier-receipts.mjs';
 
 import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance } from './client-stores.mjs';
 
@@ -211,6 +212,8 @@ export const SCHEMA = [
 // Total = rate × chargeable kg + $4 registration (+ $4 EU tax where marked).
 SCHEMA.push(...TERMS_SCHEMA, ...FILE_SCHEMA, ...STATUS_SCHEMA, ...INVOICE_SCHEMA, ...PRODUCT_SCHEMA, ...CLAIM_SCHEMA, ...STORE_SCHEMA, ...STORAGE_SCHEMA, ...LOGIN_LIMIT_SCHEMA, ...SUPPLIER_SHEET_SCHEMA);
 SCHEMA.push(...QUOTE_SHEET_SCHEMA, ...SAVED_PRICE_SCHEMA);
+// Supplier receipts (16 Nov 2026), after portal_files and client_payments exist.
+SCHEMA.push(...RECEIPT_SCHEMA);
 // "Log in as client": every change an admin makes while logged in as a client is kept here (who it was for, what, when).
 SCHEMA.push(`CREATE TABLE IF NOT EXISTS admin_impersonation_log (
   id SERIAL PRIMARY KEY, client_id INTEGER NOT NULL REFERENCES users(id), method TEXT NOT NULL, path TEXT NOT NULL,
@@ -1184,6 +1187,18 @@ async function routePortal(request, url, ctx, meta) {
   // ----- admin-only routes -----
   if (!who.admin) return json({ ok: false, error: 'Forbidden' }, 403);
   { const r = await routeSupplierAdmin(request, path, ctx); if (r) return r; }
+  // Receipts made in the supplier portal: preview, approve (sent to the client) or send back.
+  if (path.startsWith('/admin/receipts')) {
+    const a = who.adminId ? await DB.prepare('SELECT display_name FROM users WHERE id = ?').bind(who.adminId).first() : null;
+    const r = await routeReceiptsAdmin(request, path, ctx, { adminName: a?.display_name || 'Direct Line' }); if (r) return r;
+  }
+  // Name and details printed at the top of every receipt (Fees & settings > Supplier).
+  if (path === '/admin/receipt-issuer' && method === 'GET') { const v = async k => (await DB.prepare('SELECT value FROM portal_settings WHERE key = ?').bind(k).first())?.value || ''; return json({ ok: true, name: await v(ISSUER), details: await v(ISSUER_DETAILS) }); }
+  if (path === '/admin/receipt-issuer' && method === 'POST') {
+    const b = await readBody(request), name = String(b.name || '').trim().slice(0, 120), details = String(b.details || '').trim().slice(0, 400);
+    for (const [k, v] of [[ISSUER, name], [ISSUER_DETAILS, details]]) await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k, v).run();
+    return json({ ok: true, name, details });
+  }
 
   if (path === '/admin/terms' && method === 'POST') {
     try { return json({ ok: true, policy: await publishTerms(DB,await readBody(request)) }); }

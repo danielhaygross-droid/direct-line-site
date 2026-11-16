@@ -97,6 +97,14 @@
           <div class="full set-actions"><button class="btn btn-primary" type="submit">Save couriers</button><p class="form-msg" data-couriers-msg></p></div>
         </form>
         <p class="note set-note">These show as a dropdown in the Courier column of the supplier sheet. The supplier can also type a name that isn’t listed. Clients see the courier next to the tracking number.</p>
+      </section>
+      <section class="card card-pad"><h3 class="form-sec">Receipts</h3>
+        <form class="form-grid" id="issuer-form" novalidate>
+          <label class="field full"><span>Name at the top of every receipt</span><input name="name" maxlength="120" placeholder="Direct Line" data-issuer-name></label>
+          <label class="field full"><span>Details under the name <small>optional, e.g. address or company number</small></span><textarea name="details" rows="2" maxlength="400" data-issuer-details></textarea></label>
+          <div class="full set-actions"><button class="btn btn-primary" type="submit">Save</button><p class="form-msg" data-issuer-msg></p></div>
+        </form>
+        <p class="note set-note">The supplier makes a receipt for a client payment in the supplier portal. You check it under Clients &amp; payments and send it to the client. Empty: the receipt says Direct Line.</p>
       </section>`) + panel('terms', ' one', `
       <section class="card card-pad"><h3 class="form-sec">Terms of Service</h3><p class="note">Publishing a new version requires every client to accept again. Previous versions and acceptance records are preserved.</p>
         <form id="terms-publish" class="form-grid"><label class="field set-ver"><span>New version number</span><input name="version" type="number" min="${S.ov.termsPolicy.version + 1}" value="${S.ov.termsPolicy.version + 1}" required></label>
@@ -220,6 +228,16 @@
       const m = $('[data-bank-msg]');
       try { await api('/admin/settings', { method: 'POST', body: Object.fromEntries(BANK_UI.map(([k]) => [k, bf[k].value])) }); m.textContent = 'Saved. Clients see the new details right away.'; m.className = 'form-msg ok'; await loadAll(); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+    });
+    // Name and details printed at the top of every receipt (supplier receipts, 16 Nov 2026).
+    const isf = $('#issuer-form');
+    if (isf) api('/admin/receipt-issuer').then(d => { isf.name.value = d.name || ''; isf.details.value = d.details || ''; }).catch(() => {});
+    isf?.addEventListener('submit', async e => {
+      e.preventDefault();
+      const m = $('[data-issuer-msg]'), b = $('[type=submit]', isf); if (b.disabled) return; b.disabled = true;
+      try { await api('/admin/receipt-issuer', { method: 'POST', body: { name: isf.name.value, details: isf.details.value } }); m.textContent = 'Saved. New receipts use it.'; m.className = 'form-msg ok'; }
+      catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
+      finally { b.disabled = false; }
     });
     const cf = $('#couriers-form');
     cf?.addEventListener('submit', async e => {
