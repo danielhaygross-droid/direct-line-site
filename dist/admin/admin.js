@@ -909,6 +909,9 @@
           <div class="full set-actions"><button class="btn btn-primary" type="submit">Save</button><p class="form-msg" data-issuer-msg></p></div>
         </form>
         <p class="note set-note">The supplier makes a receipt for a client payment in the supplier portal. You check it under Clients &amp; payments and send it to the client. Empty: the receipt says Direct Line.</p>
+      </section>
+      <section class="card card-pad"><h3 class="form-sec">Email alerts to the supplier</h3><div data-alerts-status><p class="muted" style="margin:0">Loading…</p></div>
+        <p class="note set-note">New orders, cancel requests, quotes, price requests and receipts sent back: one summary email at most every 30 minutes. Set each supplier’s email under Team &amp; tools › Supplier logins › Edit (the supplier can change it in the supplier portal).</p>
       </section>`) + panel('terms', ' one', `
       <section class="card card-pad"><h3 class="form-sec">Terms of Service</h3><p class="note">Publishing a new version requires every client to accept again. Previous versions and acceptance records are preserved.</p>
         <form id="terms-publish" class="form-grid"><label class="field set-ver"><span>New version number</span><input name="version" type="number" min="${S.ov.termsPolicy.version + 1}" value="${S.ov.termsPolicy.version + 1}" required></label>
@@ -1033,6 +1036,13 @@
       try { await api('/admin/settings', { method: 'POST', body: Object.fromEntries(BANK_UI.map(([k]) => [k, bf[k].value])) }); m.textContent = 'Saved. Clients see the new details right away.'; m.className = 'form-msg ok'; await loadAll(); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
     });
+    // Supplier email alerts status (16 Nov 2026).
+    const als = $('[data-alerts-status]');
+    if (als) api('/admin/supplier-alerts').then(d => {
+      const who = d.suppliers.length ? `<ul class="al-list">${d.suppliers.map(p => `<li><b data-no-i18n>${esc(p.name)}</b> <span data-no-i18n>${esc(p.email || '—')}</span>${p.email ? (p.on ? '' : ' <small>(off)</small>') : ' <small>no email yet</small>'}</li>`).join('')}</ul>` : '';
+      const last = d.last ? `<p class="note" style="margin:6px 0 0"><span>Last check</span> <span data-no-i18n>${esc(fullDate(d.last.at))}</span>: ${d.last.ok ? `<span data-no-i18n>${d.last.sent}</span> <span>sent</span>` : `<span>error</span> <span data-no-i18n>${esc(d.last.error || '')}</span>`}</p>` : '';
+      als.innerHTML = (d.configured ? '<p style="margin:0 0 6px"><b>On.</b> <span>Emails go out every 5 minutes when something is new.</span></p>' : '<p class="note" style="margin:0 0 6px"><b>Not connected yet.</b> <span>An email-sending account and its key must be added in Vercel first.</span></p>') + who + last;
+    }).catch(ex => { als.innerHTML = `<p class="note" style="margin:0">${esc(ex.message)}</p>`; });
     // Name and details printed at the top of every receipt (supplier receipts, 16 Nov 2026).
     const isf = $('#issuer-form');
     if (isf) api('/admin/receipt-issuer').then(d => { isf.name.value = d.name || ''; isf.details.value = d.details || ''; }).catch(() => {});
@@ -1751,7 +1761,7 @@
       row.insertAdjacentHTML('afterend',`<form class="form-grid" data-admin-form="${x.id}" data-was="${sup?'supplier':'admin'}" novalidate style="padding:12px;border:1px solid var(--line);border-radius:12px">
         <label class="field"><span>Name</span><input name="name" maxlength="120" value="${esc(x.name)}"></label>
         <label class="field"><span>Username</span><input name="username" maxlength="60" autocomplete="off" data-no-i18n value="${esc(x.username)}"></label>
-        <label class="field"><span>Position <small>shown next to the name, e.g. Owner, Developer, Supplier</small></span><input name="position" maxlength="60" data-no-i18n value="${esc(x.position||'')}"></label>
+        <label class="field"><span>Position <small>shown next to the name, e.g. Owner, Developer, Supplier</small></span><input name="position" maxlength="60" data-no-i18n value="${esc(x.position||'')}"></label>${sup?`<label class="field"><span>Email for alerts <small>new orders, cancel requests, quotes; at most one email every 30 minutes</small></span><input name="alertEmail" type="email" maxlength="160" data-no-i18n value="${esc(x.alertEmail||'')}" placeholder="name@example.com"></label>`:''}
         <label class="field"><span>Type</span><select name="role"><option value="admin"${sup?'':' selected'}>Admin (full access)</option><option value="supplier"${sup?' selected':''}>Supplier (supplier portal only)</option></select></label>
         <label class="field"><span>Status</span><select name="active"><option value="true"${x.active?' selected':''}>Active</option><option value="false"${x.active?'':' selected'}>Disabled (can’t sign in)</option></select></label>
         <label class="field"><span>New password <small>leave empty to keep the current one</small></span><input name="password" type="password" maxlength="128" autocomplete="new-password"></label>
@@ -1974,7 +1984,7 @@
       if (adf.password.value && adf.password.value.length < 8) { m.textContent = 'Password must be at least 8 characters'; m.className = 'form-msg err'; return; }
       if (adf.role.value !== adf.dataset.was && !confirm(adf.role.value === 'supplier' ? 'Make this login a supplier login? It is signed out at once and from then on only sees the supplier portal.' : 'Make this login an ADMIN? It gets full access, including our fees and client prices.')) return;
       b.disabled = true;
-      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), position: adf.position.value, role: adf.role.value, ...(adf.owner && !adf.owner.disabled ? { owner: adf.owner.checked } : {}), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Saved.'); }
+      try { await api('/admin/users/' + adf.dataset.adminForm, { method: 'POST', body: { name: adf.name.value, username: adf.username.value.trim(), position: adf.position.value, role: adf.role.value, ...(adf.alertEmail ? { alertEmail: adf.alertEmail.value } : {}), ...(adf.owner && !adf.owner.disabled ? { owner: adf.owner.checked } : {}), active: adf.active.value === 'true', ...(adf.password.value ? { password: adf.password.value } : {}) } }); adf.remove(); document.activeElement?.blur(); await loadAll(); renderList(); toast('Saved.'); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; b.disabled = false; }
       return;
     }

@@ -118,7 +118,7 @@
       <nav class="sp-nav">${navItems('sp-tab')}</nav>
       <div class="sp-right">${langSwitch()}${bellHTML()}
         <details class="sp-me"><summary aria-label="${esc(t('Supplier'))}"><span class="sp-ava">${esc(ini)}</span><span class="sp-who"><b>${esc(name)}</b><small>${t('Supplier')}</small></span></summary>
-          <div class="sp-menu">${S.view ? `<a href="/admin/">${t('Back to admin')}</a><button type="button" data-supplier-login>${t('Sign in with a supplier login')}</button>` : `<a href="#password">${t('Change password')}</a>`}<button type="button" data-logout>${t('Log out')}</button></div></details></div></header>
+          <div class="sp-menu">${S.view ? `<a href="/admin/">${t('Back to admin')}</a><button type="button" data-supplier-login>${t('Sign in with a supplier login')}</button>` : `<a href="#password">${t('Change password')}</a><a href="#alerts">${t('Email alerts')}</a>`}<button type="button" data-logout>${t('Log out')}</button></div></details></div></header>
       ${S.view ? `<div class="sp-view" role="status"><span>${t('Admin view: this is the supplier portal. Your changes are saved, like the supplier’s.')}</span><a href="/admin/">${t('Back to admin')}</a></div>` : ''}
       <main class="sp-main${S.page === 'orders' ? ' wide' : ''}" id="sp-main">${inner}</main>
       <nav class="sp-bottom">${navItems('')}</nav>`;
@@ -265,6 +265,39 @@
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
       b.disabled = false;
     });
+  }
+  // ---------- email alerts (16 Nov 2026): the supplier's own email for the 30-minute summary ----------
+  Object.assign(ZH, {
+    'Email alerts': '邮件提醒', 'Get an email when there is something new: new orders, cancel requests, quotes, price requests, receipts sent back. At most one email every 30 minutes.': '有新内容时收到邮件：新订单、取消申请、询价、降价请求、被退回的收据。每30分钟最多一封。',
+    'Your email': '您的邮箱', 'Send me email alerts': '给我发送邮件提醒', 'Save': '保存', 'Saved.': '已保存。', 'Send a test email': '发送测试邮件', 'Test email sent. Check your inbox (and spam).': '测试邮件已发送，请查看收件箱（和垃圾邮件）。',
+    'Email is not connected yet. Direct Line will tell you when it is.': '邮件功能还未开通，Direct Line 开通后会通知您。',
+    'Each supplier login sets its own email. Change it in Fees & settings > Team & tools > Supplier logins > Edit.': '每个供应商账号设置自己的邮箱。管理员可在 Fees & settings > Team & tools > Supplier logins > Edit 中修改。',
+  });
+  S.alertsCfg = null; S.alertsMsg = null;
+  function emailAlertsHTML() {
+    const c = S.alertsCfg;
+    if (S.view) return `<div class="sp-head"><div><h1>${t('Email alerts')}</h1><p class="sp-intro">${t('Each supplier login sets its own email. Change it in Fees & settings > Team & tools > Supplier logins > Edit.')}</p></div></div>`;
+    if (!c) return S.error || `<p class="sp-empty">${t('Loading…')}</p>`;
+    const msg = S.alertsMsg ? `<p class="form-msg ${S.alertsMsg.ok ? 'ok' : 'err'}">${esc(S.alertsMsg.text)}</p>` : '';
+    return `<div class="sp-head"><div><h1>${t('Email alerts')}</h1><p class="sp-intro">${t('Get an email when there is something new: new orders, cancel requests, quotes, price requests, receipts sent back. At most one email every 30 minutes.')}</p></div></div>
+      <section class="card sp-card sp-narrow"><form id="sp-alerts" class="sp-rcform" novalidate>
+        <label class="field"><span>${t('Your email')}</span><input name="email" type="email" maxlength="160" value="${esc(c.email)}" placeholder="name@example.com" autocomplete="email"></label>
+        <label class="sp-check"><input type="checkbox" name="on"${c.on ? ' checked' : ''}> <span>${t('Send me email alerts')}</span></label>
+        ${c.connected ? '' : `<p class="sp-wait">${t('Email is not connected yet. Direct Line will tell you when it is.')}</p>`}
+        ${msg}<div class="sp-btnrow"><button type="submit" class="btn btn-primary">${t('Save')}</button>${c.connected && c.email ? `<button type="button" class="btn" data-alert-test>${t('Send a test email')}</button>` : ''}</div>
+      </form></section>`;
+  }
+  async function saveAlerts(form) {
+    const b = $('[type=submit]', form); if (b.disabled) return; b.disabled = true;
+    try { S.alertsCfg = await api('/supplier/email-alerts', { method: 'PUT', body: { email: form.email.value.trim(), on: form.on.checked } }); S.alertsMsg = { ok: true, text: t('Saved.') }; }
+    catch (e) { S.alertsMsg = { ok: false, text: e.message }; }
+    rerenderOrders();
+  }
+  async function testAlert(btn) {
+    btn.disabled = true;
+    try { await api('/supplier/email-alerts/test', { method: 'POST' }); S.alertsMsg = { ok: true, text: t('Test email sent. Check your inbox (and spam).') }; }
+    catch (e) { S.alertsMsg = { ok: false, text: e.message }; }
+    rerenderOrders();
   }
 
   // ---------- Orders: the work queue (phase 2) ----------
@@ -539,7 +572,7 @@
     if (r.status === 'approved') return `<article class="card sp-rcard" data-rc="${r.paymentId}">${head}<p class="sp-done">✓ ${t('Sent to the client on')} ${esc(fmtDay(r.decidedAt))}</p></article>`;
     return `<article class="card sp-rcard" data-rc="${r.paymentId}">${head}
       ${r.status === 'rejected' ? `<div class="sp-back"><b>${t('Sent back by Direct Line')}:</b> ${esc(r.reason)}<br><span>${t('Fix it and send it again.')}</span></div>` : ''}
-      <form class="sp-rcform" data-receipt="${r.paymentId}" novalidate><label class="sp-f"><span>${t('Note on the receipt')} <small>${t('optional, e.g. bank reference')}</small></span><input name="note" maxlength="500" value="${esc(r.note || '')}"></label>
+      <form class="sp-rcform" data-receipt="${r.paymentId}" novalidate><label class="field"><span>${t('Note on the receipt')} <small>${t('optional, e.g. bank reference')}</small></span><input name="note" maxlength="500" value="${esc(r.note || '')}"></label>
         ${formErr('rc' + r.paymentId)}<div><button type="submit" class="btn btn-primary">${ICON.receipt} ${t(r.status === 'rejected' ? 'Send again' : 'Send to Direct Line')}</button></div></form></article>`;
   }
   function receiptsHTML() {
@@ -663,19 +696,19 @@
   // ---------- pages, events, boot ----------
   function readHash() {
     const h = location.hash.replace(/^#/, ''), m = /^client\/(\d+)$/.exec(h);
-    if (m) { S.page = 'client'; S.clientId = Number(m[1]); } else if (h === 'password') S.page = 'password'; else if (['billing', 'quotes', 'requests', 'receipts'].includes(h)) S.page = h; else S.page = 'orders';
+    if (m) { S.page = 'client'; S.clientId = Number(m[1]); } else if (h === 'password') S.page = 'password'; else if (h === 'alerts') S.page = 'alerts'; else if (['billing', 'quotes', 'requests', 'receipts'].includes(h)) S.page = h; else S.page = 'orders';
   }
   const loading = () => `<p class="sp-empty">${t('Loading…')}</p>`;
   const failed = e => `<div class="sp-empty"><p>${esc(e.message)}</p><button type="button" class="btn" data-retry>${t('Try again')}</button></div>`;
   function render() {
     if (!S.me) return loginScreen();
-    const body = S.page === 'password' ? passwordHTML()
+    const body = S.page === 'password' ? passwordHTML() : S.page === 'alerts' ? emailAlertsHTML()
       : S.page === 'client' ? (S.client && S.client.id === S.clientId ? clientHTML(S.client) : S.error || loading())
       : S.page === 'orders' ? ordersHTML() : S.page === 'quotes' ? quotesHTML() : S.page === 'requests' ? requestsHTML() : S.page === 'receipts' ? receiptsHTML()
       : S.billing ? billingHTML(S.billing) : S.error || loading();
     const y = window.scrollY, drawer = S.drawer;
     document.body.innerHTML = shell(body);
-    document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t({ orders: 'Orders', quotes: 'Quotes', requests: 'Price requests', receipts: 'Receipts' }[S.page] || 'Billing');
+    document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t({ orders: 'Orders', quotes: 'Quotes', requests: 'Price requests', receipts: 'Receipts', alerts: 'Email alerts' }[S.page] || 'Billing');
     if (S.keepScroll) window.scrollTo(0, y);
     S.keepScroll = false;
     bindPassword();
@@ -690,6 +723,7 @@
       else if (S.page === 'quotes') { if (!S.quotes) render(); S.quotes = await api('/supplier/quotes'); }
       else if (S.page === 'requests') { if (!S.requests) render(); S.requests = await api('/supplier/price-requests'); }
       else if (S.page === 'receipts') { if (!S.receipts) render(); S.receipts = await api('/supplier/receipts'); }
+      else if (S.page === 'alerts' && !S.view) { S.alertsMsg = null; if (!S.alertsCfg) render(); S.alertsCfg = await api('/supplier/email-alerts'); }
     } catch (e) { if (e.status === 401) { S.me = null; return render(); } S.error = failed(e); }
     render();
   }
@@ -706,6 +740,7 @@
     const qt = e.target.closest('[data-qtab]'); if (qt) { S.qtab = qt.dataset.qtab; rerenderOrders(); return; }
     const rt = e.target.closest('[data-rtab]'); if (rt) { S.rtab = rt.dataset.rtab; rerenderOrders(); return; }
     const rct = e.target.closest('[data-rctab]'); if (rct) { S.rcTab = rct.dataset.rctab; rerenderOrders(); return; }
+    const at = e.target.closest('[data-alert-test]'); if (at) { testAlert(at); return; }
     const qe = e.target.closest('[data-qedit]'); if (qe) { S.qEdit.add(Number(qe.dataset.qedit)); rerenderOrders(); return; }
     const av = e.target.closest('[data-avail]'); if (av) { const [pid, v] = av.dataset.avail.split(':'); S.qAvail[pid] = v === '1'; rerenderOrders(); return; }
     const tb = e.target.closest('[data-tab]'); if (tb) { S.tab = tb.dataset.tab; S.onlyCancelReq = false; S.pinned.clear(); S.limit = 50; rerenderOrders(); return; }
@@ -746,7 +781,8 @@
   document.addEventListener('submit', e => {
     const q = e.target.closest('form[data-quote]'); if (q) { e.preventDefault(); sendQuote(q); return; }
     const r = e.target.closest('form[data-req]'); if (r) { e.preventDefault(); sendRequest(r); return; }
-    const rc = e.target.closest('form[data-receipt]'); if (rc) { e.preventDefault(); sendReceipt(rc); }
+    const rc = e.target.closest('form[data-receipt]'); if (rc) { e.preventDefault(); sendReceipt(rc); return; }
+    if (e.target.id === 'sp-alerts') { e.preventDefault(); saveAlerts(e.target); }
   });
   window.addEventListener('hashchange', () => { readHash(); closeDrawer(); window.scrollTo(0, 0); load(); });
   async function boot() {

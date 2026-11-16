@@ -13,6 +13,7 @@ import { supplierSession } from '../server/supplier-portal.mjs';
 import { syncFileStorage } from '../server/file-storage.mjs';
 import { runBackup } from '../server/backup.mjs';
 import { pollSupplierSheet, supplierSheetQuickLook, rememberSupplierSheet } from '../server/supplier-sheet.mjs';
+import { runSupplierAlerts } from '../server/supplier-alerts.mjs';
 import { retryPendingGoogleSheetOrders } from '../server/google-sheets.mjs';
 
 const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
@@ -41,6 +42,8 @@ const CRON_JOBS = {
   // a failed write). Before 23 Oct 2026 only an open, visible admin dashboard rewrote them.
   // Since 26 Oct 2026 (Neon free plan): a quick look at the Google Sheet first; the database is only woken when the
   // supplier changed something, or at least every 3 hours (see supplierSheetQuickLook).
+  // Every 5 minutes: one summary email to the supplier at most every 30 minutes (new orders, cancel requests, quotes...).
+  '/api/cron/supplier-alerts': (db, env) => runSupplierAlerts(db, env),
   '/api/cron/supplier-sheet': async (db, env) => {
     const look = await supplierSheetQuickLook(env).catch(e => ({ unchanged: false, error: e.message }));
     if (look.unchanged) return { ok: true, unchanged: true };
