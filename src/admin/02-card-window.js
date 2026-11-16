@@ -27,17 +27,20 @@
     const keptOwedC = keptOn.filter(o => !o.paymentId).reduce((n, o) => n + feeC(o), 0);
     const collectedC = os.filter(o => PO.state(o) === 'paid').reduce((n, o) => n + feeC(o), 0) + keptC - keptOwedC;
     const noBillC = os.filter(o => PO.state(o) === 'unbilled').reduce((n, o) => n + feeC(o), 0);
-    // Successful orders (Erwin/Shahar, 5 Nov 2026): not cancelled and paid by the client. The supplier pays us its own amount
-    // for each of them ("two fees on all orders": the client's fee plus $1 from the supplier; Fees & settings sets it).
+    // The supplier share: $1 (Fees & settings) for every order that isn't cancelled, paid or not (Erwin, 16 Nov 2026: the same
+    // rule as the supplier portal; before, only paid orders counted).
     const paidOs = os.filter(o => PO.state(o) === 'paid'), cxN = inMonth.length - os.length;
-    const supRateC = cents(S.ov.settings?.supplier_bonus_per_order ?? 1), supC = paidOs.length * supRateC, totalC = feesC + supC;
+    const supRateC = cents(S.ov.settings?.supplier_bonus_per_order ?? 1), supC = os.length * supRateC, totalC = feesC + supC;
+    // All money goes to the supplier first (clients pay the supplier directly), so our earnings are with the supplier until it
+    // pays us (Fees & settings > Team & tools > Supplier share payments). All time only: payments aren't tied to a month.
+    const supPaidC = month === 'all' ? cents(S.sharePaid || 0) : 0, leftC = totalC - supPaidC;
     // What clients owe right now: each client's balance (unpaid orders minus credit and payments not linked to orders), and
     // that amount without our fee (admin only): minus our fee on the unpaid orders (credit lowers the supplier's part).
     const balanceC = cl.reduce((n, c) => n + Math.max(0, cents(c.outstanding)), 0);
     const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0) + live.filter(o => o.status === 'cancelled' && !o.paymentId && o.keepFee === 'yes').reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const lateIds = lateClientIds(), late = balanceC > 0 && f_late(cl, lateIds, cents);
-    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, totalC, balanceC, feePartC, clientsN, lateIds, late };
+    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, totalC, supPaidC, leftC, balanceC, feePartC, clientsN, lateIds, late };
   }
 
   // Late = a client who still owes money has an unpaid order older than 14 days.
@@ -134,12 +137,14 @@
     if (k === 'earnings') {
       if (!f.totalC) return '<p class="muted kw-empty">No fees yet</p>';
       const notPaid = f.feesC - f.collectedC - f.noBillC;
-      const both = f.supC ? kwRow('', 'Client fees', kwMoney(f.feesC), kwPlural(f.os.length + f.keptOn.length, 'order')) + kwRow('+', 'From the supplier', kwMoney(f.supC), `${kwPlural(f.paidOs.length, 'paid order')} × ${kwMoney(f.supRateC)}`) + kwRow('=', 'Total', kwMoney(f.totalC), '', 'tot') : '';
+      const both = f.supC ? kwRow('', 'Client fees', kwMoney(f.feesC), kwPlural(f.os.length + f.keptOn.length, 'order')) + kwRow('+', 'Supplier share', kwMoney(f.supC), `${kwPlural(f.os.length, 'order')} × ${kwMoney(f.supRateC)}`) + kwRow('=', 'Total', kwMoney(f.totalC), '', 'tot') : '';
+      const withSup = f.supPaidC ? kwRow('', 'Our earnings', kwMoney(f.totalC)) + kwRow('−', 'Paid to us by the supplier', kwMoney(f.supPaidC)) + kwRow('=', f.leftC >= 0 ? 'Still to receive' : 'Paid ahead', kwMoney(Math.abs(f.leftC)), '', 'tot') : '';
       const sum = kwRow('', 'Collected', kwMoney(f.collectedC)) + kwRow('+', 'Not paid yet', kwMoney(notPaid)) + (f.noBillC ? kwRow('+', 'Not billed yet', kwMoney(f.noBillC), 'No cost yet, so not on a bill') : '') + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot');
       const from = f.keptC ? kwRow('', 'Our fee on orders', kwMoney(f.onOrdersC), kwPlural(f.os.length, 'order')) + kwRow('+', 'Fees kept on cancelled orders', kwMoney(f.keptC), kwPlural(f.keptOn.length, 'order')) + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot') : '';
-      const per = kwByClient([...f.os, ...f.keptOn], l => l.reduce((t, o) => t + f.feeC(o) + (o.status !== 'cancelled' && f.PO.state(o) === 'paid' ? f.supRateC : 0), 0)).filter(x => x.v).map(x => kwItem(`data-open-client="${x.id}" data-client-tab="payments"`, x.c?.name || '—', kwPlural(x.list.length, 'order'), kwMoney(x.v))).join('');
-      const supNote = f.supC ? `<p class="kw-note"><span>From the supplier: for each paid order that isn't cancelled. The supplier pays it, it's not on the client's bill.</span></p>` : '';
-      return kwBlock('', both) + kwBlock(f.supC ? 'Client fees' : '', sum) + kwBlock('Where it comes from', from) + supNote + kwBlock('By client', per);
+      const per = kwByClient([...f.os, ...f.keptOn], l => l.reduce((t, o) => t + f.feeC(o) + (o.status !== 'cancelled' ? f.supRateC : 0), 0)).filter(x => x.v).map(x => kwItem(`data-open-client="${x.id}" data-client-tab="payments"`, x.c?.name || '—', kwPlural(x.list.length, 'order'), kwMoney(x.v))).join('');
+      const supNote = f.supC ? `<p class="kw-note"><span>Supplier share: for every order that isn’t cancelled, the same as the supplier portal. The supplier pays it, it’s not on the client’s bill.</span></p>` : '';
+      const withNote = f.supPaidC ? `<p class="kw-note"><span>Clients pay the supplier, so our fees and the supplier share are with the supplier until it pays us. Payments are recorded in Fees & settings > Team & tools > Supplier share payments.</span></p>` : '';
+      return kwBlock('', both) + kwBlock('With the supplier', withSup) + withNote + kwBlock(f.supC ? 'Client fees' : '', sum) + kwBlock('Where it comes from', from) + supNote + kwBlock('By client', per);
     }
     // Clients: all time = every active client, with what they owe and their plan; a month = clients with orders that month.
     if (f.month !== 'all') {

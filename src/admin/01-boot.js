@@ -18,8 +18,10 @@
     document.addEventListener('visibilitychange', poll);
   }
 
+  // What the supplier paid us so far (Supplier share payments): comes off Our earnings (16 Nov 2026).
+  async function loadSharePaid() { try { S.sharePaid = (await api('/admin/supplier-share')).paid || 0; } catch (e) { S.sharePaid = S.sharePaid || 0; } }
   async function loadAll() {
-    const [ov, o, p, c, stores, archived] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores'),api('/admin/orders?archived=1'), loadReceipts()]);
+    const [ov, o, p, c, stores, archived] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores'),api('/admin/orders?archived=1'), loadReceipts(), loadSharePaid()]);
     S.ov = ov; S.orders = o.orders;
     // Orders the client's credit already covers are not owed (12 Nov 2026): flagged once here, read by tags and filters.
     window.DLPayOrders.markCovered(S.orders, id => ov.clients.find(c => c.id === id)?.outstanding ?? Infinity, () => [], id => Math.round(((ov.cancelled?.clients || []).find(r => r.clientId === id)?.feesOwed || 0) * 100)); S.archivedOrders = archived.orders; S.products=p.products; S.claims=c.claims;S.stores=stores.stores; window.DL.setRates(ov.rates);
