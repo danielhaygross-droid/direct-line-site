@@ -124,8 +124,10 @@
     document.addEventListener('visibilitychange', poll);
   }
 
+  // What the supplier paid us so far (Supplier share payments): comes off Our earnings (16 Nov 2026).
+  async function loadSharePaid() { try { S.sharePaid = (await api('/admin/supplier-share')).paid || 0; } catch (e) { S.sharePaid = S.sharePaid || 0; } }
   async function loadAll() {
-    const [ov, o, p, c, stores, archived] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores'),api('/admin/orders?archived=1'), loadReceipts()]);
+    const [ov, o, p, c, stores, archived] = await Promise.all([api('/admin/overview'), api('/admin/orders'),api('/admin/products'),api('/admin/claims'),api('/admin/client-stores'),api('/admin/orders?archived=1'), loadReceipts(), loadSharePaid()]);
     S.ov = ov; S.orders = o.orders;
     // Orders the client's credit already covers are not owed (12 Nov 2026): flagged once here, read by tags and filters.
     window.DLPayOrders.markCovered(S.orders, id => ov.clients.find(c => c.id === id)?.outstanding ?? Infinity, () => [], id => Math.round(((ov.cancelled?.clients || []).find(r => r.clientId === id)?.feesOwed || 0) * 100)); S.archivedOrders = archived.orders; S.products=p.products; S.claims=c.claims;S.stores=stores.stores; window.DL.setRates(ov.rates);
@@ -171,17 +173,20 @@
     const keptOwedC = keptOn.filter(o => !o.paymentId).reduce((n, o) => n + feeC(o), 0);
     const collectedC = os.filter(o => PO.state(o) === 'paid').reduce((n, o) => n + feeC(o), 0) + keptC - keptOwedC;
     const noBillC = os.filter(o => PO.state(o) === 'unbilled').reduce((n, o) => n + feeC(o), 0);
-    // Successful orders (Erwin/Shahar, 5 Nov 2026): not cancelled and paid by the client. The supplier pays us its own amount
-    // for each of them ("two fees on all orders": the client's fee plus $1 from the supplier; Fees & settings sets it).
+    // The supplier share: $1 (Fees & settings) for every order that isn't cancelled, paid or not (Erwin, 16 Nov 2026: the same
+    // rule as the supplier portal; before, only paid orders counted).
     const paidOs = os.filter(o => PO.state(o) === 'paid'), cxN = inMonth.length - os.length;
-    const supRateC = cents(S.ov.settings?.supplier_bonus_per_order ?? 1), supC = paidOs.length * supRateC, totalC = feesC + supC;
+    const supRateC = cents(S.ov.settings?.supplier_bonus_per_order ?? 1), supC = os.length * supRateC, totalC = feesC + supC;
+    // All money goes to the supplier first (clients pay the supplier directly), so our earnings are with the supplier until it
+    // pays us (Fees & settings > Team & tools > Supplier share payments). All time only: payments aren't tied to a month.
+    const supPaidC = month === 'all' ? cents(S.sharePaid || 0) : 0, leftC = totalC - supPaidC;
     // What clients owe right now: each client's balance (unpaid orders minus credit and payments not linked to orders), and
     // that amount without our fee (admin only): minus our fee on the unpaid orders (credit lowers the supplier's part).
     const balanceC = cl.reduce((n, c) => n + Math.max(0, cents(c.outstanding)), 0);
     const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0) + live.filter(o => o.status === 'cancelled' && !o.paymentId && o.keepFee === 'yes').reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const lateIds = lateClientIds(), late = balanceC > 0 && f_late(cl, lateIds, cents);
-    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, totalC, balanceC, feePartC, clientsN, lateIds, late };
+    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, totalC, supPaidC, leftC, balanceC, feePartC, clientsN, lateIds, late };
   }
 
   // Late = a client who still owes money has an unpaid order older than 14 days.
@@ -278,12 +283,14 @@
     if (k === 'earnings') {
       if (!f.totalC) return '<p class="muted kw-empty">No fees yet</p>';
       const notPaid = f.feesC - f.collectedC - f.noBillC;
-      const both = f.supC ? kwRow('', 'Client fees', kwMoney(f.feesC), kwPlural(f.os.length + f.keptOn.length, 'order')) + kwRow('+', 'From the supplier', kwMoney(f.supC), `${kwPlural(f.paidOs.length, 'paid order')} × ${kwMoney(f.supRateC)}`) + kwRow('=', 'Total', kwMoney(f.totalC), '', 'tot') : '';
+      const both = f.supC ? kwRow('', 'Client fees', kwMoney(f.feesC), kwPlural(f.os.length + f.keptOn.length, 'order')) + kwRow('+', 'Supplier share', kwMoney(f.supC), `${kwPlural(f.os.length, 'order')} × ${kwMoney(f.supRateC)}`) + kwRow('=', 'Total', kwMoney(f.totalC), '', 'tot') : '';
+      const withSup = f.supPaidC ? kwRow('', 'Our earnings', kwMoney(f.totalC)) + kwRow('−', 'Paid to us by the supplier', kwMoney(f.supPaidC)) + kwRow('=', f.leftC >= 0 ? 'Still to receive' : 'Paid ahead', kwMoney(Math.abs(f.leftC)), '', 'tot') : '';
       const sum = kwRow('', 'Collected', kwMoney(f.collectedC)) + kwRow('+', 'Not paid yet', kwMoney(notPaid)) + (f.noBillC ? kwRow('+', 'Not billed yet', kwMoney(f.noBillC), 'No cost yet, so not on a bill') : '') + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot');
       const from = f.keptC ? kwRow('', 'Our fee on orders', kwMoney(f.onOrdersC), kwPlural(f.os.length, 'order')) + kwRow('+', 'Fees kept on cancelled orders', kwMoney(f.keptC), kwPlural(f.keptOn.length, 'order')) + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot') : '';
-      const per = kwByClient([...f.os, ...f.keptOn], l => l.reduce((t, o) => t + f.feeC(o) + (o.status !== 'cancelled' && f.PO.state(o) === 'paid' ? f.supRateC : 0), 0)).filter(x => x.v).map(x => kwItem(`data-open-client="${x.id}" data-client-tab="payments"`, x.c?.name || '—', kwPlural(x.list.length, 'order'), kwMoney(x.v))).join('');
-      const supNote = f.supC ? `<p class="kw-note"><span>From the supplier: for each paid order that isn't cancelled. The supplier pays it, it's not on the client's bill.</span></p>` : '';
-      return kwBlock('', both) + kwBlock(f.supC ? 'Client fees' : '', sum) + kwBlock('Where it comes from', from) + supNote + kwBlock('By client', per);
+      const per = kwByClient([...f.os, ...f.keptOn], l => l.reduce((t, o) => t + f.feeC(o) + (o.status !== 'cancelled' ? f.supRateC : 0), 0)).filter(x => x.v).map(x => kwItem(`data-open-client="${x.id}" data-client-tab="payments"`, x.c?.name || '—', kwPlural(x.list.length, 'order'), kwMoney(x.v))).join('');
+      const supNote = f.supC ? `<p class="kw-note"><span>Supplier share: for every order that isn’t cancelled, the same as the supplier portal. The supplier pays it, it’s not on the client’s bill.</span></p>` : '';
+      const withNote = f.supPaidC ? `<p class="kw-note"><span>Clients pay the supplier, so our fees and the supplier share are with the supplier until it pays us. Payments are recorded in Fees & settings > Team & tools > Supplier share payments.</span></p>` : '';
+      return kwBlock('', both) + kwBlock('With the supplier', withSup) + withNote + kwBlock(f.supC ? 'Client fees' : '', sum) + kwBlock('Where it comes from', from) + supNote + kwBlock('By client', per);
     }
     // Clients: all time = every active client, with what they owe and their plan; a month = clients with orders that month.
     if (f.month !== 'all') {
@@ -406,7 +413,7 @@
       { key: 'clients', k: 'Clients', v: f.clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(f.cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)' },
       { key: 'orders', k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: os.length ? [`${f.paidOs.length} paid`, notShipped ? `${notShipped} not shipped yet` : '', shipped ? `${shipped} shipped` : ''].filter(Boolean) : ['No orders yet'], sub2: f.cxN ? `${f.cxN} cancelled, not counted` : '', icon: 'orders', tone: 'var(--orange)' },
       { key: 'unpaid', k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${f.PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(owed - balanceC) >= 1 ? `Unpaid orders ${money(owed / 100)} − credit and earlier payments ${money((owed - balanceC) / 100)}` : '', sub3: balanceC > 0 ? `Without our fee ${money((balanceC - feePartC) / 100)} · our fee ${money(feePartC / 100)}` : '', icon: 'money', tone: f.late ? 'var(--red)' : balanceC > 0 ? 'var(--orange)' : 'var(--mint)', owe: balanceC > 0, late: f.late },
-      { key: 'earnings', k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(f.totalC / 100), sub: [...(f.supC ? [`${money(f.feesC / 100)} client fees`, `${money(f.supC / 100)} from the supplier`] : []), `${money(f.collectedC / 100)} collected`, `${money((f.feesC - f.collectedC - f.noBillC) / 100)} not paid yet`, ...(f.noBillC ? [`${money(f.noBillC / 100)} not billed yet`] : []), `${plural(os.length + f.keptOn.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
+      { key: 'earnings', k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(f.totalC / 100), sub: [...(f.supC ? [`${money(f.feesC / 100)} client fees`, `${money(f.supC / 100)} supplier share`] : []), ...(f.supPaidC ? [`${money(f.supPaidC / 100)} paid to us by the supplier`, f.leftC >= 0 ? `${money(f.leftC / 100)} still to receive` : `${money(-f.leftC / 100)} paid ahead`] : [`${money(f.collectedC / 100)} collected`, `${money((f.feesC - f.collectedC - f.noBillC) / 100)} not paid yet`, ...(f.noBillC ? [`${money(f.noBillC / 100)} not billed yet`] : [])]), `${plural(os.length + f.keptOn.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
     ];
     $('[data-kpis]').innerHTML = cards.map(c => `<button type="button" class="stat stat-go${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}${c.late ? ' late' : ''}" style="--tone:${c.tone}" data-kpi-card="${c.key}" aria-haspopup="dialog" aria-expanded="${kpiWin === c.key}" title="Show details"><span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}${c.sub3 ? `<em class="stat-fee">${esc(c.sub3)}</em>` : ''}</button>`).join('');
     if (kpiWin) showCardWindow(kpiWin, false);
@@ -601,15 +608,15 @@
       <section class="card card-pad mc" data-money-chart></section>`;
     // Three lines (Erwin, 5 Nov 2026): no "Unpaid orders" (the Not paid yet card explains it), no cancellation fees or refunds
     // (they are in Cancelled orders, all clients, in Clients & payments).
-    // Our earnings = client fees + the supplier's own amount per paid, not cancelled order (Shahar, 5-6 Nov 2026), the same
-    // rule as the Our earnings card (kpiFacts); per month by order date.
+    // Our earnings = client fees + the supplier share on every order that isn't cancelled (16 Nov 2026; before: paid orders
+    // only), the same rule as the Our earnings card (kpiFacts); per month by order date.
     const M = window.DLClientStoreMath, PO = window.DLPayOrders, rateC = Math.round(Number(S.ov.settings?.supplier_bonus_per_order ?? 1) * 100), sup = {};
-    for (const o of S.orders) if (!o.archived && o.status !== 'cancelled' && PO.state(o) === 'paid') { const k = M.dateKey(o).slice(0, 7); sup[k] = (sup[k] || 0) + rateC; }
+    for (const o of S.orders) if (!o.archived && o.status !== 'cancelled') { const k = M.dateKey(o).slice(0, 7); sup[k] = (sup[k] || 0) + rateC; }
     const months = (S.ov.months || []).map(m => ({ ...m, earned: Math.round(Number(m.earned || 0) * 100 + (sup[m.month] || 0)) / 100 }));
     window.DLMoneyChart.mount($('[data-money-chart]'), { title: 'Money by month, all clients', key: 'dl-admin-money', months, money, series: [
       { key: 'billed', label: 'Billed', tone: 'var(--mc-gold)', note: 'What clients were billed for their orders (cancelled orders not counted)' },
       { key: 'paid', label: 'Paid', tone: 'var(--mc-teal)', note: 'Payments received from clients' },
-      { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Client fees on those orders, plus what the supplier pays us per paid order' }] });
+      { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Client fees on those orders, plus the supplier share on every order that isn’t cancelled' }] });
   }
 
   // ---------- orders tab ----------

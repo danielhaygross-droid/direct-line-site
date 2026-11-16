@@ -60,7 +60,7 @@ try {
     const cards = async () => ui.locator('[data-kpis] .stat strong').allInnerTexts();
     const allTime = await cards(); assert.equal(allTime[1], '3', tag + ' all time: 3 orders');
     await ui.locator('[data-kpi-month]').selectOption(prevMonth); await page.waitForTimeout(200);
-    const c = await cards(); assert.equal(c[0], '1'); assert.equal(c[1], '2', tag + ' last month: 2 orders'); assert.equal(c[2], allTime[2], tag + ' "Not paid yet" is what is owed now, whatever the month'); assert.equal(c[3], '$4.00', tag + ' fees 2 x $2');
+    const c = await cards(); assert.equal(c[0], '1'); assert.equal(c[1], '2', tag + ' last month: 2 orders'); assert.equal(c[2], allTime[2], tag + ' "Not paid yet" is what is owed now, whatever the month'); assert.equal(c[3], '$6.00', tag + ' fees 2 x $2 + supplier share 2 x $1 (16 Nov 2026: every order not cancelled)');
     await page.screenshot({ path: path.join(out, `${tag}-admin.png`) });
     await page.reload(); const ui2 = page.frame({ name: 'admin' }); await ui2.waitForSelector('[data-kpi-month] option[value="all"]', { state: 'attached' });
     assert.equal(await ui2.locator('[data-kpi-month]').inputValue(), prevMonth, 'remembered');
