@@ -240,7 +240,7 @@
       if (S.route !== 'new' && S.route !== 'edit') renderView(true);
       refreshDrawer();
       fresh.slice(0, 3).reverse().map(noteItem).filter(x => x.unread)
-        .forEach(x => N.popup(x, { onClick: () => { markRead(x); x.product ? go('products') : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); }, duration: 10000 }));
+        .forEach(x => N.popup(x, { onClick: () => { markRead(x); x.go ? go(x.go) : x.product ? go('products') : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); }, duration: 10000 }));
     }
   }
 
@@ -264,6 +264,7 @@
     else if(e.kind==='product')it={...base,product:true,productId:e.productId,action:'View product',icon:'order',tone:'gold',title:'Product quote updated',text:e.productName};
     else if (e.kind === 'invoice') { const [amt, day] = String(e.detail || '').split('|'); it = {...base, invoice:true, action:'View payments', icon:'wallet',tone:'mint',title:'New receipt',text:day ? `For your ${money(amt)} payment of ${window.DLPayOrders.day(day)}` : e.detail}; }
     else if(e.kind==='claim')it={...base,icon:'alert',tone:'gold',title:'Claim updated',text:ref};
+    else if (e.kind === 'subscription') { const [st, end, price] = String(e.detail || '').split('|'); it = { ...base, go: 'home', action: 'View', icon: 'alert', tone: 'red', title: st === 'overdue' ? 'Subscription payment due' : 'Your free month ended', text: st === 'overdue' ? `The subscription is ${shekels(price)} / month.` : `It ended on ${window.DLi18n?.lang === 'he' ? new Date(end + 'T12:00:00Z').toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : fmtDay(end)}. The subscription is ${shekels(price)} / month.` }; }
     else if (e.kind === 'status') {
       const words = { processing: 'We’re working on it now.', shipped: 'It’s on its way to your customer.', delivered: 'It was delivered to your customer.', cancelled: 'This order was cancelled.', pending: 'It’s back to pending.' };
       it = { ...base, icon: e.detail === 'cancelled' ? 'alert' : e.detail === 'delivered' ? 'check' : 'status', tone: { processing: 'blue', shipped: 'gold', delivered: 'mint', cancelled: 'red' }[e.detail] || 'orange', title: `${ref} is now ${e.detail}`, text: words[e.detail] || '' };
@@ -326,7 +327,7 @@
     const bell = $('[data-bell]');
     panel = N.panel({
       anchor: bell,
-      onItem: x => { markRead(x); x.product ? showProduct(x.productId) : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); },
+      onItem: x => { markRead(x); x.go ? go(x.go) : x.product ? showProduct(x.productId) : x.invoice ? go('payments') : openOrder(x.orderId, x.focus); },
       onMarkAll: async () => { try { const r = await api('/notifications/seen', { method: 'POST' }); S.seenAt = r.seenAt; readIds = new Set(); store.set(readKey(), []); updateChrome(); if (S.route === 'home' || S.route === 'orders') renderView(true); } catch (e) { /* offline */ } },
       onOpen: () => { store.set(badgeKey(), Date.now()); updateChrome(); },
       footer: 'Updates come in by themselves every 20 seconds.',
@@ -404,7 +405,7 @@
       const left = sub.trialDaysLeft, days = left === 0 ? 'last day today' : `${left} day${left === 1 ? '' : 's'} left`;
       return `<section class="sub-banner"><span class="sub-tag">First month free</span><p>Your free month runs until <b>${fmtDay(sub.trialEnd)}</b> (${days}). After that the subscription is ${price}.</p></section>`;
     }
-    if (sub.status === 'trial' && sub.trialEnded) return `<section class="sub-banner due"><span class="sub-tag">Free month ended</span><p>Your free month ended on <b>${fmtDay(sub.trialEnd)}</b>. The subscription is ${price}.</p></section>`;
+    if (sub.status === 'trial' && sub.trialEnded) return `<section class="sub-banner due"><span class="sub-tag">Free month ended</span><p>Your free month ended on <b>${fmtDay(sub.trialEnd)}</b>. The subscription is ${price}. Questions? <a href="#/messages">Message us</a>.</p></section>`;
     if (sub.status === 'overdue') return `<section class="sub-banner due"><span class="sub-tag">Payment due</span><p>Your subscription payment (${price}) is due. Questions? <a href="#/messages">Message us</a>.</p></section>`;
     if (sub.status === 'active') return `<section class="sub-banner ok"><span class="sub-tag">Subscription active</span><p>${price}${sub.lastPayment ? ` · last payment ${fmtDay(sub.lastPayment)}` : ''}</p></section>`;
     return '';
@@ -456,7 +457,7 @@
           ${all.length ? `<div class="table-wrap">${ordersTable(all.slice(0, 3), true)}</div>` : empty('orders', 'No orders yet', 'When you get a sale in your store, send it to us here. We take care of the rest.', '<a class="btn btn-primary" href="#/new">Send a new order</a>')}
         </section>
         <section class="card tw:col-span-full"><div class="card-head"><h3>Latest updates</h3><button type="button" class="link" data-open-bell>See all</button></div>
-          ${items.length ? `<div data-home-feed class="tw:grid tw:px-2.5 tw:pt-2 tw:pb-3">${items.map(x => `<button type="button" class="tw:grid tw:grid-cols-[36px_1fr] tw:gap-3 tw:items-start tw:px-3 tw:py-2.5 tw:border-0 tw:rounded-xl tw:bg-transparent tw:text-start tw:cursor-pointer tw:hover:bg-surface-2" ${x.product ? 'data-product-note="1"' : x.invoice ? 'data-invoice-note="1"' : `data-open-order="${x.orderId}"`} data-focus="${x.focus || ''}" data-note="${x.id}"><span class="dln-ic t-${x.tone} tw:size-9!">${N.icon(x.icon)}</span><span class="tw:grid tw:min-w-0"><b class="tw:block tw:text-14 tw:font-semibold${x.unread ? ' tw:after:inline-block tw:after:size-[7px] tw:after:ms-[7px] tw:after:rounded-full tw:after:bg-gold tw:after:align-middle' : ''}">${esc(x.title)}</b><span class="tw:block tw:text-muted tw:text-13 tw:truncate">${esc(x.text)}</span><time class="tw:block tw:text-dim tw:text-12">${esc(N.timeAgo(x.time))}</time></span></button>`).join('')}</div>`
+          ${items.length ? `<div data-home-feed class="tw:grid tw:px-2.5 tw:pt-2 tw:pb-3">${items.map(x => `<button type="button" class="tw:grid tw:grid-cols-[36px_1fr] tw:gap-3 tw:items-start tw:px-3 tw:py-2.5 tw:border-0 tw:rounded-xl tw:bg-transparent tw:text-start tw:cursor-pointer tw:hover:bg-surface-2" ${x.go ? `data-go-note="${x.go}"` : x.product ? 'data-product-note="1"' : x.invoice ? 'data-invoice-note="1"' : `data-open-order="${x.orderId}"`} data-focus="${x.focus || ''}" data-note="${x.id}"><span class="dln-ic t-${x.tone} tw:size-9!">${N.icon(x.icon)}</span><span class="tw:grid tw:min-w-0"><b class="tw:block tw:text-14 tw:font-semibold${x.unread ? ' tw:after:inline-block tw:after:size-[7px] tw:after:ms-[7px] tw:after:rounded-full tw:after:bg-gold tw:after:align-middle' : ''}">${esc(x.title)}</b><span class="tw:block tw:text-muted tw:text-13 tw:truncate">${esc(x.text)}</span><time class="tw:block tw:text-dim tw:text-12">${esc(N.timeAgo(x.time))}</time></span></button>`).join('')}</div>`
             : empty('bell', 'No updates yet', 'When we change an order’s status or reply to you, it shows up here.')}
         </section>
         <section class="card card-pad mc tw:col-span-full" data-client-chart></section>
@@ -1316,6 +1317,7 @@
     const gf = t.closest('[data-go-filter]'); if (gf) { S.filter = gf.dataset.goFilter; S.q = ''; go('orders'); return; }
     if (t.closest('[data-ask-go]')) { openOrder($('[data-ask]').value, 'chat'); return; }
     const productNote=t.closest('[data-product-note]');if(productNote){const note=noteItems().find(x=>x.id===productNote.dataset.note);if(note)markRead(note);showProduct(note?.productId);return;}
+    const goNote=t.closest('[data-go-note]');if(goNote){const note=noteItems().find(x=>x.id===goNote.dataset.note);if(note)markRead(note);go(goNote.dataset.goNote);return;}
     const invoiceNote=t.closest('[data-invoice-note]');if(invoiceNote){const note=noteItems().find(x=>x.id===invoiceNote.dataset.note);if(note)markRead(note);go('payments');return;}
     const oo = t.closest('[data-open-order]');
     if (oo && !t.closest('a')) {
