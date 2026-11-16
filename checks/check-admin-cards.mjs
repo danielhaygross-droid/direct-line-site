@@ -74,16 +74,16 @@ try {
       // Not paid yet card: what is owed now = without our fee + our fee on the unpaid orders (2 Nov 2026 fix: not the total before credit).
       assert.ok((await notPaid.innerText()).includes(`Without our fee ${usd(pb + pc - 5 - fee * 2)} · our fee ${usd(fee * 2)}`), tag + ': without our fee adds up to what is owed');
       assert.match(await card(1).innerText(), /4 not shipped yet/, tag + ': the jobs are in Needs your attention, not on the card');
-      // Successful orders and the supplier's $1 per order (5 Nov 2026): only A is paid, so 1 paid order × $1.00.
+      // The supplier's $1 per order: every order that isn't cancelled (16 Nov 2026; before: paid orders only), so 4 × $1.00.
       assert.match(await card(1).innerText(), /1 paid/, tag + ': orders card says how many are paid');
-      assert.equal(await card(3).locator('strong').innerText(), usd(fee * n + 1), tag + ': earnings = client fees + $1 from the supplier per paid order');
-      assert.ok(earn.includes(`${usd(fee * n)} client fees · $1.00 from the supplier`), tag + ' ' + earn);
+      assert.equal(await card(3).locator('strong').innerText(), usd(fee * n + n), tag + ': earnings = client fees + $1 supplier share per order not cancelled');
+      assert.ok(earn.includes(`${usd(fee * n)} client fees · ${usd(n)} supplier share`), tag + ' ' + earn);
       await card(3).click(); await ui.locator('[data-kpi-win]').waitFor(); const ew = await ui.locator('[data-kpi-win]').innerText();
-      const flat = ew.replace(/\s+/g, ' '); assert.ok(flat.includes(`Client fees 4 orders ${usd(fee * n)} + From the supplier 1 paid order × $1.00 $1.00 = Total ${usd(fee * n + 1)}`), tag + ': window: client fees + supplier = total ' + flat);
+      const flat = ew.replace(/\s+/g, ' '); assert.ok(flat.includes(`Client fees 4 orders ${usd(fee * n)} + Supplier share 4 orders × $1.00 ${usd(n)} = Total ${usd(fee * n + n)}`), tag + ': window: client fees + supplier = total ' + flat);
       await page.keyboard.press('Escape'); await page.waitForTimeout(300);
-      // Money by month: Our earnings = the server's client fees per month + $1 for the one paid order (6 Nov 2026).
+      // Money by month: Our earnings = the server's client fees per month + $1 for every order not cancelled (16 Nov 2026).
       const srv = ok(await call('/admin/overview', 'GET', null, admin)).months.reduce((t, x) => t + Number(x.earned || 0), 0);
-      assert.equal(await ui.locator('[data-mc-key="earned"] b').innerText(), usd(srv + 1), tag + ': chart earnings include the supplier part');
+      assert.equal(await ui.locator('[data-mc-key="earned"] b').innerText(), usd(srv + n), tag + ': chart earnings include the supplier share');
     } else {
       assert.match(await notPaid.innerText(), /עוד לא שולם/, tag);
       assert.match(await notPaid.innerText(), /2 הזמנות · לקוח אחד · הישנה ביותר/, tag);
