@@ -187,10 +187,13 @@ export async function alerts(DB, me) {
 async function alertItems(DB, seen) {
   const rows = async (sql, b = []) => ((await DB.prepare(sql).bind(...b).all()).results || []);
   const live = "JOIN users u ON u.id = o.client_id AND u.role = 'client' AND NOT u.archived WHERE NOT o.archived";
-  const order = kind => r => ({ kind, id: Number(r.id), ref: r.order_ref || '', title: r.item_title || '', at: Number(r.at || 0) });
-  const fresh = await rows(`SELECT o.id, o.order_ref, o.item_title, o.created_at AS at FROM client_orders o ${live} AND o.created_at > ? AND o.status IN ('pending','processing','cancellation_requested') AND o.bought_at IS NULL AND COALESCE(o.tracking_number, '') = '' ORDER BY o.created_at DESC LIMIT 8`, [seen]);
-  const cancel = await rows(`SELECT o.id, o.order_ref, o.item_title, o.updated_at AS at FROM client_orders o ${live} AND o.status = 'cancellation_requested' ORDER BY o.updated_at DESC LIMIT 8`);
-  const reqOrders = await rows(`SELECT o.id, o.order_ref, o.item_title, o.updated_at AS at FROM client_orders o ${live} AND o.revision_status = 'open' ORDER BY o.updated_at DESC LIMIT 8`);
+  // Product as the Orders list shows it: the item title and the variant (17 Nov 2026: store orders often have only a
+  // variant, e.g. "Gold, one size"); several lines: the first variant + how many more.
+  const productOf = r => { const its = lines(r); const v = its.length > 1 ? `${norm(its[0].variant) || its[0].quantity + ' pcs'} +${its.length - 1}` : norm(r.variant); return [norm(r.item_title), v].filter(Boolean).join(' · '); };
+  const order = kind => r => ({ kind, id: Number(r.id), ref: r.order_ref || '', title: productOf(r), at: Number(r.at || 0) });
+  const fresh = await rows(`SELECT o.id, o.order_ref, o.item_title, o.variant, o.items, o.created_at AS at FROM client_orders o ${live} AND o.created_at > ? AND o.status IN ('pending','processing','cancellation_requested') AND o.bought_at IS NULL AND COALESCE(o.tracking_number, '') = '' ORDER BY o.created_at DESC LIMIT 8`, [seen]);
+  const cancel = await rows(`SELECT o.id, o.order_ref, o.item_title, o.variant, o.items, o.updated_at AS at FROM client_orders o ${live} AND o.status = 'cancellation_requested' ORDER BY o.updated_at DESC LIMIT 8`);
+  const reqOrders = await rows(`SELECT o.id, o.order_ref, o.item_title, o.variant, o.items, o.updated_at AS at FROM client_orders o ${live} AND o.revision_status = 'open' ORDER BY o.updated_at DESC LIMIT 8`);
   const prod = "FROM portal_products p JOIN users u ON u.id = p.client_id AND u.role = 'client' AND NOT u.archived";
   const quotes = await rows(`SELECT p.id, p.name, p.variant FROM portal_products p JOIN users u ON u.id = p.client_id AND u.role = 'client' AND NOT u.archived WHERE p.status = 'awaiting_quote' AND p.revision_status = '' ORDER BY p.id DESC LIMIT 8`);
   const reqProducts = await rows(`SELECT p.id, p.name, p.variant ${prod} WHERE p.revision_status = 'open' ORDER BY p.id DESC LIMIT 8`);
