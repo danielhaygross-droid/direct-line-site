@@ -41,6 +41,8 @@ const mk = async (ref, title) => ok(await call('/orders', 'POST', { storeId: sto
 ok(await call('/admin/users', 'POST', { username: 'sup-ada', name: 'Ada', password: 'supplierpass1', role: 'supplier' }, admin));
 const sup = (await call('/login', 'POST', { username: 'sup-ada', password: 'supplierpass1' })).cookie;
 const o1 = await mk('CO-1', 'Brass lamp'), o2 = await mk('CO-2', 'Walnut hooks');
+// A store order often has no item title, only a variant: the bell still names the product (17 Nov 2026).
+const o3 = await mk('CO-3', 'Tray'); await DB.prepare("UPDATE client_orders SET item_title = '', variant = 'Gold, one size' WHERE id = ?").bind(o3.id).run();
 ok(await call('/orders/' + o2.id + '/request-cancellation', 'POST', { reason: 'Changed mind' }, client));
 const cookieOf = c => ({ name: c.split('=')[0], value: decodeURIComponent(c.split('=').slice(1).join('=')), url: base, httpOnly: true, sameSite: 'Lax' });
 const session = async (cookie, width) => {
@@ -61,11 +63,11 @@ try {
   for (const [lang, w] of [['en', 1440], ['zh', 390]]) {
     const { ctx, page } = await session(sup, w); watch(page, 'sup-' + lang + w);
     await page.goto(`${base}/supplier/?lang=${lang}#orders`); await page.waitForSelector('.sp-bell');
-    await page.waitForFunction(() => document.querySelector('.sp-bell .sp-badge')?.textContent === '3'); // 2 new orders + 1 cancel request
+    await page.waitForFunction(() => document.querySelector('.sp-bell .sp-badge')?.textContent === '4'); // 3 new orders + 1 cancel request
     await page.locator('.sp-bell summary').click(); await page.waitForSelector('.sp-bell[open] .sp-bitem');
     const lines = await page.locator('.sp-bitem').allInnerTexts();
-    assert.equal(lines.length, 3, 'two new orders and one cancel request: ' + lines.join(' | '));
-    assert.ok(lines.some(l => /CO-1 · Brass lamp/.test(l)) && lines.some(l => /CO-2 · Walnut hooks/.test(l)), 'order numbers and products');
+    assert.equal(lines.length, 4, 'three new orders and one cancel request: ' + lines.join(' | '));
+    assert.ok(lines.some(l => /CO-1 · Brass lamp · Gold/.test(l)) && lines.some(l => /CO-2 · Walnut hooks/.test(l)) && lines.some(l => /CO-3 · Gold, one size$/.test(l)), 'order numbers and products');
     for (const leak of ['Jane Buyer', '555 0100', '1 Sample St']) assert.ok(!lines.join(' ').includes(leak), 'bell holds ' + leak);
     await page.screenshot({ path: path.join(out, `sup-${lang}-${w}-bell.png`) });
     await page.mouse.click(w / 2, 700); assert.equal(await page.locator('.sp-bell[open]').count(), 0, 'click outside closes the bell');
