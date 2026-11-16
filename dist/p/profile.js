@@ -19,7 +19,9 @@
     }
     greet.forEach(([el, text]) => { if (el.isConnected) el.textContent = team ? name.split(/\s+/)[0] : text; });
   }
-  const load = () => fetch('/api/auth/session', { credentials: 'same-origin', cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then(show).catch(() => {});
+  // One retry: the very first request after the site wakes up can fail, and the header then kept saying Daniel.
+  const ask = () => fetch('/api/auth/session', { credentials: 'same-origin', cache: 'no-store' }).then(r => (r.ok ? r.json() : Promise.reject(r.status)));
+  const load = () => ask().catch(() => new Promise(r => setTimeout(r, 1500)).then(ask)).then(show).catch(() => {});
   load();
   // Signing in on this page adds the "authenticated" class to <body> (no reload): read who it is again.
   let was = document.body.classList.contains('authenticated');

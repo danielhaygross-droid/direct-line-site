@@ -77,7 +77,7 @@ assert.equal(ok(await call('/supplier/alerts', 'GET', null, sup)).receiptsSentBa
 const C = await mk('RC-C', 12);
 const pay2 = ok(await call('/admin/payments', 'POST', { clientId: id, amount: 12.37, paidAt: '2026-11-06', orderIds: [C] }, admin)), p2 = pay2.payment?.id ?? pay2.id;
 ok(await call('/admin/invoices', 'POST', { clientId: id, paymentId: p2, date: '2026-11-06', file: { filename: 'r.png', data: 'data:image/png;base64,' + png } }, admin));
-assert.ok(!ok(await call('/supplier/receipts', 'GET', null, sup)).toMake.some(x => x.paymentId === p2), 'already has an uploaded receipt');
+{ const rr = ok(await call('/supplier/receipts', 'GET', null, sup)); assert.ok(!rr.toMake.some(x => x.paymentId === p2), 'already has an uploaded receipt'); assert.ok(rr.earlier >= 1, 'counted as an earlier receipt'); }
 
 // 7. Hebrew names are drawn right to left.
 assert.deepEqual(visualRuns('יהודה וקנין').map(r => r.text), ['וקנין', ' ', 'יהודה'], 'Hebrew words right to left, letters as typed');

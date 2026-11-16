@@ -140,17 +140,19 @@ async function uploadedFor(DB) {
 // deps: { clientsFor, clientBilling, clientSummary, getSettings } from supplier-portal.mjs / portal.mjs (no import loop).
 export async function supplierReceipts(DB, deps) {
   const settings = await deps.getSettings(DB), recs = await receiptsByPayment(DB), uploaded = await uploadedFor(DB), out = [];
+  let earlier = 0;
   for (const u of await deps.clientsFor(DB)) {
     const c = await deps.clientBilling(DB, u, await deps.clientSummary(DB, u.id, settings), { detail: true });
     for (const p of c.payments || []) {
       const r = recs.get(p.id);
-      if (!r && uploaded.has(p.id)) continue;
+      if (!r && uploaded.has(p.id)) { earlier++; continue; }
       out.push({ paymentId: p.id, clientId: c.id, client: c.name, paidAt: p.paidAt, yourPart: p.yourPart, orders: p.orders,
         status: STATUS(r), number: r ? receiptNumber(r) : '', note: r?.note || '', reason: r?.status === 'rejected' ? r.reason : '', submittedBy: r?.submitted_by || '', submittedAt: r ? Number(r.submitted_at) : null, decidedAt: r?.decided_at ? Number(r.decided_at) : null });
     }
   }
   out.sort((a, b) => b.paidAt - a.paidAt || b.paymentId - a.paymentId);
-  return { toMake: out.filter(x => x.status === 'none' || x.status === 'rejected'), waiting: out.filter(x => x.status === 'submitted'), sent: out.filter(x => x.status === 'approved') };
+  // earlier: payments Direct Line already sent its own receipt for (uploaded before receipts were made here).
+  return { toMake: out.filter(x => x.status === 'none' || x.status === 'rejected'), waiting: out.filter(x => x.status === 'submitted'), sent: out.filter(x => x.status === 'approved'), earlier };
 }
 export async function submitReceipt(DB, me, body) {
   const paymentId = Number(body?.paymentId), note = norm(body?.note).slice(0, 500);
