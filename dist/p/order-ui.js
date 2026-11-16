@@ -119,9 +119,11 @@
     };
     try { if (window.frameElement) { window.parent.addEventListener('scroll', () => d.isOpen && fit(), { passive: true }); window.parent.addEventListener('resize', () => d.isOpen && fit()); } } catch (e) { /* not same-origin */ }
     const close = () => d.close();
-    scrim.addEventListener('click', close);
+    // Click outside or Esc: ask first when a form in the panel has typing that isn't saved (dismiss.js, 17 Nov 2026).
+    const softClose = () => { if (window.DLDismiss && !window.DLDismiss.ok(el)) return; close(); };
+    scrim.addEventListener('click', softClose);
     el.querySelector('[data-d-close]').addEventListener('click', close);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && d.isOpen && !document.querySelector('.dln-panel.open')) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && d.isOpen && !document.querySelector('.dln-panel.open')) softClose(); });
     const d = drawer = {
       el, isOpen: false, onClose: null, key: null,
       head: el.querySelector('[data-d-title]'), body: el.querySelector('[data-d-body]'), foot: el.querySelector('[data-d-foot]'),
