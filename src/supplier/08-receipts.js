@@ -20,7 +20,7 @@
     if (r.status === 'approved') return `<article class="card sp-rcard" data-rc="${r.paymentId}">${head}<p class="sp-done">✓ ${t('Sent to the client on')} ${esc(fmtDay(r.decidedAt))}</p></article>`;
     return `<article class="card sp-rcard" data-rc="${r.paymentId}">${head}
       ${r.status === 'rejected' ? `<div class="sp-back"><b>${t('Sent back by Direct Line')}:</b> ${esc(r.reason)}<br><span>${t('Fix it and send it again.')}</span></div>` : ''}
-      <form class="sp-rcform" data-receipt="${r.paymentId}" novalidate><label class="sp-f"><span>${t('Note on the receipt')} <small>${t('optional, e.g. bank reference')}</small></span><input name="note" maxlength="500" value="${esc(r.note || '')}"></label>
+      <form class="sp-rcform" data-receipt="${r.paymentId}" novalidate><label class="field"><span>${t('Note on the receipt')} <small>${t('optional, e.g. bank reference')}</small></span><input name="note" maxlength="500" value="${esc(r.note || '')}"></label>
         ${formErr('rc' + r.paymentId)}<div><button type="submit" class="btn btn-primary">${ICON.receipt} ${t(r.status === 'rejected' ? 'Send again' : 'Send to Direct Line')}</button></div></form></article>`;
   }
   function receiptsHTML() {
