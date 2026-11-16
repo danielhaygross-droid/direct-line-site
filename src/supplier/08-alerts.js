@@ -10,6 +10,7 @@
     'Get a notification on this computer or phone when a new order, cancel request, quote or price request comes in (while the portal is open).': '有新订单、取消申请、询价或降价请求时，在此电脑或手机上收到通知（门户打开时）。',
     'Turn on': '开启', 'Not now': '以后再说',
     'quote to answer': '个询价待回复', 'quotes to answer': '个询价待回复',
+    'New order': '新订单', 'Cancel request': '取消申请', 'Quote': '询价', 'Price request': '降价请求', 'Receipt sent back': '收据被退回', 'Nothing new.': '没有新内容。',
     'price request': '个降价请求', 'price requests': '个降价请求', 'receipt sent back': '张收据被退回', 'receipts sent back': '张收据被退回',
   });
   let soundOn = false;
@@ -59,10 +60,19 @@
     for (const [k, one, many, page] of KINDS) { const d = Number(now[k] || 0) - Number(before[k] || 0); if (d > 0) { parts.push(`${d} ${t(d === 1 ? one : many)}`); pages.push(page); } }
     return { text: parts.join(' · '), page: pages[0] || 'orders' };
   }
+  // The bell lists what waits (17 Nov 2026): each new order, cancel request, quote, price request and receipt sent back; a
+  // click opens it. The badge counts all of them.
+  const KIND_LABEL = { order: 'New order', cancel: 'Cancel request', quote: 'Quote', request: 'Price request', receipt: 'Receipt sent back' };
+  const bellCount = A => ['newOrders', 'cancelRequests', 'quotes', 'requests', 'receiptsSentBack'].reduce((n, k) => n + Number(A?.[k] || 0), 0);
+  function bellItem(x) {
+    const line = [x.ref, x.title].filter(Boolean).join(' · ') || '—';
+    return `<button type="button" class="sp-bitem k-${esc(x.kind)}" data-bell-go="${esc(x.kind)}:${x.id}"><small>${t(KIND_LABEL[x.kind] || '')}</small><span dir="auto">${esc(line)}</span></button>`;
+  }
   function bellHTML() {
-    const n = S.alerts?.newOrders || 0;
-    return `<details class="sp-bell"><summary class="icon-btn" aria-label="${esc(newCountText(n))}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>${n ? `<b class="sp-badge">${n}</b>` : ''}</summary>
-      <div class="sp-menu"><p class="sp-menu-h">${n ? esc(newCountText(n)) : t('No new orders.')}</p>${n ? `<button type="button" data-see-new>${t('See new orders')}</button>` : ''}
+    const n = bellCount(S.alerts), newN = S.alerts?.newOrders || 0, items = S.alerts?.items || [];
+    return `<details class="sp-bell"><summary class="icon-btn" aria-label="${esc(n ? `${n} · ${t('Notifications on this device')}` : t('Nothing new.'))}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>${n ? `<b class="sp-badge">${n}</b>` : ''}</summary>
+      <div class="sp-menu sp-bellmenu"><p class="sp-menu-h">${newN ? esc(newCountText(newN)) : t(items.length ? 'No new orders.' : 'Nothing new.')}</p>
+        ${items.length ? `<div class="sp-blist">${items.map(bellItem).join('')}</div>` : ''}${newN ? `<button type="button" data-see-new>${t('See new orders')}</button>` : ''}
         <label class="sp-check"><input type="checkbox" data-notify${notifyOn() ? ' checked' : ''}> <span>${t('Notifications on this device')}</span></label>
         <label class="sp-check"><input type="checkbox" data-sound${soundOn ? ' checked' : ''}> <span>${t('Sound for new orders')}</span></label></div></details>`;
   }
@@ -89,6 +99,14 @@
         if (a.newOrders > (before.newOrders || 0) && S.page === 'orders' && !document.activeElement?.dataset?.f) { const d = await api('/supplier/orders'); S.queue = d; render(); }
       }
     } catch (e) { /* try again next minute */ }
+  }
+  // A click on a line in the bell: open that order, or the page for quotes, price requests or receipts.
+  function bellGo(v) {
+    const [kind, idText] = v.split(':'), id = Number(idText), page = { quote: 'quotes', receipt: 'receipts' }[kind] || (kind === 'request' ? 'requests' : 'orders');
+    $('.sp-bell')?.removeAttribute('open');
+    const isOrder = kind === 'order' || kind === 'cancel';
+    if (isOrder) { S.openAfter = id; if (location.hash !== '#orders') { location.hash = 'orders'; return; } if (S.queue?.orders.some(o => o.id === id)) { S.openAfter = null; openDrawer(id); } else load(); return; }
+    if (location.hash !== '#' + page) location.hash = page;
   }
   async function seeNew() {
     S.page = 'orders'; S.tab = 'new'; S.onlyCancelReq = false;

@@ -180,7 +180,24 @@ export async function alerts(DB, me) {
   const q = (where, b = []) => DB.prepare(`SELECT COUNT(*) AS n FROM client_orders o JOIN users u ON u.id = o.client_id AND u.role = 'client' AND NOT u.archived WHERE NOT o.archived ${where}`).bind(...b).first();
   const fresh = Number((await q("AND o.created_at > ? AND o.status IN ('pending','processing','cancellation_requested') AND o.bought_at IS NULL AND COALESCE(o.tracking_number, '') = ''", [seen]))?.n || 0);
   const cancelReq = Number((await q("AND o.status = 'cancellation_requested'"))?.n || 0);
-  return { newOrders: fresh, cancelRequests: cancelReq, seenAt: seen };
+  return { newOrders: fresh, cancelRequests: cancelReq, seenAt: seen, items: await alertItems(DB, seen) };
+}
+// What the bell lists (17 Nov 2026, Erwin: the bell only showed a count): newest first, at most 8 of each kind.
+// Only order numbers and product names: never prices, our fee or the buyer's details.
+async function alertItems(DB, seen) {
+  const rows = async (sql, b = []) => ((await DB.prepare(sql).bind(...b).all()).results || []);
+  const live = "JOIN users u ON u.id = o.client_id AND u.role = 'client' AND NOT u.archived WHERE NOT o.archived";
+  const order = kind => r => ({ kind, id: Number(r.id), ref: r.order_ref || '', title: r.item_title || '', at: Number(r.at || 0) });
+  const fresh = await rows(`SELECT o.id, o.order_ref, o.item_title, o.created_at AS at FROM client_orders o ${live} AND o.created_at > ? AND o.status IN ('pending','processing','cancellation_requested') AND o.bought_at IS NULL AND COALESCE(o.tracking_number, '') = '' ORDER BY o.created_at DESC LIMIT 8`, [seen]);
+  const cancel = await rows(`SELECT o.id, o.order_ref, o.item_title, o.updated_at AS at FROM client_orders o ${live} AND o.status = 'cancellation_requested' ORDER BY o.updated_at DESC LIMIT 8`);
+  const reqOrders = await rows(`SELECT o.id, o.order_ref, o.item_title, o.updated_at AS at FROM client_orders o ${live} AND o.revision_status = 'open' ORDER BY o.updated_at DESC LIMIT 8`);
+  const prod = "FROM portal_products p JOIN users u ON u.id = p.client_id AND u.role = 'client' AND NOT u.archived";
+  const quotes = await rows(`SELECT p.id, p.name, p.variant FROM portal_products p JOIN users u ON u.id = p.client_id AND u.role = 'client' AND NOT u.archived WHERE p.status = 'awaiting_quote' AND p.revision_status = '' ORDER BY p.id DESC LIMIT 8`);
+  const reqProducts = await rows(`SELECT p.id, p.name, p.variant ${prod} WHERE p.revision_status = 'open' ORDER BY p.id DESC LIMIT 8`);
+  const back = await rows("SELECT r.id, r.submitted_at, r.reason FROM supplier_receipts r WHERE r.status = 'rejected' AND NOT r.archived ORDER BY r.decided_at DESC LIMIT 8").catch(() => []);
+  const product = kind => r => ({ kind, id: Number(r.id), ref: '', title: [r.name, r.variant].filter(Boolean).join(' · '), at: 0 });
+  return [...fresh.map(order('order')), ...cancel.map(order('cancel')), ...quotes.map(product('quote')), ...reqOrders.map(order('request')), ...reqProducts.map(product('request')),
+    ...back.map(r => ({ kind: 'receipt', id: Number(r.id), ref: 'R-' + new Date(Number(r.submitted_at) * 1000).getUTCFullYear() + '-' + String(r.id).padStart(4, '0'), title: r.reason || '', at: 0 }))];
 }
 
 // All photos of one order in a zip (files stored, not compressed).
