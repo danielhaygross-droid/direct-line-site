@@ -19,6 +19,7 @@
     S.keepScroll = false;
     bindPassword();
     if (drawer && S.page === 'orders') openDrawer(drawer);
+    else if (S.openAfter && S.page === 'orders' && S.queue?.orders.some(o => o.id === S.openAfter)) { const id = S.openAfter; S.openAfter = null; openDrawer(id); }
   }
   async function load() {
     S.error = null;
@@ -39,6 +40,7 @@
     if (e.target.closest('[data-logout]')) { await fetch('/api/auth/logout', { method: 'POST', headers: { 'x-dl-portal': S.view ? 'admin' : 'supplier' } }).catch(() => {}); location.href = S.view ? '/' : '/supplier/'; return; }
     if (e.target.closest('[data-retry]')) { load(); return; }
     if (e.target.closest('[data-see-new]')) { seeNew(); return; }
+    const bg = e.target.closest('[data-bell-go]'); if (bg) { bellGo(bg.dataset.bellGo); return; }
     if (e.target.closest('[data-notify-on]')) { setNotify(true).then(() => { $('.sp-notify')?.remove(); const b = $('.sp-bell'); if (b && !b.open) b.outerHTML = bellHTML(); }); return; }
     if (e.target.closest('[data-notify-later]')) { try { localStorage.setItem('dl_supplier_notify_ask', 'no'); } catch (x) { /* private mode */ } $('.sp-notify')?.remove(); return; }
     const p = e.target.closest('[data-pay]'); if (p) { const id = Number(p.dataset.pay); S.open.has(id) ? S.open.delete(id) : S.open.add(id); S.keepScroll = true; render(); return; }
