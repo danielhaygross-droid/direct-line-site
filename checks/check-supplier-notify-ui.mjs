@@ -53,8 +53,10 @@ const spy = () => {
   window.__notes = [];
   const rec = (title, o) => window.__notes.push({ title, body: o?.body || '', hash: o?.data?.hash || '' });
   if (window.ServiceWorkerRegistration) ServiceWorkerRegistration.prototype.showNotification = function (title, o) { rec(title, o); return Promise.resolve(); };
-  const N = window.Notification; window.Notification = function (title, o) { rec(title, o); return { close() {} }; };
-  Object.defineProperty(window.Notification, 'permission', { get: () => N.permission }); window.Notification.requestPermission = (...a) => N.requestPermission(...a);
+  // Permission is played here too: some headless browsers (GitHub's) answer "denied" whatever the context grants.
+  window.Notification = function (title, o) { rec(title, o); return { close() {} }; };
+  Object.defineProperty(window.Notification, 'permission', { get: () => localStorage.getItem('__perm') || 'default' });
+  window.Notification.requestPermission = async () => { localStorage.setItem('__perm', 'granted'); return 'granted'; };
   const hf = Document.prototype.hasFocus; Document.prototype.hasFocus = function () { return window.__away ? false : hf.call(this); };
 };
 const session = async (width, lang) => {
