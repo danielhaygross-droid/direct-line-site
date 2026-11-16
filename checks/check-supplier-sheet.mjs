@@ -826,6 +826,18 @@ for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 36, t
   assert.equal(Number((await order(RN.id)).supplier_cost), 12.5, 'and its supplier cells are read again');
   assert.equal((await order(RN.id)).sheet_ref, 'BULK-3000');
   console.log('PASS an order renamed on the website to the number typed in the sheet is in line again');
+  // Live case: the supplier filled in tracking while the row was out of line, then the order was renamed. The next minute
+  // must read it, without waiting for the 3-hour check (the sheet itself did not change after the rename).
+  const RL = await mk('N/A-2'); await settle();
+  supplierTypes(RL.id, 1, 'BULK-LIVE'); supplierTypes(RL.id, N, 21); supplierTypes(RL.id, O, 'UL555LIVE');
+  // Earlier blocks leave rows waiting for the sheet (they force full checks too); clear them so only the out-of-line row counts.
+  await DB.prepare("UPDATE client_orders SET sheet_sync_status='synced'").run();
+  later(); const s1 = await cron(); assert.ok(s1.outOfLine > 0, 'out of line');
+  const s2 = await cron(); assert.ok(!s2.unchanged, 'while a row is out of line every minute is a full check ' + JSON.stringify(s2).slice(0, 200));
+  assert.equal((await call('/orders/' + RL.id, 'PUT', { orderRef: 'BULK-LIVE' }, admin)).status, 200); await settle();
+  const s3 = await cron(); assert.ok(!s3.unchanged, 'no 3-hour wait');
+  const ol = await order(RL.id); assert.deepEqual([Number(ol.supplier_cost), ol.tracking_number], [21, 'UL555LIVE'], 'cost and tracking read the next minute');
+  console.log('PASS a row filled in while out of line is read the minute after the order is renamed');
 }
 const supplierPart = () => Object.fromEntries(TABS().flatMap(t => Object.entries(idsIn(t)).map(([id, r]) => [id, JSON.stringify(sheets.get(t).grid[r].slice(15, 22))])));
 const costs = async () => JSON.stringify((await DB.prepare('SELECT id, supplier_cost, tracking_number FROM client_orders ORDER BY id').all()).results);
