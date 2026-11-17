@@ -43,6 +43,12 @@ const n1 = ok(await call('/notifications', 'GET', null, client)), s1 = n1.items.
 assert.equal(s1.length, 1); assert.ok(s1[0].createdAt > n1.seenAt, 'shows as new'); assert.match(s1[0].detail, /^trial\|2026-11-13\|\d+/);
 const s2 = ok(await call('/notifications', 'GET', null, client)).items.filter(x => x.kind === 'subscription');
 assert.equal(s2[0].createdAt, s1[0].createdAt, 'same item, not new again on every look');
+// Your profit on Home (17 Nov 2026): it covers only orders with Etsy earnings, so it says which: "From 1 of 2 orders".
+const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6kQQAAAAASUVORK5CYII=';
+const store = ok(await call('/client-stores', 'GET', null, client)).stores[0];
+const mkO = async ref => ok(await call('/orders', 'POST', { storeId: store.id, orderRef: ref, buyerName: 'Sample', address1: '1 Sample St', destination: 'US', etsyUrl: 'https://example.com/i', photos: [{ filename: 'p.png', data: 'data:image/png;base64,' + png }] }, client)).order;
+const p1 = await mkO('PR-1'); await mkO('PR-2');
+await DB.prepare('UPDATE client_orders SET etsy_earned = 30, price = 20 WHERE id = ?').bind(p1.id).run();
 const errors = [];
 try {
   for (const [lang, w] of [['en', 1440], ['he', 390], ['en', 390], ['he', 1440]]) {
@@ -54,7 +60,8 @@ try {
     assert.match(banner, lang === 'he' ? /החודש החינמי/ : /Your free month ended on 13 Nov 2026/);
     assert.equal(await page.locator('.sub-banner.due a[href="#/messages"]').count(), 1, 'Message us link');
     assert.ok(await page.evaluate(() => { const b = document.querySelector('.sub-banner.due'), h = document.querySelector('[data-home-hello]'); return !!(h && h.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) && b.getBoundingClientRect().top < innerHeight; }), 'at the top of Home, seen without scrolling');
-    await page.screenshot({ path: path.join(out, `${lang}-${w}-home.png`) });
+    assert.match(await page.locator('[data-profit-of]').innerText(), lang === 'he' ? /לפי 1 מתוך 2 הזמנות/ : /^From 1 of 2 orders$/, 'profit says which orders');
+    await page.screenshot({ path: path.join(out, `${lang}-${w}-home.png`), fullPage: true });
     await page.locator('[data-bell]').click(); await page.waitForTimeout(400);
     const panel = await page.locator('.dln-panel').innerText();
     assert.match(panel, lang === 'he' ? /החודש החינמי שלך הסתיים/ : /Your free month ended/, 'in the bell');

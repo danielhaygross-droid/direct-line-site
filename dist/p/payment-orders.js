@@ -86,7 +86,7 @@
     const list = (payment.orderIds || []).map(id => orders.find(o => o.id === id)).filter(Boolean);
     if (!list.length) return admin ? '<span class="po-tag warn">Not linked to orders</span>' : '<span class="dim">—</span>';
     const sum = list.reduce((n, o) => n + dueCents(o, adjustments), 0), amount = cents(payment.amount);
-    const gap = !admin ? '' : amount === sum ? '<span class="po-tag ok">Matches</span>' : amount > sum ? `<span class="po-tag warn">${fmt(amount - sum)} more than its orders</span>` : `<span class="po-tag warn">${fmt(sum - amount)} less than its orders</span>`;
+    const gap = !admin ? '' : amount === sum ? '<span class="po-tag ok">Matches</span>' : amount > sum ? `<span class="po-tag warn">${fmt(amount - sum)} went to the client’s credit</span>` : `<span class="po-tag warn">${fmt(sum - amount)} paid from the client’s credit</span>`; // 17 Nov 2026: say what happened (was "more / less than its orders")
     return `<details class="po-linked"><summary><span>For ${list.length} ${orderWord(list.length)} · ${fmt(sum)}</span> ${gap}</summary><div class="po-names">${list.map(o => `<span class="po-name"${o.id ? ` data-open-order="${o.id}"` : ''} data-no-i18n>${esc(orderName(o))}</span>`).join('')}</div></details>`;
   }
 

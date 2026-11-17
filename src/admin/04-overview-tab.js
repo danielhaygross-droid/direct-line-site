@@ -34,9 +34,10 @@
     // only), the same rule as the Our earnings card (kpiFacts); per month by order date.
     const M = window.DLClientStoreMath, PO = window.DLPayOrders, rateC = Math.round(Number(S.ov.settings?.supplier_bonus_per_order ?? 1) * 100), sup = {};
     for (const o of S.orders) if (!o.archived && o.status !== 'cancelled') { const k = M.dateKey(o).slice(0, 7); sup[k] = (sup[k] || 0) + rateC; }
-    const months = (S.ov.months || []).map(m => ({ ...m, earned: Math.round(Number(m.earned || 0) * 100 + (sup[m.month] || 0)) / 100 }));
+    // Billed includes cancellation fees (17 Nov 2026, Erwin: same as Billed in the Clients table).
+    const months = (S.ov.months || []).map(m => ({ ...m, billed: Math.round(Number(m.billed || 0) * 100 + Number(m.fees || 0) * 100) / 100, earned: Math.round(Number(m.earned || 0) * 100 + (sup[m.month] || 0)) / 100 }));
     window.DLMoneyChart.mount($('[data-money-chart]'), { title: 'Money by month, all clients', key: 'dl-admin-money', months, money, series: [
-      { key: 'billed', label: 'Billed', tone: 'var(--mc-gold)', note: 'What clients were billed for their orders (cancelled orders not counted)' },
+      { key: 'billed', label: 'Billed', tone: 'var(--mc-gold)', note: 'What clients were billed: their orders (cancelled orders not counted) plus cancellation fees' },
       { key: 'paid', label: 'Paid', tone: 'var(--mc-teal)', note: 'Payments received from clients' },
       { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Client fees on those orders, plus the supplier share on every order that isn’t cancelled' }] });
   }
