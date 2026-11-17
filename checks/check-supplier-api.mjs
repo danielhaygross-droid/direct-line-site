@@ -69,6 +69,20 @@ assert.equal((await call('/admin/supplier-share', 'POST', { amount: 1, paidAt: '
 ok(await call('/admin/supplier-share', 'POST', { amount: 1, paidAt: '2026-11-10', note: 'WeChat' }, admin));
 const share = ok(await call('/supplier/billing', 'GET', null, sup)).share;
 assert.deepEqual([share.counted, share.amount, share.paid, share.stillToPay], [3, 3, 1, 2]);
+// Per client (17 Nov 2026): payments count for the oldest orders first, across clients. A second, newer client with 2 orders:
+const c2id = ok(await call('/admin/users', 'POST', { username: 'client-two', name: 'Second Client', password: 'clientpass12', role: 'client' }, admin)).id;
+const c2 = (await call('/login', 'POST', { username: 'client-two', password: 'clientpass12' })).cookie; { const tm = await call('/terms', 'GET', null, c2); ok(await call('/terms/accept', 'POST', { version: tm.data.policy.version, accepted: true }, c2)); }
+const st2 = ok(await call('/client-stores', 'GET', null, c2)).stores[0];
+for (const ref of ['TWO-1', 'TWO-2']) ok(await call('/orders', 'POST', { storeId: st2.id, orderRef: ref, buyerName: 'Sample', address1: '1 Sample St', destination: 'US', etsyUrl: 'https://example.com/i', photos: [{ filename: 'p.png', data: 'data:image/png;base64,' + png }] }, c2));
+await DB.prepare('UPDATE client_orders SET created_at = created_at + 100 WHERE client_id = ?').bind(c2id).run();
+const perClient = async () => { const b = ok(await call('/supplier/billing', 'GET', null, sup)); return Object.fromEntries(b.clients.map(c => [c.id, [c.share.amount, c.share.paid, c.share.stillToPay]])); };
+assert.deepEqual((await perClient())[id], [3, 1, 2], 'first client: $1 paid of $3');
+assert.deepEqual((await perClient())[c2id], [2, 0, 2], 'newer client: nothing paid yet');
+ok(await call('/admin/supplier-share', 'POST', { amount: 2.5, paidAt: '2026-11-11' }, admin)); // $3.50 in all
+let pc = await perClient(); assert.deepEqual(pc[id], [3, 3, 0], 'oldest orders paid first'); assert.deepEqual(pc[c2id], [2, 0.5, 1.5], 'the rest goes to the next client');
+ok(await call('/admin/supplier-share', 'POST', { amount: 3, paidAt: '2026-11-12' }, admin)); // $6.50 for $5 of orders
+pc = await perClient(); assert.deepEqual(pc[c2id], [2, 2, 0]); const sh2 = ok(await call('/supplier/billing', 'GET', null, sup)).share;
+assert.equal(sh2.stillToPay, -1.5, 'paid ahead stays on the total'); assert.equal(Object.values(pc).reduce((n, v) => n + v[1], 0) + 1.5, sh2.paid, 'per-client paid + paid ahead = paid');
 
 // Nothing about our fee, client prices or full payment amounts in any supplier answer.
 const forbiddenKeys = /^(commission|price|sellingPrice|paidPrice|profit|ourFee|ourShare|fee|fees|keptFees|kept|supplierShare|amountReceived|clientProfit|etsy.*|buyer.*|email|phone)$/i;
