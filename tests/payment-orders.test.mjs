@@ -48,7 +48,7 @@ test('checklist: running total and the comparison with the amount; linked: which
   assert.match(P.checklist({ orders: [], orderName: String, dateOf: String, esc, empty: 'Nothing to pay.' }), /Nothing to pay\./);
   const linked = (payment, admin) => P.linked({ payment, orders, orderName: o => o.orderRef, esc, admin });
   assert.match(linked({ amount: 45, orderIds: [1, 2] }, true), /For 2 orders · \$45\.00[\s\S]*Matches[\s\S]*A-1[\s\S]*B-2/);
-  assert.match(linked({ amount: 50, orderIds: [1] }, true), /For 1 order · \$20\.00[\s\S]*\$30\.00 more than its orders/);
+  assert.match(linked({ amount: 50, orderIds: [1] }, true), /For 1 order · \$20\.00[\s\S]*\$30\.00 went to the client’s credit/);
   assert.doesNotMatch(linked({ amount: 50, orderIds: [1] }, false), /more than|Matches/, 'clients see the orders, not the gap');
   assert.match(linked({ amount: 50, orderIds: [] }, true), /Not linked to orders/);
 });

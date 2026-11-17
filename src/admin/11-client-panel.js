@@ -280,7 +280,7 @@
         <div><span>Orders</span><b>${c.orders}</b></div>
         <div><span>${c.outstanding < 0 ? 'Credit' : 'To pay'}</span><b class="${c.outstanding > 0 ? 'neg' : c.outstanding < 0 ? 'pos' : ''}">${money(Math.abs(c.outstanding))}</b><small><span>Billed</span> ${money(c.billed)}</small>${c.supplier ? `<small><span>Without our fee</span> ${money(Math.abs(c.supplier.balance))}</small>` : ''}</div>
         <div><span>Paid</span><b class="pos">${money(c.paid)}</b></div>
-        <div><span>Our earnings</span><b>${money(c.ourShare)}</b><small><span>Client’s profit</span> ${money(c.clientProfit)}</small></div></div>
+        <div><span>Our earnings</span>${(e => `<b data-earn-panel>${money(e.total)}</b>${earningsSplit(e)}`)(clientEarnings(c))}<small><span>Client’s profit</span> ${money(c.clientProfit)}</small></div></div>
       <div class="gtabs" role="tablist">${CLIENT_GROUPS.map(([g, label, secs]) => `<button type="button" role="tab" aria-selected="${group === g}" class="${group === g ? 'on' : ''}" data-ctab="${S.drawer.last?.[g] || secs[0]}">${label}${g === 'orders' ? ` <small>${orders.length}</small>` : ''}${g === 'shop' && waiting ? '<i class="tab-dot" title="Waiting for a price"></i>' : ''}</button>`).join('')}</div>
       ${subs.length > 1 ? `<div class="subtabs">${subs.map(k => `<button type="button" class="${tab === k ? 'on' : ''}" data-ctab="${k}">${subLabel[k]}${k === 'products' && waiting ? '<i class="tab-dot" title="Waiting for a price"></i>' : ''}</button>`).join('')}</div>` : ''}
       ${pane}`;

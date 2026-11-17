@@ -154,6 +154,15 @@
   const LATE_DAYS = 14, unpaidDays = o => Math.floor((Date.now() - Date.parse(window.DLClientStoreMath.dateKey(o) + 'T12:00:00Z')) / 864e5);
   const lateClientIds = () => new Set(S.orders.filter(o => !o.archived && window.DLPayOrders.owes(o) && !(unpaidDays(o) <= LATE_DAYS)).map(o => o.clientId));
 
+  // "Our earnings" for one client, the same rule as the Overview card (17 Nov 2026, Erwin: one meaning everywhere): our
+  // fees (on its orders + kept on cancels: c.ourShare from the server) + the supplier share for every order of the client
+  // that isn't cancelled. Used by the Clients table and the client panel; all clients together = the Overview's All time.
+  function clientEarnings(c) {
+    const cents = n => Math.round(Number(n || 0) * 100), rate = cents(S.ov.settings?.supplier_bonus_per_order ?? 1);
+    const n = S.orders.filter(o => !o.archived && o.clientId === c.id && o.status !== 'cancelled').length, feesC = cents(c.ourShare), shareC = n * rate;
+    return { fees: feesC / 100, share: shareC / 100, total: (feesC + shareC) / 100, orders: n };
+  }
+  const earningsSplit = e => `<small class="earn-split"><span>${money(e.fees)} client fees</span> · <span>${money(e.share)} supplier share</span></small>`;
   // Every number the four cards show, worked out once for the cards and for their windows.
   function kpiFacts() {
     const cl = S.ov.clients, M = window.DLClientStoreMath, UIS = window.DLClientStoreUI, PO = window.DLPayOrders;
@@ -612,9 +621,10 @@
     // only), the same rule as the Our earnings card (kpiFacts); per month by order date.
     const M = window.DLClientStoreMath, PO = window.DLPayOrders, rateC = Math.round(Number(S.ov.settings?.supplier_bonus_per_order ?? 1) * 100), sup = {};
     for (const o of S.orders) if (!o.archived && o.status !== 'cancelled') { const k = M.dateKey(o).slice(0, 7); sup[k] = (sup[k] || 0) + rateC; }
-    const months = (S.ov.months || []).map(m => ({ ...m, earned: Math.round(Number(m.earned || 0) * 100 + (sup[m.month] || 0)) / 100 }));
+    // Billed includes cancellation fees (17 Nov 2026, Erwin: same as Billed in the Clients table).
+    const months = (S.ov.months || []).map(m => ({ ...m, billed: Math.round(Number(m.billed || 0) * 100 + Number(m.fees || 0) * 100) / 100, earned: Math.round(Number(m.earned || 0) * 100 + (sup[m.month] || 0)) / 100 }));
     window.DLMoneyChart.mount($('[data-money-chart]'), { title: 'Money by month, all clients', key: 'dl-admin-money', months, money, series: [
-      { key: 'billed', label: 'Billed', tone: 'var(--mc-gold)', note: 'What clients were billed for their orders (cancelled orders not counted)' },
+      { key: 'billed', label: 'Billed', tone: 'var(--mc-gold)', note: 'What clients were billed: their orders (cancelled orders not counted) plus cancellation fees' },
       { key: 'paid', label: 'Paid', tone: 'var(--mc-teal)', note: 'Payments received from clients' },
       { key: 'earned', label: 'Our earnings', tone: 'var(--mc-blue)', note: 'Client fees on those orders, plus the supplier share on every order that isn’t cancelled' }] });
   }
@@ -765,7 +775,7 @@
       ${list.map(c => `<tr class="click" data-open-client="${c.id}" tabindex="0">
         <td class="wide"><div class="who"><span class="ava">${esc(initials(c.name))}</span><div><b>${esc(c.name)}</b><small>@${esc(c.username)}</small>${c.pendingTransfers ? `<small>${c.pendingTransfers} transfer confirmation${c.pendingTransfers === 1 ? '' : 's'} waiting</small>` : ''}</div></div></td>
         <td data-label="Orders" class="num">${c.orders}</td><td data-label="Billed" class="num">${money(c.billed)}</td><td data-label="Without our fee" class="num dim hide-sm">${money((c.billed || 0) - (c.ourShare || 0))}</td><td data-label="Paid" class="num">${money(c.paid)}</td>
-        <td data-label="Balance" class="num ${c.outstanding > 0 && lateIds.has(c.id) ? 'neg' : c.outstanding < 0 ? 'pos' : ''}"><small class="bal-word">${c.outstanding > 0 ? 'To pay' : c.outstanding < 0 ? 'Credit' : ''}</small> <b><bdi>${money(Math.abs(c.outstanding))}</bdi></b></td><td data-label="Our earnings" class="num pos">${money(c.ourShare)}</td>
+        <td data-label="Balance" class="num ${c.outstanding > 0 && lateIds.has(c.id) ? 'neg' : c.outstanding < 0 ? 'pos' : ''}"><small class="bal-word">${c.outstanding > 0 ? 'To pay' : c.outstanding < 0 ? 'Credit' : ''}</small> <b><bdi>${money(Math.abs(c.outstanding))}</bdi></b></td><td data-label="Our earnings" class="num pos" data-earn="${c.id}">${(e => `<b>${money(e.total)}</b>${earningsSplit(e)}`)(clientEarnings(c))}</td>
         <td data-label="Fee / order" class="num hide-sm">${money(c.commissionPerOrder ?? def)}${c.commissionPerOrder == null ? ' <span class="dim" style="font-size:12px">default</span>' : ''}</td>
         <td data-label="Subscription" class="sub-cell">${subPill(c.subscription)}</td>
         <td data-label="Status"${c.active ? ' class="hide-sm"' : ''}>${c.active ? '<span class="st st-delivered">Active</span>' : '<span class="st st-cancelled">Disabled</span>'}</td></tr>`).join('')}
@@ -1511,7 +1521,7 @@
         <div><span>Orders</span><b>${c.orders}</b></div>
         <div><span>${c.outstanding < 0 ? 'Credit' : 'To pay'}</span><b class="${c.outstanding > 0 ? 'neg' : c.outstanding < 0 ? 'pos' : ''}">${money(Math.abs(c.outstanding))}</b><small><span>Billed</span> ${money(c.billed)}</small>${c.supplier ? `<small><span>Without our fee</span> ${money(Math.abs(c.supplier.balance))}</small>` : ''}</div>
         <div><span>Paid</span><b class="pos">${money(c.paid)}</b></div>
-        <div><span>Our earnings</span><b>${money(c.ourShare)}</b><small><span>Client’s profit</span> ${money(c.clientProfit)}</small></div></div>
+        <div><span>Our earnings</span>${(e => `<b data-earn-panel>${money(e.total)}</b>${earningsSplit(e)}`)(clientEarnings(c))}<small><span>Client’s profit</span> ${money(c.clientProfit)}</small></div></div>
       <div class="gtabs" role="tablist">${CLIENT_GROUPS.map(([g, label, secs]) => `<button type="button" role="tab" aria-selected="${group === g}" class="${group === g ? 'on' : ''}" data-ctab="${S.drawer.last?.[g] || secs[0]}">${label}${g === 'orders' ? ` <small>${orders.length}</small>` : ''}${g === 'shop' && waiting ? '<i class="tab-dot" title="Waiting for a price"></i>' : ''}</button>`).join('')}</div>
       ${subs.length > 1 ? `<div class="subtabs">${subs.map(k => `<button type="button" class="${tab === k ? 'on' : ''}" data-ctab="${k}">${subLabel[k]}${k === 'products' && waiting ? '<i class="tab-dot" title="Waiting for a price"></i>' : ''}</button>`).join('')}</div>` : ''}
       ${pane}`;

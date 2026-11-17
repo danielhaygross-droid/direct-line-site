@@ -8,6 +8,15 @@
   const LATE_DAYS = 14, unpaidDays = o => Math.floor((Date.now() - Date.parse(window.DLClientStoreMath.dateKey(o) + 'T12:00:00Z')) / 864e5);
   const lateClientIds = () => new Set(S.orders.filter(o => !o.archived && window.DLPayOrders.owes(o) && !(unpaidDays(o) <= LATE_DAYS)).map(o => o.clientId));
 
+  // "Our earnings" for one client, the same rule as the Overview card (17 Nov 2026, Erwin: one meaning everywhere): our
+  // fees (on its orders + kept on cancels: c.ourShare from the server) + the supplier share for every order of the client
+  // that isn't cancelled. Used by the Clients table and the client panel; all clients together = the Overview's All time.
+  function clientEarnings(c) {
+    const cents = n => Math.round(Number(n || 0) * 100), rate = cents(S.ov.settings?.supplier_bonus_per_order ?? 1);
+    const n = S.orders.filter(o => !o.archived && o.clientId === c.id && o.status !== 'cancelled').length, feesC = cents(c.ourShare), shareC = n * rate;
+    return { fees: feesC / 100, share: shareC / 100, total: (feesC + shareC) / 100, orders: n };
+  }
+  const earningsSplit = e => `<small class="earn-split"><span>${money(e.fees)} client fees</span> · <span>${money(e.share)} supplier share</span></small>`;
   // Every number the four cards show, worked out once for the cards and for their windows.
   function kpiFacts() {
     const cl = S.ov.clients, M = window.DLClientStoreMath, UIS = window.DLClientStoreUI, PO = window.DLPayOrders;

@@ -79,6 +79,15 @@ ok(await call('/admin/supplier-share', 'POST', { amount: 3, paidAt: '2026-11-06'
   assert.equal(Math.round((fees + share) * 100), Math.round(total * 100), 'fees + share = total: ' + card);
   assert.equal(paid, 3); assert.equal(Math.round((total - paid) * 100), Math.round(left * 100), 'total − paid = still to receive: ' + card);
   await ui.locator('[data-kpi-card=earnings]').click(); await ui.waitForSelector('.kw-row, [data-kw]'); await page.waitForTimeout(300); await page.screenshot({ path: path.join(out, 'en-1440-earnings-window.png') });
+  // Clients table (17 Nov 2026, Erwin: one meaning everywhere): each client's Our earnings = its fees + its share, and all
+  // clients together = the Overview card's total; the client panel shows the same number.
+  await page.keyboard.press('Escape'); await ui.locator('[data-tab=clients]').click(); await ui.waitForSelector('[data-earn]');
+  const cells = await ui.locator('[data-earn]').allInnerTexts(), num = t => Number(t.replace(/[$,]/g, ''));
+  let sum = 0; for (const c of cells) { const [tot, f, sh] = [/^\s*\$([\d,.]+)/, /\$([\d,.]+) client fees/, /\$([\d,.]+) supplier share/].map(r => num(r.exec(c)?.[1] || 'NaN')); assert.equal(Math.round((f + sh) * 100), Math.round(tot * 100), 'client: fees + share = earnings: ' + c); sum += tot; }
+  assert.equal(Math.round(sum * 100), Math.round(total * 100), 'all clients = Overview Our earnings');
+  await ui.locator('[data-earn]').first().click(); await ui.waitForSelector('[data-earn-panel]');
+  assert.equal(await ui.locator('[data-earn-panel]').innerText(), cells[0].trim().split(/\s/)[0], 'client panel shows the same');
+  await page.screenshot({ path: path.join(out, 'en-1440-client-panel-earnings.png') });
   await ctx.close(); console.log('PASS our earnings: fees + share (every order not cancelled) = total; total − paid by the supplier = still to receive');
 }
 try {
@@ -113,6 +122,7 @@ try {
     await ui.locator('[data-mc-key="billed"]').click(); await ui.locator('[data-mc-range="6"]').click(); assert.equal(await ui.locator('[data-mc-range="6"].on').count(), 1, tag + ' range');
     // Cancelled orders, all clients: under the clients table in Clients & payments, with its own title and Add client.
     await ui.locator('[data-tab=clients]').click(); await ui.waitForSelector('[data-cancelled-all]');
+    await ui.locator('[data-list]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-clients-earnings.png`) });
     assert.match(await ui.locator('.adm-head h1').innerText(), lang === 'en' ? /^Clients & payments$/ : /^לקוחות ותשלומים$/, tag + ' Clients & payments title');
     assert.equal(await ui.locator('.adm-head [data-add-account=client]').count(), 1, tag + ' Add client on Clients & payments'); assert.equal(await ui.locator('.adm-head [data-new-order]').count(), 0, tag + ' no New order there');
     await ui.locator('[data-tab=orders]').click(); await ui.waitForFunction(() => document.querySelector('[data-tab=orders]')?.classList.contains('on'));

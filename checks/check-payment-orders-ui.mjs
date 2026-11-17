@@ -102,7 +102,7 @@ try {
     assert.deepEqual(await pe.locator('[name=poOrder]').evaluateAll(i => i.map(x => [Number(x.value), x.checked])), [[A, true], [B, true], [C, false]]);
     await pe.locator(`[name=poOrder][value="${B}"]`).uncheck(); assert.equal(await pe.locator('[data-po-gap]').innerText(), 'The amount is $25.00 more than the ticked orders.');
     await pe.locator('[type=submit]').click(); await ui.waitForSelector('.pay-card .po-linked:has-text("For 1 order")');
-    assert.match(await ui.locator('.pay-card .po-linked').first().innerText(), /\$25\.00 more than its orders/);
+    assert.match(await ui.locator('.pay-card .po-linked').first().innerText(), /\$25\.00 went to the client’s credit/);
     assert.equal((await paidBy())['SHOP-102'], null);
     await ui.locator('[data-pay-edit]').first().click(); await ui.locator(`[data-payment-edit-form] [name=poOrder][value="${B}"]`).check(); await ui.locator('[data-payment-edit-form] [type=submit]').click();
     await ui.waitForSelector('.pay-card .po-linked:has-text("For 2 orders")');
