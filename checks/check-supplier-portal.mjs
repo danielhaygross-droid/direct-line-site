@@ -90,6 +90,9 @@ try {
     assert.ok(text.includes('$' + all.totals.paidForYourPart.toLocaleString('en-US', { minimumFractionDigits: 2 })), tag + ': paid for your part');
     if (lang === 'en') { assert.match(text, /Juniper & Co\./); assert.match(text, /Northwind Home/); assert.match(text, /Your supplier share/); }
     else { assert.match(text, /每个客户的余额/); assert.match(text, /供应商分成/); }
+    // Share per client (17 Nov 2026, live bug): the order count shows once, as a column on desktop, under the name on phones.
+    if (await page.locator('.sp-share-tbl').count()) { const [col, small] = await page.evaluate(() => [getComputedStyle(document.querySelector('.sp-share-tbl td:nth-child(2)')).display, getComputedStyle(document.querySelector('.sp-share-tbl .sp-phone-only')).display]);
+      assert.deepEqual([col === 'none', small === 'none'], page.viewportSize().width <= 560 ? [true, false] : [false, true], tag + ': order count shown once'); }
     await page.screenshot({ path: path.join(out, `${tag}-billing.png`), fullPage: true });
     // Open a client.
     await page.locator(`${w < 700 ? '.sp-ccard' : 'tr[data-client]'}[data-client="${id2}"]`).click(); await page.waitForSelector('.sp-adds');
