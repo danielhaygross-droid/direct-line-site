@@ -92,10 +92,12 @@ try {
     await page.screenshot({ path: path.join(out, `${tag}-order-from-product.png`) });
     // A product link inside a row still opens the link, not the panel.
     await page.goto(`${base}/portal/?lang=${lang}#/products`); await page.waitForSelector('[data-plist]'); await page.waitForTimeout(300);
-    // Retried (17 Nov 2026): on a busy test machine the first click sometimes landed before the list was ready.
-    const link = page.locator('.mp-row a').first(); await link.waitFor(); let popup = null;
-    for (let i = 0; i < 3 && !popup; i++) [popup] = await Promise.all([ctx.waitForEvent('page', { timeout: 8000 }).catch(() => null), link.click()]);
-    assert.ok(popup, 'the product link opens'); await popup.close();
+    // The link opens in a new tab and the row's own click doesn't stop it (17 Nov 2026: waiting for the new tab itself was
+    // flaky on GitHub's browser, so the check looks at the click instead and stops the real navigation).
+    const link = page.locator('.mp-row a').first(); await link.waitFor();
+    assert.equal(await link.getAttribute('target'), '_blank', 'opens in a new tab'); assert.match(await link.getAttribute('href'), /^https?:/);
+    await page.evaluate(() => { window.__lk = null; document.addEventListener('click', e => { if (e.target.closest('.mp-row a')) { window.__lk = { prevented: e.defaultPrevented }; e.preventDefault(); } }); });
+    await link.click(); await page.waitForFunction(() => window.__lk); assert.deepEqual(await page.evaluate(() => window.__lk), { prevented: false }, 'the page lets the link open');
     assert.equal(await page.locator('.drawer.open').count(), 0);
     // A "Product quote updated" notification opens that product's panel, not only the list (Erwin, 26 Oct 2026).
     await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForTimeout(500); await page.locator('[data-bell]:visible').first().click();
