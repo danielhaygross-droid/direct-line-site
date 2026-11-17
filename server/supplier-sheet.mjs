@@ -21,7 +21,7 @@ import { sheetsRequest, googleSheetsConfig, googleSheetsConfigured, syncPortalOr
 import { changeStatus, statusAt } from './order-status.mjs';
 import { sheetPhotoUrl, sheetCollageUrl } from './sheet-photos.mjs';
 import { splitOldNotes } from './order-notes.mjs';
-import { pollQuoteTab, QT } from './quote-sheet.mjs';
+import { pollQuoteTab, QT, QUOTE_HELP } from './quote-sheet.mjs';
 import { createHash } from 'node:crypto';
 import { rememberPrice, backfillSavedPrices } from './saved-prices.mjs';
 import { bi, en, GUIDE, GUIDE_TAB } from './sheet-zh.mjs';
@@ -824,6 +824,33 @@ const websiteProtection = (sheetId, email, c = C) => [[{ sheetId, startColumnInd
   [{ sheetId, startColumnIndex: c.PAIDC, endColumnIndex: c.CLIENT + 1 }, 'Filled in by the Direct Line website'], [{ sheetId, startRowIndex: 0, endRowIndex: 5, startColumnIndex: 14, endColumnIndex: c.PAIDC }, 'Column headers']]
   .map(([range, description]) => ({ addProtectedRange: { protectedRange: { range, description, editors: { users: [email] } } } }));
 
+// ---------- Portal only: the sheet becomes a locked, read-only backup (phase 3b, Erwin 17 Nov 2026) ----------
+// While "portal only" is on, the supplier tabs (Orders, Shipped, Cancelled, Product Quotes) are protected as a whole: only
+// the website's account can write, so Ada and Ye can look but not type (Erwin chose a lock over a warning). The note at the
+// top says to use the supplier portal. The website keeps writing everything, so the sheet stays a full backup. Switching
+// back removes the lock and puts the usual note back. The minute check applies it whenever the switch and the sheet disagree.
+export const LOCK_DESC = 'Portal only: read-only backup (Direct Line)';
+export const LOCK_SET = 'supplier_sheet_locked';
+const PORTAL_URL = 'https://direct-line-control.vercel.app/supplier/';
+export const PORTAL_NOTE = `READ-ONLY BACKUP. Please work in the supplier portal: ${PORTAL_URL} (typing here is blocked; the website still updates this sheet).\n只读备份。请在供应商门户中操作：${PORTAL_URL}（此处无法输入；网站仍会更新此表格）。`;
+export async function applySheetLock(DB, env, fetchImpl = fetch) {
+  const want = await portalOnly(DB), have = (await getSetting(DB, LOCK_SET)) === '1';
+  if (want === have) return null;
+  const { wq } = await tabNames(DB);
+  const meta = (await sheetsRequest(env, '?fields=sheets(properties(sheetId,title),protectedRanges(protectedRangeId,description))', {}, fetchImpl)).sheets || [];
+  const ids = Object.fromEntries(meta.map(s => [s.properties?.title, s.properties?.sheetId]));
+  const tabs = [wq, SHIPPED_TAB, CANCELLED_TAB, QT].filter(t => ids[t] != null);
+  const old = meta.flatMap(s => (s.protectedRanges || []).filter(p => p.description === LOCK_DESC).map(p => ({ deleteProtectedRange: { protectedRangeId: p.protectedRangeId } })));
+  const email = googleSheetsConfig(env).email;
+  const add = want ? tabs.map(t => ({ addProtectedRange: { protectedRange: { range: { sheetId: ids[t] }, description: LOCK_DESC, editors: { users: [email] } } } })) : [];
+  if (old.length || add.length) await batch(env, [...old, ...add], fetchImpl);
+  const usual = { [wq]: instructions, [SHIPPED_TAB]: tabText[SHIPPED_TAB][1], [CANCELLED_TAB]: tabText[CANCELLED_TAB][1], [QT]: QUOTE_HELP };
+  await batchValues(env, tabs.map(t => ({ range: `${t}!A${t === QT ? 2 : 3}`, values: [[want ? PORTAL_NOTE : usual[t]]] })), fetchImpl);
+  await putSetting(DB, LOCK_SET, want ? '1' : '0');
+  return want ? 'locked' : 'unlocked';
+}
+const lockSafely = async (DB, env, fetchImpl) => { try { return await applySheetLock(DB, env, fetchImpl); } catch (e) { console.error('Sheet lock', e?.message || e); return 'error: ' + (e?.message || e); } };
+
 // ---------- Billing tab (Ada, 1 Nov 2026) ----------
 // Ada bills per order and needs one list of every order (not split by shipping status), with what our clients have
 // paid apart from what they haven't. "Billing" is worked out by the sheet itself (FILTER formulas over Orders and
@@ -1431,6 +1458,7 @@ async function pollNow(DB, env, { waitUntil, fetchImpl }, t, result) {
     result.revisionColours = await revSafely(DB, env, fetchImpl);
     result.greenDoneRemoved = await noGreenSafely(DB, env, fetchImpl);
     result.bilingual = await zhSafely(DB, env, fetchImpl);
+    result.portalLock = await lockSafely(DB, env, fetchImpl);
     const { wq } = await tabNames(DB);
     // Old "ADDRESS CHANGED" warnings: take them off, a few rows a minute (Google's write limit), until none are left.
     for (const r of (await DB.prepare('SELECT id FROM client_orders WHERE address_changed_at IS NOT NULL ORDER BY id LIMIT 5').all()).results || []) {
@@ -1547,6 +1575,7 @@ export async function supplierSheetStatus(DB, env) {
 // Keeps the current Work Queue as a hidden backup tab, rebuilds the Work Queue as a website-written
 // table (same tab id, so existing links still open it), adds the supplier columns, and switches syncing on.
 export async function setupSupplierWorkQueue(DB, env, fetchImpl = fetch) {
+  await putSetting(DB, LOCK_SET, '0'); // a rebuilt sheet has no lock yet: the next minute check adds it back if portal only is on
   if (!googleSheetsConfigured(env)) throw new Error('Google Sheets is not connected.');
   // Running setup again: first take in anything the supplier typed, so the rebuilt table keeps it.
   if (await supplierSheetEnabled(DB)) { const p = await pollSupplierSheet(DB, env, { fetchImpl }); if (!p.ok) throw new Error('Could not read the supplier columns first: ' + p.error); }

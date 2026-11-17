@@ -6,7 +6,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { DB, env, call, seed, pg } from './lib.mjs';
 import { route } from '../api/index.mjs';
 import { syncPortalOrderToGoogleSheet } from '../server/google-sheets.mjs';
-import { WQ, WQ_NEW, LOG_NEW, TAB_NAMES, FIRST_ROW, HEADERS, SHIPPED, NOT_SHIPPED, SHIPPED_TAB, CANCELLED_TAB } from '../server/supplier-sheet.mjs';
+import { LOCK_DESC, WQ, WQ_NEW, LOG_NEW, TAB_NAMES, FIRST_ROW, HEADERS, SHIPPED, NOT_SHIPPED, SHIPPED_TAB, CANCELLED_TAB } from '../server/supplier-sheet.mjs';
 
 // ---------- fake Google Sheets ----------
 const sheets = new Map(); // title -> { sheetId, hidden, grid: array of rows (arrays), prot: protected ranges }
@@ -44,6 +44,8 @@ globalThis.fetch = (real => async (url, opt = {}) => {
   requests.push(method + ' ' + decodeURIComponent(path).slice(0, 80));
   if (globalThis.slowSheet) await new Promise(r => setTimeout(r, 5 + Math.random() * 30)); // like Google: syncs side by side interleave
   if (path.startsWith('?fields=developerMetadata')) return Response.json({ developerMetadata: meta, sheets: [...sheets.keys()].map(title => ({ properties: { title } })) });
+  // The portal-only lock (17 Nov 2026) reads titles, ids and descriptions.
+  if (path.startsWith('?fields=sheets(properties(sheetId,title),protectedRanges')) return Response.json({ sheets: [...sheets].map(([title, s]) => ({ properties: { title, sheetId: s.sheetId }, protectedRanges: s.prot.map(p => ({ protectedRangeId: p.protectedRangeId, description: p.description })) })) });
   if (path.startsWith('?fields=sheets(properties(sheetId),protectedRanges')) return Response.json({ sheets: [...sheets.values()].map(s => ({ properties: { sheetId: s.sheetId }, protectedRanges: s.prot.map((p, i) => ({ protectedRangeId: i + 1 })) })) });
   if (path.startsWith('?fields=sheets(properties(sheetId,title),conditionalFormats)')) return Response.json({ sheets: [...sheets].map(([title, s]) => ({ properties: { title, sheetId: s.sheetId }, conditionalFormats: s.cf || [] })) });
   if (path.startsWith('?fields=sheets.properties')) return Response.json({ sheets: [...sheets].map(([title, s]) => ({ properties: { title, sheetId: s.sheetId, hidden: s.hidden, gridProperties: { columnCount: s.cols ?? 35 } } })) });
@@ -57,7 +59,8 @@ globalThis.fetch = (real => async (url, opt = {}) => {
       else if (kind === 'updateConditionalFormatRule') byId(a.sheetId)[1].cf[a.index] = JSON.parse(JSON.stringify(a.rule));
       else if (kind === 'setDataValidation') (byId(a.range.sheetId)[1].rules ||= []).push(a);
       else if (kind === 'setBasicFilter') byId(a.filter.range.sheetId)[1].filter = { ...a.filter.range };
-      else if (kind === 'addProtectedRange') byId(a.protectedRange.range.sheetId)[1].prot.push(a.protectedRange);
+      else if (kind === 'addProtectedRange') byId(a.protectedRange.range.sheetId)[1].prot.push({ ...a.protectedRange, protectedRangeId: (globalThis.protSeq = (globalThis.protSeq || 0) + 1) });
+      else if (kind === 'deleteProtectedRange') for (const [, t] of sheets) t.prot = t.prot.filter(p => p.protectedRangeId !== a.protectedRangeId);
       // Columns (layout 19): every row's cells move, like Google does (row 1 to the last row).
       else if (kind === 'moveDimension' && a.source.dimension === 'COLUMNS') { const [, s] = byId(a.source.sheetId), { startIndex: f, endIndex: e } = a.source, d = a.destinationIndex; s.grid.forEach((r, i) => { if (!r) return; while (r.length < e) r.push(''); const cut = r.splice(f, e - f); r.splice(d > f ? d - cut.length : d, 0, ...cut); s.grid[i] = r; }); }
       // Like Google: a row moved above where a colour rule starts pushes that rule down a row (2 Nov 2026).
@@ -803,6 +806,12 @@ for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 36, t
   assert.ok([403, 404].includes((await call('/admin/supplier-sheet/portal-only', 'POST', { on: true }, sup)).status), 'a supplier cannot switch it');
   assert.equal((await call('/admin/supplier-sheet/portal-only', 'POST', { on: true }, admin)).status, 200);
   assert.equal((await call('/admin/supplier-sheet', 'GET', null, admin)).data.portalOnly, true);
+  // Locked (17 Nov 2026, Erwin): every supplier tab is protected as a whole (only the website writes) and says to use the portal.
+  const locks = () => [...sheets].filter(([, t]) => t.prot.some(p => p.description === LOCK_DESC)).map(([title]) => title).sort();
+  const note = title => String(sheets.get(title)?.grid?.[title === 'Product Quotes' ? 1 : 2]?.[0] ?? '');
+  const lockedTabs = locks(); assert.ok(lockedTabs.length >= 3 && lockedTabs.includes('Shipped') && lockedTabs.includes('Cancelled'), 'tabs locked: ' + lockedTabs);
+  for (const t of lockedTabs) { assert.match(note(t), /READ-ONLY BACKUP[\s\S]*\/supplier\//, t + ' note'); assert.deepEqual(sheets.get(t).prot.find(p => p.description === LOCK_DESC).editors.users.length, 1, t + ': only the website can write'); }
+  later(); await cron(); assert.deepEqual(locks(), lockedTabs, 'the minute check does not lock twice');
   supplierTypes(P3.id, N, 99); later(); const b1 = await cron();
   assert.equal(b1.ok, true, JSON.stringify(b1).slice(0, 300)); assert.equal(b1.portalOnly, true); assert.deepEqual(b1.changed, []); assert.ok(b1.restored.includes(P3.id), 'the typed row is put back');
   assert.equal(Number((await order(P3.id)).supplier_cost), 40, 'portal only: a cost typed in the sheet is not read');
@@ -810,6 +819,7 @@ for (const t of TABS()) assert.equal(sheets.get(t).filter?.endColumnIndex, 36, t
   later(); assert.deepEqual((await cron()).restored, [], 'nothing left to put back');
   await put3('cost', '41'); assert.equal(cell(P3.id, N), 41, 'portal edits still reach the backup sheet');
   assert.equal((await call('/admin/supplier-sheet/portal-only', 'POST', { on: false }, admin)).status, 200);
+  assert.deepEqual(locks(), [], 'switched back: unlocked'); for (const t of lockedTabs) assert.doesNotMatch(note(t), /READ-ONLY/, t + ': usual note back');
   supplierTypes(P3.id, N, 42); later(); await cron();
   assert.equal(Number((await order(P3.id)).supplier_cost), 42, 'switched back: the sheet is read again');
   console.log('PASS portal only (phase 3b): the sheet is a backup, typed cells are put back, owners switch it on and off');

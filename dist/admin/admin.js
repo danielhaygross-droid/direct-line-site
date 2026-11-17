@@ -1002,7 +1002,7 @@
     const box = $('[data-supplier-sheet]'); if (!box) return;
     try { const d = await api('/admin/supplier-sheet'); box.innerHTML = supplierSheetHTML(d); const setupBtn = $('[data-supplier-setup]'); setupBtn.hidden = !d.configured; setupBtn.textContent = d.enabled ? 'Rebuild supplier sheet' : 'Set up supplier sheet'; $('[data-supplier-check]').hidden = !d.enabled;
       const po = $('[data-portal-only]'); po.hidden = !d.enabled || !canManage(); S.portalOnly = !!d.portalOnly;
-      $('[data-portal-only-text]').textContent = d.portalOnly ? 'Portal only. The Google Sheet is a backup: anything typed in its supplier columns is put back within a few minutes.' : 'Sheet and portal. The supplier can type in the Google Sheet or in the supplier portal; both are read. Switch to portal only when Ada and Ye have stopped using the sheet.';
+      $('[data-portal-only-text]').textContent = d.portalOnly ? 'Portal only. The Google Sheet is a locked, read-only backup: Ada and Ye can look but not type in it, and the website keeps it up to date.' : 'Sheet and portal. The supplier can type in the Google Sheet or in the supplier portal; both are read. Switch to portal only when Ada and Ye have stopped using the sheet.';
       $('[data-portal-only-btn]').textContent = d.portalOnly ? 'Let the supplier use the sheet again' : 'Switch to portal only'; }
     catch (ex) { box.innerHTML = `<p class="note" style="margin:0">${esc(ex.message)}</p>`; }
   }
@@ -1019,7 +1019,7 @@
     run('[data-supplier-check]', '/admin/supplier-sheet/check', r => r.ok ? (r.portalOnly ? `Backup checked: ${r.restored.length} rows put back.` : `${r.changed.length} orders updated from the sheet.`) : r.error);
     const pb = $('[data-portal-only-btn]'); if (pb) pb.addEventListener('click', async () => {
       const on = !S.portalOnly;
-      if (on && !confirm('Switch to portal only? From now on the website no longer reads what the supplier types in the Google Sheet. Ada and Ye must work in the supplier portal.')) return;
+      if (on && !confirm('Switch to portal only? The Google Sheet becomes a locked, read-only backup (the website keeps updating it). Ada and Ye must work in the supplier portal.')) return;
       pb.disabled = true;
       try { await api('/admin/supplier-sheet/portal-only', { method: 'POST', body: { on } }); m.textContent = on ? 'The supplier now works in the portal only.' : 'The sheet is read again.'; m.className = 'form-msg ok'; await loadSupplierSheet(); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
