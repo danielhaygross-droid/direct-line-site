@@ -129,6 +129,7 @@
     : b < -0.004 ? `<span class="sp-bal credit"><small>${t('Credit')}</small><b>${money(-b)}</b></span>`
     : `<span class="sp-bal zero"><small>${t('All paid')}</small><b>${money(0)}</b></span>`;
   const countLine = c => `${c.ordersTotal} ${t(c.ordersTotal === 1 ? 'order' : 'orders')}${c.cancelledCount ? ` · ${c.cancelledCount} ${t('cancelled')}` : ''}`;
+  Object.assign(ZH, { 'Still to pay': '还需支付', 'Your payments count for the oldest orders first, across all clients.': '您的付款先计入最早的订单（所有客户一起算）。' });
   const shareIntro = rate => lang === 'zh'
     ? `每个订单您付给 Direct Line ${money(rate)}，已取消的订单不算。您付的款由 Direct Line 记录。`
     : `You pay Direct Line ${money(rate)} for every order. Cancelled orders don’t count. Direct Line records what you paid.`;
@@ -144,7 +145,10 @@
         <td class="num">${balCell(c.balance)}</td><td class="go">${ICON.next}</td></tr>`).join('');
     const cards = d.clients.map(c => `<button type="button" class="sp-ccard" data-client="${c.id}"><span class="sp-ccard-h"><span><b>${esc(c.name)}</b><small>${countLine(c)}</small></span>${balCell(c.balance)}</span>
         <span class="sp-ccard-n"><span><small>${t('Orders')}</small>${money(c.orders)}</span><span><small>${t('Cancellation fees')}</small>${money(c.cancelFees)}</span><span><small>${t('Paid for your part')}</small>${money(c.paidForYourPart)}</span></span></button>`).join('');
-    const shareRows = d.clients.filter(c => c.share.counted).map(c => `<tr><td><b>${esc(c.name)}</b></td><td class="num">${c.share.counted}</td><td class="num">${money(c.share.amount)}</td></tr>`).join('');
+    // Per client: what was paid (oldest orders first, across clients) and what is still to pay (17 Nov 2026).
+    const leftCell = v => `<td class="num"><b class="${v > 0.004 ? 'red' : ''}">${money(Math.max(0, v))}</b></td>`;
+    const shareRows = d.clients.filter(c => c.share.counted).map(c => `<tr><td><b>${esc(c.name)}</b><small class="sp-phone-only">${c.share.counted} ${t(c.share.counted === 1 ? 'order' : 'orders')}</small></td><td class="num">${c.share.counted}</td><td class="num">${money(c.share.amount)}</td><td class="num">${money(c.share.paid || 0)}</td>${leftCell(c.share.stillToPay ?? c.share.amount)}</tr>`).join('');
+    const shareLeftAll = d.clients.reduce((n, c) => n + Math.max(0, c.share.stillToPay ?? c.share.amount), 0), sharePaidAll = d.clients.reduce((n, c) => n + (c.share.paid || 0), 0);
     return `<div class="sp-head"><div><h1>${t('Billing')}</h1><p class="sp-intro">${t('What each client has paid for your part of their orders, and what is still open. Direct Line records the payments.')}</p>
         <p class="sp-upd">${t('Updated')} ${esc(fmtTime(d.updatedAt))} ${t('(China time)')}</p></div></div>
       <section class="sp-tiles">
@@ -166,8 +170,9 @@
           <div><small>${money(sh.rate)} × ${t('orders')}</small><b>${money(sh.amount)}</b></div>
           <div><small>${t('Paid to Direct Line')}</small><b>${money(sh.paid)}</b><span>${sh.lastPaidAt ? t('Last payment') + ' ' + esc(fmtDay(sh.lastPaidAt)) : t('No payment yet')}</span></div>
           <div><small>${t(ahead ? 'Paid ahead' : 'Still to pay Direct Line')}</small><b class="${sh.stillToPay > 0.004 ? 'red' : ahead ? 'mint' : ''}">${money(Math.abs(sh.stillToPay))}</b>${ahead ? `<span>${t('Counts toward your next orders.')}</span>` : ''}</div></div>
-        ${shareRows ? `<div class="sp-table-wrap"><table class="sp-table"><thead><tr><th>${t('Client')}</th><th class="num">${t('Orders counted')}</th><th class="num">${t('Share')}</th></tr></thead><tbody>${shareRows}</tbody>
-          <tfoot><tr><td><b>${t('All clients')}</b></td><td class="num">${sh.counted}</td><td class="num">${money(sh.amount)}</td></tr></tfoot></table></div>` : ''}
+        ${shareRows ? `<div class="sp-table-wrap"><table class="sp-table sp-share-tbl"><thead><tr><th>${t('Client')}</th><th class="num">${t('Orders counted')}</th><th class="num">${t('Share')}</th><th class="num">${t('Paid')}</th><th class="num">${t('Still to pay')}</th></tr></thead><tbody>${shareRows}</tbody>
+          <tfoot><tr><td><b>${t('All clients')}</b></td><td class="num">${sh.counted}</td><td class="num">${money(sh.amount)}</td><td class="num">${money(sharePaidAll)}</td>${leftCell(shareLeftAll)}</tr></tfoot></table></div>
+          <p class="sp-foot">${t('Your payments count for the oldest orders first, across all clients.')}</p>` : ''}
       </section>`;
   }
 

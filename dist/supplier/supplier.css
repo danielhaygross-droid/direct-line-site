@@ -298,3 +298,6 @@ a.sp-add:hover u{color:var(--gold-2)}
 .sp-bitem.k-cancel small,.sp-bitem.k-receipt small{color:var(--red-ink)}.sp-bitem.k-order small{color:var(--orange-ink)}
 .sp-bitem span{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:560px){.sp-bellmenu{position:fixed;inset-inline:12px;top:64px;width:auto}}
+/* Supplier share per client (17 Nov 2026): on phones the order count folds under the client name */
+.sp-phone-only{display:none}
+@media(max-width:560px){.sp-share-tbl th:nth-child(2),.sp-share-tbl td:nth-child(2){display:none}.sp-share-tbl .sp-phone-only{display:block;font-size:12px;font-weight:400;color:var(--muted)}.sp-share-tbl th,.sp-share-tbl td{padding-inline:6px}}

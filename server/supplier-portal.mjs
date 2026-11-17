@@ -44,6 +44,17 @@ export async function sharePayments(DB) {
   return rows.map(r => ({ id: Number(r.id), amount: r2(r.amount), paidAt: Number(r.paid_at), note: r.note || '' }));
 }
 
+// The supplier share per client (17 Nov 2026, Erwin chose): what the supplier paid goes to the oldest orders first, across
+// all clients, $rate per order (a payment that isn't a whole number of orders pays part of the next order). Money beyond
+// every counted order stays "paid ahead" on the total, not on a client. Same orders as share.counted: not archived, not cancelled.
+export async function shareByClient(DB, clients, paid, rate) {
+  const ids = clients.map(c => c.id), rateC = Math.round(rate * 100), byClient = new Map();
+  const orders = ids.length ? ((await DB.prepare(`SELECT client_id FROM client_orders WHERE NOT archived AND status <> 'cancelled' AND client_id IN (${ids.map(() => '?').join(',')}) ORDER BY created_at, id`).bind(...ids).all()).results || []) : [];
+  let left = Math.round(paid * 100);
+  for (const o of orders) { if (left <= 0 || rateC <= 0) break; const take = Math.min(rateC, left), k = Number(o.client_id); byClient.set(k, (byClient.get(k) || 0) + take); left -= take; }
+  for (const c of clients) { const p = (byClient.get(c.id) || 0) / 100; c.share.paid = r2(p); c.share.stillToPay = r2(c.share.amount - p); }
+}
+
 // One client, supplier side only. summary = clientSummary(...) from portal.mjs (passed in to keep this file free of it).
 async function clientBilling(DB, u, summary, { detail = false } = {}) {
   const s = summary.supplier, rate = await shareRate(DB);
@@ -125,6 +136,7 @@ export async function routeSupplier(request, path, ctx, who, deps, viewer = null
     const owe = r2(clients.reduce((n, c) => n + Math.max(0, c.balance), 0)), credit = r2(clients.reduce((n, c) => n + Math.max(0, -c.balance), 0));
     const counted = clients.reduce((n, c) => n + c.share.counted, 0), shareAmount = r2(clients.reduce((n, c) => n + c.share.amount, 0));
     const pays = await sharePayments(DB), sharePaid = r2(pays.reduce((n, p) => n + p.amount, 0));
+    await shareByClient(DB, clients, sharePaid, await shareRate(DB));
     return json({ ok: true, updatedAt: now(), clients,
       totals: { orders: sum('orders'), cancelFees: sum('cancelFees'), paidForYourPart: sum('paidForYourPart'), stillOwed: owe, credit, net: r2(owe - credit),
         ordersTotal: clients.reduce((n, c) => n + c.ordersTotal, 0), cancelledCount: clients.reduce((n, c) => n + c.cancelledCount, 0) },
