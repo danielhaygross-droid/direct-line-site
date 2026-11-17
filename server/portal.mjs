@@ -37,7 +37,7 @@ import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, client
 
 import { STORAGE_SCHEMA, photoBytes, syncFileStorage, fileStorageStatus } from './file-storage.mjs';
 import { splitNotes } from './order-notes.mjs';
-import { SUPPLIER_SHEET_SCHEMA, markPaidDirty, setupSupplierWorkQueue, pollSupplierSheet, supplierSheetStatus, PORTAL_ONLY, DEFAULT_COURIERS, courierList, updateCourierDropdown } from './supplier-sheet.mjs';
+import { SUPPLIER_SHEET_SCHEMA, markPaidDirty, setupSupplierWorkQueue, pollSupplierSheet, supplierSheetStatus, PORTAL_ONLY, applySheetLock, DEFAULT_COURIERS, courierList, updateCourierDropdown } from './supplier-sheet.mjs';
 import { runBackup, listBackups, downloadBackup } from './backup.mjs';
 import { repairSwitchOrders } from './repair-2026-10-29.mjs';
 import { LOGIN_LIMIT_SCHEMA, LOCK_MESSAGE, clientIp, loginKeys, lockedFor, recordFailure, clearFailures } from './login-limit.mjs';
@@ -1247,7 +1247,9 @@ async function routePortal(request, url, ctx, meta) {
     if (!await isOwner(DB, who)) return json({ ok: false, error: 'Only the owners (Erwin, Shahar, Daniel) can change this.' }, 403);
     const on = (await request.json().catch(() => ({}))).on === true;
     await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(PORTAL_ONLY, on ? '1' : '0').run();
-    return json({ ok: true, portalOnly: on });
+    // Lock / unlock the sheet right away (17 Nov 2026); if Google is slow or down, the minute check does it.
+    let lock = null; try { lock = await applySheetLock(DB, env); } catch (e) { lock = 'later: ' + (e?.message || e); }
+    return json({ ok: true, portalOnly: on, lock });
   }
   // One-time repair of 9 orders after the 29 Oct 2026 sheet switch (see repair-2026-10-29.mjs).
   if (path === '/admin/repair/2026-10-29' && method === 'POST') return json(await repairSwitchOrders(DB));
