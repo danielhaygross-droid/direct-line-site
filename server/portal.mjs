@@ -33,7 +33,7 @@ import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from
 import { SUPPLIER_SCHEMA, supplierSession, routeSupplier, routeSupplierAdmin } from './supplier-portal.mjs';
 import { RECEIPT_SCHEMA, routeReceiptsAdmin, ISSUER, ISSUER_DETAILS } from './supplier-receipts.mjs';
 
-import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance } from './client-stores.mjs';
+import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance, withEtsyRef } from './client-stores.mjs';
 
 import { STORAGE_SCHEMA, photoBytes, syncFileStorage, fileStorageStatus } from './file-storage.mjs';
 import { splitNotes } from './order-notes.mjs';
@@ -957,6 +957,7 @@ async function routePortal(request, url, ctx, meta) {
       f.product_cost = null; f.shipping_fee = null; f.price = 0;
     }
     try{f.store_id=await orderStore(DB,clientId,body.storeId);}catch(e){return json({ok:false,error:e.message},400);}
+    f.order_ref=await withEtsyRef(DB,f.store_id,f.order_ref);
     let savedProduct=null,productPhotos=[];
     if(body.productId){
       savedProduct=await DB.prepare("SELECT * FROM portal_products WHERE id=? AND client_id=? AND status='approved'").bind(Number(body.productId),clientId).first();
@@ -1123,6 +1124,7 @@ async function routePortal(request, url, ctx, meta) {
       f.product_cost = existing.product_cost; f.shipping_fee = existing.shipping_fee; f.price = existing.price;
     }
     try{f.store_id=await orderStore(DB,existing.client_id,body.storeId,Number(existing.store_id),who.admin);}catch(e){return json({ok:false,error:e.message},400);}
+    f.order_ref=await withEtsyRef(DB,f.store_id,f.order_ref);
     if(existing.quoted_unit_price!=null){f.price=round2(Number(existing.quoted_unit_price)*f.quantity+Number(existing.quoted_shipping||0));if(f.price>=1e7)return json({ok:false,error:'Order total is too large.'},400);f.product_cost=existing.product_cost;f.shipping_fee=existing.shipping_fee;f.etsy_url=existing.etsy_url;f.item_title=existing.item_title;}
     if (who.admin && followsSupplierCost(existing) && Number(commission) !== Number(existing.commission) && body.productCost == null && body.shippingFee == null) {
       f.price = round2(Number(existing.supplier_cost) + Number(commission)); f.product_cost = f.price; f.shipping_fee = null;
