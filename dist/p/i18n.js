@@ -703,6 +703,7 @@
     [/^(\d+(?:\.\d+)?) ₪ \/ month$/, (m, n) => `${n} ₪ לחודש`],
     [/^· last payment (.+)$/, (m, d) => `· תשלום אחרון ${tc(d)}`],
     [/^last payment (.+)$/, (m, d) => `תשלום אחרון ${tc(d)}`],
+    [/^First month free, then (.+) \/ month\. The client sees this in their portal\. “On the bill” adds it to the client’s bill every month after the free month, at (.+); otherwise nothing is charged or blocked automatically\.$/, (m, p, u) => `חודש ראשון חינם, אחר כך ${p} לחודש. הלקוח רואה את זה בפורטל שלו. “בחשבון” מוסיף את המנוי לחשבון של הלקוח בכל חודש אחרי החודש החינמי, ב-${u === 'the $ amount set in Settings' ? 'סכום הדולרים שנקבע בהגדרות' : u}; אחרת שום דבר לא מחויב או נחסם אוטומטית.`],
     [/^First month free, then (.+) \/ month\. The client sees this in their portal\. Nothing is charged or blocked automatically\.$/, (m, p) => `חודש ראשון חינם, אחר כך ${p} לחודש. הלקוח רואה את זה בפורטל שלו. שום דבר לא מחויב או נחסם אוטומטית.`],
     [/^\. Their free month starts today \((.+)\)\.$/, (m, d) => `. החודש החינמי שלהם מתחיל היום (${tc(d)}).`],
     [/^empty = default \((.+)\)$/, (m, a) => `ריק = ברירת מחדל (${a})`],
