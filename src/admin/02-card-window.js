@@ -15,7 +15,7 @@
     const cents = n => Math.round(Number(n || 0) * 100), rate = cents(S.ov.settings?.supplier_bonus_per_order ?? 1);
     const n = S.orders.filter(o => !o.archived && o.clientId === c.id && o.status !== 'cancelled').length, feesC = cents(c.ourShare), shareC = n * rate;
     // + the subscription on the client's bill (18 Nov 2026), ours too.
-    const subC = cents(c.subscription);
+    const subC = cents(c.parts?.subscription);
     return { fees: feesC / 100, share: shareC / 100, sub: subC / 100, total: (feesC + shareC + subC) / 100, orders: n };
   }
   const earningsSplit = e => `<small class="earn-split"><span>${money(e.fees)} client fees</span> · <span>${money(e.share)} supplier share</span>${e.sub ? ` · <span>${money(e.sub)} subscription</span>` : ''}</small>`;
@@ -42,7 +42,7 @@
     // rule as the supplier portal; before, only paid orders counted).
     const paidOs = os.filter(o => PO.state(o) === 'paid'), cxN = inMonth.length - os.length;
     // The subscription on clients' bills (18 Nov 2026): All time = every client's, a month = what was added that month.
-    const subC = month === 'all' ? cl.reduce((n, c) => n + cents(c.subscription), 0) : cents((S.ov.months || []).find(x => x.month === month)?.subs);
+    const subC = month === 'all' ? cl.reduce((n, c) => n + cents(c.parts?.subscription), 0) : cents((S.ov.months || []).find(x => x.month === month)?.subs);
     const supRateC = cents(S.ov.settings?.supplier_bonus_per_order ?? 1), supC = os.length * supRateC, totalC = feesC + supC + subC;
     // All money goes to the supplier first (clients pay the supplier directly), so our earnings are with the supplier until it
     // pays us (Fees & settings > Team & tools > Supplier share payments). All time only: payments aren't tied to a month.

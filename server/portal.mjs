@@ -774,7 +774,7 @@ async function clientSummary(DB, clientId, settings) {
   const subPaid = round2(Math.max(0, sub.total - Math.max(0, outstanding))), supRecv = round2(supReceived - subPaid);
   const parts = { orders: ordersBilled, fees, other, subscription: sub.total, subscriptionMonths: sub.months, subscriptionIls: sub.ils };
   const supplier = { orders: supOrders, fees: supFees, other, billed: supBilled, received: supRecv, ourFee: round2(ourPaid + subPaid), subscriptionPaid: subPaid, balance: round2(supBilled - supRecv) };
-  return { orders: Number(o.n), billed: billedAll, paid, refunded, outstanding, parts, supplier, commission, supplierShare, keptFees: kept, ourShare: round2(commission - supplierShare + kept), subscription: sub.total, clientProfit: performance.totals.profit };
+  return { orders: Number(o.n), billed: billedAll, paid, refunded, outstanding, parts, supplier, commission, supplierShare, keptFees: kept, ourShare: round2(commission - supplierShare + kept), clientProfit: performance.totals.profit };
 }
 
 // One line per client for the supplier sheet's Billing tab (Ada, 13 Nov 2026: "why do I get the feeling that things are

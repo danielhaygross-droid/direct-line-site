@@ -62,7 +62,7 @@ assert.equal(s.supplier, undefined, 'the client never gets the supplier side');
 assert.equal(ok(await call('/me', 'GET', null, client)).summary.parts.subscriptionMonths, 1, 'looking again adds nothing');
 // Admin: our earnings include it; the supplier's statement doesn't.
 const ov = ok(await call('/admin/overview', 'GET', null, admin)), c = ov.clients.find(x => x.id === id);
-assert.equal(c.subscription, 8); assert.equal(c.supplier.billed, 18, 'not on the supplier statement');
+assert.equal(c.parts.subscription, 8); assert.equal(c.subscription.status, 'bill', 'the plan stays an object (18 Nov: a number overwrote it)'); assert.equal(c.supplier.billed, 18, 'not on the supplier statement');
 assert.deepEqual([c.supplier.subscriptionPaid, c.supplier.received, c.supplier.ourFee, c.supplier.balance], [8, 30, 10, -12], 'paid from the credit: ours, like our fee');
 assert.equal(ov.months.find(m => m.month === today.slice(0, 7)).subs, 8, 'in the money of this month');
 // Supplier portal: the same numbers, and the payment shows only the supplier part.
@@ -98,6 +98,7 @@ try {
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=clients]');
     await ui.locator('[data-tab=clients]').click(); await page.waitForTimeout(300);
     if (lang === 'en') assert.match(flat(await ui.locator(`[data-earn="${id}"]`).first().innerText()), /\$8\.00 subscription/, tag + ' our earnings include the subscription');
+    if (lang === 'en') assert.match(flat(await ui.locator('.sub-cell').first().innerText()), /On the bill/, tag + ' the plan says On the bill');
     await ui.locator(`[data-open-client="${id}"]`).first().click(); await ui.waitForSelector('.gtabs'); await ui.locator('.gtabs button').nth(2).click(); await ui.locator('.subtabs [data-ctab=payments]').click(); await ui.waitForSelector('[data-statement]'); await page.waitForTimeout(400);
     const as = flat(await ui.locator('[data-statement]').innerText());
     if (lang === 'en') assert.match(as, /Direct Line subscription \(1 month × ₪29\) \$8\.00 Total billed \$28\.00 \$18\.00/, tag + ' admin statement: ' + as);
