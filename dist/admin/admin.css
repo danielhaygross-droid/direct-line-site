@@ -35,6 +35,8 @@ html.embed .adm{width:100%;max-width:none;padding:28px 32px 40px}
 .status-btns button.on{border-color:var(--tone);background:color-mix(in srgb,var(--tone) 14%,transparent);color:var(--text)}
 .inline-form{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
 .inline-form .field{flex:1;min-width:160px}
+#settings-form>.field{grid-template-rows:1fr auto}
+.attn-slot:empty{display:none}
 .split{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 .split div{padding:10px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
 .split small{display:block;color:var(--dim);font-size:12px}.split b{font-size:15px}

@@ -651,6 +651,7 @@
     [/^Billed (\S+) · paid (\S+)$/, (m, a, b) => `חויב ${a} · שולם ${b}`],
     [/^Fees (\S+) · supplier (\S+)$/, (m, a, b) => `עמלות ${a} · ספק ${b}`],
     [/^orders? waiting to be processed$/, () => 'הזמנות ממתינות לטיפול'],
+    [/^orders? with a cancel request$/, () => 'הזמנות עם בקשת ביטול'],
     [/^orders? with unread client messages$/, () => 'הזמנות עם הודעות מלקוחות שלא נקראו'],
     [/^orders? still need product \+ shipping cost$/, () => 'הזמנות שעדיין חסרה בהן עלות מוצר ומשלוח'],
     [/^orders? in processing without tracking$/, () => 'הזמנות בטיפול בלי מספר מעקב'],

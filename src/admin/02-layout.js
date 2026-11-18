@@ -20,6 +20,7 @@
   function shell() {
     $('#app').innerHTML = `
       <section class="adm-head" data-adm-head>${headHTML(S.tab)}</section>
+      <div class="attn-slot" data-attn-slot></div>
       <div class="kpi-wrap" data-kpi-wrap><section class="kpis" data-kpis></section></div>
       <div class="seg" role="tablist" data-main-tabs>${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['claims','Claims'], ['products','Products'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
       <section data-tab-body style="display:grid;gap:14px"></section>`;
@@ -43,7 +44,7 @@
     const cards = [
       { key: 'clients', k: 'Clients', v: f.clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(f.cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)' },
       { key: 'orders', k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: os.length ? [`${f.paidOs.length} paid`, notShipped ? `${notShipped} not shipped yet` : '', shipped ? `${shipped} shipped` : ''].filter(Boolean) : ['No orders yet'], sub2: f.cxN ? `${f.cxN} cancelled, not counted` : '', icon: 'orders', tone: 'var(--orange)' },
-      { key: 'unpaid', k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${f.PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(owed - balanceC) >= 1 ? `Unpaid orders ${money(owed / 100)} − credit and earlier payments ${money((owed - balanceC) / 100)}` : '', sub3: balanceC > 0 ? `Without our fee ${money((balanceC - feePartC) / 100)} · our fee ${money(feePartC / 100)}` : '', icon: 'money', tone: f.late ? 'var(--red)' : balanceC > 0 ? 'var(--orange)' : 'var(--mint)', owe: balanceC > 0, late: f.late },
+      { key: 'unpaid', k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${f.PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub3: balanceC > 0 ? `Without our fee ${money((balanceC - feePartC) / 100)} · our fee ${money(feePartC / 100)}` : '', icon: 'money', tone: f.late ? 'var(--red)' : balanceC > 0 ? 'var(--orange)' : 'var(--mint)', owe: balanceC > 0, late: f.late },
       { key: 'earnings', k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(f.totalC / 100), sub: [...(f.supC ? [`${money(f.feesC / 100)} client fees`, `${money(f.supC / 100)} supplier share`] : []), ...(f.supPaidC ? [`${money(f.supPaidC / 100)} paid to us by the supplier`, f.leftC >= 0 ? `${money(f.leftC / 100)} still to receive` : `${money(-f.leftC / 100)} paid ahead`] : [`${money(f.collectedC / 100)} collected`, `${money((f.feesC - f.collectedC - f.noBillC) / 100)} not paid yet`, ...(f.noBillC ? [`${money(f.noBillC / 100)} not billed yet`] : [])]), f.keptOn.length ? `${plural(os.length, 'order')} + ${f.keptOn.length} cancelled with a fee kept` : `${plural(os.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
     ];
     $('[data-kpis]').innerHTML = cards.map(c => `<button type="button" class="stat stat-go${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}${c.late ? ' late' : ''}" style="--tone:${c.tone}" data-kpi-card="${c.key}" aria-haspopup="dialog" aria-expanded="${kpiWin === c.key}" title="Show details"><span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}${c.sub3 ? `<em class="stat-fee">${esc(c.sub3)}</em>` : ''}</button>`).join('');
@@ -55,6 +56,7 @@
     $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === S.tab); b.setAttribute('aria-selected', String(b.dataset.tab === S.tab)); });
     // The summary cards (and their month picker) belong to Clients overview only (Erwin, 4 Nov 2026), not to every section.
     for (const el of $$('[data-kpis]')) el.style.display = S.tab === 'overview' ? '' : 'none';
+    for (const el of $$('[data-attn-slot]')) { el.style.display = S.tab === 'overview' ? '' : 'none'; if (S.tab !== 'overview') el.innerHTML = ''; }
     if (S.tab !== 'overview') closeCardWindow(false);
     const head = $('[data-adm-head]'); if (head) head.innerHTML = headHTML(S.tab);
     if (S.tab === 'overview' && S.ov) renderKpis();

@@ -402,6 +402,7 @@
   function shell() {
     $('#app').innerHTML = `
       <section class="adm-head" data-adm-head>${headHTML(S.tab)}</section>
+      <div class="attn-slot" data-attn-slot></div>
       <div class="kpi-wrap" data-kpi-wrap><section class="kpis" data-kpis></section></div>
       <div class="seg" role="tablist" data-main-tabs>${[['overview', 'Overview'], ['orders', 'Orders'], ['clients', 'Clients'], ['claims','Claims'], ['products','Products'], ['settings', 'Fees & settings']].map(([k, l]) => `<button type="button" role="tab" data-tab="${k}">${l}<span data-tab-badge="${k}"></span></button>`).join('')}</div>
       <section data-tab-body style="display:grid;gap:14px"></section>`;
@@ -425,7 +426,7 @@
     const cards = [
       { key: 'clients', k: 'Clients', v: f.clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(f.cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)' },
       { key: 'orders', k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: os.length ? [`${f.paidOs.length} paid`, notShipped ? `${notShipped} not shipped yet` : '', shipped ? `${shipped} shipped` : ''].filter(Boolean) : ['No orders yet'], sub2: f.cxN ? `${f.cxN} cancelled, not counted` : '', icon: 'orders', tone: 'var(--orange)' },
-      { key: 'unpaid', k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${f.PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub2: Math.abs(owed - balanceC) >= 1 ? `Unpaid orders ${money(owed / 100)} − credit and earlier payments ${money((owed - balanceC) / 100)}` : '', sub3: balanceC > 0 ? `Without our fee ${money((balanceC - feePartC) / 100)} · our fee ${money(feePartC / 100)}` : '', icon: 'money', tone: f.late ? 'var(--red)' : balanceC > 0 ? 'var(--orange)' : 'var(--mint)', owe: balanceC > 0, late: f.late },
+      { key: 'unpaid', k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${f.PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub3: balanceC > 0 ? `Without our fee ${money((balanceC - feePartC) / 100)} · our fee ${money(feePartC / 100)}` : '', icon: 'money', tone: f.late ? 'var(--red)' : balanceC > 0 ? 'var(--orange)' : 'var(--mint)', owe: balanceC > 0, late: f.late },
       { key: 'earnings', k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(f.totalC / 100), sub: [...(f.supC ? [`${money(f.feesC / 100)} client fees`, `${money(f.supC / 100)} supplier share`] : []), ...(f.supPaidC ? [`${money(f.supPaidC / 100)} paid to us by the supplier`, f.leftC >= 0 ? `${money(f.leftC / 100)} still to receive` : `${money(-f.leftC / 100)} paid ahead`] : [`${money(f.collectedC / 100)} collected`, `${money((f.feesC - f.collectedC - f.noBillC) / 100)} not paid yet`, ...(f.noBillC ? [`${money(f.noBillC / 100)} not billed yet`] : [])]), f.keptOn.length ? `${plural(os.length, 'order')} + ${f.keptOn.length} cancelled with a fee kept` : `${plural(os.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
     ];
     $('[data-kpis]').innerHTML = cards.map(c => `<button type="button" class="stat stat-go${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}${c.late ? ' late' : ''}" style="--tone:${c.tone}" data-kpi-card="${c.key}" aria-haspopup="dialog" aria-expanded="${kpiWin === c.key}" title="Show details"><span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}${c.sub3 ? `<em class="stat-fee">${esc(c.sub3)}</em>` : ''}</button>`).join('');
@@ -437,6 +438,7 @@
     $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === S.tab); b.setAttribute('aria-selected', String(b.dataset.tab === S.tab)); });
     // The summary cards (and their month picker) belong to Clients overview only (Erwin, 4 Nov 2026), not to every section.
     for (const el of $$('[data-kpis]')) el.style.display = S.tab === 'overview' ? '' : 'none';
+    for (const el of $$('[data-attn-slot]')) { el.style.display = S.tab === 'overview' ? '' : 'none'; if (S.tab !== 'overview') el.innerHTML = ''; }
     if (S.tab !== 'overview') closeCardWindow(false);
     const head = $('[data-adm-head]'); if (head) head.innerHTML = headHTML(S.tab);
     if (S.tab === 'overview' && S.ov) renderKpis();
@@ -594,12 +596,13 @@
   // (cardActions in 02-card-window.js). Money owed is not a row here: it is the "Not paid yet" card (Erwin, 5 Nov 2026).
   function todoRows() {
     const os = S.orders, cl = S.ov.clients, n = (list, w) => `${w}${list.length === 1 ? '' : 's'}`;
-    const pending = os.filter(o => o.status === 'pending'), follow = os.filter(o => o.unreadMessages > 0);
+    const cxReq = os.filter(o => o.status === 'cancellation_requested' && !o.archived), pending = os.filter(o => o.status === 'pending'), follow = os.filter(o => o.unreadMessages > 0);
     const noTrack = os.filter(o => o.status === 'processing' && !o.trackingNumber), noCost = os.filter(needsCost), revs = os.filter(o => ['open', 'offered'].includes(o.revision?.status)), revProducts = (S.products || []).filter(p => ['open', 'offered'].includes(p.revision?.status));
     const trialSoon = cl.filter(c => c.subscription?.status === 'trial' && c.subscription.trialDaysLeft !== null && c.subscription.trialDaysLeft >= 0 && c.subscription.trialDaysLeft <= 7);
     const rcs = typeof rcWaiting === 'function' ? rcWaiting() : [];
     const subDue = cl.filter(c => (c.subscription?.status === 'trial' && c.subscription.trialEnded) || c.subscription?.status === 'overdue');
     return [
+      [cxReq, `${n(cxReq, 'order')} with a cancel request`, 'data-go-filter="cancellation_requested"', 'var(--red)', 'job:cancelreq'],
       [pending, `${n(pending, 'order')} waiting to be processed`, 'data-go-filter="pending"', 'var(--orange)', 'job:pending'],
       [follow, `${n(follow, 'order')} with unread client messages`, 'data-go-filter="followups"', 'var(--red)', 'job:followups'],
       [revs, `${n(revs, 'order')} with a cost revision request`, 'data-go-filter="revision"', 'var(--orange)', 'job:revision'],
@@ -617,7 +620,9 @@
   function renderOverview() {
     const box = $('[data-overview]'); if (!box) return;
     const todo = todoRows();
-    box.innerHTML = `<section class="card card-pad"><h3 class="sec-title">Needs your attention</h3>${todo.length ? `<div class="todo-list">${todo.map(({ n, text, attrs, tone }) => `<button type="button" class="todo" ${attrs} style="--tone:${tone}"><b>${n}</b><span>${esc(text)}</span>${UI.svg(P.chev)}</button>`).join('')}</div>` : '<p class="muted" style="margin:0">All caught up. Nothing is waiting on you.</p>'}</section>
+    // UX pass (18 Nov 2026): "Needs your attention" sits above the summary cards, so the work comes first.
+    const attn = $('[data-attn-slot]'); if (attn) attn.innerHTML = `<section class="card card-pad"><h3 class="sec-title">Needs your attention</h3>${todo.length ? `<div class="todo-list">${todo.map(({ n, text, attrs, tone }) => `<button type="button" class="todo" ${attrs} style="--tone:${tone}"><b>${n}</b><span>${esc(text)}</span>${UI.svg(P.chev)}</button>`).join('')}</div>` : '<p class="muted" style="margin:0">All caught up. Nothing is waiting on you.</p>'}</section>`;
+    box.innerHTML = `
       <section class="card card-pad mc" data-money-chart></section>`;
     // Three lines (Erwin, 5 Nov 2026): no "Unpaid orders" (the Not paid yet card explains it), no cancellation fees or refunds
     // (they are in Cancelled orders, all clients, in Clients & payments).
@@ -666,7 +671,7 @@
     $('[data-list]').innerHTML = rows.length ? `${bulkBar(archivedView, allOn)}<div class="table-wrap"><table class="tbl stack"><thead><tr><th class="pick"></th><th>Client</th><th>Order</th><th>Destination</th><th class="num">Total</th><th>Status</th><th>Messages</th><th class="hide-sm"></th></tr></thead><tbody>
       ${seen.map(o => `<tr class="click${o.unreadMessages || newUpdates(o).length ? ' is-new' : ''}${S.picked.has(o.id) ? ' picked' : ''}" data-open-order="${o.id}" tabindex="0">
         <td class="pick"><input type="checkbox" data-pick="${o.id}" aria-label="Select ${esc(orderName(o))}"${S.picked.has(o.id) ? ' checked' : ''}></td>
-        <td class="wide"><div class="who"><span class="ava">${esc(initials(clientName(o.clientId)))}</span><div><b>${esc(clientName(o.clientId))}</b><small>${esc(fullDate(o.createdAt))}</small></div></div></td>
+        <td class="wide"><div class="who"><span class="ava">${esc(initials(clientName(o.clientId)))}</span><div><b>${esc(clientName(o.clientId))}</b><small title="${esc(fullDate(o.createdAt))}">${esc(window.DL.shortTime(o.createdAt))}</small></div></div></td>
         <td data-label="Order"><div class="ord-cell">${o.photos?.length ? `<img class="ord-thumb" src="${photoUrl(o.id, o.photos[0].id, true)}" alt="" loading="lazy">` : '<span class="ord-thumb none" title="No photo">—</span>'}<span class="t-main"><b>${esc(orderName(o))}</b>${o.itemTitle ? `<small>${esc(o.itemTitle)}</small>` : ''}<small class="mono">${esc(o.trackingNumber) || 'No tracking yet'}</small>${updateTags(o)}</span></div></td>
         <td data-label="Destination">${esc(place(o.destination))}</td>
         <td data-label="Total" class="num"><b>${money(o.price)}</b>${window.DLPayOrders.tag(o, [], true)}</td>

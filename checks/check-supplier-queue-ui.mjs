@@ -80,6 +80,17 @@ try {
       await page.selectOption(`tr[data-row="${ids[1]}"] [data-f=ship]`, 'bought');
       await page.waitForFunction(id => /Saved · Ada/.test(document.querySelector(`tr[data-row="${id}"]`)?.innerText || ''), ids[1]);
       assert.equal(await page.locator(`tr[data-row="${ids[1]}"]`).count(), 1, 'stays in view after Bought');
+      // The last courier picked (UX pass 18 Nov): shown in the next empty courier box and saved with its tracking number.
+      await page.selectOption(`tr[data-row="${ids[1]}"] [data-f=courier]`, 'Yanwen');
+      for (let i = 0; i < 20 && (await DB.prepare('SELECT courier FROM client_orders WHERE id = ?').bind(ids[1]).first()).courier !== 'Yanwen'; i++) await page.waitForTimeout(200);
+      const sug = page.locator(`tr[data-row="${ids[2]}"] [data-f=courier]`);
+      await page.click('[data-tab=new]'); await page.waitForSelector(`tr[data-row="${ids[2]}"]`);
+      assert.equal(await sug.inputValue(), 'Yanwen', 'the last courier is shown in an empty courier box'); assert.match(await sug.getAttribute('class') || '', /sp-suggest/);
+      const t2 = page.locator(`tr[data-row="${ids[2]}"] [data-f=tracking]`); await t2.fill('UL720000002YP'); await t2.press('Tab');
+      await page.waitForFunction(id => /Saved · Ada/.test(document.querySelector(`tr[data-row="${id}"]`)?.innerText || ''), ids[2]);
+      for (let i = 0; i < 20 && (await DB.prepare('SELECT courier FROM client_orders WHERE id = ?').bind(ids[2]).first()).courier !== 'Yanwen'; i++) await page.waitForTimeout(200);
+      assert.equal((await DB.prepare('SELECT courier FROM client_orders WHERE id = ?').bind(ids[2]).first()).courier, 'Yanwen', 'the courier is saved with the tracking number');
+      assert.ok(!/Nothing typed yet/.test(await page.locator('body').innerText()), 'no "Nothing typed yet" on every row');
       await page.screenshot({ path: path.join(out, `${tag}-orders-typed.png`) });
       // Export.
       const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-export-orders]')]);
@@ -103,8 +114,8 @@ try {
   // Client paid on every order (16 Nov 2026): the supplier confirms which orders are paid. Tag in the list + filter.
   for (const w of [1440, 390]) {
     const ctx = await session(sup, w), page = await ctx.newPage();
-    await page.goto(`${base}/supplier/?lang=en#orders`); await page.waitForSelector('[data-paid] >> visible=true'); // phone: the table copy is hidden, the cards show
-    assert.ok(await page.locator('[data-paid=no_bill]').count() > 0, 'New orders without a bill say No bill yet');
+    await page.goto(`${base}/supplier/?lang=en#orders`); await page.waitForSelector('[data-row] >> visible=true'); // phone: the table copy is hidden, the cards show
+    assert.equal(await page.locator('[data-paid=no_bill]').count(), 0, 'no "No bill yet" tag: it is the usual state (UX pass 18 Nov)');
     await page.locator('[data-tab=bought]').click(); await page.waitForTimeout(300);
     assert.ok(await page.locator('[data-paid=not_paid]').count() > 0, 'a billed order not paid yet says Not paid');
     await page.screenshot({ path: path.join(out, `en-${w}-paid-tags.png`) });
