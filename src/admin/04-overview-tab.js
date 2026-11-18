@@ -3,12 +3,13 @@
   // (cardActions in 02-card-window.js). Money owed is not a row here: it is the "Not paid yet" card (Erwin, 5 Nov 2026).
   function todoRows() {
     const os = S.orders, cl = S.ov.clients, n = (list, w) => `${w}${list.length === 1 ? '' : 's'}`;
-    const pending = os.filter(o => o.status === 'pending'), follow = os.filter(o => o.unreadMessages > 0);
+    const cxReq = os.filter(o => o.status === 'cancellation_requested' && !o.archived), pending = os.filter(o => o.status === 'pending'), follow = os.filter(o => o.unreadMessages > 0);
     const noTrack = os.filter(o => o.status === 'processing' && !o.trackingNumber), noCost = os.filter(needsCost), revs = os.filter(o => ['open', 'offered'].includes(o.revision?.status)), revProducts = (S.products || []).filter(p => ['open', 'offered'].includes(p.revision?.status));
     const trialSoon = cl.filter(c => c.subscription?.status === 'trial' && c.subscription.trialDaysLeft !== null && c.subscription.trialDaysLeft >= 0 && c.subscription.trialDaysLeft <= 7);
     const rcs = typeof rcWaiting === 'function' ? rcWaiting() : [];
     const subDue = cl.filter(c => (c.subscription?.status === 'trial' && c.subscription.trialEnded) || c.subscription?.status === 'overdue');
     return [
+      [cxReq, `${n(cxReq, 'order')} with a cancel request`, 'data-go-filter="cancellation_requested"', 'var(--red)', 'job:cancelreq'],
       [pending, `${n(pending, 'order')} waiting to be processed`, 'data-go-filter="pending"', 'var(--orange)', 'job:pending'],
       [follow, `${n(follow, 'order')} with unread client messages`, 'data-go-filter="followups"', 'var(--red)', 'job:followups'],
       [revs, `${n(revs, 'order')} with a cost revision request`, 'data-go-filter="revision"', 'var(--orange)', 'job:revision'],
@@ -26,7 +27,9 @@
   function renderOverview() {
     const box = $('[data-overview]'); if (!box) return;
     const todo = todoRows();
-    box.innerHTML = `<section class="card card-pad"><h3 class="sec-title">Needs your attention</h3>${todo.length ? `<div class="todo-list">${todo.map(({ n, text, attrs, tone }) => `<button type="button" class="todo" ${attrs} style="--tone:${tone}"><b>${n}</b><span>${esc(text)}</span>${UI.svg(P.chev)}</button>`).join('')}</div>` : '<p class="muted" style="margin:0">All caught up. Nothing is waiting on you.</p>'}</section>
+    // UX pass (18 Nov 2026): "Needs your attention" sits above the summary cards, so the work comes first.
+    const attn = $('[data-attn-slot]'); if (attn) attn.innerHTML = `<section class="card card-pad"><h3 class="sec-title">Needs your attention</h3>${todo.length ? `<div class="todo-list">${todo.map(({ n, text, attrs, tone }) => `<button type="button" class="todo" ${attrs} style="--tone:${tone}"><b>${n}</b><span>${esc(text)}</span>${UI.svg(P.chev)}</button>`).join('')}</div>` : '<p class="muted" style="margin:0">All caught up. Nothing is waiting on you.</p>'}</section>`;
+    box.innerHTML = `
       <section class="card card-pad mc" data-money-chart></section>`;
     // Three lines (Erwin, 5 Nov 2026): no "Unpaid orders" (the Not paid yet card explains it), no cancellation fees or refunds
     // (they are in Cancelled orders, all clients, in Clients & payments).

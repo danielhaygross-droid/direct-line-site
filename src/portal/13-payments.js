@@ -86,6 +86,9 @@
     g.className = 'po-gap full' + (g.textContent ? ' warn' : '');
   }
   function bindPayments() {
+    // "Pay now" next to the amount to pay (UX pass, 18 Nov 2026): straight to step 1 of Pay for your orders.
+    $('[data-pay-jump]')?.addEventListener('click', () => { if (payTab() !== 'pay') { S.payTab = 'pay'; history.replaceState(null, '', '#/payments?tab=pay'); renderView(); }
+      const el = $('#pay-flow'); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.querySelector('input,button')?.focus({ preventScroll: true }); } });
     $('.pay-tabs')?.addEventListener('click', e => { const b = e.target.closest('[data-pay-tab]'); if (!b || b.dataset.payTab === payTab()) return;
       S.payTab = b.dataset.payTab; history.replaceState(null, '', '#/payments?tab=' + S.payTab); renderView(); $('[data-pay-tab].on')?.focus(); });
     $('.pay-tabs')?.addEventListener('keydown', e => { if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return; const all = $$('[data-pay-tab]'), i = all.indexOf(document.activeElement); if (i < 0) return;

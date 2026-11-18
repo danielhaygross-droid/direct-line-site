@@ -48,6 +48,10 @@
       return true;
     });
   }
+  // The courier Ada picked last (UX pass, 18 Nov 2026): shown in empty courier boxes and saved with the tracking number.
+  const LAST_COURIER = 'dl_supplier_last_courier';
+  const lastCourier = () => { try { const v = localStorage.getItem(LAST_COURIER) || ''; return S.queue?.couriers?.includes(v) ? v : ''; } catch (e) { return ''; } };
+  const flashSaved = (id, f) => { for (const el of document.querySelectorAll(`[data-o="${id}"][data-f="${f}"]`)) { el.classList.add('sp-just-saved'); setTimeout(() => el.classList.remove('sp-just-saved'), 1600); } };
   const tabCount = tab => (S.queue?.orders || []).filter(o => o.tab === tab).length;
   const disabledFor = (o, field) => {
     if (field === 'cancelFee') return !(o.status === 'cancelled' || o.cancelRequested);
@@ -64,21 +68,21 @@
     if (field === 'itemCosts') return `<input data-o="${id}" data-f="itemCosts" value="${esc(c.itemCosts)}" placeholder="—" aria-label="${esc(t('Cost per product (USD)'))}"${dis(o, 'itemCosts')}>`;
     if (field === 'ship') return `<select data-o="${id}" data-f="ship" aria-label="${esc(t('Shipping status'))}"${o.ship === 'shipped' || o.status === 'cancelled' || o.cancelRequested ? ' disabled' : ''}>${SHIP_OPTS.map(([v, l]) => `<option value="${v}"${shipState(o) === v ? ' selected' : ''}>${t(l)}</option>`).join('')}</select>`;
     if (field === 'tracking') return `<input class="mono" data-o="${id}" data-f="tracking" value="${esc(c.tracking)}" placeholder="${esc(t('Tracking number'))}" aria-label="${esc(t('Tracking number'))}"${dis(o, 'tracking')}>`;
-    if (field === 'courier') { const list = S.queue.couriers.includes(c.courier) || !c.courier ? S.queue.couriers : [c.courier, ...S.queue.couriers];
-      return `<select data-o="${id}" data-f="courier" aria-label="${esc(t('Courier'))}"${dis(o, 'courier')}><option value="">${t('Pick')}</option>${list.map(v => `<option${v === c.courier ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`; }
+    if (field === 'courier') { const list = S.queue.couriers.includes(c.courier) || !c.courier ? S.queue.couriers : [c.courier, ...S.queue.couriers], sug = !c.courier && !disabledFor(o, 'courier') ? lastCourier() : '', pick = c.courier || sug;
+      return `<select data-o="${id}" data-f="courier" aria-label="${esc(t('Courier'))}"${sug ? ' class="sp-suggest"' : ''}${dis(o, 'courier')}><option value="">${t('Pick')}</option>${list.map(v => `<option${v === pick ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`; }
     if (field === 'delayed') return `<select data-o="${id}" data-f="delayed" aria-label="${esc(t('Delayed? + reason'))}"${dis(o, 'delayed')}><option value="0">${t('On time')}</option><option value="1"${c.delayed ? ' selected' : ''}>${t('Possibly delayed')}</option></select>${c.delayed ? `<input data-o="${id}" data-f="reason" value="${esc(c.reason)}" placeholder="${esc(t('Reason'))}" aria-label="${esc(t('Reason'))}"${dis(o, 'reason')}>` : ''}`;
     if (field === 'domestic') return `<input class="mono" data-o="${id}" data-f="domestic" value="${esc(c.domestic)}" placeholder="${esc(t('If there is one'))}" aria-label="${esc(t('Domestic express tracking'))}"${dis(o, 'domestic')}>`;
     if (field === 'cancelFee') return `<span class="sp-money"><span>$</span><input inputmode="decimal" data-o="${id}" data-f="cancelFee" value="${esc(c.cancelFee)}" placeholder="0" aria-label="${esc(t('Cancellation fee (USD)'))}"${dis(o, 'cancelFee')}></span>`;
     return '';
   }
   const savedLine = o => { const st = S.saving[o.id]; if (st === 'saving') return `<span class="sp-saved">${t('Saving…')}</span>`; if (st === 'err') return `<span class="sp-saved err">⚠ ${t('Not saved')}</span>`;
-    const e = lastEdit(o); return e ? `<span class="sp-saved ok">✓ ${t('Saved')} · ${esc(e.by)} · ${esc(ago(e.at))}</span>` : `<span class="sp-saved">${t('Nothing typed yet')}</span>`; };
+    const e = lastEdit(o); return e ? `<span class="sp-saved ok">✓ ${t('Saved')} · ${esc(e.by)} · ${esc(ago(e.at))}</span>` : ''; };
   const warnLine = o => { const w = S.warn[o.id]; return w?.length ? `<p class="sp-warn">${t('Also on')} ${w.map(esc).join(', ')}. ${t('Check the number.')}</p>` : ''; };
   const errLine = o => (S.err[o.id] ? `<p class="sp-warn">${esc(S.err[o.id])}</p>` : '');
   const thumb = o => (o.photos[0] ? `<img class="sp-thumb" src="${esc(o.photos[0].thumb)}" alt="" loading="lazy">` : '<span class="sp-thumb none"></span>');
   // Client paid (Erwin, 16 Nov 2026: the supplier confirms which orders are paid already). Cancelled orders don't need it.
   const PAID = { paid: ['Paid', 'mint'], not_paid: ['Not paid', 'red'], no_bill: ['No bill yet', ''] };
-  const paidTag = o => (o.status === 'cancelled' || !PAID[o.clientPaid] ? '' : ` <span class="sp-tag ${PAID[o.clientPaid][1]}" data-paid="${o.clientPaid}">${t(PAID[o.clientPaid][0])}</span>`);
+  const paidTag = o => (o.status === 'cancelled' || o.clientPaid === 'no_bill' || !PAID[o.clientPaid] ? '' : ` <span class="sp-tag ${PAID[o.clientPaid][1]}" data-paid="${o.clientPaid}">${t(PAID[o.clientPaid][0])}</span>`);
   const orderHead = o => `<button type="button" class="sp-ref" data-open="${o.id}">${esc(o.ref)}${ICON.next}</button>${isNew(o) ? ` <span class="sp-tag gold">${t('New')}</span>` : ''}${paidTag(o)}
     <small>${esc(o.client)}${o.shop ? ' · ' + esc(o.shop) : ''}</small><small>${esc(fmtDay(o.createdAt))}</small>${savedLine(o)}`;
   const cancelNote = o => (o.cancelRequested ? `<span class="sp-tag red">${t('Cancel requested')}</span><p class="sp-warn">${t('don’t buy or ship them. Wait for Direct Line.')}</p>` : o.revision ? `<span class="sp-tag orange">${t('Cost revision requested')}</span>` : '');
@@ -110,7 +114,7 @@
     const filtered = !!(S.q || f.client || f.country || f.noCost || f.paid || S.onlyCancelReq);
     const tabs = [['new', 'New'], ['bought', 'Bought'], ['shipped', 'Shipped'], ['cancelled', 'Cancelled']].map(([k, l]) => {
       const n = tabCount(k), extra = k === 'new' ? Q.orders.filter(isNew).length : k === 'cancelled' ? 0 : 0;
-      return `<button type="button" class="sp-chip" data-tab="${k}" aria-pressed="${S.tab === k && !S.onlyCancelReq}">${t(l)} <span>${n}</span>${extra ? `<b class="sp-badge">${extra}</b>` : ''}</button>`; }).join('');
+      return `<button type="button" class="sp-chip" data-tab="${k}" aria-pressed="${S.tab === k && !S.onlyCancelReq}">${t(l)} ${extra && extra === n ? `<b class="sp-badge">${n}</b>` : `<span>${n}</span>${extra ? `<b class="sp-badge">${extra}</b>` : ''}`}</button>`; }).join('');
     const cx = S.tab === 'cancelled';
     const head = `<tr><th>${t('Order')}</th><th>${t('Product / variation')}</th><th class="num">${t('Qty')}</th><th>${t('Ship to')}</th><th class="g">${t('Total cost (USD)')}</th><th class="g">${t('Cost per product (USD)')}</th>
       ${cx ? `<th class="g">${t('Cancellation fee (USD)')}</th><th class="g">${t('Tracking number')}</th>` : `<th class="g">${t('Shipping status')}</th><th class="g">${t('Tracking number')}</th><th class="g">${t('Courier')}</th><th class="g">${t('Delayed? + reason')}</th>`}<th class="g">${t('Domestic express tracking')}</th></tr>`;
@@ -144,10 +148,16 @@
       const r = await api('/supplier/orders/' + id, { method: 'PUT', body: { field, value } });
       Object.assign(o, r.order); delete S.saving[id];
       if (field === 'tracking') S.warn[id] = r.warn?.sameTracking || [];
+      if (field === 'courier' && value) try { localStorage.setItem(LAST_COURIER, value); } catch (e) { /* private mode */ }
+      // A tracking number saved with no courier yet: the last courier goes with it (Ada can still change it).
+      if (field === 'tracking' && value && !o.cells.courier && lastCourier()) {
+        try { const r2 = await api('/supplier/orders/' + id, { method: 'PUT', body: { field: 'courier', value: lastCourier() } }); Object.assign(o, r2.order); setTimeout(() => flashSaved(id, 'courier')); } catch (e) { /* she picks it herself */ }
+      }
       if (o.tab !== S.tab) { S.pinned.add(id); S.pinnedTab = S.tab; }
     } catch (e) { S.saving[id] = 'err'; S.err[id] = e.message; }
     delete S.pending[key];
     redrawOrder(id);
+    if (!S.err[id]) flashSaved(id, f);
   }
   function redrawOrder(id) {
     const o = S.queue.orders.find(x => x.id === id), active = document.activeElement, keep = active?.dataset?.o == id && !active.closest('#sp-drawer') ? active.dataset.f : null, sel = keep && active.closest('.sp-ocard') ? '.sp-ocard' : 'tr';

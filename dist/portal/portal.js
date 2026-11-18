@@ -442,8 +442,8 @@
     return `
       <section data-home-hello class="tw:flex tw:items-end tw:justify-between tw:gap-5 tw:flex-wrap"><div><h2 class="tw:mt-2 tw:text-[clamp(26px,3vw,36px)] tw:font-semibold tw:tracking-[-.02em]">${hello}, <span class="tw:text-gold">${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p class="tw:m-0 tw:mt-1 tw:text-muted">${all.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Send us your first order to get started.'}</p></div>
         <div class="hello-actions tw:flex tw:gap-2 tw:flex-wrap tw:max-md:hidden"><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a></div></section>
-      ${subBanner(me.subscription)}
       ${payStrip()}
+      ${subBanner(me.subscription)}
       ${moneyNow()}
       ${window.DLClientStoreUI.periodFields(S.period,S.from,S.to,window.DLClientStoreMath.monthsOf(S.orders))}
       ${!S.storeId&&S.stores.length>1?`<section class="card card-pad"><h3 class="sec-title">Performance by store</h3>${window.DLClientStoreUI.table(stats)}</section>`:''}
@@ -1101,6 +1101,9 @@
     g.className = 'po-gap full' + (g.textContent ? ' warn' : '');
   }
   function bindPayments() {
+    // "Pay now" next to the amount to pay (UX pass, 18 Nov 2026): straight to step 1 of Pay for your orders.
+    $('[data-pay-jump]')?.addEventListener('click', () => { if (payTab() !== 'pay') { S.payTab = 'pay'; history.replaceState(null, '', '#/payments?tab=pay'); renderView(); }
+      const el = $('#pay-flow'); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.querySelector('input,button')?.focus({ preventScroll: true }); } });
     $('.pay-tabs')?.addEventListener('click', e => { const b = e.target.closest('[data-pay-tab]'); if (!b || b.dataset.payTab === payTab()) return;
       S.payTab = b.dataset.payTab; history.replaceState(null, '', '#/payments?tab=' + S.payTab); renderView(); $('[data-pay-tab].on')?.focus(); });
     $('.pay-tabs')?.addEventListener('keydown', e => { if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return; const all = $$('[data-pay-tab]'), i = all.indexOf(document.activeElement); if (i < 0) return;

@@ -67,7 +67,7 @@ try {
     assert.equal(await notPaid.locator('strong').innerText(), usd(pb + pc - 5), tag + ': B + C owed, minus the unlinked $5');
     if (lang === 'en') {
       assert.match(await notPaid.innerText(), /2 orders · 1 client · oldest 9 Oct 2026/, tag);
-      assert.match(await notPaid.innerText(), new RegExp(`Unpaid orders \\${usd(pb + pc)} − credit and earlier payments \\$5\\.00`), tag + ': the difference explained');
+      assert.ok(!/credit and earlier payments/.test(await notPaid.innerText()), tag + ': the card stays short (UX pass 18 Nov): the credit is explained in its window');
       const fee = Number((await DB.prepare('SELECT commission FROM client_orders WHERE id=?').bind(a.id).first()).commission), n = 4;
       const earn = await card(3).innerText();
       assert.ok(earn.includes(usd(fee * n)) && earn.includes(`${usd(fee)} collected · ${usd(fee * (n - 2))} not paid yet · ${usd(fee)} not billed yet · 4 orders`), tag + ': earnings split, the parts add up ' + earn);
@@ -87,7 +87,7 @@ try {
     } else {
       assert.match(await notPaid.innerText(), /עוד לא שולם/, tag);
       assert.match(await notPaid.innerText(), /2 הזמנות · לקוח אחד · הישנה ביותר/, tag);
-      assert.match(await notPaid.innerText(), /זיכוי ותשלומים קודמים/, tag);
+      assert.ok(!/זיכוי ותשלומים קודמים/.test(await notPaid.innerText()), tag + ': short card (UX pass 18 Nov)');
       assert.match(await card(3).innerText(), /נגבו \$[\d,.]+ · עוד לא שולמו \$[\d,.]+/, tag + ': earnings split in Hebrew, word then amount');
       // Right to left: each part sits to the left of the one before it, and its amount stays inside the part.
       const parts = await card(3).locator('em > span').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { t: e.textContent, right: r.right, top: r.top }; }));
