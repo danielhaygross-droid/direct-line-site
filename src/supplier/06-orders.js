@@ -23,7 +23,7 @@
     'The client asked to cancel this order: don’t ship it. Direct Line will tell you.': '客户申请取消这个订单：不要发货。Direct Line 会通知您。',
     'The client asked to cancel this order: don’t buy it. Direct Line will tell you.': '客户申请取消这个订单：不要购买。Direct Line 会通知您。',
     'Type the total cost in US dollars, e.g. 17.90.': '请填写美元总成本，例如 17.90。', 'Type one tracking number, without spaces.': '请填写一个运单号，不要空格。',
-    'Pick a courier from the list.': '请从列表中选择快递公司。', 'Type the fee in US dollars, e.g. 4.': '请填写美元费用，例如 4。', 'Mark the order as possibly delayed first.': '请先标记为可能延迟。',
+    'Pick a courier from the list.': '请从列表中选择快递公司。', '+ Add courier…': '+ 添加快递公司…', 'Name of the new courier': '新快递公司名称', 'Type the courier name (up to 40 characters).': '请填写快递公司名称（最多40个字符）。', 'Type the fee in US dollars, e.g. 4.': '请填写美元费用，例如 4。', 'Mark the order as possibly delayed first.': '请先标记为可能延迟。',
     'This order is cancelled: its cost can’t change.': '这个订单已取消：成本不能修改。', 'This order is cancelled.': '这个订单已取消。',
     'A cancellation fee is only for cancelled orders or cancel requests.': '取消费只用于已取消或申请取消的订单。', 'Only orders that are not shipped yet can be delayed.': '只有还没发货的订单可以标记延迟。',
     'Only orders not shipped yet can be marked bought.': '只有还没发货的订单可以标记为已购买。', 'This order is shipped: its tracking number can’t be cleared.': '这个订单已发货：运单号不能清空。',
@@ -69,7 +69,7 @@
     if (field === 'ship') return `<select data-o="${id}" data-f="ship" aria-label="${esc(t('Shipping status'))}"${o.ship === 'shipped' || o.status === 'cancelled' || o.cancelRequested ? ' disabled' : ''}>${SHIP_OPTS.map(([v, l]) => `<option value="${v}"${shipState(o) === v ? ' selected' : ''}>${t(l)}</option>`).join('')}</select>`;
     if (field === 'tracking') return `<input class="mono" data-o="${id}" data-f="tracking" value="${esc(c.tracking)}" placeholder="${esc(t('Tracking number'))}" aria-label="${esc(t('Tracking number'))}"${dis(o, 'tracking')}>`;
     if (field === 'courier') { const list = S.queue.couriers.includes(c.courier) || !c.courier ? S.queue.couriers : [c.courier, ...S.queue.couriers], sug = !c.courier && !disabledFor(o, 'courier') ? lastCourier() : '', pick = c.courier || sug;
-      return `<select data-o="${id}" data-f="courier" aria-label="${esc(t('Courier'))}"${sug ? ' class="sp-suggest"' : ''}${dis(o, 'courier')}><option value="">${t('Pick')}</option>${list.map(v => `<option${v === pick ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select>`; }
+      return `<select data-o="${id}" data-f="courier" aria-label="${esc(t('Courier'))}"${sug ? ' class="sp-suggest"' : ''}${dis(o, 'courier')}><option value="">${t('Pick')}</option>${list.map(v => `<option${v === pick ? ' selected' : ''}>${esc(v)}</option>`).join('')}<option value="__add">${t('+ Add courier…')}</option></select>`; }
     if (field === 'delayed') return `<select data-o="${id}" data-f="delayed" aria-label="${esc(t('Delayed? + reason'))}"${dis(o, 'delayed')}><option value="0">${t('On time')}</option><option value="1"${c.delayed ? ' selected' : ''}>${t('Possibly delayed')}</option></select>${c.delayed ? `<input data-o="${id}" data-f="reason" value="${esc(c.reason)}" placeholder="${esc(t('Reason'))}" aria-label="${esc(t('Reason'))}"${dis(o, 'reason')}>` : ''}`;
     if (field === 'domestic') return `<input class="mono" data-o="${id}" data-f="domestic" value="${esc(c.domestic)}" placeholder="${esc(t('If there is one'))}" aria-label="${esc(t('Domestic express tracking'))}"${dis(o, 'domestic')}>`;
     if (field === 'cancelFee') return `<span class="sp-money"><span>$</span><input inputmode="decimal" data-o="${id}" data-f="cancelFee" value="${esc(c.cancelFee)}" placeholder="0" aria-label="${esc(t('Cancellation fee (USD)'))}"${dis(o, 'cancelFee')}></span>`;
@@ -139,6 +139,14 @@
   async function saveBox(el) {
     const id = Number(el.dataset.o), f = el.dataset.f, o = S.queue.orders.find(x => x.id === id); if (!o) return;
     let field = f, value = el.value.trim();
+    // "+ Add courier…" (19 Nov 2026): the new name goes on the courier list, then on this order.
+    if (f === 'courier' && value === '__add') {
+      const name = (window.prompt(t('Name of the new courier')) || '').trim();
+      if (!name) { redrawOrder(id); return; }
+      try { const r = await api('/supplier/couriers', { method: 'POST', body: { name } }); S.queue.couriers = r.couriers; value = r.courier;
+        for (const sel of document.querySelectorAll('select[data-f="courier"]')) if (![...sel.options].some(op => op.value === value)) sel.querySelector('option[value="__add"]')?.before(new Option(value, value)); }
+      catch (e) { S.err[id] = e.message; redrawOrder(id); return; }
+    }
     if (f === 'ship') { field = value === 'shipped' ? 'shipped' : 'bought'; value = value === 'shipped' ? true : value === 'bought'; if (field === 'bought' && !!o.boughtAt === value) return; }
     else if (f === 'delayed') { value = value === '1'; if (value === o.cells.delayed) return; }
     else if ((o.cells[f] ?? '') === value) return;

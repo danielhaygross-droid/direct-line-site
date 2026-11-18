@@ -91,6 +91,11 @@ try {
       for (let i = 0; i < 20 && (await DB.prepare('SELECT courier FROM client_orders WHERE id = ?').bind(ids[2]).first()).courier !== 'Yanwen'; i++) await page.waitForTimeout(200);
       assert.equal((await DB.prepare('SELECT courier FROM client_orders WHERE id = ?').bind(ids[2]).first()).courier, 'Yanwen', 'the courier is saved with the tracking number');
       assert.ok(!/Nothing typed yet/.test(await page.locator('body').innerText()), 'no "Nothing typed yet" on every row');
+      // "+ Add courier…" (19 Nov 2026): the supplier types a new name; it goes on the list and on the order.
+      page.once('dialog', d => d.accept('DHL eCommerce')); await page.selectOption(`tr[data-row="${ids[0]}"] [data-f=courier]`, '__add');
+      for (let i = 0; i < 25 && (await DB.prepare('SELECT courier FROM client_orders WHERE id = ?').bind(ids[0]).first()).courier !== 'DHL eCommerce'; i++) await page.waitForTimeout(200);
+      assert.equal((await DB.prepare('SELECT courier FROM client_orders WHERE id = ?').bind(ids[0]).first()).courier, 'DHL eCommerce', 'the new courier is saved on the order');
+      assert.ok((await page.locator(`tr[data-row="${ids[2]}"] [data-f=courier] option`).allInnerTexts()).includes('DHL eCommerce'), 'and offered on the other orders');
       await page.screenshot({ path: path.join(out, `${tag}-orders-typed.png`) });
       // Export.
       const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-export-orders]')]);

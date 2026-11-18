@@ -29,7 +29,7 @@ test('paid state of an order follows the balance rule: price unless cancelled, p
   assert.deepEqual(orders.map(o => P.state(o, adj)), ['unpaid', 'unbilled', 'unpaid', 'paid', 'unbilled', null]);
   assert.deepEqual(orders.map(o => P.dueCents(o, adj)), [2000, 0, 400, 1000, 0, 0], 'cancelled = only its fee; a refund takes the bill down');
   assert.equal(P.tag(orders[0], adj), '<span class="pay-tag unpaid">Not paid</span>');
-  assert.equal(P.tag(orders[3], adj, true), '<div class="pay-line"><span class="pay-tag paid">Paid</span></div>');
+  assert.equal(P.tag(orders[3], adj, true), '<div class="pay-tagline"><span class="pay-tag paid">Paid</span></div>');
   assert.equal(P.tag(orders[1], adj), '', 'no tag before there is a bill');
 });
 

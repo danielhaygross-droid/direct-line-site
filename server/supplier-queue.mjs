@@ -7,7 +7,7 @@
 // cost revisions, shipped, delays, cancellation fees), then the new cells are written into the sheet row.
 
 import { paidOrders } from './payment-orders.mjs';
-import { applySupplierRow, writeSupplierCells, withOrderLock, addressLines, savedPriceFlag, numberedLines, SHIPPED, NOT_SHIPPED, DELAYED, ON_TIME, DEFAULT_COURIERS } from './supplier-sheet.mjs';
+import { applySupplierRow, writeSupplierCells, withOrderLock, addressLines, savedPriceFlag, numberedLines, SHIPPED, NOT_SHIPPED, DELAYED, ON_TIME, DEFAULT_COURIERS, updateCourierDropdown } from './supplier-sheet.mjs';
 import { syncPortalOrderToGoogleSheet, googleSheetsConfigured } from './google-sheets.mjs';
 import { photoSignature } from './sheet-photos.mjs';
 import { photoBytes } from './file-storage.mjs';
@@ -39,6 +39,20 @@ const statusAt = o => Number(o.status_changed_at ?? o.created_at) || 0;
 export const tabOf = o => (['cancelled'].includes(o.status) ? 'cancelled' : ['shipped', 'delivered'].includes(o.status) ? 'shipped' : o.bought_at || norm(o.tracking_number) ? 'bought' : 'new'); // a tracking number means it was bought
 const shipWord = o => (['shipped', 'delivered'].includes(o.status) ? 'shipped' : o.status === 'cancelled' ? 'cancelled' : o.status === 'cancellation_requested' ? 'cancel_requested' : 'not_shipped');
 
+// The courier from the tracking number (Erwin, 19 Nov 2026: "UL706844450YP = Yanwen, ZS35381739099 = China Post").
+// Known formats first; otherwise the courier earlier orders with the same format had (letters + digit count + letters),
+// only when they all agree, so a new courier is learned after it was picked twice. Only names on the courier list.
+export const COURIER_RULES = [[/^[A-Z]{2}\d{9}YP$/i, 'Yanwen'], [/^ZS\d{11}$/i, 'China Post']];
+export const trackingShape = t => { const m = /^([A-Z]*)(\d+)([A-Z]*)$/i.exec(norm(t)); return m ? `${m[1].toUpperCase()}|${m[2].length}|${m[3].toUpperCase()}` : ''; };
+export async function guessCourier(DB, tracking) {
+  const t = norm(tracking), list = await courierList(DB), has = c => list.find(x => x.toLowerCase() === String(c).toLowerCase()) || '';
+  if (!t) return '';
+  for (const [re, c] of COURIER_RULES) if (re.test(t)) return has(c);
+  const shape = trackingShape(t); if (!shape) return '';
+  const rows = (await DB.prepare("SELECT tracking_number, courier FROM client_orders WHERE COALESCE(courier, '') <> '' AND COALESCE(tracking_number, '') <> '' AND NOT archived ORDER BY id DESC LIMIT 400").all()).results || [];
+  const same = rows.filter(r => trackingShape(r.tracking_number) === shape), names = [...new Set(same.map(r => norm(r.courier).toLowerCase()))];
+  return same.length >= 2 && names.length === 1 ? has(same[0].courier) : '';
+}
 export async function courierList(DB) {
   const row = await DB.prepare("SELECT value FROM portal_settings WHERE key = 'couriers'").first();
   return String(row?.value ?? DEFAULT_COURIERS).split(/\r?\n/).map(norm).filter(Boolean);
@@ -123,6 +137,7 @@ export async function saveCell(DB, env, waitUntil, me, id, field, value) {
       if (v.length > 120 || /\s/.test(v)) fail(400, 'Type one tracking number, without spaces.');
       if (shipped && !v) fail(409, 'This order is shipped: its tracking number can’t be cleared.');
       cells.tracking = v;
+      if (v && !norm(o.sheet_courier) && !norm(o.courier)) { const g = await guessCourier(DB, v); if (g) cells.courier = g; }
     } else if (field === 'courier') {
       if (v && !(await courierList(DB)).includes(v)) fail(400, 'Pick a courier from the list.');
       cells.courier = v;
@@ -242,6 +257,16 @@ export async function routeQueue(request, path, ctx, me) {
     const body = await request.json().catch(() => ({}));
     try { return json({ ok: true, ...(await saveCell(DB, env, waitUntil, me, Number(one[1]), String(body.field || ''), body.value)) }); }
     catch (e) { return json({ ok: false, error: e.message }, e.status || (e.busy ? 409 : 500)); }
+  }
+  // A courier that isn't on the list yet (Erwin, 19 Nov 2026): the supplier adds it from the courier box.
+  if (path === '/supplier/couriers' && method === 'POST') {
+    const name = norm((await request.json().catch(() => ({}))).name).replace(/\s+/g, ' ');
+    if (!name || name.length > 40 || /[\r\n]/.test(name)) return json({ ok: false, error: 'Type the courier name (up to 40 characters).' }, 400);
+    const list = await courierList(DB), same = list.find(c => c.toLowerCase() === name.toLowerCase());
+    if (same) return json({ ok: true, couriers: list, courier: same });
+    await DB.prepare("INSERT INTO portal_settings (key, value) VALUES ('couriers', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind([...list, name].join('\n')).run();
+    const dd = updateCourierDropdown(DB, env).catch(e => console.error('Courier dropdown update failed', e)); if (waitUntil) waitUntil(dd); else await dd;
+    return json({ ok: true, couriers: await courierList(DB), courier: name });
   }
   const zipM = /^\/supplier\/orders\/(\d+)\/photos\.zip$/.exec(path);
   if (zipM && method === 'GET') return photosZip(DB, env, Number(zipM[1]));

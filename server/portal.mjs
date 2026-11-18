@@ -33,6 +33,7 @@ import { CLAIM_SCHEMA, claims, submitClaim, decideClaim, claimEligibility } from
 import { SUPPLIER_SCHEMA, supplierSession, routeSupplier, routeSupplierAdmin } from './supplier-portal.mjs';
 import { RECEIPT_SCHEMA, routeReceiptsAdmin, ISSUER, ISSUER_DETAILS } from './supplier-receipts.mjs';
 
+import { guessCourier } from './supplier-queue.mjs';
 import { STORE_SCHEMA, ensureStores, clientStores, saveStore, orderStore, clientPerformance, withEtsyRef } from './client-stores.mjs';
 
 import { STORAGE_SCHEMA, photoBytes, syncFileStorage, fileStorageStatus } from './file-storage.mjs';
@@ -1140,6 +1141,8 @@ async function routePortal(request, url, ctx, meta) {
     if (row.status !== existing.status) await logEvent(DB, id, existing.client_id, 'status', actor, row.status);
     if (row.tracking_number !== existing.tracking_number && row.tracking_number) await logEvent(DB, id, existing.client_id, 'tracking', actor, row.tracking_number);
     if (who.admin && body.courier !== undefined) { const c = text(body.courier, 60) || null; await DB.prepare('UPDATE client_orders SET courier=? WHERE id=?').bind(c, id).run(); row.courier = c; }
+    // A tracking number with no courier: the courier from its format (19 Nov 2026, as in the supplier portal).
+    if (who.admin && row.tracking_number && !row.courier) { const g = await guessCourier(DB, row.tracking_number); if (g) { await DB.prepare('UPDATE client_orders SET courier=? WHERE id=?').bind(g, id).run(); row.courier = g; } }
     // Tax number / gift message: saved with the same rights as the rest of this edit (the update above passed).
     if (body.taxNumber !== undefined || body.giftMessage !== undefined) {
       const tax = body.taxNumber !== undefined ? f.tax_number : existing.tax_number, gift = body.giftMessage !== undefined ? f.gift_message : existing.gift_message;

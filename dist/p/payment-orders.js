@@ -23,7 +23,7 @@
   };
   // Small "Paid" / "Not paid" tag for order lists (nothing for orders with no bill yet); line = on its own line (table cells).
   // Refunded (Erwin, 29 Oct 2026): a cancelled order the client had paid for (a linked payment), like the sheet.
-  const tag = (o, adjustments, line = false) => { const s = state(o, adjustments), t = o.status === 'cancelled' && o.paymentId ? '<span class="pay-tag refunded">Refunded</span>' : s === 'paid' ? '<span class="pay-tag paid">Paid</span>' : s === 'unpaid' ? (o.coveredByCredit ? '<span class="pay-tag credit">Covered by credit</span>' : '<span class="pay-tag unpaid">Not paid</span>') : ''; return t && line ? `<div class="pay-line">${t}</div>` : t; };
+  const tag = (o, adjustments, line = false) => { const s = state(o, adjustments), t = o.status === 'cancelled' && o.paymentId ? '<span class="pay-tag refunded">Refunded</span>' : s === 'paid' ? '<span class="pay-tag paid">Paid</span>' : s === 'unpaid' ? (o.coveredByCredit ? '<span class="pay-tag credit">Covered by credit</span>' : '<span class="pay-tag unpaid">Not paid</span>') : ''; return t && line ? `<div class="pay-tagline">${t}</div>` : t; };
   const orderWord = n => n === 1 ? 'order' : 'orders';
 
   // Erwin, 5 Nov 2026 (Balance due lower than "Send the total"): what the client already has with us and
