@@ -22,5 +22,12 @@ try{
  await call('/client-stores/'+beta,'POST',{archived:false},client);assert.equal((await call('/client-stores','GET',null,client)).data.stores.find(s=>s.id===beta).archived,false);
  assert.equal((await call('/admin/client-stores','POST',{clientId:id,name:'Admin Store',platform:'eBay'},admin)).status,200);
  assert.equal(Number((await DB.prepare('SELECT COUNT(*) AS n FROM client_orders WHERE store_id IS NULL').first()).n),0);
- console.log('PASS default store, required selection, three-store exact totals including missing sales/fees/refunds, client summary equality, ownership, admin moves, archive/history/restore and admin store creation');
+ // Etsy order numbers get their "#" (alpha is an Etsy store; beta is Shopify; text like BULK-... stays as typed).
+ const refOf=async oid=>(await call('/orders','GET',null,client)).data.orders.find(o=>o.id===oid).orderRef;
+ const e1=await make(alpha,'4237175615',10,25),e2=await make(alpha,'#4237411527',10,25),e3=await make(alpha,'BULK-3000',10,25),s1=await make(beta,'1234567890',10,25);
+ assert.equal(await refOf(e1),'#4237175615');assert.equal(await refOf(e2),'#4237411527');assert.equal(await refOf(e3),'BULK-3000');assert.equal(await refOf(s1),'1234567890');
+ assert.equal((await call('/orders/'+e2,'PUT',{orderRef:'4237411528'},client)).status,200);assert.equal(await refOf(e2),'#4237411528');
+ await DB.prepare("UPDATE client_orders SET order_ref='4229656852' WHERE id=?").bind(e3).run();for(const q of STORE_SCHEMA.slice(-1))await DB.prepare(q).run();
+ assert.equal(await refOf(e3),'#4229656852');assert.equal(await refOf(s1),'1234567890');
+ console.log('PASS Etsy order numbers get their #, default store, required selection, three-store exact totals including missing sales/fees/refunds, client summary equality, ownership, admin moves, archive/history/restore and admin store creation');
 }finally{await pg.close();}

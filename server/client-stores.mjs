@@ -8,7 +8,12 @@ export const STORE_SCHEMA=[
  'ALTER TABLE client_orders ALTER COLUMN store_id SET NOT NULL',
  // The client's own tag for a shop (Erwin, 27 Oct 2026): 'active' or 'suspended'. Only a label: orders, prices and billing are not affected.
  "ALTER TABLE client_stores ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'",
+ // Etsy order numbers start with "#" (Erwin, 18 Nov 2026: clients forget it; the "#" shows it is an Etsy order). Older ones typed without it are fixed here.
+ "UPDATE client_orders o SET order_ref='#'||TRIM(o.order_ref) FROM client_stores s WHERE s.id=o.store_id AND s.platform='Etsy' AND TRIM(o.order_ref) ~ '^[0-9]{6,}$'",
 ];
+// An Etsy store's order number typed as digits only gets its "#" (other text, e.g. BULK-..., stays as typed).
+export const etsyRef=(ref,platform)=>{const r=String(ref??'').trim();return platform==='Etsy'&&/^[0-9]{6,}$/.test(r)?'#'+r:ref;};
+export async function withEtsyRef(DB,storeId,ref){const s=await DB.prepare('SELECT platform FROM client_stores WHERE id=?').bind(storeId).first();return etsyRef(ref,s?.platform);}
 const palette=['#8b6e37','#287d80','#6960aa','#bd7045','#489661','#b05a86'];
 const out=r=>({id:Number(r.id),clientId:Number(r.client_id),name:r.name,platform:r.platform,link:r.link,color:r.color,archived:!!r.archived,status:r.status==='suspended'?'suspended':'active'});
 export async function ensureStores(DB,clientId){
