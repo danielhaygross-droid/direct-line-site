@@ -88,6 +88,10 @@ async function clientBilling(DB, u, summary, { detail = false } = {}) {
     }
     return { id: Number(p.id), paidAt: Number(p.paid_at), yourPart: r2(Number(p.amount) - ours), orders: list };
   });
+  // The client's subscription on the bill is ours (18 Nov 2026): the part of the payments that paid it, newest first, is
+  // not the supplier's either, so the payments still add up to what the statement says was paid.
+  let subLeft = Math.round(Number(s.subscriptionPaid || 0) * 100);
+  for (const p of payments) { if (subLeft <= 0) break; const take = Math.min(subLeft, Math.max(0, Math.round(p.yourPart * 100))); if (take) { p.yourPart = r2(p.yourPart - take / 100); p.subscription = r2(take / 100); subLeft -= take; } }
   const refunded = r2(summary.refunded);
 
   // Cancelled orders, without our fee: what was paid for them, the supplier's cancellation fee, what goes back.

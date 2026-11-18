@@ -8,6 +8,7 @@
       return `<span class="st st-pending">Free month</span><small class="dim sub-when">until ${esc(fmtDay(sub.trialEnd))}</small>`;
     }
     if (sub.status === 'active') return `<span class="st st-delivered">Paying</span>${sub.lastPayment ? `<small class="dim sub-when">paid ${esc(fmtDay(sub.lastPayment))}</small>` : ''}`;
+    if (sub.status === 'bill') return `<span class="st st-delivered">On the bill</span><small class="dim sub-when">${sub.billUsd ? esc(money(sub.billUsd)) + ' / month' : 'set the $ amount in Settings'}</small>`;
     if (sub.status === 'overdue') return '<span class="st st-cancelled">Overdue</span>';
     return '<span class="st" style="--tone:var(--dim)">Cancelled</span>';
   }

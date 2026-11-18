@@ -63,10 +63,10 @@ const W = [await mk('WAIT-1', 12), await mk('WAIT-2', 12)]; await mk('NO-COST', 
 // ---- the numbers (server) ----
 const me = ok(await call('/me', 'GET', null, client)).summary, ac = ok(await call('/admin/overview', 'GET', null, admin)).clients.find(x => x.id === id);
 assert.deepEqual([me.billed, me.paid, me.refunded, me.outstanding], [216, 230, 0, -14], 'billed 216 - received 230 = credit 14');
-assert.deepEqual(me.parts, { orders: 194, fees: 22, other: 0 }, 'the bill: 10 orders + cancellation fees');
+assert.deepEqual(me.parts, { orders: 194, fees: 22, other: 0, subscription: 0, subscriptionMonths: 0, subscriptionIls: 29 }, 'the bill: 10 orders + cancellation fees');
 assert.equal(Math.round((me.parts.orders + me.parts.fees + me.parts.other) * 100), Math.round(me.billed * 100), 'the parts add up to Total billed');
 assert.ok(!('supplier' in me) && !JSON.stringify(me).includes('ourFee'), 'the client never gets the column without our fee');
-assert.deepEqual(ac.supplier, { orders: 174, fees: 16, other: 0, billed: 190, received: 208, ourFee: 22, balance: -18 }, 'without our fee: 190 billed - 208 received = credit 18');
+assert.deepEqual(ac.supplier, { orders: 174, fees: 16, other: 0, billed: 190, received: 208, ourFee: 22, subscriptionPaid: 0, balance: -18 }, 'without our fee: 190 billed - 208 received = credit 18');
 assert.equal(Math.round((ac.supplier.received + ac.supplier.ourFee) * 100), Math.round((ac.paid - ac.refunded) * 100), 'received without our fee + our fee = received');
 console.log('PASS numbers: billed 216 = 194 orders + 22 fees; received 230; credit 14; without our fee 190 - 208 = credit 18');
 

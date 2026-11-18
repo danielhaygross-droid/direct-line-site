@@ -64,6 +64,7 @@
           <label class="field"><span>From the supplier per order (USD) <small>the supplier pays us this for every order, apart from the client's fee</small></span><span class="money"><input name="supplier_bonus_per_order" type="number" min="0" step="0.01" value="${esc(s.supplier_bonus_per_order ?? 1)}"></span></label>
           <div class="full split" data-split></div>
           <label class="field"><span>Client subscription <small>₪ / month, after the free month</small></span><input name="subscription_price" type="number" min="0" step="0.01" value="${esc(s.subscription_price ?? 29)}"></label>
+          <label class="field"><span>Subscription on the bill (USD) <small>added each month for clients set to “On the bill”</small></span><span class="money"><input name="subscription_usd" type="number" min="0" step="0.01" value="${esc(s.subscription_usd ?? '')}"></span></label>
           <label class="field"><span>Size-to-weight divisor <small>cm³ per kg</small></span><input name="volumetric_divisor" type="number" min="1000" max="10000" step="1" value="${esc(s.volumetric_divisor)}"></label>
           <div class="full set-actions"><button class="btn btn-primary" type="submit">Save settings</button><p class="form-msg" data-settings-msg></p></div>
         </form>
@@ -257,7 +258,7 @@
     f.addEventListener('submit', async e => {
       e.preventDefault();
       const m = $('[data-settings-msg]');
-      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_bonus_per_order: f.supplier_bonus_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg ok'; await loadAll(); }
+      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_bonus_per_order: f.supplier_bonus_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value, subscription_usd: f.subscription_usd.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg ok'; await loadAll(); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
     });
     const c = $('[data-calc]'), out = $('[data-calc-out]');

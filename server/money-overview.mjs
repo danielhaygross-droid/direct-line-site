@@ -39,10 +39,13 @@ export async function moneyMonths(DB) {
   const kept = await q(`SELECT ${month('a.created_at')} AS m, SUM(a.amount) AS n FROM client_balance_adjustments a JOIN client_orders o ON o.id = a.order_id AND NOT o.archived ${live} WHERE a.kind = 'kept_fee' GROUP BY 1`);
   const fees = await q(`SELECT ${month('a.created_at')} AS m, SUM(a.amount) AS n FROM client_balance_adjustments a JOIN client_orders o ON o.id = a.order_id AND NOT o.archived ${live} WHERE a.kind = 'cancellation_fee' GROUP BY 1`);
   const refunds = await q(`SELECT ${month('r.refunded_at')} AS m, SUM(r.amount) AS n FROM client_refunds r JOIN users u ON u.id = r.client_id AND NOT u.archived WHERE NOT r.archived GROUP BY 1`);
+  // The subscription on the bill (18 Nov 2026): billed and ours, in the month it was added. subs = that part, on its own.
+  const subs = await q(`SELECT ${month('c.created_at')} AS m, SUM(c.amount) AS n FROM client_charges c JOIN users u ON u.id = c.client_id AND NOT u.archived WHERE NOT c.archived GROUP BY 1`);
   const map = new Map();
-  const at = m => { if (!map.has(m)) map.set(m, { month: m, billed: 0, earned: 0, paid: 0, fees: 0, refunds: 0, orders: 0, cancelled: 0 }); return map.get(m); };
+  const at = m => { if (!map.has(m)) map.set(m, { month: m, billed: 0, earned: 0, paid: 0, fees: 0, refunds: 0, subs: 0, orders: 0, cancelled: 0 }); return map.get(m); };
   for (const r of orders) Object.assign(at(r.m), { billed: r2(r.billed), earned: r2(r.earned), orders: Number(r.orders), cancelled: Number(r.cancelled) });
   for (const [rows, k] of [[paid, 'paid'], [fees, 'fees'], [refunds, 'refunds']]) for (const r of rows) at(r.m)[k] = r2(r.n);
   for (const r of kept) at(r.m).earned = r2(at(r.m).earned + Number(r.n));
+  for (const r of subs) { const x = at(r.m); x.subs = r2(r.n); x.billed = r2(x.billed + Number(r.n)); x.earned = r2(x.earned + Number(r.n)); }
   return [...map.values()].filter(x => /^\d{4}-\d{2}$/.test(x.month)).sort((a, b) => a.month.localeCompare(b.month));
 }

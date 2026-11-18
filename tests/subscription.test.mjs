@@ -20,7 +20,7 @@ test('subscription summary: trial days left, ended, price 29 ₪ by default', ()
   assert.deepEqual([s.status, s.trialDaysLeft, s.trialEnded, s.price, s.currency], ['trial', 7, false, 29, 'ILS']);
   assert.equal(subscriptionOut({ trial_start: '2026-08-01', trial_end: '2026-09-01', sub_status: 'trial' }, DEFAULT_SETTINGS, '2026-10-25').trialEnded, true);
   assert.equal(subscriptionOut({}, DEFAULT_SETTINGS).status, null);
-  assert.deepEqual(SUB_STATUSES, ['trial', 'active', 'overdue', 'cancelled']);
+  assert.deepEqual(SUB_STATUSES, ['trial', 'active', 'overdue', 'cancelled', 'bill']);
 });
 
 test('portal shows the banner; admin has the subscription form and the fixed "Add an admin" texts', () => {

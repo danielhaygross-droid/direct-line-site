@@ -160,9 +160,11 @@
   function clientEarnings(c) {
     const cents = n => Math.round(Number(n || 0) * 100), rate = cents(S.ov.settings?.supplier_bonus_per_order ?? 1);
     const n = S.orders.filter(o => !o.archived && o.clientId === c.id && o.status !== 'cancelled').length, feesC = cents(c.ourShare), shareC = n * rate;
-    return { fees: feesC / 100, share: shareC / 100, total: (feesC + shareC) / 100, orders: n };
+    // + the subscription on the client's bill (18 Nov 2026), ours too.
+    const subC = cents(c.subscription);
+    return { fees: feesC / 100, share: shareC / 100, sub: subC / 100, total: (feesC + shareC + subC) / 100, orders: n };
   }
-  const earningsSplit = e => `<small class="earn-split"><span>${money(e.fees)} client fees</span> · <span>${money(e.share)} supplier share</span></small>`;
+  const earningsSplit = e => `<small class="earn-split"><span>${money(e.fees)} client fees</span> · <span>${money(e.share)} supplier share</span>${e.sub ? ` · <span>${money(e.sub)} subscription</span>` : ''}</small>`;
   // Every number the four cards show, worked out once for the cards and for their windows.
   function kpiFacts() {
     const cl = S.ov.clients, M = window.DLClientStoreMath, UIS = window.DLClientStoreUI, PO = window.DLPayOrders;
@@ -185,7 +187,9 @@
     // The supplier share: $1 (Fees & settings) for every order that isn't cancelled, paid or not (Erwin, 16 Nov 2026: the same
     // rule as the supplier portal; before, only paid orders counted).
     const paidOs = os.filter(o => PO.state(o) === 'paid'), cxN = inMonth.length - os.length;
-    const supRateC = cents(S.ov.settings?.supplier_bonus_per_order ?? 1), supC = os.length * supRateC, totalC = feesC + supC;
+    // The subscription on clients' bills (18 Nov 2026): All time = every client's, a month = what was added that month.
+    const subC = month === 'all' ? cl.reduce((n, c) => n + cents(c.subscription), 0) : cents((S.ov.months || []).find(x => x.month === month)?.subs);
+    const supRateC = cents(S.ov.settings?.supplier_bonus_per_order ?? 1), supC = os.length * supRateC, totalC = feesC + supC + subC;
     // All money goes to the supplier first (clients pay the supplier directly), so our earnings are with the supplier until it
     // pays us (Fees & settings > Team & tools > Supplier share payments). All time only: payments aren't tied to a month.
     const supPaidC = month === 'all' ? cents(S.sharePaid || 0) : 0, leftC = totalC - supPaidC;
@@ -195,7 +199,7 @@
     const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0) + live.filter(o => o.status === 'cancelled' && !o.paymentId && o.keepFee === 'yes').reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const lateIds = lateClientIds(), late = balanceC > 0 && f_late(cl, lateIds, cents);
-    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, totalC, supPaidC, leftC, balanceC, feePartC, clientsN, lateIds, late };
+    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, subC, totalC, supPaidC, leftC, balanceC, feePartC, clientsN, lateIds, late };
   }
 
   // Late = a client who still owes money has an unpaid order older than 14 days.
@@ -292,7 +296,7 @@
     if (k === 'earnings') {
       if (!f.totalC) return '<p class="muted kw-empty">No fees yet</p>';
       const notPaid = f.feesC - f.collectedC - f.noBillC;
-      const both = f.supC ? kwRow('', 'Client fees', kwMoney(f.feesC), kwPlural(f.os.length + f.keptOn.length, 'order')) + kwRow('+', 'Supplier share', kwMoney(f.supC), `${kwPlural(f.os.length, 'order')} × ${kwMoney(f.supRateC)}`) + kwRow('=', 'Total', kwMoney(f.totalC), '', 'tot') : '';
+      const both = f.supC || f.subC ? kwRow('', 'Client fees', kwMoney(f.feesC), kwPlural(f.os.length + f.keptOn.length, 'order')) + (f.supC ? kwRow('+', 'Supplier share', kwMoney(f.supC), `${kwPlural(f.os.length, 'order')} × ${kwMoney(f.supRateC)}`) : '') + (f.subC ? kwRow('+', 'Subscriptions', kwMoney(f.subC), 'on clients’ bills') : '') + kwRow('=', 'Total', kwMoney(f.totalC), '', 'tot') : '';
       const withSup = f.supPaidC ? kwRow('', 'Our earnings', kwMoney(f.totalC)) + kwRow('−', 'Paid to us by the supplier', kwMoney(f.supPaidC)) + kwRow('=', f.leftC >= 0 ? 'Still to receive' : 'Paid ahead', kwMoney(Math.abs(f.leftC)), '', 'tot') : '';
       const sum = kwRow('', 'Collected', kwMoney(f.collectedC)) + kwRow('+', 'Not paid yet', kwMoney(notPaid)) + (f.noBillC ? kwRow('+', 'Not billed yet', kwMoney(f.noBillC), 'No cost yet, so not on a bill') : '') + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot');
       const from = f.keptC ? kwRow('', 'Our fee on orders', kwMoney(f.onOrdersC), kwPlural(f.os.length, 'order')) + kwRow('+', 'Fees kept on cancelled orders', kwMoney(f.keptC), kwPlural(f.keptOn.length, 'order')) + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot') : '';
@@ -684,6 +688,7 @@
       return `<span class="st st-pending">Free month</span><small class="dim sub-when">until ${esc(fmtDay(sub.trialEnd))}</small>`;
     }
     if (sub.status === 'active') return `<span class="st st-delivered">Paying</span>${sub.lastPayment ? `<small class="dim sub-when">paid ${esc(fmtDay(sub.lastPayment))}</small>` : ''}`;
+    if (sub.status === 'bill') return `<span class="st st-delivered">On the bill</span><small class="dim sub-when">${sub.billUsd ? esc(money(sub.billUsd)) + ' / month' : 'set the $ amount in Settings'}</small>`;
     if (sub.status === 'overdue') return '<span class="st st-cancelled">Overdue</span>';
     return '<span class="st" style="--tone:var(--dim)">Cancelled</span>';
   }
@@ -878,6 +883,7 @@
           <label class="field"><span>From the supplier per order (USD) <small>the supplier pays us this for every order, apart from the client's fee</small></span><span class="money"><input name="supplier_bonus_per_order" type="number" min="0" step="0.01" value="${esc(s.supplier_bonus_per_order ?? 1)}"></span></label>
           <div class="full split" data-split></div>
           <label class="field"><span>Client subscription <small>₪ / month, after the free month</small></span><input name="subscription_price" type="number" min="0" step="0.01" value="${esc(s.subscription_price ?? 29)}"></label>
+          <label class="field"><span>Subscription on the bill (USD) <small>added each month for clients set to “On the bill”</small></span><span class="money"><input name="subscription_usd" type="number" min="0" step="0.01" value="${esc(s.subscription_usd ?? '')}"></span></label>
           <label class="field"><span>Size-to-weight divisor <small>cm³ per kg</small></span><input name="volumetric_divisor" type="number" min="1000" max="10000" step="1" value="${esc(s.volumetric_divisor)}"></label>
           <div class="full set-actions"><button class="btn btn-primary" type="submit">Save settings</button><p class="form-msg" data-settings-msg></p></div>
         </form>
@@ -1071,7 +1077,7 @@
     f.addEventListener('submit', async e => {
       e.preventDefault();
       const m = $('[data-settings-msg]');
-      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_bonus_per_order: f.supplier_bonus_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg ok'; await loadAll(); }
+      try { await api('/admin/settings', { method: 'POST', body: { commission_per_order: f.commission_per_order.value, supplier_bonus_per_order: f.supplier_bonus_per_order.value, volumetric_divisor: f.volumetric_divisor.value, subscription_price: f.subscription_price.value, subscription_usd: f.subscription_usd.value } }); m.textContent = 'Saved. New orders use the new fee.'; m.className = 'form-msg ok'; await loadAll(); }
       catch (ex) { m.textContent = ex.message; m.className = 'form-msg err'; }
     });
     const c = $('[data-calc]'), out = $('[data-calc-out]');
@@ -1175,9 +1181,9 @@
     const sub = c.subscription || {}, price = sub.price ?? Number(S.ov.settings.subscription_price ?? 29);
     const opt = (v, l) => `<option value="${v}"${(sub.status || 'trial') === v ? ' selected' : ''}>${l}</option>`;
     return `<section class="card card-pad"><h3 class="sec-title">Subscription</h3>
-      <p class="muted" style="margin:0 0 12px;font-size:14px">First month free, then ${esc(shekels(price))} / month. The client sees this in their portal. Nothing is charged or blocked automatically.</p>
+      <p class="muted" style="margin:0 0 12px;font-size:14px">First month free, then ${esc(shekels(price))} / month. The client sees this in their portal. “On the bill” adds it to the client’s bill every month after the free month, at ${sub.billUsd ? esc(money(sub.billUsd)) : 'the $ amount set in Settings'}; otherwise nothing is charged or blocked automatically.</p>
       <form class="form-grid" data-sub-form="${c.id}" novalidate>
-        <label class="field"><span>Status</span><select name="subStatus">${opt('trial', 'Free month (trial)')}${opt('active', 'Active (paying)')}${opt('overdue', 'Overdue')}${opt('cancelled', 'Cancelled')}</select></label>
+        <label class="field"><span>Status</span><select name="subStatus">${opt('trial', 'Free month (trial)')}${opt('active', 'Active (paying)')}${opt('bill', 'On the bill (added every month)')}${opt('overdue', 'Overdue')}${opt('cancelled', 'Cancelled')}</select></label>
         <label class="field"><span>Last payment <small>optional</small></span><input name="subLastPayment" type="date" value="${esc(sub.lastPayment || '')}"></label>
         <label class="field"><span>Trial start</span><input name="trialStart" type="date" value="${esc(sub.trialStart || '')}"></label>
         <label class="field"><span>Trial end <small>1 month after start</small></span><input name="trialEnd" type="date" value="${esc(sub.trialEnd || '')}"></label>
