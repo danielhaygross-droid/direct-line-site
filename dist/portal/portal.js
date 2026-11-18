@@ -264,6 +264,7 @@
     else if(e.kind==='product')it={...base,product:true,productId:e.productId,action:'View product',icon:'order',tone:'gold',title:'Product quote updated',text:e.productName};
     else if (e.kind === 'invoice') { const [amt, day] = String(e.detail || '').split('|'); it = {...base, invoice:true, action:'View payments', icon:'wallet',tone:'mint',title:'New receipt',text:day ? `For your ${money(amt)} payment of ${window.DLPayOrders.day(day)}` : e.detail}; }
     else if(e.kind==='claim')it={...base,icon:'alert',tone:'gold',title:'Claim updated',text:ref};
+    else if (e.kind === 'subscription' && String(e.detail || '').startsWith('bill|')) { const price = String(e.detail).split('|')[2]; it = { ...base, go: 'home', action: 'View', icon: 'alert', tone: 'gold', title: 'Subscription added to your bill', text: `The subscription (${shekels(price)} / month) is added to your bill every month.` }; }
     else if (e.kind === 'subscription') { const [st, end, price] = String(e.detail || '').split('|'); it = { ...base, go: 'home', action: 'View', icon: 'alert', tone: 'red', title: st === 'overdue' ? 'Subscription payment due' : 'Your free month ended', text: st === 'overdue' ? `The subscription is ${shekels(price)} / month.` : `It ended on ${window.DLi18n?.lang === 'he' ? new Date(end + 'T12:00:00Z').toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : fmtDay(end)}. The subscription is ${shekels(price)} / month.` }; }
     else if (e.kind === 'status') {
       const words = { processing: 'We’re working on it now.', shipped: 'It’s on its way to your customer.', delivered: 'It was delivered to your customer.', cancelled: 'This order was cancelled.', pending: 'It’s back to pending.' };
@@ -406,6 +407,8 @@
       return `<section class="sub-banner"><span class="sub-tag">First month free</span><p>Your free month runs until <b>${fmtDay(sub.trialEnd)}</b> (${days}). After that the subscription is ${price}.</p></section>`;
     }
     if (sub.status === 'trial' && sub.trialEnded) return `<section class="sub-banner due"><span class="sub-tag">Free month ended</span><p>Your free month ended on <b>${fmtDay(sub.trialEnd)}</b>. The subscription is ${price}. Questions? <a href="#/messages">Message us</a>.</p></section>`;
+    // On the bill (18 Nov 2026): added to the bill every month, so nothing to do apart from paying the bill.
+    if (sub.status === 'bill') return `<section class="sub-banner ok"><span class="sub-tag">Subscription</span><p>${sub.trialEnd && sub.trialEnded ? `Your free month ended on <b>${fmtDay(sub.trialEnd)}</b>. ` : ''}The subscription (${price}) is added to your bill every month. Questions? <a href="#/messages">Message us</a>.</p></section>`;
     if (sub.status === 'overdue') return `<section class="sub-banner due"><span class="sub-tag">Payment due</span><p>Your subscription payment (${price}) is due. Questions? <a href="#/messages">Message us</a>.</p></section>`;
     if (sub.status === 'active') return `<section class="sub-banner ok"><span class="sub-tag">Subscription active</span><p>${price}${sub.lastPayment ? ` · last payment ${fmtDay(sub.lastPayment)}` : ''}</p></section>`;
     return '';
@@ -423,7 +426,7 @@
     const tile = (cls, label, value, note, tone = '') => `<a class="mn-tile ${cls}" href="#/payments"><small>${label}</small><strong class="${tone}" data-no-i18n>${value}</strong><em>${note}</em></a>`;
     return `<section class="card card-pad money-now" data-money-now><div class="mn-head"><h3 class="sec-title">Your money</h3><a class="link" href="#/payments">Payments details</a></div><div class="mn-grid">
       ${tile('hero', credit ? 'Credit on your account' : 'Balance due', money(Math.abs(s.outstanding)), credit ? 'It counts toward your next orders' : s.outstanding > 0 ? 'Please send this to Direct Line' : 'You’re all paid up')}
-      ${tile('', 'Total billed', money(s.billed), s.parts && s.parts.fees > 0 ? 'Orders and cancellation fees' : n(s.orders, 'order', 'orders'))}
+      ${tile('', 'Total billed', money(s.billed), s.parts && s.parts.subscription > 0 ? (s.parts.fees > 0 ? 'Orders, fees and subscription' : 'Orders and subscription') : s.parts && s.parts.fees > 0 ? 'Orders and cancellation fees' : n(s.orders, 'order', 'orders'))}
       ${tile('', 'Paid', money(s.paid), n(S.payments.length, 'payment', 'payments'), 'pos')}
     </div></section>`;
   }

@@ -239,6 +239,8 @@
     const billedRows = row(n1(billedN, 'order', 'orders', 'הזמנה אחת', 'הזמנות'), cents(parts.orders), sup && cents(sup.orders))
       + (cents(parts.fees) || c?.count ? row(T('Cancellation fees', 'עמלות ביטול') + (c?.count ? ` <small>(${n1(c.count, 'cancelled order', 'cancelled orders', 'הזמנה אחת שבוטלה', 'הזמנות שבוטלו')})</small>` : ''), cents(parts.fees), sup && cents(sup.fees)) : '')
       + (cents(parts.other) ? row(T('Other changes to the bill', 'שינויים אחרים בחשבון'), cents(parts.other), sup && cents(sup.other)) : '')
+      // The subscription on the bill (18 Nov 2026): months so far and the shekel price; not in the supplier's column.
+      + (cents(parts.subscription) ? row(T('Direct Line subscription', 'מנוי Direct Line') + ` <small>(${n1(parts.subscriptionMonths || 1, 'month', 'months', 'חודש אחד', 'חודשים')} × ₪${parts.subscriptionIls ?? 29})</small>`, cents(parts.subscription), null) : '')
       + row(T('Total billed', 'סה״כ חויב'), cents(s.billed), sup && cents(sup.billed), 'acct-total');
     const recvRows = row(payments ? n1(payments, 'payment', 'payments', 'תשלום אחד', 'תשלומים') : T('Payments', 'תשלומים'), cents(s.paid), sup && cents(sup.received) + cents(s.refunded))
       + (cents(s.refunded) ? row(admin ? T('− Refunds we sent back', '− החזרים ששלחנו') : T('− Refunds sent back to you', '− החזרים שנשלחו אליכם'), -cents(s.refunded), sup && -cents(s.refunded)) : '')
@@ -255,7 +257,7 @@
     return `<section class="card card-pad acct${sup ? ' has-sup' : ''}" data-statement data-no-i18n>
       <div class="acct-top"><h3 class="sec-title">${T('Account statement', 'דף חשבון')}</h3><p class="acct-big ${result.cls}" data-statement-result>${result.word} ${m(Math.abs(bal))}</p><p class="acct-sub">${result.sub}</p></div>
       <div class="table-wrap"><table class="acct-tbl"><tbody>${head(admin ? T('1 · What we billed', '1 · מה חייבנו') : T('1 · What you were billed', '1 · מה חויבתם'))}${billedRows}${head(admin ? T('2 · What we received', '2 · מה קיבלנו') : T('2 · What you paid', '2 · מה שילמתם'))}${recvRows}${resRow}</tbody></table></div>
-      ${sup ? `<p class="acct-hint">${T('“Without our fee” is how the supplier sheet counts. Our fee received so far:', '"בלי העמלה שלנו" הוא החישוב של גיליון הספק. העמלה שלנו שהתקבלה עד כה:')} ${m(cents(sup.ourFee))}</p>` : ''}
+      ${sup ? `<p class="acct-hint">${cents(sup.subscriptionPaid) ? T('“Without our fee” is how the supplier sheet counts. Our fee and the subscription received so far:', '"בלי העמלה שלנו" הוא החישוב של גיליון הספק. העמלה שלנו והמנוי שהתקבלו עד כה:') : T('“Without our fee” is how the supplier sheet counts. Our fee received so far:', '"בלי העמלה שלנו" הוא החישוב של גיליון הספק. העמלה שלנו שהתקבלה עד כה:')} ${m(cents(sup.ourFee))}</p>` : ''}
       <div class="acct-tiles">${tiles}</div></section>`;
   }
   root.DLPayOrders = { cancelledBox, cxSettle, dueCents, state, tag, day, checklist, picked, linked, refresh, tickOldest, creditCents, cover, markCovered, owes, statement, supCents };

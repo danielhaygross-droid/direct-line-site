@@ -175,6 +175,12 @@ export const SCHEMA = [
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_end TEXT',
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS sub_status TEXT',
   'ALTER TABLE users ADD COLUMN IF NOT EXISTS sub_last_payment TEXT',
+  // The subscription on the client's bill (Erwin, 18 Nov 2026: "we just include yehuda subscription to his future bill").
+  // One row per month once the free month is over, in dollars (Settings > subscription on the bill). See subscriptionCharges().
+  `CREATE TABLE IF NOT EXISTS client_charges (
+    id SERIAL PRIMARY KEY, client_id INTEGER NOT NULL REFERENCES users(id), kind TEXT NOT NULL, period TEXT NOT NULL,
+    amount DOUBLE PRECISION NOT NULL, note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, archived BOOLEAN NOT NULL DEFAULT FALSE,
+    UNIQUE(client_id, kind, period))`,
   // Screenshots / photos of the product that was ordered. The client attaches them with the order;
   // admins can add more. Stored as base64 (the browser shrinks them first), with a small thumbnail.
   `CREATE TABLE IF NOT EXISTS order_photos (
@@ -281,7 +287,8 @@ const BANK_DEFAULTS = {
 // Admin only, never shown to clients.
 export const DEFAULT_SETTINGS = { commission_per_order: '2', supplier_bonus_per_order: '1', supplier_share_per_order: '1', volumetric_divisor: '6000', subscription_price: '29', couriers: DEFAULT_COURIERS, ...BANK_DEFAULTS };
 // ---------- subscription (first month free, then monthly) ----------
-export const SUB_STATUSES = ['trial', 'active', 'overdue', 'cancelled'];
+// 'bill' = on the bill: every month after the free month, the subscription is added to the client's bill (18 Nov 2026).
+export const SUB_STATUSES = ['trial', 'active', 'overdue', 'cancelled', 'bill'];
 export const isoDate = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v ? v : null);
 // Today in Israel (the business runs on Israeli dates).
 export const todayIso = (d = new Date()) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
@@ -296,8 +303,23 @@ export function subscriptionOut(u, settings, today = todayIso()) {
   if (!u.trial_start && !u.sub_status) return { status: null, trialStart: null, trialEnd: null, lastPayment: u.sub_last_payment || null, price, currency: 'ILS' };
   const trialEnd = u.trial_end || null;
   const daysLeft = trialEnd ? Math.round((Date.parse(trialEnd + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000) : null;
+  const usd = Number(settings.subscription_usd || 0) > 0 ? Number(settings.subscription_usd) : null;
   return { status: u.sub_status || 'trial', trialStart: u.trial_start || null, trialEnd, lastPayment: u.sub_last_payment || null, price, currency: 'ILS',
-    trialDaysLeft: daysLeft, trialEnded: daysLeft !== null && daysLeft < 0 };
+    trialDaysLeft: daysLeft, trialEnded: daysLeft !== null && daysLeft < 0, billUsd: usd };
+}
+// The subscription on the bill (18 Nov 2026). Status 'bill': one charge per month from the day the free month ended
+// (13 Nov, 13 Dec, ...; the first once that day is over), each added on its day, at the dollar amount in Settings on that day. Charges already added stay
+// if the status changes later. Returns { total, months, ils } of the client's charges.
+export async function subscriptionCharges(DB, clientId, settings, today = todayIso()) {
+  const u = await DB.prepare('SELECT trial_end, sub_status FROM users WHERE id = ?').bind(clientId).first();
+  const usd = Number(settings.subscription_usd || 0), ils = Number(settings.subscription_price ?? DEFAULT_SETTINGS.subscription_price);
+  if (u?.sub_status === 'bill' && isoDate(u.trial_end) && u.trial_end < today && usd > 0) { // its last day is still free
+    for (let p = u.trial_end, i = 0; p <= today && i < 120; p = addMonth(p), i++)
+      await DB.prepare("INSERT INTO client_charges (client_id, kind, period, amount, note, created_at) VALUES (?, 'subscription', ?, ?, ?, ?) ON CONFLICT (client_id, kind, period) DO NOTHING")
+        .bind(clientId, p, usd, `Direct Line subscription (${ils} ILS)`, Math.floor(Date.parse(p + 'T12:00:00Z') / 1000)).run();
+  }
+  const r = await DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total FROM client_charges WHERE client_id = ? AND kind = 'subscription' AND NOT archived").bind(clientId).first();
+  return { total: round2(r?.total), months: Number(r?.n || 0), ils };
 }
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -745,8 +767,14 @@ async function clientSummary(DB, clientId, settings) {
   const ordersBilled = round2(rows.reduce((n, r) => n + Number(r.price), 0)), other = round2(billed - ordersBilled - fees);
   const supOrders = round2(rows.reduce((n, r) => n + supOf(r), 0)), ourPaid = round2(rows.reduce((n, r) => n + (paidIds.has(Number(r.id)) ? Number(r.price) - supOf(r) : 0), 0) + kept);
   const supBilled = round2(supOrders + supFees + other), supReceived = round2(paid - refunded - ourPaid);
-  const parts = { orders: ordersBilled, fees, other }, supplier = { orders: supOrders, fees: supFees, other, billed: supBilled, received: supReceived, ourFee: ourPaid, balance: round2(supBilled - supReceived) };
-  return { orders: Number(o.n), billed, paid, refunded, outstanding: round2(billed - paid + refunded), parts, supplier, commission, supplierShare, keptFees: kept, ourShare: round2(commission - supplierShare + kept), clientProfit: performance.totals.profit };
+  // The subscription on the bill (18 Nov 2026) is ours, not the supplier's: it is on the client's bill but not in the
+  // supplier's ("without our fee"). The client pays the supplier, so what was paid of it counts like our fee: paid first
+  // from the money received (whatever the client still owes is orders), and the supplier passes it on to us.
+  const sub = await subscriptionCharges(DB, clientId, settings), billedAll = round2(billed + sub.total), outstanding = round2(billedAll - paid + refunded);
+  const subPaid = round2(Math.max(0, sub.total - Math.max(0, outstanding))), supRecv = round2(supReceived - subPaid);
+  const parts = { orders: ordersBilled, fees, other, subscription: sub.total, subscriptionMonths: sub.months, subscriptionIls: sub.ils };
+  const supplier = { orders: supOrders, fees: supFees, other, billed: supBilled, received: supRecv, ourFee: round2(ourPaid + subPaid), subscriptionPaid: subPaid, balance: round2(supBilled - supRecv) };
+  return { orders: Number(o.n), billed: billedAll, paid, refunded, outstanding, parts, supplier, commission, supplierShare, keptFees: kept, ourShare: round2(commission - supplierShare + kept), subscription: sub.total, clientProfit: performance.totals.profit };
 }
 
 // One line per client for the supplier sheet's Billing tab (Ada, 13 Nov 2026: "why do I get the feeling that things are
@@ -979,8 +1007,8 @@ async function routePortal(request, url, ctx, meta) {
     // dated the first time the bell is read after that, so it shows as new once.
     const subU = await DB.prepare('SELECT trial_start, trial_end, sub_status, sub_last_payment FROM users WHERE id = ?').bind(who.clientId).first();
     const sub = subU ? subscriptionOut(subU, await getSettings(DB)) : null;
-    if (sub && ((sub.status === 'trial' && sub.trialEnded) || sub.status === 'overdue')) {
-      const key = `sub_notice_${who.clientId}_${sub.status === 'overdue' ? 'overdue' : sub.trialEnd}`;
+    if (sub && ((sub.status === 'trial' && sub.trialEnded) || sub.status === 'overdue' || (sub.status === 'bill' && sub.trialEnded))) {
+      const key = `sub_notice_${who.clientId}_${sub.status === 'overdue' ? 'overdue' : sub.status === 'bill' ? 'bill' : sub.trialEnd}`;
       await DB.prepare('INSERT INTO portal_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING').bind(key, String(now())).run();
       const at = Number((await DB.prepare('SELECT value FROM portal_settings WHERE key = ?').bind(key).first())?.value || now());
       rows.push({ id: 'sub-' + who.clientId, order_id: null, client_id: who.clientId, kind: 'subscription', actor: 'admin', detail: [sub.status, sub.trialEnd || '', sub.price].join('|'), created_at: at });
@@ -1579,6 +1607,7 @@ async function routePortal(request, url, ctx, meta) {
     if (body.supplier_bonus_per_order !== undefined) { const v = money(body.supplier_bonus_per_order); if (v === null || !isMoney(v) || v > 1000) return json({ ok: false, error: 'Invalid amount from the supplier' }, 400); updates.supplier_bonus_per_order = String(v); }
     if (body.monthly_order_goal !== undefined) { const v = Number(body.monthly_order_goal); if (!(Number.isInteger(v) && v >= 0 && v <= 1e6)) return json({ ok: false, error: 'Goal must be a whole number' }, 400); updates.monthly_order_goal = String(v); }
     if (body.subscription_price !== undefined) { const v = money(body.subscription_price); if (v === null || !isMoney(v) || v > 100000) return json({ ok: false, error: 'Invalid subscription price' }, 400); updates.subscription_price = String(v); }
+    if (body.subscription_usd !== undefined) { const v = body.subscription_usd === '' ? 0 : money(body.subscription_usd); if (v === null || !isMoney(v) || v > 10000) return json({ ok: false, error: 'Invalid subscription amount in $' }, 400); updates.subscription_usd = v ? String(v) : ''; }
     if (body.volumetric_divisor !== undefined) { const v = Number(body.volumetric_divisor); if (!(v >= 1000 && v <= 10000)) return json({ ok: false, error: 'Divisor must be 1000-10000' }, 400); updates.volumetric_divisor = String(v); }
     for (const k of BANK_FIELDS) if (body[k] !== undefined) updates[k] = text(body[k], 200);
     // Couriers the supplier can pick in the sheet (one per line). The dropdown in the sheet is updated right away.

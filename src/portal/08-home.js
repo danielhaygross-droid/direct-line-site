@@ -10,7 +10,7 @@
     const tile = (cls, label, value, note, tone = '') => `<a class="mn-tile ${cls}" href="#/payments"><small>${label}</small><strong class="${tone}" data-no-i18n>${value}</strong><em>${note}</em></a>`;
     return `<section class="card card-pad money-now" data-money-now><div class="mn-head"><h3 class="sec-title">Your money</h3><a class="link" href="#/payments">Payments details</a></div><div class="mn-grid">
       ${tile('hero', credit ? 'Credit on your account' : 'Balance due', money(Math.abs(s.outstanding)), credit ? 'It counts toward your next orders' : s.outstanding > 0 ? 'Please send this to Direct Line' : 'You’re all paid up')}
-      ${tile('', 'Total billed', money(s.billed), s.parts && s.parts.fees > 0 ? 'Orders and cancellation fees' : n(s.orders, 'order', 'orders'))}
+      ${tile('', 'Total billed', money(s.billed), s.parts && s.parts.subscription > 0 ? (s.parts.fees > 0 ? 'Orders, fees and subscription' : 'Orders and subscription') : s.parts && s.parts.fees > 0 ? 'Orders and cancellation fees' : n(s.orders, 'order', 'orders'))}
       ${tile('', 'Paid', money(s.paid), n(S.payments.length, 'payment', 'payments'), 'pos')}
     </div></section>`;
   }

@@ -9,6 +9,8 @@
       return `<section class="sub-banner"><span class="sub-tag">First month free</span><p>Your free month runs until <b>${fmtDay(sub.trialEnd)}</b> (${days}). After that the subscription is ${price}.</p></section>`;
     }
     if (sub.status === 'trial' && sub.trialEnded) return `<section class="sub-banner due"><span class="sub-tag">Free month ended</span><p>Your free month ended on <b>${fmtDay(sub.trialEnd)}</b>. The subscription is ${price}. Questions? <a href="#/messages">Message us</a>.</p></section>`;
+    // On the bill (18 Nov 2026): added to the bill every month, so nothing to do apart from paying the bill.
+    if (sub.status === 'bill') return `<section class="sub-banner ok"><span class="sub-tag">Subscription</span><p>${sub.trialEnd && sub.trialEnded ? `Your free month ended on <b>${fmtDay(sub.trialEnd)}</b>. ` : ''}The subscription (${price}) is added to your bill every month. Questions? <a href="#/messages">Message us</a>.</p></section>`;
     if (sub.status === 'overdue') return `<section class="sub-banner due"><span class="sub-tag">Payment due</span><p>Your subscription payment (${price}) is due. Questions? <a href="#/messages">Message us</a>.</p></section>`;
     if (sub.status === 'active') return `<section class="sub-banner ok"><span class="sub-tag">Subscription active</span><p>${price}${sub.lastPayment ? ` · last payment ${fmtDay(sub.lastPayment)}` : ''}</p></section>`;
     return '';

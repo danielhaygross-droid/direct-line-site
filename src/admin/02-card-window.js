@@ -14,9 +14,11 @@
   function clientEarnings(c) {
     const cents = n => Math.round(Number(n || 0) * 100), rate = cents(S.ov.settings?.supplier_bonus_per_order ?? 1);
     const n = S.orders.filter(o => !o.archived && o.clientId === c.id && o.status !== 'cancelled').length, feesC = cents(c.ourShare), shareC = n * rate;
-    return { fees: feesC / 100, share: shareC / 100, total: (feesC + shareC) / 100, orders: n };
+    // + the subscription on the client's bill (18 Nov 2026), ours too.
+    const subC = cents(c.subscription);
+    return { fees: feesC / 100, share: shareC / 100, sub: subC / 100, total: (feesC + shareC + subC) / 100, orders: n };
   }
-  const earningsSplit = e => `<small class="earn-split"><span>${money(e.fees)} client fees</span> · <span>${money(e.share)} supplier share</span></small>`;
+  const earningsSplit = e => `<small class="earn-split"><span>${money(e.fees)} client fees</span> · <span>${money(e.share)} supplier share</span>${e.sub ? ` · <span>${money(e.sub)} subscription</span>` : ''}</small>`;
   // Every number the four cards show, worked out once for the cards and for their windows.
   function kpiFacts() {
     const cl = S.ov.clients, M = window.DLClientStoreMath, UIS = window.DLClientStoreUI, PO = window.DLPayOrders;
@@ -39,7 +41,9 @@
     // The supplier share: $1 (Fees & settings) for every order that isn't cancelled, paid or not (Erwin, 16 Nov 2026: the same
     // rule as the supplier portal; before, only paid orders counted).
     const paidOs = os.filter(o => PO.state(o) === 'paid'), cxN = inMonth.length - os.length;
-    const supRateC = cents(S.ov.settings?.supplier_bonus_per_order ?? 1), supC = os.length * supRateC, totalC = feesC + supC;
+    // The subscription on clients' bills (18 Nov 2026): All time = every client's, a month = what was added that month.
+    const subC = month === 'all' ? cl.reduce((n, c) => n + cents(c.subscription), 0) : cents((S.ov.months || []).find(x => x.month === month)?.subs);
+    const supRateC = cents(S.ov.settings?.supplier_bonus_per_order ?? 1), supC = os.length * supRateC, totalC = feesC + supC + subC;
     // All money goes to the supplier first (clients pay the supplier directly), so our earnings are with the supplier until it
     // pays us (Fees & settings > Team & tools > Supplier share payments). All time only: payments aren't tied to a month.
     const supPaidC = month === 'all' ? cents(S.sharePaid || 0) : 0, leftC = totalC - supPaidC;
@@ -49,7 +53,7 @@
     const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0) + live.filter(o => o.status === 'cancelled' && !o.paymentId && o.keepFee === 'yes').reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const lateIds = lateClientIds(), late = balanceC > 0 && f_late(cl, lateIds, cents);
-    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, totalC, supPaidC, leftC, balanceC, feePartC, clientsN, lateIds, late };
+    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, subC, totalC, supPaidC, leftC, balanceC, feePartC, clientsN, lateIds, late };
   }
 
   // Late = a client who still owes money has an unpaid order older than 14 days.
@@ -146,7 +150,7 @@
     if (k === 'earnings') {
       if (!f.totalC) return '<p class="muted kw-empty">No fees yet</p>';
       const notPaid = f.feesC - f.collectedC - f.noBillC;
-      const both = f.supC ? kwRow('', 'Client fees', kwMoney(f.feesC), kwPlural(f.os.length + f.keptOn.length, 'order')) + kwRow('+', 'Supplier share', kwMoney(f.supC), `${kwPlural(f.os.length, 'order')} × ${kwMoney(f.supRateC)}`) + kwRow('=', 'Total', kwMoney(f.totalC), '', 'tot') : '';
+      const both = f.supC || f.subC ? kwRow('', 'Client fees', kwMoney(f.feesC), kwPlural(f.os.length + f.keptOn.length, 'order')) + (f.supC ? kwRow('+', 'Supplier share', kwMoney(f.supC), `${kwPlural(f.os.length, 'order')} × ${kwMoney(f.supRateC)}`) : '') + (f.subC ? kwRow('+', 'Subscriptions', kwMoney(f.subC), 'on clients’ bills') : '') + kwRow('=', 'Total', kwMoney(f.totalC), '', 'tot') : '';
       const withSup = f.supPaidC ? kwRow('', 'Our earnings', kwMoney(f.totalC)) + kwRow('−', 'Paid to us by the supplier', kwMoney(f.supPaidC)) + kwRow('=', f.leftC >= 0 ? 'Still to receive' : 'Paid ahead', kwMoney(Math.abs(f.leftC)), '', 'tot') : '';
       const sum = kwRow('', 'Collected', kwMoney(f.collectedC)) + kwRow('+', 'Not paid yet', kwMoney(notPaid)) + (f.noBillC ? kwRow('+', 'Not billed yet', kwMoney(f.noBillC), 'No cost yet, so not on a bill') : '') + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot');
       const from = f.keptC ? kwRow('', 'Our fee on orders', kwMoney(f.onOrdersC), kwPlural(f.os.length, 'order')) + kwRow('+', 'Fees kept on cancelled orders', kwMoney(f.keptC), kwPlural(f.keptOn.length, 'order')) + kwRow('=', 'Total', kwMoney(f.feesC), '', 'tot') : '';
