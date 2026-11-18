@@ -100,3 +100,23 @@ console.log('PASS work queue: saves work like the sheet (billing, bought, tracki
   ok(await put(T, 'tracking', 'UL123456789YP'));
   assert.equal((await get(T)).tab, 'bought', 'tracking typed: the order is in Bought');
   console.log('PASS an order with a tracking number is in Bought, not New'); }
+// The courier from the tracking number (Erwin, 19 Nov 2026) and adding a courier from the supplier portal.
+{ const Y = await mk('Q-YANWEN'), C = await mk('Q-CHINAPOST'), K = await mk('Q-KEEP');
+  ok(await put(Y, 'tracking', 'UL706844450YP')); assert.equal((await get(Y)).cells.courier, 'Yanwen', 'UL…YP is Yanwen');
+  ok(await put(C, 'tracking', 'ZS35381739099')); assert.equal((await get(C)).cells.courier, 'China Post', 'ZS + 11 digits is China Post');
+  ok(await put(K, 'courier', 'China Post')); ok(await put(K, 'tracking', 'UL706844451YP'));
+  assert.equal((await get(K)).cells.courier, 'China Post', 'a courier already picked is never changed');
+  // A new courier: added from the courier box, then learned from its tracking format once two orders agree.
+  assert.equal((await call('/supplier/couriers', 'POST', { name: '' }, sup)).status, 400, 'a name is needed');
+  const added = ok(await call('/supplier/couriers', 'POST', { name: 'Cainiao' }, sup));
+  assert.ok(added.couriers.includes('Cainiao') && added.couriers.includes('Yanwen'), 'added to the list, the others kept');
+  assert.deepEqual(ok(await call('/supplier/couriers', 'POST', { name: 'cainiao' }, sup)).couriers, added.couriers, 'no duplicate');
+  const L1 = await mk('Q-LEARN-1'), L2 = await mk('Q-LEARN-2'), L3 = await mk('Q-LEARN-3'), L4 = await mk('Q-LEARN-4');
+  ok(await put(L1, 'courier', 'Cainiao')); ok(await put(L1, 'tracking', 'LP00123456789'));
+  ok(await put(L2, 'tracking', 'LP00123456790')); assert.equal((await get(L2)).cells.courier, '', 'one example is not enough');
+  ok(await put(L2, 'courier', 'Cainiao'));
+  ok(await put(L3, 'tracking', 'LP00123456791')); assert.equal((await get(L3)).cells.courier, 'Cainiao', 'learned after two orders');
+  ok(await put(L4, 'tracking', 'XX1')); assert.equal((await get(L4)).cells.courier, '', 'unknown format: left for the supplier');
+  const A = await mk('Q-ADMIN'); ok(await call('/orders/' + A, 'PUT', { trackingNumber: 'UL706844452YP' }, admin));
+  assert.equal(ok(await call('/admin/orders', 'GET', null, admin)).orders.find(o => o.id === A).courier, 'Yanwen', 'admin: the courier from the tracking number too');
+  console.log('PASS courier from the tracking number (Yanwen, China Post, learned), never overwritten; supplier adds a courier; admin too'); }

@@ -93,6 +93,9 @@ try {
     const ctx = await session(admin, width), page = await ctx.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' });
     await ui.waitForSelector('[data-tab=orders]'); await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter="all"]').click();
+    // Paid / Not paid pill sits right under the price (19 Nov 2026: a .pay-line name clash pushed it left with a line above).
+    if (width > 700) { const off = await ui.evaluate(() => [...document.querySelectorAll('td .pay-tagline')].map(l => { const b = l.parentElement.querySelector('b').getBoundingClientRect(), p = l.querySelector('.pay-tag').getBoundingClientRect(); const rtl = getComputedStyle(l).direction === 'rtl'; return [Math.round(Math.abs(rtl ? b.left - p.left : b.right - p.right)), getComputedStyle(l).borderTopStyle]; }));
+      assert.ok(off.length > 0, tag + ' pills in the list'); for (const [dx, line] of off) { assert.ok(dx <= 3, tag + ' pill under the price, off by ' + dx); assert.equal(line, 'none', tag + ' no line above the pill'); } }
     await ui.locator(`tr[data-open-order="${o.id}"]`).click(); await ui.waitForSelector('[data-set-status]');
     assert.deepEqual(await ui.locator('[data-set-status]').evaluateAll(b => b.map(x => x.dataset.setStatus)), ['pending', 'processing', 'shipped', 'delivered'], tag + ' all four statuses');
     await ui.locator('[data-set-status="shipped"]').click(); await page.waitForTimeout(900); assert.equal((await row(o)).status, 'shipped', tag);
