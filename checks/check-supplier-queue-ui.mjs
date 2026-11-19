@@ -113,6 +113,14 @@ try {
     // Cancelled tab.
     await page.click('[data-tab=cancelled]'); await page.waitForSelector(`${scope}[data-row="${cx}"]`);
     await page.screenshot({ path: path.join(out, `${tag}-cancelled.png`), fullPage: w > 700 });
+    // "All" tab (19 Nov 2026): every order from every tab, its count on the tab; a cancelled order says Cancelled.
+    const total = ids.length + 3, allTab = page.locator('[data-tab=all]');
+    assert.match(await allTab.innerText(), lang === 'en' ? new RegExp(`^All\\s+${total}$`) : new RegExp(`^全部\\s+${total}$`), tag + ': All tab with every order');
+    await allTab.click(); await page.waitForSelector(`${scope}[data-row="${cx}"]`);
+    assert.equal(await page.locator(`${scope}[data-row]`).count(), total, tag + ': All shows every order');
+    for (const id of [ids[3], ids[4], cx, req]) assert.equal(await page.locator(`${scope}[data-row="${id}"]`).count(), 1, tag + ': bought, shipped, cancelled and cancel-requested orders are in All');
+    assert.match(await page.locator(`${scope}[data-row="${cx}"]`).innerText(), lang === 'en' ? /Cancelled/ : /已取消/, tag + ': a cancelled order says Cancelled in All');
+    await page.screenshot({ path: path.join(out, `${tag}-all.png`), fullPage: w > 700 });
     assert.deepEqual(errors, [], tag + ': no page errors');
     await ctx.close();
   }
