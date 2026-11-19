@@ -54,7 +54,7 @@
     const tb = e.target.closest('[data-tab]'); if (tb) { S.tab = tb.dataset.tab; S.onlyCancelReq = false; S.pinned.clear(); S.limit = 50; rerenderOrders(); return; }
     if (e.target.closest('[data-cxreq]')) { S.onlyCancelReq = !S.onlyCancelReq; rerenderOrders(); return; }
     if (e.target.closest('[data-filters]')) { S.showFilters = !S.showFilters; rerenderOrders(); return; }
-    if (e.target.closest('[data-clear]')) { S.q = ''; S.f = {}; S.onlyCancelReq = false; rerenderOrders(); return; }
+    if (e.target.closest('[data-clear]')) { S.q = ''; S.f = {}; S.onlyCancelReq = false; S.period = window.DLPeriod.fresh(); rerenderOrders(); return; }
     if (e.target.closest('[data-more]')) { S.limit += 50; rerenderOrders(); return; }
     if (e.target.closest('[data-export-orders]')) { exportOrders(); return; }
     const op = e.target.closest('[data-open]'); if (op) { openDrawer(Number(op.dataset.open)); return; }
@@ -68,6 +68,7 @@
   document.addEventListener('change', e => {
     const el = e.target;
     if (el.matches('[data-notify]')) { setNotify(el.checked).then(() => { el.checked = notifyOn(); }); return; }
+    if (window.DLPeriod.read(S.period, el)) { S.limit = 50; rerenderOrders(); return; }
     if (el.matches('[data-sound]')) { soundOn = el.checked; try { localStorage.setItem('dl_supplier_sound', soundOn ? '1' : '0'); } catch (x) { /* private mode */ } if (soundOn) beep(); return; }
     if (el.matches('[data-fl]')) { S.f = { ...S.f, [el.dataset.fl]: el.type === 'checkbox' ? el.checked : el.value }; S.limit = 50; rerenderOrders(); return; }
     if (el.matches('[data-rchoice]')) { S.rChoice[el.dataset.rchoice] = el.value; rerenderOrders(); return; }

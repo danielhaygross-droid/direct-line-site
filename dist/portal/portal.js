@@ -32,7 +32,7 @@
     price_asc: ['Price: low to high', bySort.num(p => p.unitPrice)], price_desc: ['Price: high to low', bySort.num(p => p.unitPrice, true)],
     revision: ['Cost revision first', bySort.revision],
   };
-  const S = { me: null, orders: [], payments: [], transfers: [], adjustments: [], invoices: [], products: [], claims: [], stores: [], storeId:0, period:'month', from:'', to:'', notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
+  const S = { me: null, orders: [], payments: [], transfers: [], adjustments: [], invoices: [], products: [], claims: [], stores: [], storeId:0, ordersPeriod: window.DLPeriod.fresh(), period:'month', from:'', to:'', notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
@@ -534,15 +534,19 @@
   // Orders page (Erwin, 28 Oct 2026: "he cant even properly sort out the orders"): the list and its filters come first;
   // the earnings (store table, cards, profit chart) are folded below it and closed until the client opens them.
   // No unpaid strip here (5 Nov 2026): it is on Home and Payments; the "Not paid" chip filters the unpaid orders.
-  const viewOrders = () => `<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label>${sortPick('portal-orders-2', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
+  const viewOrders = () => `<div class="toolbar"><div class="chips" data-chips></div><label class="search"><span class="sr">Search orders</span>${ic('search')}<input type="search" placeholder="Search order, product, customer…" value="${esc(S.q)}" data-q></label><span data-period-slot></span>${sortPick('portal-orders-2', ORDER_SORTS)}<button type="button" class="btn btn-sm" data-excel-export title="An Excel file with the orders on screen, their prices and a Paid column (Yes / No)">${ic('doc')}Export to Excel</button></div>
       <section class="card" data-orders-list></section>`;
   const isUnpaid = o => window.DLPayOrders.owes(o, S.adjustments);
   // "Cost revisions": every order the client asked a cost revision on (waiting or answered).
   const hasRevision = o => !!UI.revTag(o);
   const byFilter = (o, f) => f === 'all' || (f === 'updates' ? newByOrder.has(o.id) : f === 'unpaid' ? isUnpaid(o) : f === 'revision' ? hasRevision(o) : o.status === f);
+  // The week / month picker (19 Nov 2026): an order belongs to the day it was sent to us; the chip counts follow it.
+  const periodOrders = () => storeOrders().filter(o => window.DLPeriod.match(o.createdAt, S.ordersPeriod));
+  const periodOpts = () => window.DLi18n?.lang === 'he' ? { t: window.DLi18n.t, locale: 'he-IL' } : { locale: 'en-GB' };
+  function renderPeriod() { const el = $('[data-period-slot]'); if (el) el.innerHTML = window.DLPeriod.html(S.ordersPeriod, S.orders.map(o => o.createdAt), periodOpts()); }
   function renderChips() {
     refreshNew();
-    const c = st => storeOrders().filter(o => byFilter(o, st)).length;
+    const c = st => periodOrders().filter(o => byFilter(o, st)).length;
     // Shipped is always there, like in admin (29 Oct 2026), even before anything ships.
     $('[data-chips]').innerHTML = ['all', 'updates', 'unpaid', ...STATUSES, 'revision'].filter(st => st === 'all' || st === 'shipped' || c(st) || st === S.filter)
       .map(st => `<button type="button" class="chip${S.filter === st ? ' on' : ''} t-${st}" data-filter="${st}" aria-pressed="${S.filter === st}">${st !== 'all' ? '<i class="dot"></i>' : ''}${st === 'all' ? 'All' : st === 'updates' ? 'New updates' : st === 'unpaid' ? 'Not paid' : st === 'revision' ? 'Cost revisions' : UI.LABEL[st]} <span>${c(st)}</span></button>`).join('');
@@ -551,7 +555,7 @@
   function shownOrders() {
     refreshNew();
     const q = S.q.toLowerCase();
-    return sortList(storeOrders().filter(o => byFilter(o, S.filter)
+    return sortList(periodOrders().filter(o => byFilter(o, S.filter)
       && (!q || [o.orderRef, o.trackingNumber, o.itemTitle, o.sku, o.buyerName, o.notes, o.destination, place(o.destination),S.stores.find(s=>s.id===o.storeId)?.name].join(' ').toLowerCase().includes(q))), 'portal-orders-2', ORDER_SORTS);
   }
   // "Export to Excel": the orders on screen as an .xlsx with prices, a Yes / No "Paid" column and paid / not paid totals.
@@ -578,11 +582,11 @@
   const listShown = (k, sig) => { const sh = S.shown ||= {}; if (sh[k]?.sig !== sig) sh[k] = { sig, n: LIST_PAGE[k] }; return sh[k].n; };
   const listMore = (k, shown, n) => n > shown ? `<div class="list-more" data-list-more-bar="${k}"><button type="button" class="btn btn-sm" data-list-more="${k}"><span>Show ${Math.min(LIST_PAGE[k], n - shown)} more</span></button><small class="dim">${shown} of ${n} shown</small></div>` : '';
   function renderOrdersList() {
-    const all = shownOrders(), list = all.slice(0, listShown('orders', [S.filter, S.q, S.storeId].join('|')));
+    const all = shownOrders(), list = all.slice(0, listShown('orders', [S.filter, S.q, S.storeId, S.ordersPeriod.k, S.ordersPeriod.from, S.ordersPeriod.to].join('|')));
     $('[data-orders-list]').innerHTML = list.length ? `${bulkDelivered(all)}<div class="table-wrap">${ordersTable(list)}</div>${listMore('orders', list.length, all.length)}`
-      : S.orders.length ? empty('search', 'No orders match', 'Try another search or status.') : empty('orders', 'No orders yet', 'Add your first order and we’ll take it from there.', '<a class="btn btn-primary" href="#/new">New order</a>');
+      : S.orders.length ? empty('search', 'No orders match', S.ordersPeriod.k !== 'all' ? 'Try another search, status or period.' : 'Try another search or status.') : empty('orders', 'No orders yet', 'Add your first order and we’ll take it from there.', '<a class="btn btn-primary" href="#/new">New order</a>');
   }
-  function bindOrders() { renderChips(); renderOrdersList(); }
+  function bindOrders() { renderPeriod(); renderChips(); renderOrdersList(); }
 
   // ---------- order drawer ----------
   let chatCtl = null, drawerEvents = [];
@@ -1354,6 +1358,8 @@
   document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders-2')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}else renderView(true);});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
   document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
+  // Orders list: week / month picker (19 Nov 2026).
+  document.addEventListener('change', e => { if (S.route !== 'orders' || !window.DLPeriod.read(S.ordersPeriod, e.target)) return; if (e.target.matches('[data-period-pick]')) renderPeriod(); renderChips(); renderOrdersList(); });
   document.addEventListener('input', e => { const f = e.target.closest?.('[data-rev-form]'); if (!f) return; $$('.field.bad', f).forEach(x => x.classList.remove('bad')); const m = $('[data-rev-msg]', f); m.textContent = ''; m.className = 'form-msg'; });
   // Cost revision request: the competitor price is required (the server checks it too).
   document.addEventListener('submit', async e => {
