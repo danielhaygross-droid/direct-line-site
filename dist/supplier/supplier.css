@@ -232,7 +232,7 @@ select.sp-suggest{color:var(--dim);font-style:italic}
 }
 @media(max-width:700px){
   .sp-main.wide{padding:16px 12px 88px}
-  .sp-tools{min-width:0;width:100%}.sp-search{max-width:none}
+  .sp-tools{min-width:0;width:100%;flex-wrap:wrap}.sp-search{max-width:none}.sp-tools .period-pick{flex:1 1 100%}
   .sp-chip{padding:0 12px;font-size:13.5px}
   .sp-bottom{position:fixed;left:0;right:0;bottom:0;z-index:15;display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line);background:var(--surface);padding-bottom:env(safe-area-inset-bottom)}
   .sp-bottom a{position:relative;display:grid;justify-items:center;gap:2px;min-height:56px;padding:8px 0;color:var(--muted);font-size:12px;font-weight:600;text-decoration:none}

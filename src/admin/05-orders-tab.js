@@ -10,10 +10,19 @@
   const LIST_PAGE = { orders: 50, clients: 20 };
   const listShown = (k, sig) => { const sh = S.shown ||= {}; if (sh[k]?.sig !== sig) sh[k] = { sig, n: LIST_PAGE[k] }; return sh[k].n; };
   const listMore = (k, shown, n) => n > shown ? `<div class="panel-more" data-list-more-bar="${k}"><button type="button" class="btn btn-sm" data-list-more="${k}"><span>Show ${Math.min(LIST_PAGE[k], n - shown)} more</span></button><small class="dim">${shown} of ${n} shown</small></div>` : '';
+  // The week / month picker (19 Nov 2026): the day the order was sent in; the chip counts follow it. The picker is drawn
+  // again only when its choices change, so a date being typed keeps its focus.
+  function renderPeriod(all) {
+    const el = $('[data-period-slot]'); if (!el) return;
+    const opts = window.DLi18n?.lang === 'he' ? { t: window.DLi18n.t, locale: 'he-IL' } : { locale: 'en-GB' };
+    const html = window.DLPeriod.html(S.ordersPeriod, all.map(o => o.createdAt), opts);
+    if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
+  }
   function renderOrders() {
     freshRead();
     const all = [...S.orders,...S.archivedOrders];
-    const inClient = all.filter(o => !S.client || String(o.clientId) === S.client);
+    renderPeriod(all);
+    const inClient = all.filter(o => (!S.client || String(o.clientId) === S.client) && window.DLPeriod.match(o.createdAt, S.ordersPeriod));
     const count = f => inClient.filter(o => matches(o, f)).length;
     const label = f => (f === 'archived' ? 'Archived orders' : f === 'all' ? 'All' : f === 'neworders' ? 'New orders' : f === 'updates' ? 'New updates' : f === 'followups' ? 'New follow-ups' : f === 'needscost' ? 'Needs cost' : f === 'revision' ? 'Cost revision' : f === 'unpaid' ? 'Not paid' : UI.LABEL[f]);
     // Shipped is always there (Erwin, 29 Oct 2026: "we need a sort view for Shipped order"), even before anything ships.
@@ -25,7 +34,7 @@
     const q = S.q.toLowerCase(), byChanged = window.DL.sortKey('admin-orders-2', ADMIN_ORDER_SORTS).startsWith('changed'); // date under the status
     const rows = sortList(inClient.filter(o => matches(o, S.filter) && (!q || [o.orderRef, o.trackingNumber, o.notes, o.destination, place(o.destination), clientName(o.clientId), o.itemTitle, o.sku, o.buyerName].join(' ').toLowerCase().includes(q))), 'admin-orders-2', ADMIN_ORDER_SORTS);
     // Bulk edit: only rows that are on screen can stay selected.
-    const showN = listShown('orders', [S.filter, S.q, S.client].join('|')), seen = rows.slice(0, showN);
+    const showN = listShown('orders', [S.filter, S.q, S.client, S.ordersPeriod.k, S.ordersPeriod.from, S.ordersPeriod.to].join('|')), seen = rows.slice(0, showN);
     const shown = new Set(seen.map(o => o.id)); for (const id of [...S.picked]) if (!shown.has(id)) S.picked.delete(id);
     const archivedView = S.filter === 'archived', allOn = seen.length > 0 && seen.every(o => S.picked.has(o.id));
     $('[data-list]').innerHTML = rows.length ? `${bulkBar(archivedView, allOn)}<div class="table-wrap"><table class="tbl stack"><thead><tr><th class="pick"></th><th>Client</th><th>Order</th><th>Destination</th><th class="num">Total</th><th>Status</th><th>Messages</th><th class="hide-sm"></th></tr></thead><tbody>
@@ -39,7 +48,7 @@
         <td data-label="Messages">${o.unreadMessages ? `<span class="unread-pill">${ic('chat')}${o.unreadMessages} new</span>` : o.messages ? `<span class="msgs">${ic('chat')}${o.messages}</span>` : '<span class="dim">—</span>'}</td>
         <td class="num hide-sm">${UI.svg(P.chev).replace('<svg', '<svg style="width:18px;height:18px;fill:none;stroke:var(--dim);stroke-width:2"')}</td></tr>`).join('')}
       </tbody></table></div>${listMore('orders', seen.length, rows.length)}`
-      : S.orders.length ? empty('No orders here', S.filter === 'followups' ? 'No unread follow-ups. You’re all caught up.' : S.filter === 'neworders' ? 'No new orders. You’re all caught up.' : S.filter === 'updates' ? 'No new updates. You’re all caught up.' : S.filter === 'archived' ? 'No archived orders match this search.' : 'Try another filter or search.')
+      : S.orders.length ? empty('No orders here', S.filter === 'followups' ? 'No unread follow-ups. You’re all caught up.' : S.filter === 'neworders' ? 'No new orders. You’re all caught up.' : S.filter === 'updates' ? 'No new updates. You’re all caught up.' : S.filter === 'archived' ? 'No archived orders match this search.' : S.ordersPeriod.k !== 'all' ? 'Try another filter, search or period.' : 'Try another filter or search.')
         : empty('No client orders yet', 'They show up here as soon as a client adds one in their portal. You can also add one for a client.', '<button type="button" class="btn btn-primary" data-new-order>New order</button>');
   }
 

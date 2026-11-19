@@ -32,7 +32,7 @@
     price_asc: ['Price: low to high', bySort.num(p => p.unitPrice)], price_desc: ['Price: high to low', bySort.num(p => p.unitPrice, true)],
     revision: ['Cost revision first', bySort.revision],
   };
-  const S = { me: null, orders: [], payments: [], transfers: [], adjustments: [], invoices: [], products: [], claims: [], stores: [], storeId:0, period:'month', from:'', to:'', notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
+  const S = { me: null, orders: [], payments: [], transfers: [], adjustments: [], invoices: [], products: [], claims: [], stores: [], storeId:0, ordersPeriod: window.DLPeriod.fresh(), period:'month', from:'', to:'', notes: [], seenAt: 0, route: 'home', id: null, filter: 'all', q: '' };
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },

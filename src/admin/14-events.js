@@ -67,6 +67,7 @@
   }
   function onChange(e) {
     if (e.target.matches('[data-client-filter]')) { S.client = e.target.value; renderOrders(); }
+    if (window.DLPeriod.read(S.ordersPeriod, e.target)) renderOrders();
     if (e.target.matches('[data-status]')) setStatus(e.target.dataset.status, e.target.value, e.target);
     if (e.target.matches('[data-pick]')) { const id = Number(e.target.dataset.pick); if (e.target.checked) S.picked.add(id); else S.picked.delete(id); renderOrders(); }
     if (e.target.matches('[data-pick-all]')) { $$('[data-pick]').forEach(c => { const id = Number(c.dataset.pick); if (e.target.checked) S.picked.add(id); else S.picked.delete(id); }); renderOrders(); }

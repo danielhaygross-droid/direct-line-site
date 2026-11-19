@@ -4,7 +4,7 @@
     'Orders': '订单', 'Newest first. Type in the gold columns: each change saves by itself.': '最新的在最上面。在金色栏里填写：每次修改都会自动保存。',
     'New': '新订单', 'Bought': '已购买', 'Shipped': '已发货', 'Cancelled': '已取消', 'Not bought': '未购买', 'Cancel requested': '客户申请取消',
     'cancel requests': '个取消申请', 'cancel request': '个取消申请', 'don’t buy or ship them. Wait for Direct Line.': '不要购买或发货。请等 Direct Line 通知。',
-    'Show them': '查看', 'Show all': '显示全部', 'Order number, shop, product or tracking': '订单号、店铺、商品或运单号', 'Filters': '筛选', 'Clear filters': '清除筛选',
+    'Show them': '查看', 'Show all': '显示全部', 'Period': '时间段', 'All time': '全部时间', 'This week': '本周', 'Last week': '上周', 'This month': '本月', 'Last month': '上个月', 'Custom range': '自定义日期', 'From': '从', 'To': '到', 'Order number, shop, product or tracking': '订单号、店铺、商品或运单号', 'Filters': '筛选', 'Clear filters': '清除筛选',
     'All clients': '所有客户', 'All countries': '所有国家', 'Only orders without a total cost': '只看没有总成本的订单',
     'Order': '订单号', 'Product / variation': '商品 / 款式', 'Qty': '数量', 'Ship to': '寄往', 'Total cost (USD)': '总成本（美元）', 'Cost per product (USD)': '每件商品成本（美元）',
     'Shipping status': '发货状态', 'Tracking number': '运单号', 'Courier': '快递公司', 'Delayed? + reason': '延迟？+ 原因', 'Domestic express tracking': '国内快递单号',
@@ -40,6 +40,7 @@
     return (S.queue?.orders || []).filter(o => {
       if (S.onlyCancelReq) return o.cancelRequested;
       if (!(o.tab === S.tab || S.pinned.has(o.id) && S.pinnedTab === S.tab)) return false;
+      if (!window.DLPeriod.match(o.createdAt, S.period)) return false;
       if (q && !searchText(o).includes(q)) return false;
       if (f.client && o.client !== f.client) return false;
       if (f.country && o.country !== f.country) return false;
@@ -52,7 +53,8 @@
   const LAST_COURIER = 'dl_supplier_last_courier';
   const lastCourier = () => { try { const v = localStorage.getItem(LAST_COURIER) || ''; return S.queue?.couriers?.includes(v) ? v : ''; } catch (e) { return ''; } };
   const flashSaved = (id, f) => { for (const el of document.querySelectorAll(`[data-o="${id}"][data-f="${f}"]`)) { el.classList.add('sp-just-saved'); setTimeout(() => el.classList.remove('sp-just-saved'), 1600); } };
-  const tabCount = tab => (S.queue?.orders || []).filter(o => o.tab === tab).length;
+  // Tab counts follow the week / month picker (19 Nov 2026).
+  const tabCount = tab => (S.queue?.orders || []).filter(o => o.tab === tab && window.DLPeriod.match(o.createdAt, S.period)).length;
   const disabledFor = (o, field) => {
     if (field === 'cancelFee') return !(o.status === 'cancelled' || o.cancelRequested);
     if (o.status === 'cancelled') return true;
@@ -111,9 +113,10 @@
     const Q = S.queue; if (!Q) return S.error || `<p class="sp-empty">${t('Loading…')}</p>`;
     const req = Q.orders.filter(o => o.cancelRequested), list = visibleOrders(), shown = list.slice(0, S.limit), f = S.f || {};
     const clients = [...new Set(Q.orders.map(o => o.client))].sort(), countries = [...new Set(Q.orders.map(o => o.country).filter(Boolean))].sort();
-    const filtered = !!(S.q || f.client || f.country || f.noCost || f.paid || S.onlyCancelReq);
+    const filtered = !!(S.q || f.client || f.country || f.noCost || f.paid || S.onlyCancelReq || S.period.k !== 'all');
+    const period = window.DLPeriod.html(S.period, Q.orders.map(o => o.createdAt), { t, locale: lang === 'zh' ? 'zh-CN' : 'en-GB' });
     const tabs = [['new', 'New'], ['bought', 'Bought'], ['shipped', 'Shipped'], ['cancelled', 'Cancelled']].map(([k, l]) => {
-      const n = tabCount(k), extra = k === 'new' ? Q.orders.filter(isNew).length : k === 'cancelled' ? 0 : 0;
+      const n = tabCount(k), extra = k === 'new' ? Q.orders.filter(o => isNew(o) && window.DLPeriod.match(o.createdAt, S.period)).length : k === 'cancelled' ? 0 : 0;
       return `<button type="button" class="sp-chip" data-tab="${k}" aria-pressed="${S.tab === k && !S.onlyCancelReq}">${t(l)} ${extra && extra === n ? `<b class="sp-badge">${n}</b>` : `<span>${n}</span>${extra ? `<b class="sp-badge">${extra}</b>` : ''}`}</button>`; }).join('');
     const cx = S.tab === 'cancelled';
     const head = `<tr><th>${t('Order')}</th><th>${t('Product / variation')}</th><th class="num">${t('Qty')}</th><th>${t('Ship to')}</th><th class="g">${t('Total cost (USD)')}</th><th class="g">${t('Cost per product (USD)')}</th>
@@ -123,7 +126,7 @@
       ${notifyBannerHTML()}
       ${req.length ? `<div class="sp-alert"><b>${req.length} ${t(req.length === 1 ? 'cancel request' : 'cancel requests')}</b><span>${req.slice(0, 4).map(o => esc(o.ref)).join(', ')}${req.length > 4 ? '…' : ''}: ${t('don’t buy or ship them. Wait for Direct Line.')}</span><button type="button" class="btn btn-sm" data-cxreq>${t(S.onlyCancelReq ? 'Show all' : 'Show them')}</button></div>` : ''}
       <div class="sp-bar"><div class="sp-chips">${tabs}</div>
-        <div class="sp-tools"><label class="sp-search"><input type="search" data-q value="${esc(S.q || '')}" placeholder="${esc(t('Order number, shop, product or tracking'))}" aria-label="${esc(t('Order number, shop, product or tracking'))}"></label>
+        <div class="sp-tools">${period}<label class="sp-search"><input type="search" data-q value="${esc(S.q || '')}" placeholder="${esc(t('Order number, shop, product or tracking'))}" aria-label="${esc(t('Order number, shop, product or tracking'))}"></label>
           <button type="button" class="btn" data-filters aria-expanded="${!!S.showFilters}">${t('Filters')}${f.client || f.country || f.noCost || f.paid ? ' •' : ''}</button></div></div>
       ${S.showFilters ? `<div class="sp-filters"><select data-fl="client"><option value="">${t('All clients')}</option>${clients.map(c => `<option${f.client === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
         <select data-fl="country"><option value="">${t('All countries')}</option>${countries.map(c => `<option${f.country === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>

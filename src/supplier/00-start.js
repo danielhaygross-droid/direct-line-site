@@ -2,7 +2,7 @@
    English and Simplified Chinese. The server only ever sends supplier-safe numbers (server/supplier-portal.mjs). */
 (function () {
   'use strict';
-  const S = { me: null, page: 'orders', clientId: null, billing: null, client: null, open: new Set(),
+  const S = { me: null, period: window.DLPeriod.fresh(), page: 'orders', clientId: null, billing: null, client: null, open: new Set(),
     queue: null, tab: 'new', q: '', f: {}, limit: 50, pinned: new Set(), pinnedTab: null, saving: {}, pending: {}, warn: {}, err: {}, drawer: null, alerts: null, seenAt: null,
     quotes: null, requests: null, qtab: 'answer', rtab: 'answer', qEdit: new Set(), qAvail: {}, rChoice: {}, formErr: {} };
   const $ = (sel, root = document) => root.querySelector(sel);
