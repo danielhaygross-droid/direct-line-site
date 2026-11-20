@@ -37,6 +37,7 @@
  "check-order-period.mjs": 150,
  "check-order-updates.mjs": 28,
  "check-orders-earnings.mjs": 15,
+ "check-orders-status.mjs": 45,
  "check-overview-money.mjs": 16,
  "check-pay-credit.mjs": 16,
  "check-pay-for-orders.mjs": 17,
