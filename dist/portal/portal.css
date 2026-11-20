@@ -371,7 +371,13 @@ small{font-size:max(12px,.85em)}.store-label small{opacity:1;color:var(--muted)}
 .store-add:not([open]){padding:0;border:0;background:none;box-shadow:none}.store-add[open]>summary,.store-edit[open]>summary{margin-bottom:14px}.store-edit{margin-top:10px}
 .store-add [data-client-store-form]>h3,.store-edit [data-client-store-form]>h3{display:none}
 /* Phone order cards (stacked rows): no empty tracking / earned / profit lines (5 Nov 2026). */
-@media(max-width:760px){.tbl.stack td.empty-sm{display:none}}
+@media(max-width:760px){.tbl.stack td.empty-sm{display:none}
+}
+/* Client orders table: Status always fits (QA 19 Nov 2026). Tighter cells; Earned / Profit only once the client entered Etsy numbers; Customer and Destination step aside on narrower screens. */
+@media(min-width:761px){.orders-tbl th,.orders-tbl td{padding-inline:10px}.orders-tbl td:nth-child(3){min-width:104px}}
+.orders-tbl.no-earn .col-earn{display:none}
+@media(min-width:761px) and (max-width:1320px){.orders-tbl .col-dest{display:none}}
+@media(min-width:761px) and (max-width:1100px){.orders-tbl .col-cust,.orders-tbl .col-earned{display:none}}
 /* Pay box: ticked orders minus the credit on the account (5 Nov 2026). */
 .pf-credit{margin:0 0 6px;font-size:14px;color:var(--muted)}.pf-credit b{color:var(--text)}.pf-credit b:last-child{color:var(--mint)}
 /* Payments sections (5 Nov 2026): one part of the page at a time. */
