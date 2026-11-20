@@ -192,7 +192,7 @@
     kpiWin = k;
     for (const b of wrap.querySelectorAll('[data-kpi-card]')) b.setAttribute('aria-expanded', String(b === card));
     placeCardWindow();
-    if (focus) win.focus({ preventScroll: true });
+    if (focus) { win.focus({ preventScroll: true }); win.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
   }
   function closeCardWindow(back = true) {
     const wrap = $('[data-kpi-wrap]'), card = kpiWin && wrap?.querySelector(`[data-kpi-card="${kpiWin}"]`);

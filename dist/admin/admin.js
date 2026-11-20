@@ -338,7 +338,7 @@
     kpiWin = k;
     for (const b of wrap.querySelectorAll('[data-kpi-card]')) b.setAttribute('aria-expanded', String(b === card));
     placeCardWindow();
-    if (focus) win.focus({ preventScroll: true });
+    if (focus) { win.focus({ preventScroll: true }); win.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
   }
   function closeCardWindow(back = true) {
     const wrap = $('[data-kpi-wrap]'), card = kpiWin && wrap?.querySelector(`[data-kpi-card="${kpiWin}"]`);
@@ -930,7 +930,7 @@
           <label class="field full"><span>Couriers the supplier can pick <small>one per line</small></span><textarea name="couriers" rows="4" maxlength="1000" data-no-i18n>${esc(String(s.couriers || ''))}</textarea></label>
           <div class="full set-actions"><button class="btn btn-primary" type="submit">Save couriers</button><p class="form-msg" data-couriers-msg></p></div>
         </form>
-        <p class="note set-note">These show as a dropdown in the Courier column of the supplier sheet. The supplier can also type a name that isn’t listed. Clients see the courier next to the tracking number.</p>
+        <p class="note set-note">The supplier picks from this list in the supplier portal (and in the sheet’s Courier column) and can add a new name there with “+ Add courier…”. Clients see the courier next to the tracking number.</p>
       </section>
       <section class="card card-pad"><h3 class="form-sec">Receipts</h3>
         <form class="form-grid" id="issuer-form" novalidate>

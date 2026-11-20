@@ -22,7 +22,7 @@
   });
   const linkOut = l => (l ? `<a class="sp-plink" href="${esc(l)}" target="_blank" rel="noopener noreferrer">${esc(l.replace(/^https?:\/\/(www\.)?/, '').slice(0, 48))}</a> <button type="button" class="btn btn-sm" data-copy="${esc(l)}">${t('Copy link')}</button>` : '');
   const pic = src => (src ? `<img class="sp-rpic" src="${esc(src)}" alt="" loading="lazy">` : '<span class="sp-rpic none"></span>');
-  const subTabs = (key, list) => `<div class="sp-chips">${list.map(([k, l, n, red]) => `<button type="button" class="sp-chip" data-${key}="${k}" aria-pressed="${S[key] === k}">${t(l)} <span>${n}</span>${red && n ? `<b class="sp-badge">${n}</b>` : ''}</button>`).join('')}</div>`;
+  const subTabs = (key, list) => `<div class="sp-chips">${list.map(([k, l, n, red]) => `<button type="button" class="sp-chip" data-${key}="${k}" aria-pressed="${S[key] === k}">${t(l)} ${red && n ? `<b class="sp-badge">${n}</b>` : `<span>${n}</span>`}</button>`).join('')}</div>`;
   const formErr = k => (S.formErr[k] ? `<p class="sp-warn">${esc(S.formErr[k])}</p>` : '');
 
   // Quotes
@@ -44,7 +44,7 @@
         <dl class="sp-rkv">${p.expected != null ? `<div><dt>${t('Expected per month')}</dt><dd>${p.expected}</dd></div>` : ''}${p.competitor ? `<div><dt>${t('Competitor price')}</dt><dd>${esc(p.competitor)}</dd></div>` : ''}<div class="wide"><dt>${t('Product link')}</dt><dd>${linkOut(p.link)}</dd></div></dl>
         ${p.photos.length > 1 ? `<div class="sp-rthumbs">${p.photos.slice(1).map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt=""></a>`).join('')}</div>` : ''}</div></div>
       ${answered && !editing ? `<div class="sp-rans"><span class="sp-pill ${p.status === 'approved' ? 'shipped' : 'red'}">${t(p.status === 'approved' ? 'Quoted' : 'Not available')}</span>
-          ${p.status === 'approved' ? `<span><small>${t('Price per item (USD)')}</small><b class="pre">${esc(a.price)}</b></span>${a.shipping ? `<span><small>${t('Shipping per order (USD)')}</small><b>$${esc(a.shipping)}</b></span>` : ''}` : ''}
+          ${p.status === 'approved' ? `<span><small>${t('Price per item (USD)')}</small><b class="pre">${esc(a.price)}</b></span>${a.shipping ? `<span><small>${t('Shipping per order (USD)')}</small><b>$${esc(Number.isFinite(Number(a.shipping)) ? Number(a.shipping).toFixed(2) : a.shipping)}</b></span>` : ''}` : ''}
           ${a.note ? `<span><small>${t('Note')}</small><b>${esc(a.note)}</b></span>` : ''}<button type="button" class="btn btn-sm" data-qedit="${p.id}">${t('Change answer')}</button></div>` : quoteForm(p)}</article>`;
   }
   function quotesHTML() {
