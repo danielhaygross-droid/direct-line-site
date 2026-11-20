@@ -152,7 +152,9 @@
     const form = $('form', wrap), err = $('.form-msg', wrap);
     form.addEventListener('submit', async e => {
       e.preventDefault();
-      const btn = $('button[type=submit]', form); btn.disabled = true; err.hidden = true;
+      const btn = $('button[type=submit]', form); err.hidden = true;
+      if (!form.username.value.trim() || !form.password.value) { err.textContent = 'Enter your username and password.'; err.hidden = false; return; }
+      btn.disabled = true;
       try {
         const data = await api('/login', { method: 'POST', body: { username: form.username.value.trim(), password: form.password.value, remember: form.remember.checked } });
         if (data.redirect && !location.pathname.startsWith(data.redirect)) location.href = data.redirect; else location.reload();

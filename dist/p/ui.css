@@ -17,6 +17,9 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .mono{font-family:var(--mono)}
 .eyebrow{font:600 12px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+/* Hebrew has no glyphs in the mono font and wide letter spacing breaks its letters (QA 19 Nov 2026). */
+[dir=rtl] .eyebrow{font-family:inherit;font-size:13px;letter-spacing:.02em}
+[data-theme=dark] .rev-tag:not(.ok):not(.kept){color:var(--gold)}
 .muted{color:var(--muted)}.dim{color:var(--dim)}
 .pos{color:var(--mint)}.neg{color:var(--red)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}

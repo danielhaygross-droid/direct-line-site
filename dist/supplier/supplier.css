@@ -169,6 +169,8 @@ a.sp-add:hover u{color:var(--gold-2)}
 .sp-q tr.isnew td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
 .sp-q tr:focus-within td{background:color-mix(in srgb,var(--gold) 9%,var(--surface))}
 .sp-q input,.sp-q select,.sp-fgrid input,.sp-fgrid select{width:100%;min-height:40px;padding:0 10px;border:1px solid var(--line-field);border-radius:9px;background:var(--surface);color:var(--text);font:inherit;font-size:14px}
+/* Long courier names (e.g. "Cainiao Super Economy Global") were cut at about 100px (QA 19 Nov 2026). */
+.sp-q select[data-f=courier]{min-width:150px}
 .sp-q input:focus,.sp-q select:focus,.sp-fgrid input:focus,.sp-fgrid select:focus{outline:0;border-color:var(--focus);box-shadow:0 0 0 3px color-mix(in srgb,var(--gold) 18%,transparent)}
 .sp-q input:disabled,.sp-q select:disabled,.sp-fgrid input:disabled,.sp-fgrid select:disabled{opacity:.55;background:var(--surface-2)}
 .sp-q td.dl input{margin-top:6px}

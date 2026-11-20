@@ -238,7 +238,7 @@ export async function photosZip(DB, env, id) {
   const o = (await loadOrders(DB, 'AND o.id = ?', [id]))[0];
   if (!o) return json({ ok: false, error: 'Not found' }, 404);
   const rows = (await DB.prepare('SELECT id, item_index, mime, data, blob_path, thumb_mime, thumb, thumb_blob_path FROM order_photos WHERE order_id = ? ORDER BY id LIMIT 8').bind(id).all()).results || [];
-  const safe = (norm(o.order_ref) || 'order-' + id).replace(/[^\w.-]+/g, '_'), files = [];
+  const safe = (norm(o.order_ref) || 'order-' + id).replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'order-' + id, files = [];
   for (const [i, r] of rows.entries()) {
     const img = await photoBytes(env, r, false);
     if (!img.bytes) continue;

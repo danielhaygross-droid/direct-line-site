@@ -33,6 +33,9 @@
   const ago = sec => { const d = Math.max(0, Math.floor(Date.now() / 1000) - sec); return d < 60 ? t('just now') : d < 3600 ? Math.floor(d / 60) + ' ' + t('min ago') : d < 86400 ? Math.floor(d / 3600) + ' ' + t('h ago') : fmtDay(sec); };
   const lastEdit = o => Object.values(o.edits || {}).sort((a, b) => b.at - a.at)[0];
   const isNew = o => S.seenAt != null && o.createdAt > S.seenAt && o.tab === 'new';
+  // "Product 1:" / "Product 2:" in an order with several products is built on the server (also for the sheet); in 中文 it
+  // reads 商品 1：(QA 19 Nov 2026).
+  const prodText = s => (lang === 'zh' ? String(s || '').replace(/Product (\d+):/g, '商品 $1：') : s);
   const searchText = o => [o.ref, o.shop, o.client, o.product, o.buyer, o.cells.tracking, o.cells.domestic, o.country].join(' ').toLowerCase();
 
   function visibleOrders() {
@@ -71,7 +74,7 @@
     if (field === 'ship') return `<select data-o="${id}" data-f="ship" aria-label="${esc(t('Shipping status'))}"${o.ship === 'shipped' || o.status === 'cancelled' || o.cancelRequested ? ' disabled' : ''}>${SHIP_OPTS.map(([v, l]) => `<option value="${v}"${shipState(o) === v ? ' selected' : ''}>${t(l)}</option>`).join('')}</select>`;
     if (field === 'tracking') return `<input class="mono" data-o="${id}" data-f="tracking" value="${esc(c.tracking)}" placeholder="${esc(t('Tracking number'))}" aria-label="${esc(t('Tracking number'))}"${dis(o, 'tracking')}>`;
     if (field === 'courier') { const list = S.queue.couriers.includes(c.courier) || !c.courier ? S.queue.couriers : [c.courier, ...S.queue.couriers], sug = !c.courier && !disabledFor(o, 'courier') ? lastCourier() : '', pick = c.courier || sug;
-      return `<select data-o="${id}" data-f="courier" aria-label="${esc(t('Courier'))}"${sug ? ' class="sp-suggest"' : ''}${dis(o, 'courier')}><option value="">${t('Pick')}</option>${list.map(v => `<option${v === pick ? ' selected' : ''}>${esc(v)}</option>`).join('')}<option value="__add">${t('+ Add courier…')}</option></select>`; }
+      return `<select data-o="${id}" data-f="courier" aria-label="${esc(t('Courier'))}"${pick ? ` title="${esc(pick)}"` : ''}${sug ? ' class="sp-suggest"' : ''}${dis(o, 'courier')}><option value="">${t('Pick')}</option>${list.map(v => `<option${v === pick ? ' selected' : ''}>${esc(v)}</option>`).join('')}<option value="__add">${t('+ Add courier…')}</option></select>`; }
     if (field === 'delayed') return `<select data-o="${id}" data-f="delayed" aria-label="${esc(t('Delayed? + reason'))}"${dis(o, 'delayed')}><option value="0">${t('On time')}</option><option value="1"${c.delayed ? ' selected' : ''}>${t('Possibly delayed')}</option></select>${c.delayed ? `<input data-o="${id}" data-f="reason" value="${esc(c.reason)}" placeholder="${esc(t('Reason'))}" aria-label="${esc(t('Reason'))}"${dis(o, 'reason')}>` : ''}`;
     if (field === 'domestic') return `<input class="mono" data-o="${id}" data-f="domestic" value="${esc(c.domestic)}" placeholder="${esc(t('If there is one'))}" aria-label="${esc(t('Domestic express tracking'))}"${dis(o, 'domestic')}>`;
     if (field === 'cancelFee') return `<span class="sp-money"><span>$</span><input inputmode="decimal" data-o="${id}" data-f="cancelFee" value="${esc(c.cancelFee)}" placeholder="0" aria-label="${esc(t('Cancellation fee (USD)'))}"${dis(o, 'cancelFee')}></span>`;
@@ -92,7 +95,7 @@
     const cx = S.tab === 'cancelled';
     return `<tr data-row="${o.id}" class="${o.cancelRequested ? 'cxreq' : ''}${isNew(o) ? ' isnew' : ''}">
       <td class="ord">${orderHead(o)}</td>
-      <td class="prod"><div class="sp-prod">${thumb(o)}<span><b>${esc(o.product || '—')}</b>${cancelNote(o)}</span></div></td>
+      <td class="prod"><div class="sp-prod">${thumb(o)}<span><b>${esc(prodText(o.product) || '—')}</b>${cancelNote(o)}</span></div></td>
       <td class="num">${o.qty}</td><td>${esc(o.country)}</td>
       <td class="g">${cellBox(o, 'cost')}${errLine(o)}</td><td class="g">${cellBox(o, 'itemCosts')}</td>
       ${cx ? `<td class="g">${cellBox(o, 'cancelFee')}</td><td class="g">${cellBox(o, 'tracking')}</td>` : `<td class="g">${cellBox(o, 'ship')}</td><td class="g">${cellBox(o, 'tracking')}${warnLine(o)}</td><td class="g">${cellBox(o, 'courier')}</td><td class="g dl">${cellBox(o, 'delayed')}</td>`}
@@ -102,7 +105,7 @@
     const cx = S.tab === 'cancelled' || (S.tab === 'all' && o.status === 'cancelled'), st = shipState(o), f = (label, box) => `<label class="sp-f"><span>${label}</span>${box}</label>`;
     return `<article class="sp-ocard${o.cancelRequested ? ' cxreq' : ''}" data-row="${o.id}">
       <div class="sp-ocard-h"><div>${orderHead(o)}</div><span class="sp-pill ${o.status === 'cancelled' ? 'red' : st}">${t(o.status === 'cancelled' ? 'Cancelled' : SHIP_OPTS.find(x => x[0] === st)[1])}</span></div>
-      <div class="sp-prod">${thumb(o)}<span><b>${esc(o.product || '—')}</b>${cancelNote(o)}</span></div>
+      <div class="sp-prod">${thumb(o)}<span><b>${esc(prodText(o.product) || '—')}</b>${cancelNote(o)}</span></div>
       <div class="sp-fgrid">${f(t('Qty'), `<b>${o.qty}</b>`)}${f(t('Ship to'), `<b>${esc(o.country)}</b>`)}
         ${f(t('Total cost (USD)'), cellBox(o, 'cost') + errLine(o))}${cx ? f(t('Cancellation fee (USD)'), cellBox(o, 'cancelFee')) : f(t('Shipping status'), cellBox(o, 'ship'))}
         ${f(t('Cost per product (USD)'), cellBox(o, 'itemCosts'))}${f(t('Tracking number'), cellBox(o, 'tracking') + warnLine(o))}
