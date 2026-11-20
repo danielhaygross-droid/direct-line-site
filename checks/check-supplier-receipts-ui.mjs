@@ -72,7 +72,7 @@ try {
   for (const [lang, w] of [['en', 1440], ['he', 1440], ['en', 390], ['he', 390]]) {
     const ctx = await session(admin, w), page = await ctx.newPage(); page.on('pageerror', e => errors.push(lang + w + ': ' + e.message)); page.on('frameattached', f => {}); page.on('console', m => { if (m.type() === 'error') errors.push('console ' + m.text()); });
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=overview]');
-    await ui.waitForSelector('.todo'); assert.match(await ui.locator('[data-attn-slot]').innerText(), lang === 'en' ? /receipts? from the supplier to check and send/ : /קבלות מהספק לבדוק ולשלוח/);
+    await ui.waitForSelector('.todo'); assert.match(await ui.locator('[data-attn-slot]').innerText(), lang === 'en' ? /receipts? from the supplier to check and send/ : /קבלה מהספק לבדוק ולשלוח/);
     await ui.locator('[data-tab=clients]').click(); await ui.waitForSelector('[data-receipts-box]');
     assert.match(await ui.locator('[data-receipts-box]').innerText(), /\$42\.44|\$32\.27/, 'the admin sees the client amount');
     await ui.locator('[data-receipts-box]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `admin-${lang}-${w}-box.png`) });
