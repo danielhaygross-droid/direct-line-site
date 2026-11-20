@@ -89,7 +89,7 @@
   const PAID = { paid: ['Paid', 'mint'], not_paid: ['Not paid', 'red'], no_bill: ['No bill yet', ''] };
   const paidTag = o => (o.status === 'cancelled' || o.clientPaid === 'no_bill' || !PAID[o.clientPaid] ? '' : ` <span class="sp-tag ${PAID[o.clientPaid][1]}" data-paid="${o.clientPaid}">${t(PAID[o.clientPaid][0])}</span>`);
   const orderHead = o => `<button type="button" class="sp-ref" data-open="${o.id}">${esc(o.ref)}${ICON.next}</button>${isNew(o) ? ` <span class="sp-tag gold">${t('New')}</span>` : ''}${paidTag(o)}
-    <small>${esc(o.client)}${o.shop ? ' · ' + esc(o.shop) : ''}</small><small>${esc(fmtDay(o.createdAt))}</small>${savedLine(o)}`;
+    <small>${esc(o.client)}${o.shop ? ' · ' + esc(o.shop) : ''} · <span class="nw">${esc(fmtDay(o.createdAt))}</span></small>${savedLine(o)}`;
   const cancelNote = o => (S.tab === 'all' && o.status === 'cancelled' ? `<span class="sp-tag red">${t('Cancelled')}</span>` : o.cancelRequested ? `<span class="sp-tag red">${t('Cancel requested')}</span><p class="sp-warn">${t('don’t buy or ship them. Wait for Direct Line.')}</p>` : o.revision ? `<span class="sp-tag orange">${t('Cost revision requested')}</span>` : '');
   function rowHTML(o) {
     const cx = S.tab === 'cancelled';

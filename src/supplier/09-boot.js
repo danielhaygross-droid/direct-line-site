@@ -12,10 +12,11 @@
       : S.page === 'client' ? (S.client && S.client.id === S.clientId ? clientHTML(S.client) : S.error || loading())
       : S.page === 'orders' ? ordersHTML() : S.page === 'quotes' ? quotesHTML() : S.page === 'requests' ? requestsHTML() : S.page === 'receipts' ? receiptsHTML()
       : S.billing ? billingHTML(S.billing) : S.error || loading();
-    const y = window.scrollY, drawer = S.drawer;
+    // The Orders table scrolls inside its own box (sticky header, QA 19 Nov 2026): keep that box's place too.
+    const y = window.scrollY, drawer = S.drawer, qw = document.querySelector('.sp-qwrap'), qy = qw?.scrollTop || 0, qx = qw?.scrollLeft || 0;
     document.body.innerHTML = shell(body);
     document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t({ orders: 'Orders', quotes: 'Quotes', requests: 'Price requests', receipts: 'Receipts' }[S.page] || 'Billing');
-    if (S.keepScroll) window.scrollTo(0, y);
+    if (S.keepScroll) { window.scrollTo(0, y); const q = document.querySelector('.sp-qwrap'); if (q) { q.scrollTop = qy; q.scrollLeft = qx; } }
     S.keepScroll = false;
     bindPassword();
     if (drawer && S.page === 'orders') openDrawer(drawer);

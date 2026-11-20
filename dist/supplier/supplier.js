@@ -362,7 +362,7 @@
   const PAID = { paid: ['Paid', 'mint'], not_paid: ['Not paid', 'red'], no_bill: ['No bill yet', ''] };
   const paidTag = o => (o.status === 'cancelled' || o.clientPaid === 'no_bill' || !PAID[o.clientPaid] ? '' : ` <span class="sp-tag ${PAID[o.clientPaid][1]}" data-paid="${o.clientPaid}">${t(PAID[o.clientPaid][0])}</span>`);
   const orderHead = o => `<button type="button" class="sp-ref" data-open="${o.id}">${esc(o.ref)}${ICON.next}</button>${isNew(o) ? ` <span class="sp-tag gold">${t('New')}</span>` : ''}${paidTag(o)}
-    <small>${esc(o.client)}${o.shop ? ' · ' + esc(o.shop) : ''}</small><small>${esc(fmtDay(o.createdAt))}</small>${savedLine(o)}`;
+    <small>${esc(o.client)}${o.shop ? ' · ' + esc(o.shop) : ''} · <span class="nw">${esc(fmtDay(o.createdAt))}</span></small>${savedLine(o)}`;
   const cancelNote = o => (S.tab === 'all' && o.status === 'cancelled' ? `<span class="sp-tag red">${t('Cancelled')}</span>` : o.cancelRequested ? `<span class="sp-tag red">${t('Cancel requested')}</span><p class="sp-warn">${t('don’t buy or ship them. Wait for Direct Line.')}</p>` : o.revision ? `<span class="sp-tag orange">${t('Cost revision requested')}</span>` : '');
   function rowHTML(o) {
     const cx = S.tab === 'cancelled';
@@ -783,10 +783,11 @@
       : S.page === 'client' ? (S.client && S.client.id === S.clientId ? clientHTML(S.client) : S.error || loading())
       : S.page === 'orders' ? ordersHTML() : S.page === 'quotes' ? quotesHTML() : S.page === 'requests' ? requestsHTML() : S.page === 'receipts' ? receiptsHTML()
       : S.billing ? billingHTML(S.billing) : S.error || loading();
-    const y = window.scrollY, drawer = S.drawer;
+    // The Orders table scrolls inside its own box (sticky header, QA 19 Nov 2026): keep that box's place too.
+    const y = window.scrollY, drawer = S.drawer, qw = document.querySelector('.sp-qwrap'), qy = qw?.scrollTop || 0, qx = qw?.scrollLeft || 0;
     document.body.innerHTML = shell(body);
     document.title = (S.page === 'client' && S.client ? S.client.name + ' · ' : '') + 'Direct Line · ' + t({ orders: 'Orders', quotes: 'Quotes', requests: 'Price requests', receipts: 'Receipts' }[S.page] || 'Billing');
-    if (S.keepScroll) window.scrollTo(0, y);
+    if (S.keepScroll) { window.scrollTo(0, y); const q = document.querySelector('.sp-qwrap'); if (q) { q.scrollTop = qy; q.scrollLeft = qx; } }
     S.keepScroll = false;
     bindPassword();
     if (drawer && S.page === 'orders') openDrawer(drawer);

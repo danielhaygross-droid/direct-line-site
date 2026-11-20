@@ -305,3 +305,16 @@ select.sp-suggest{color:var(--dim);font-style:italic}
 /* Supplier share per client (17 Nov 2026): on phones the order count folds under the client name */
 .sp-share-tbl td .sp-phone-only{display:none}
 @media(max-width:560px){.sp-share-tbl th:nth-child(2),.sp-share-tbl td:nth-child(2){display:none}.sp-share-tbl td .sp-phone-only{display:block;font-size:12px;font-weight:400;color:var(--muted)}.sp-share-tbl th,.sp-share-tbl td{padding-inline:6px}}
+/* Orders: about 8 rows on a laptop screen and a header that stays on top (QA 19 Nov 2026: 4 rows per screen, header
+   scrolled away). The table scrolls inside its own box, so the header can stick even when it also scrolls sideways. */
+@media(min-width:861px){
+  .sp-qwrap{max-height:max(240px,calc(100vh - 200px));overflow:auto} /* 200px: top bar + the legend and page end below, so the header is never under the top bar */
+  .sp-q thead th{position:sticky;top:0;z-index:3}
+  .sp-q td{padding:7px 8px}
+  .sp-q input,.sp-q select{min-height:36px}
+  .sp-q td.ord{min-width:168px}.sp-q td.prod{min-width:180px}.sp-q .sp-ref{min-height:26px}
+  .sp-q .nw{white-space:nowrap}.sp-q td:nth-child(10){min-width:124px}.sp-q td:nth-child(11){min-width:120px}
+  .sp-q .sp-thumb{width:36px;height:36px;border-radius:8px}
+  .sp-q .sp-prod b{line-height:1.3}.sp-q .sp-prod .sp-tag{margin-top:3px}
+  .sp-q td.dl input{margin-top:4px}
+}

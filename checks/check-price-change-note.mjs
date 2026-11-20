@@ -62,9 +62,25 @@ try {
     if (lang === 'en') {
       assert.equal((txt.match(/Product cost updated/g) || []).length, 3, 'every cost change says "Product cost updated"');
       assert.ok(/\$103\.90 → \$76\.40/.test(txt) && /\$28\.90 → \$19\.40/.test(txt) && /\$22\.90 → \$18\.90/.test(txt), 'old → new price shown');
-      assert.equal((txt.match(/Order billed/g) || []).length, 2, 'the first bills still say "Order billed"');
-    } else assert.ok(txt.includes('עלות המוצר עודכנה'), 'Hebrew title');
+      // One row per order (QA 19 Nov 2026): A's first bill is folded into their newest update.
+      assert.equal((txt.match(/Order billed/g) || []).length, 0, 'the first bills are folded under the newest update');
+      for (const ref of ['SHOP-1001', 'SHOP-1002', 'SHOP-1003']) assert.equal((txt.match(new RegExp(ref, 'g')) || []).length, 1, ref + ' shows once');
+      assert.ok(txt.includes('SHOP-1001 · ') && /SHOP-1001[^\n]*\n\+1 more update/.test(txt), 'A says +1 more update (its first bill)');
+      assert.match(txt, /\+\d+ more updates/, 'B says how many more');
+    } else { assert.ok(txt.includes('עלות המוצר עודכנה'), 'Hebrew title'); assert.match(txt, /ועוד עדכון אחד/, 'Hebrew +1 more'); }
+    // Short times ("5 min ago"), the exact time in the tooltip (QA 19 Nov 2026: full timestamps with seconds).
+    const times = await page.locator('.dln-panel .dln-item time').allInnerTexts();
+    assert.ok(times.length && times.every(x => /min ago|just now|h ago|לפני|הרגע/.test(x) && !/\d\d:\d\d:\d\d/.test(x)), lang + ' short times: ' + times.join(' | '));
+    assert.match(await page.locator('.dln-panel .dln-item time').first().getAttribute('title'), /\d\d:\d\d:\d\d/, lang + ' exact time in the tooltip');
     await page.screenshot({ path: path.join(out, `${lang}-${width}-bell.png`) });
+    // Opening the folded row marks both of A's updates read: A leaves Unread as one piece, not one update at a time.
+    if (lang === 'en' && width === 1440) { // first run: nothing marked read yet
+      await page.locator('.dln-panel .dln-item', { hasText: 'SHOP-1001' }).click(); await page.waitForTimeout(400);
+      await page.keyboard.press('Escape'); await page.waitForTimeout(200); await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.reload(); await page.waitForSelector('[data-bell]');
+      await page.locator('[data-bell]').click(); await page.waitForTimeout(300); await page.locator('[data-dln-f="unread"]').click(); await page.waitForTimeout(200);
+      assert.equal(await page.locator('.dln-panel .dln-item', { hasText: 'SHOP-1001' }).count(), 0, lang + ' A is read after one click');
+      assert.equal(await page.locator('.dln-panel .dln-item').count(), 2, lang + ' B and C still unread');
+    }
     // Read next to Unread (Erwin, 3 Nov 2026).
     if (width === 1440) {
       await page.locator('[data-dln-f="read"]').click(); await page.waitForTimeout(200);
@@ -79,5 +95,5 @@ try {
     }
     await ctx.close();
   }
-  console.log('PASS bell: "Product cost updated" with old → new (also when the first bill is older than the latest 50), first bill stays "Order billed"; Read / Unread chips (EN/HE, 1440/390)');
+  console.log('PASS bell: "Product cost updated" with old → new (also when the first bill is older than the latest 50), one row per order with "+N more updates", short times; Read / Unread chips (EN/HE, 1440/390)');
 } finally { await browser.close(); await new Promise(r => server.close(r)); await pg.close(); }
