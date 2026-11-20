@@ -136,6 +136,16 @@ try {
     await u.locator('.cancel-sup').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${lang}-${width}-request-supplier-fee.png`) });
     await page.keyboard.press('Escape'); await page.waitForTimeout(300);
     await u.locator(`[data-pick="${rq.id}"]`).check(); await u.locator(`[data-pick="${pd.id}"]`).check();
+    // Phones (QA 19 Nov 2026): the bar is one short line; the edit boxes open under "Change".
+    const barH = () => u.locator('[data-bulk-bar]').evaluate(b => Math.round(b.getBoundingClientRect().height));
+    if (width < 721) {
+      await u.locator('[data-bulk-bar]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${lang}-${width}-bulk-folded.png`) });
+      assert.ok(await barH() <= 64, tag + ' folded bulk bar is one line: ' + await barH());
+      assert.equal(await u.locator('[data-bulk-status]').isVisible(), false, tag + ' boxes folded');
+      await u.locator('[data-bulk-toggle]').click();
+      assert.equal(await u.locator('[data-bulk-toggle]').getAttribute('aria-expanded'), 'true', tag);
+      await page.screenshot({ path: path.join(out, `${lang}-${width}-bulk-open.png`) });
+    } else assert.equal(await u.locator('[data-bulk-toggle]').isVisible(), false, tag + ' no Change button on desktop');
     await u.locator('[data-bulk-status]').selectOption('cancelled'); await u.locator('[data-bulk="status"]').click();
     const bw = u.locator('dialog[data-cancel-window]'); await bw.waitFor();
     assert.equal((await row(rq)).status, 'cancellation_requested', tag + ' bulk: the window only asks');

@@ -64,6 +64,19 @@ try {
     for (const n of ['0.37', '24.97', '17.47']) assert.ok(!text.includes(n), `${tag}: shows ${n}`);
     assert.match(text, lang === 'en' ? /1 cancel request/ : /取消申请/);
     await page.screenshot({ path: path.join(out, `${tag}-orders.png`), fullPage: w > 700 });
+    if (w > 860) {
+      // Short rows + a header that stays (QA 19 Nov 2026: 4 rows per screen, header scrolled away). A plain row (not the
+      // cancel request, no two-product order) is at most 80px; with the window made short the table scrolls in its box
+      // and the header row stays on top of it.
+      const hs = await page.locator('.sp-q tbody tr:not(.cxreq)').evaluateAll(r => r.filter(x => !x.querySelector('.sp-saved')).map(x => Math.round(x.getBoundingClientRect().height)));
+      assert.ok(!hs.length || hs.filter(h => h <= 80).length >= Math.min(3, hs.length - 1), `${tag}: rows at most 80px: ${hs}`);
+      assert.ok(await page.evaluate(() => { const q = document.querySelector('.sp-qwrap'); return q.scrollWidth <= q.clientWidth + 1; }), `${tag}: every column fits, no sideways scroll`);
+      await page.setViewportSize({ width: w, height: 450 }); await page.evaluate(() => { window.scrollTo(0, document.documentElement.scrollHeight); document.querySelector('.sp-qwrap').scrollTop = 200; }); await page.waitForTimeout(200);
+      const st = await page.evaluate(() => { const q = document.querySelector('.sp-qwrap'), th = q.querySelector('thead th'); return { q: q.scrollTop, gap: Math.round(th.getBoundingClientRect().top - q.getBoundingClientRect().top), under: Math.round(document.querySelector('.sp-top').getBoundingClientRect().bottom - th.getBoundingClientRect().top) }; });
+      assert.ok(st.q > 0 && Math.abs(st.gap) <= 1 && st.under <= 0, `${tag}: header stays (and is not under the top bar, page scrolled to the end) on top of the scrolled table ${JSON.stringify(st)}`);
+      await page.screenshot({ path: path.join(out, `${tag}-sticky.png`) });
+      await page.setViewportSize({ width: w, height: 950 }); await page.evaluate(() => { document.querySelector('.sp-qwrap').scrollTop = 0; window.scrollTo(0, 0); });
+    }
     const scope = w < 860 ? '.sp-ocard' : 'tr';
     if (lang === 'en' && w === 1440) {
       // Type a cost, Enter: saved, and the next order's cost box has the focus.

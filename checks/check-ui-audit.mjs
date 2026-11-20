@@ -207,6 +207,7 @@ try {
     // Orders ticked: the bulk edit bar.
     ui = await openAdmin(page, lang); await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter=all]').click(); await settle();
     await ui.locator('[data-pick]').nth(0).check(); await ui.locator('[data-pick]').nth(1).check(); await settle(); await run(ui, page, tag, 'admin-bulk-bar');
+    if (await ui.locator('[data-bulk-toggle]').isVisible()) { await ui.locator('[data-bulk-toggle]').click(); await settle(); await run(ui, page, tag, 'admin-bulk-open'); } // phones: boxes fold under Change (21 Nov 2026)
     await ui.locator('[data-bulk="clear"]').click(); await settle();
     // Long names / address / link in the order panel, then its photo viewer.
     await ui.locator(`[data-open-order="${longId}"]`).first().click(); await ui.waitForSelector('.drawer.open'); await page.waitForTimeout(700); await run(ui, page, tag, 'admin-order-long');

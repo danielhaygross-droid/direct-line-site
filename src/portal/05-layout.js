@@ -48,7 +48,7 @@
 
   function updateChrome() {
     if (!panel) return;
-    const items = noteItems();
+    const items = bellItems(noteItems());
     panel.set(items);
     const badgeAt = store.get(badgeKey(), 0);
     const n = items.filter(x => x.unread && x.time > badgeAt).length;

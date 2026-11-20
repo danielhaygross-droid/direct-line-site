@@ -2,14 +2,15 @@
   function bulkBar(archivedView, allOn) {
     const n = S.picked.size, all = `<label class="bulk-all"><input type="checkbox" data-pick-all${allOn ? ' checked' : ''}><span>Select all</span></label>`;
     if (!n) return `<div class="bulk-bar bulk-hint">${all}<span class="dim">Tick orders to change several at once: status, courier, fee or archive.</span></div>`;
-    const couriers = String(S.ov.settings.couriers || '').split('\n').filter(Boolean);
-    return `<div class="bulk-bar" data-bulk-bar>${all}<b>${n} selected</b>
-      ${archivedView ? '<button type="button" class="btn btn-sm" data-bulk="restore">Restore</button>' : `
+    const couriers = String(S.ov.settings.couriers || '').split('\n').filter(Boolean), clear = '<button type="button" class="btn btn-sm btn-ghost" data-bulk="clear">Clear selection</button>';
+    // Phones (QA 19 Nov 2026: the bar was 330px tall and stuck on top): one line, the edit boxes fold under "Change".
+    return `<div class="bulk-bar${S.bulkOpen ? ' open' : ''}" data-bulk-bar>${all}<b>${n} selected</b>
+      ${archivedView ? '<button type="button" class="btn btn-sm" data-bulk="restore">Restore</button>' : `<button type="button" class="btn btn-sm bulk-tog" data-bulk-toggle aria-expanded="${!!S.bulkOpen}">Change</button><div class="bulk-acts">
       <label class="bulk-f"><span>Status</span><select data-bulk-status><option value="">Choose…</option>${ADMIN_STATUSES.map(s => `<option value="${s}">${UI.LABEL[s]}</option>`).join('')}<option value="cancelled">${UI.LABEL.cancelled}</option><option value="undo-cancel">Undo cancellation approval</option></select></label><button type="button" class="btn btn-sm" data-bulk="status">Set status</button>
       <label class="bulk-f"><span>Courier</span><input data-bulk-courier list="dl-bulk-couriers" maxlength="60" placeholder="e.g. Yanwen"><datalist id="dl-bulk-couriers">${couriers.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label><button type="button" class="btn btn-sm" data-bulk="courier">Set courier</button>
       <label class="bulk-f"><span>Fee</span><span class="money"><input data-bulk-fee type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.50"></span></label><button type="button" class="btn btn-sm" data-bulk="fee">Set fee</button>
-      <button type="button" class="btn btn-sm btn-danger" data-bulk="archive">Archive</button>`}
-      <button type="button" class="btn btn-sm btn-ghost" data-bulk="clear">Clear selection</button>
+      <button type="button" class="btn btn-sm btn-danger" data-bulk="archive">Archive</button>${clear}</div>`}
+      ${archivedView ? clear : ''}
       <span class="bulk-msg" data-bulk-msg role="status"></span></div>`;
   }
   async function runBulk(kind, btn) {

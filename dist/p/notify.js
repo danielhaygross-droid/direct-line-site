@@ -68,6 +68,7 @@
   .dln-item.unread .dln-tx b{font-weight:700}
   .dln-tx span{font-size:13px;color:var(--n-muted);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   .dln-tx time{font-size:12px;color:var(--n-dim)}
+  .dln-tx .dln-n{display:block;font-size:12px;color:var(--n-dim)}
   .dln-item.unread .dln-tx time{color:var(--n-acc);font-weight:600}
   .dln-dot{width:9px;height:9px;margin-top:14px;border-radius:50%;background:var(--n-acc)}
   .dln-item:not(.unread) .dln-dot{visibility:hidden}
@@ -99,7 +100,7 @@
 
   const itemHTML = (n, tag = 'button') => `<${tag} type="button" class="dln-item${n.unread ? ' unread' : ''}" data-dln-id="${esc(n.id)}">
     <span class="dln-ic t-${n.tone || 'gold'}">${icon(n.icon)}</span>
-    <span class="dln-tx"><b>${esc(n.title)}</b>${n.text ? `<span>${esc(n.text)}</span>` : ''}<time${n.time ? ` datetime="${new Date(n.time).toISOString()}" title="${esc(exactTime(n.time))}"` : ''}>${esc(n.time ? exactTime(n.time) : (n.timeText || ''))}</time></span>
+    <span class="dln-tx"><b>${esc(n.title)}</b>${n.text ? `<span>${esc(n.text)}</span>` : ''}${n.more ? `<small class="dln-n">${n.more === 1 ? L('+1 more update', 'ועוד עדכון אחד') : L(`+${n.more} more updates`, `ועוד ${n.more} עדכונים`)}</small>` : ''}<time${n.time ? ` datetime="${new Date(n.time).toISOString()}" title="${esc(exactTime(n.time))}"` : ''}>${esc(n.time ? timeAgo(n.time) : (n.timeText || ''))}</time></span>
     <i class="dln-dot" aria-label="${n.unread ? L('Unread', 'לא נקרא') : ''}"></i></${tag}>`;
 
   // ---------- dropdown ----------
@@ -175,7 +176,7 @@
       refresh() { if (isOpen) render(); },
     };
     opts.anchor.setAttribute('aria-haspopup', 'dialog'); opts.anchor.setAttribute('aria-expanded', 'false');
-    setInterval(() => { if (isOpen) el.querySelectorAll('time[datetime]').forEach(t => { t.textContent = exactTime(new Date(t.getAttribute('datetime')).getTime()); }); }, 30000);
+    setInterval(() => { if (isOpen) el.querySelectorAll('time[datetime]').forEach(t => { t.textContent = timeAgo(new Date(t.getAttribute('datetime')).getTime()); }); }, 30000);
     return api;
   }
 

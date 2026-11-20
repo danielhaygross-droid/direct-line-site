@@ -68,6 +68,7 @@ try {
     await page.goto(`${base}/test-admin.html?lang=${lang}`); const ui = page.frame({ name: 'admin' }); await ui.waitForSelector('[data-tab=orders]');
     await ui.locator('[data-tab=orders]').click(); await ui.locator('[data-filter=cancellation_requested]').click();
     for (const o of [A, B, C, D]) await ui.locator(`[data-pick="${o}"]`).check();
+    { const tg = ui.locator('[data-bulk-toggle]'); if (await tg.isVisible() && await tg.getAttribute('aria-expanded') !== 'true') await tg.click(); } // phones: boxes fold under Change
     await ui.locator('[data-bulk-status]').selectOption('cancelled'); await ui.locator('[data-bulk="status"]').click();
     const win = ui.locator('dialog[data-cancel-window]'); await win.waitFor();
     assert.equal(await win.locator('[data-cw-row]').count(), 4, tag + ' one row per order');
@@ -126,6 +127,7 @@ try {
     await undo.click(); await ui.locator('aside.drawer [data-cancel-window]').first().waitFor();
     // B from the bulk bar.
     await page.keyboard.press('Escape'); await page.waitForTimeout(300); await ui.locator('[data-filter=cancelled]').click(); await ui.locator(`[data-pick="${B}"]`).check();
+    { const tg = ui.locator('[data-bulk-toggle]'); if (await tg.isVisible() && await tg.getAttribute('aria-expanded') !== 'true') await tg.click(); } // phones: boxes fold under Change
     await ui.locator('[data-bulk-status]').selectOption('undo-cancel'); await ui.locator('[data-bulk="status"]').click();
     await ui.locator(`[data-pick="${B}"]`).waitFor({ state: 'detached' });
     for (const o of [A, B]) {

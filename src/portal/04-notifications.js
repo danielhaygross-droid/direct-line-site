@@ -41,6 +41,18 @@
     return it;
   }
   const noteItems = () => S.notes.map(noteItem);
-  function markRead(x) { reads().add(x.id); store.set(readKey(), [...reads()].slice(-300)); updateChrome(); }
+  // One bell row per order (QA 19 Nov 2026: the same order showed twice in a row): updates of the same order on the same
+  // day, both new or both read, become the newest one + "+N more updates". Opening it marks them all read.
+  function bellItems(list) {
+    const out = [], byKey = new Map(), day = ms => new Date(ms).toDateString();
+    for (const x of list.slice().sort((a, b) => b.time - a.time)) {
+      const k = x.orderId && !x.product && !x.invoice && !x.go ? `${x.orderId}|${x.unread ? 1 : 0}|${day(x.time)}` : '';
+      const g = k && byKey.get(k);
+      if (g) { g.more = (g.more || 0) + 1; g.ids.push(x.id); continue; }
+      const it = { ...x, ids: [x.id] }; if (k) byKey.set(k, it); out.push(it);
+    }
+    return out;
+  }
+  function markRead(x) { for (const id of x.ids || [x.id]) reads().add(id); store.set(readKey(), [...reads()].slice(-300)); updateChrome(); }
   let panel;
 

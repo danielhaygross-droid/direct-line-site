@@ -47,6 +47,7 @@
     const rs = t.closest('[data-restore]');
     if (rs) { setArchived(Number(rs.dataset.restore), false, rs); return; }
     const bk = t.closest('[data-bulk]'); if (bk) { runBulk(bk.dataset.bulk, bk); return; }
+    const btg = t.closest('[data-bulk-toggle]'); if (btg) { S.bulkOpen = !S.bulkOpen; const bar = btg.closest('[data-bulk-bar]'); bar.classList.toggle('open', S.bulkOpen); btg.setAttribute('aria-expanded', String(S.bulkOpen)); return; }
     if (t.closest('select') || t.closest('[data-bulk-bar]') || t.closest('td.pick, th.pick')) return;
     const oc = t.closest('[data-open-client]'); if (oc) { openClient(oc.dataset.openClient, oc.dataset.clientTab || 'orders'); return; }
     const oo = t.closest('[data-open-order]'); if (oo) openOrder(oo.dataset.openOrder);
