@@ -217,6 +217,8 @@
   }
   // Still owed: not paid and not covered by credit.
   const owes = (o, adjustments) => state(o, adjustments) === 'unpaid' && !o.coveredByCredit;
+  // Billed orders: not archived, not cancelled, on a bill (QA 19 Nov 2026: Home said "24 orders" billed, Payments 14).
+  const billedCount = (orders, adjustments) => orders.filter(o => !o.archived && o.status !== 'cancelled' && state(o, adjustments) !== 'unbilled').length;
   // What an order costs without our fee (admin): the supplier's cost, else the price minus our fee.
   const supCents = o => o.supplierCost == null ? cents(o.price) - cents(o.commission) : cents(o.supplierCost);
   // The statement card. opts: { summary (billed, paid, refunded, outstanding, parts, supplier), orders (the client's, not
@@ -260,5 +262,5 @@
       ${sup ? `<p class="acct-hint">${cents(sup.subscriptionPaid) ? T('“Without our fee” is how the supplier sheet counts. Our fee and the subscription received so far:', '"בלי העמלה שלנו" הוא החישוב של גיליון הספק. העמלה שלנו והמנוי שהתקבלו עד כה:') : T('“Without our fee” is how the supplier sheet counts. Our fee received so far:', '"בלי העמלה שלנו" הוא החישוב של גיליון הספק. העמלה שלנו שהתקבלה עד כה:')} ${m(cents(sup.ourFee))}</p>` : ''}
       <div class="acct-tiles">${tiles}</div></section>`;
   }
-  root.DLPayOrders = { cancelledBox, cxSettle, dueCents, state, tag, day, checklist, picked, linked, refresh, tickOldest, creditCents, cover, markCovered, owes, statement, supCents };
+  root.DLPayOrders = { cancelledBox, cxSettle, dueCents, state, tag, day, checklist, picked, linked, refresh, tickOldest, creditCents, cover, markCovered, owes, billedCount, statement, supCents };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -28,7 +28,10 @@
     const os = inMonth.filter(o => o.status !== 'cancelled');
     // "Not paid yet" is what clients owe right now (billed orders with no payment linked), whatever month is picked.
     const unpaid = live.filter(o => PO.state(o) === 'unpaid'), owed = unpaid.reduce((n, o) => n + PO.dueCents(o), 0);
-    const owing = new Set(unpaid.map(o => o.clientId)).size, oldest = unpaid.map(o => M.dateKey(o)).filter(Boolean).sort()[0];
+    // The card counts the orders still owed, like the "Not paid" chip; orders a client's credit already pays for are left
+    // out (QA 19 Nov 2026: card said 11 orders, chip 9). The window still adds up from all unpaid orders minus credit.
+    const owesL = unpaid.filter(o => !o.coveredByCredit), coveredN = unpaid.length - owesL.length;
+    const owing = new Set(owesL.map(o => o.clientId)).size, oldest = owesL.map(o => M.dateKey(o)).filter(Boolean).sort()[0];
     // Our earnings (Erwin, 4 Nov 2026): our fee on every order of the period, plus the fee we keep on a cancelled order the
     // client had paid; split into collected (paid orders), not paid yet, and not billed yet (no cost yet), which add up.
     // Since 8 Nov 2026 the admin picks it per order in the cancel window (keepFee: auto = only if paid, yes, no); a fee kept
@@ -53,7 +56,7 @@
     const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0) + live.filter(o => o.status === 'cancelled' && !o.paymentId && o.keepFee === 'yes').reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const lateIds = lateClientIds(), late = balanceC > 0 && f_late(cl, lateIds, cents);
-    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, subC, totalC, supPaidC, leftC, balanceC, feePartC, clientsN, lateIds, late };
+    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owesL, coveredN, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, subC, totalC, supPaidC, leftC, balanceC, feePartC, clientsN, lateIds, late };
   }
 
   // Late = a client who still owes money has an unpaid order older than 14 days.
@@ -120,13 +123,13 @@
     if (k === 'unpaid') {
       if (!f.unpaid.length && !f.balanceC) return '<p class="muted kw-empty">Every billed order is paid</p>';
       const diff = f.owed - f.balanceC;
-      const sum = kwRow('', 'Unpaid orders', kwMoney(f.owed), kwPlural(f.unpaid.length, 'order'))
+      const sum = kwRow('', 'Unpaid orders', kwMoney(f.owed), kwPlural(f.unpaid.length, 'order') + (f.coveredN ? ` · ${f.coveredN} covered by credit` : ''))
         + (Math.abs(diff) >= 1 ? kwRow(diff > 0 ? '−' : '+', diff > 0 ? 'Credit and earlier payments' : 'Other amounts on the balance', kwMoney(Math.abs(diff))) : '')
         + kwRow('=', 'Clients owe now', kwMoney(f.balanceC), '', 'tot');
       const split = f.balanceC > 0 ? kwRow('', 'Without our fee', kwMoney(f.balanceC - f.feePartC)) + kwRow('+', 'Our fee', kwMoney(f.feePartC)) + kwRow('=', 'Total', kwMoney(f.balanceC), '', 'tot') : '';
       const owes = f.cl.filter(c => f.cents(c.outstanding) > 0).sort((a, b) => b.outstanding - a.outstanding);
       const clients = owes.map(c => {
-        const mine = f.unpaid.filter(o => o.clientId === c.id), old = mine.map(o => f.M.dateKey(o)).filter(Boolean).sort()[0];
+        const mine = f.owesL.filter(o => o.clientId === c.id), old = mine.map(o => f.M.dateKey(o)).filter(Boolean).sort()[0];
         return kwItem(`data-open-client="${c.id}" data-client-tab="payments"`, c.name, [mine.length ? kwPlural(mine.length, 'order') : '', old ? `oldest ${f.PO.day(old)}` : ''].filter(Boolean).join(' · '), kwMoney(f.cents(c.outstanding)), f.lateIds.has(c.id) ? 'neg' : '');
       }).join('');
       // How long the orders have been unpaid, by order date (before credit, so these add up to "Unpaid orders"); late in red.

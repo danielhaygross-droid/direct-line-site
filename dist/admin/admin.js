@@ -174,7 +174,10 @@
     const os = inMonth.filter(o => o.status !== 'cancelled');
     // "Not paid yet" is what clients owe right now (billed orders with no payment linked), whatever month is picked.
     const unpaid = live.filter(o => PO.state(o) === 'unpaid'), owed = unpaid.reduce((n, o) => n + PO.dueCents(o), 0);
-    const owing = new Set(unpaid.map(o => o.clientId)).size, oldest = unpaid.map(o => M.dateKey(o)).filter(Boolean).sort()[0];
+    // The card counts the orders still owed, like the "Not paid" chip; orders a client's credit already pays for are left
+    // out (QA 19 Nov 2026: card said 11 orders, chip 9). The window still adds up from all unpaid orders minus credit.
+    const owesL = unpaid.filter(o => !o.coveredByCredit), coveredN = unpaid.length - owesL.length;
+    const owing = new Set(owesL.map(o => o.clientId)).size, oldest = owesL.map(o => M.dateKey(o)).filter(Boolean).sort()[0];
     // Our earnings (Erwin, 4 Nov 2026): our fee on every order of the period, plus the fee we keep on a cancelled order the
     // client had paid; split into collected (paid orders), not paid yet, and not billed yet (no cost yet), which add up.
     // Since 8 Nov 2026 the admin picks it per order in the cancel window (keepFee: auto = only if paid, yes, no); a fee kept
@@ -199,7 +202,7 @@
     const unpaidFeeC = unpaid.reduce((n, o) => n + feeC(o), 0) + live.filter(o => o.status === 'cancelled' && !o.paymentId && o.keepFee === 'yes').reduce((n, o) => n + feeC(o), 0), feePartC = Math.min(unpaidFeeC, balanceC);
     const clientsN = month === 'all' ? cl.filter(c => c.active).length : new Set(os.map(o => o.clientId)).size;
     const lateIds = lateClientIds(), late = balanceC > 0 && f_late(cl, lateIds, cents);
-    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, subC, totalC, supPaidC, leftC, balanceC, feePartC, clientsN, lateIds, late };
+    return { cl, M, PO, cents, feeC, months, month, name, live, inMonth, os, unpaid, owesL, coveredN, owed, owing, oldest, keptOn, keptC, onOrdersC, feesC, collectedC, noBillC, paidOs, cxN, supRateC, supC, subC, totalC, supPaidC, leftC, balanceC, feePartC, clientsN, lateIds, late };
   }
 
   // Late = a client who still owes money has an unpaid order older than 14 days.
@@ -266,13 +269,13 @@
     if (k === 'unpaid') {
       if (!f.unpaid.length && !f.balanceC) return '<p class="muted kw-empty">Every billed order is paid</p>';
       const diff = f.owed - f.balanceC;
-      const sum = kwRow('', 'Unpaid orders', kwMoney(f.owed), kwPlural(f.unpaid.length, 'order'))
+      const sum = kwRow('', 'Unpaid orders', kwMoney(f.owed), kwPlural(f.unpaid.length, 'order') + (f.coveredN ? ` · ${f.coveredN} covered by credit` : ''))
         + (Math.abs(diff) >= 1 ? kwRow(diff > 0 ? '−' : '+', diff > 0 ? 'Credit and earlier payments' : 'Other amounts on the balance', kwMoney(Math.abs(diff))) : '')
         + kwRow('=', 'Clients owe now', kwMoney(f.balanceC), '', 'tot');
       const split = f.balanceC > 0 ? kwRow('', 'Without our fee', kwMoney(f.balanceC - f.feePartC)) + kwRow('+', 'Our fee', kwMoney(f.feePartC)) + kwRow('=', 'Total', kwMoney(f.balanceC), '', 'tot') : '';
       const owes = f.cl.filter(c => f.cents(c.outstanding) > 0).sort((a, b) => b.outstanding - a.outstanding);
       const clients = owes.map(c => {
-        const mine = f.unpaid.filter(o => o.clientId === c.id), old = mine.map(o => f.M.dateKey(o)).filter(Boolean).sort()[0];
+        const mine = f.owesL.filter(o => o.clientId === c.id), old = mine.map(o => f.M.dateKey(o)).filter(Boolean).sort()[0];
         return kwItem(`data-open-client="${c.id}" data-client-tab="payments"`, c.name, [mine.length ? kwPlural(mine.length, 'order') : '', old ? `oldest ${f.PO.day(old)}` : ''].filter(Boolean).join(' · '), kwMoney(f.cents(c.outstanding)), f.lateIds.has(c.id) ? 'neg' : '');
       }).join('');
       // How long the orders have been unpaid, by order date (before credit, so these add up to "Unpaid orders"); late in red.
@@ -420,13 +423,13 @@
     // Four cards (Erwin, 23 Oct 2026); a click opens the details window with one smart button (02-card-window.js, 5 Nov).
     const f = kpiFacts(), UIS = window.DLClientStoreUI, plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`, sel = $('[data-kpi-month]');
     if (sel) sel.innerHTML = `<option value="all">All time</option>` + f.months.map(k => `<option value="${k}"${k === f.month ? ' selected' : ''} data-no-i18n>${esc(UIS.monthName(k))}</option>`).join('');
-    const { month, name, os, unpaid, owed, owing, oldest, balanceC, feePartC } = f;
+    const { month, name, os, unpaid, owesL, owed, owing, oldest, balanceC, feePartC } = f;
     // Orders: how many are shipped (the jobs, like waiting or need cost, are in "Needs your attention" under the cards).
     const shipped = os.filter(o => ['shipped', 'delivered'].includes(o.status)).length, notShipped = os.length - shipped;
     const cards = [
       { key: 'clients', k: 'Clients', v: f.clientsN, sub: [month === 'all' ? (owing ? `${plural(owing, 'client')} with unpaid orders` : plural(f.cl.length, 'account')) : `with orders in ${name}`], icon: 'users', tone: 'var(--blue)' },
       { key: 'orders', k: month === 'all' ? 'Orders' : `Orders in ${name}`, v: os.length, sub: os.length ? [`${f.paidOs.length} paid`, notShipped ? `${notShipped} not shipped yet` : '', shipped ? `${shipped} shipped` : ''].filter(Boolean) : ['No orders yet'], sub2: f.cxN ? `${f.cxN} cancelled, not counted` : '', icon: 'orders', tone: 'var(--orange)' },
-      { key: 'unpaid', k: 'Not paid yet', v: money(balanceC / 100), sub: unpaid.length ? [plural(unpaid.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${f.PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub3: balanceC > 0 ? `Without our fee ${money((balanceC - feePartC) / 100)} · our fee ${money(feePartC / 100)}` : '', icon: 'money', tone: f.late ? 'var(--red)' : balanceC > 0 ? 'var(--orange)' : 'var(--mint)', owe: balanceC > 0, late: f.late },
+      { key: 'unpaid', k: 'Not paid yet', v: money(balanceC / 100), sub: owesL.length ? [plural(owesL.length, 'order'), plural(owing, 'client'), oldest ? `oldest ${f.PO.day(oldest)}` : ''].filter(Boolean) : ['Every billed order is paid'], sub3: balanceC > 0 ? `Without our fee ${money((balanceC - feePartC) / 100)} · our fee ${money(feePartC / 100)}` : '', icon: 'money', tone: f.late ? 'var(--red)' : balanceC > 0 ? 'var(--orange)' : 'var(--mint)', owe: balanceC > 0, late: f.late },
       { key: 'earnings', k: month === 'all' ? 'Our earnings' : `Our earnings in ${name}`, v: money(f.totalC / 100), sub: [...(f.supC ? [`${money(f.feesC / 100)} client fees`, `${money(f.supC / 100)} supplier share`] : []), ...(f.supPaidC ? [`${money(f.supPaidC / 100)} paid to us by the supplier`, f.leftC >= 0 ? `${money(f.leftC / 100)} still to receive` : `${money(-f.leftC / 100)} paid ahead`] : [`${money(f.collectedC / 100)} collected`, `${money((f.feesC - f.collectedC - f.noBillC) / 100)} not paid yet`, ...(f.noBillC ? [`${money(f.noBillC / 100)} not billed yet`] : [])]), f.keptOn.length ? `${plural(os.length, 'order')} + ${f.keptOn.length} cancelled with a fee kept` : `${plural(os.length, 'order')}`], icon: 'check', tone: 'var(--gold)', hero: true },
     ];
     $('[data-kpis]').innerHTML = cards.map(c => `<button type="button" class="stat stat-go${c.hero ? ' hero' : ''}${c.owe ? ' owe' : ''}${c.late ? ' late' : ''}" style="--tone:${c.tone}" data-kpi-card="${c.key}" aria-haspopup="dialog" aria-expanded="${kpiWin === c.key}" title="Show details"><span class="stat-ic">${ic(c.icon)}</span><small>${esc(c.k)}</small><strong>${c.v}</strong><em>${c.sub.map(x => `<span>${esc(x)}</span>`).join(' · ')}</em>${c.sub2 ? `<em class="stat-note">${esc(c.sub2)}</em>` : ''}${c.sub3 ? `<em class="stat-fee">${esc(c.sub3)}</em>` : ''}</button>`).join('');
