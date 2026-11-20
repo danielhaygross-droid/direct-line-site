@@ -19,7 +19,8 @@
   const toSendCents = (sum = unpaidCents()) => Math.max(0, sum - creditCents());
   // Short "N orders not paid yet · $X  [Pay for orders]" line for Home and Orders (nothing when all is paid).
   function payStrip() {
-    const list = unpaidOrders(); if (!list.length || S.me.preview || !toSendCents()) return '';
+    // Orders credit already pays for are not counted (QA 19 Nov 2026: Home said 11 not paid, Payments 9 + 2 covered by credit).
+    const list = unpaidOrders().filter(o => !o.coveredByCredit); if (!list.length || S.me.preview || !toSendCents()) return '';
     // Reminder (portal review, 28 Oct 2026): once the oldest unpaid order is more than 14 days old the strip turns red and
     // says since when. Only a reminder: nothing is blocked or charged.
     const oldest = list.map(o => window.DLClientStoreMath.dateKey(o)).sort()[0], days = oldest ? Math.floor((Date.now() - Date.parse(oldest + 'T12:00:00Z')) / 864e5) : 0, late = days > 14;
