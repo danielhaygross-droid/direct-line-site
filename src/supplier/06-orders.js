@@ -179,7 +179,8 @@
   }
   function redrawOrder(id) {
     const o = S.queue.orders.find(x => x.id === id), active = document.activeElement, keep = active?.dataset?.o == id && !active.closest('#sp-drawer') ? active.dataset.f : null, sel = keep && active.closest('.sp-ocard') ? '.sp-ocard' : 'tr';
-    for (const el of document.querySelectorAll(`[data-row="${id}"]`)) el.outerHTML = el.matches('tr') ? rowHTML(o) : cardHTML(o);
+    // A phone card's open "More" stays open, read from the card itself (the toggle event can come after a quick save).
+    for (const el of document.querySelectorAll(`[data-row="${id}"]`)) { if (el.querySelector('details[data-more-fold][open]')) (S.moreOpen ||= new Set()).add(id); el.outerHTML = el.matches('tr') ? rowHTML(o) : cardHTML(o); }
     if (S.drawer === id) drawerFill();
     if (keep) { const el = document.querySelector(`${sel}[data-row="${id}"] [data-f="${keep}"]`); if (el) { if (el.value !== active.value) el.value = active.value; el.focus(); } }
   }
