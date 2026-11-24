@@ -1762,7 +1762,42 @@
   });
   document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
   // ---------- events ----------
+  // Shipped with no tracking number yet (QA 19 Nov 2026, item 14): a small window asks for it first, with the courier
+  // (left empty, the server fills it in from the tracking number when it knows the format). One save does both;
+  // "Ship without tracking" keeps the old way. Resolves { trackingNumber, courier } / {} (no tracking) / null (cancel).
+  function shipWindow(o) {
+    return new Promise(resolve => {
+      document.querySelector('dialog.shipw')?.remove();
+      const dlg = document.createElement('dialog'); dlg.className = 'cxw shipw'; dlg.setAttribute('aria-labelledby', 'shipw-h');
+      const couriers = String(S.ov?.settings?.couriers || '').split('\n').map(c => c.trim()).filter(Boolean);
+      dlg.innerHTML = `<form method="dialog" class="cxw-box" novalidate>
+        <div class="kw-head"><h3 id="shipw-h">Mark as shipped</h3><button type="button" class="kw-x" data-sw-close aria-label="Close">${UI.svg('<path d="M6 6l12 12M18 6 6 18"/>')}</button></div>
+        <p class="muted cxw-lead"><b data-no-i18n>${esc(orderName(o))}</b> · <span>Add the tracking number so the client can follow the parcel.</span></p>
+        <div class="track-fields"><label class="field"><span>Tracking number</span><input name="trackingNumber" maxlength="120" autocomplete="off" placeholder="e.g. LX123456789CN"></label>
+          <label class="field"><span>Courier <small>empty: filled in from the tracking number</small></span><input name="courier" maxlength="60" list="shipw-couriers" placeholder="e.g. Yanwen"></label>
+          <datalist id="shipw-couriers">${couriers.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
+        <p class="form-msg" data-sw-msg role="alert"></p>
+        <div class="form-actions"><button type="submit" class="btn btn-primary" value="save">Save and mark shipped</button><button type="button" class="btn" data-sw-skip>Ship without tracking</button><button type="button" class="btn" data-sw-close>Cancel</button></div>
+      </form>`;
+      let done = false; const finish = v => { if (done) return; done = true; resolve(v); if (dlg.open) dlg.close(); dlg.remove(); };
+      const f = dlg.querySelector('form');
+      f.addEventListener('submit', e => { e.preventDefault(); const tn = f.trackingNumber.value.trim(); if (!tn) { const m = dlg.querySelector('[data-sw-msg]'); m.textContent = 'Type the tracking number, or choose Ship without tracking.'; m.className = 'form-msg err'; f.trackingNumber.focus(); return; } finish({ trackingNumber: tn, courier: f.courier.value.trim() }); });
+      dlg.addEventListener('click', e => { if (e.target.closest('[data-sw-skip]')) finish({}); else if (e.target.closest('[data-sw-close]')) finish(null); });
+      dlg.addEventListener('close', () => finish(null));
+      document.body.append(dlg); dlg.showModal(); f.trackingNumber.focus();
+    });
+  }
   async function setStatus(id, status, el) {
+    const o = S.orders.find(x => String(x.id) === String(id));
+    if (status === 'shipped' && o && !o.trackingNumber) {
+      const back = () => { if (el?.matches?.('select')) el.value = o.status; };
+      const r = await shipWindow(o); if (!r) { back(); return; }
+      if (r.trackingNumber) {
+        if (el) el.disabled = true;
+        try { await api('/orders/' + id, { method: 'PUT', body: { trackingNumber: r.trackingNumber, courier: r.courier } }); }
+        catch (ex) { toast(ex.message); if (el) el.disabled = false; back(); return; }
+      }
+    }
     if (el) el.disabled = true;
     try { await api('/orders/' + id, { method: 'PUT', body: { status } }); await loadAll(); renderList(); refreshDrawer(); toast(`Status set to ${UI.LABEL[status]}. The client sees it right away.`); }
     catch (ex) { toast(ex.message); if (el) el.disabled = false; }

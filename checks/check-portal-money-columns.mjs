@@ -107,14 +107,14 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ' no sideways scroll');
     if (width === 1440) await page.screenshot({ path: path.join(out, `${lang}-orders.png`) });
     // The order panel: the fee and the net profit line, and "Your numbers"
-    await page.locator('tr[data-open-order]').filter({ hasText: 'TRACKER-1' }).click(); await page.waitForSelector('#numbers-form');
+    await page.locator('tr[data-open-order]').filter({ hasText: 'TRACKER-1' }).click(); await page.waitForSelector('#numbers-form', { state: 'attached' }); await page.evaluate(() => { const f = document.querySelector('[data-numbers-fold]'); if (f) f.open = true; }); // folded since QA batch 3
     const panel = await page.locator('.money-rows').first().innerText();
     assert.match(panel, /17\.08/, tag + ' fee line'); assert.match(panel, /44\.70/, tag + ' you earned line'); assert.match(panel, /28\.80/, tag + ' profit line'); assert.match(panel, lang === 'en' ? /Your profit/ : /הרווח שלך/);
     assert.equal(await page.locator('#numbers-form [name=etsyFee]').inputValue(), '17.08');
     if (width === 1440) await page.screenshot({ path: path.join(out, `${lang}-panel.png`) });
     await page.keyboard.press('Escape'); await page.waitForTimeout(300);
     // Enter the fee for an order that lacks it: the table then shows the net profit
-    await page.locator('tr[data-open-order]').filter({ hasText: 'NO-FEE' }).click(); await page.waitForSelector('#numbers-form');
+    await page.locator('tr[data-open-order]').filter({ hasText: 'NO-FEE' }).click(); await page.waitForSelector('#numbers-form', { state: 'attached' }); await page.evaluate(() => { const f = document.querySelector('[data-numbers-fold]'); if (f) f.open = true; }); // folded since QA batch 3
     await page.locator('#numbers-form [name=etsyFee]').fill('5.5'); await page.locator('#numbers-form [type=submit]').click();
     await page.waitForFunction(() => !document.querySelector('#numbers-form')?.dataset.dirty, null, { timeout: 8000 });
     await page.waitForTimeout(600); await page.keyboard.press('Escape'); await page.waitForTimeout(300);

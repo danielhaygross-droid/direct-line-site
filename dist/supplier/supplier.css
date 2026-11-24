@@ -171,6 +171,14 @@ a.sp-add:hover u{color:var(--gold-2)}
 .sp-q input,.sp-q select,.sp-fgrid input,.sp-fgrid select{width:100%;min-height:40px;padding:0 10px;border:1px solid var(--line-field);border-radius:9px;background:var(--surface);color:var(--text);font:inherit;font-size:14px}
 /* Long courier names (e.g. "Cainiao Super Economy Global") were cut at about 100px (QA 19 Nov 2026). */
 .sp-q select[data-f=courier]{min-width:150px}
+/* Phone card "More" fold (QA 19 Nov 2026, item 5). */
+.sp-qty{display:block;margin-top:2px;color:var(--muted);font-size:13px;font-weight:500}
+.sp-fold{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+.sp-fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;min-height:44px;font-weight:600;color:var(--muted)}
+.sp-fold>summary::-webkit-details-marker{display:none}
+.sp-fold>summary::after{content:'+';margin-inline-start:auto;font-size:18px}.sp-fold[open]>summary::after{content:'−'}
+.sp-fold .sp-fgrid{margin-bottom:10px}
+.sp-dot{width:8px;height:8px;border-radius:50%;background:var(--gold)}
 .sp-q input:focus,.sp-q select:focus,.sp-fgrid input:focus,.sp-fgrid select:focus{outline:0;border-color:var(--focus);box-shadow:0 0 0 3px color-mix(in srgb,var(--gold) 18%,transparent)}
 .sp-q input:disabled,.sp-q select:disabled,.sp-fgrid input:disabled,.sp-fgrid select:disabled{opacity:.55;background:var(--surface-2)}
 .sp-q td.dl input{margin-top:6px}

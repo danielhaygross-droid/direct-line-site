@@ -72,7 +72,7 @@ try {
     assert.equal(await page.locator('#order-form [name=competitorPrice]').inputValue(), '$30.50 on Etsy shop WoodCo', 'filled in from the product');
     await page.locator('#order-form [name=competitorPrice]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-order-form.png`) });
     page.on('dialog', d => d.accept().catch(() => {})); await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.reload(); await page.waitForSelector('[data-orders-list] tr[data-open-order]'); await page.waitForTimeout(300);
-    await page.locator(`[data-orders-list] tr[data-open-order="${oid}"]`).click(); await page.waitForSelector('#numbers-form [name=competitorPrice]');
+    await page.locator(`[data-orders-list] tr[data-open-order="${oid}"]`).click(); await page.waitForSelector('#numbers-form [name=competitorPrice]', { state: 'attached' }); await page.evaluate(() => { const f = document.querySelector('[data-numbers-fold]'); if (f) f.open = true; }); // folded since QA batch 3
     assert.equal(await page.locator('#numbers-form [name=competitorPrice]').inputValue(), '$27.50 on Amazon');
     await page.locator('#numbers-form [name=competitorPrice]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-your-numbers.png`) });
     assert.deepEqual(errors, [], tag + ' portal'); await ctx.close();

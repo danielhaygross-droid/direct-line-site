@@ -66,6 +66,8 @@
     const cp = e.target.closest('[data-copy]'); if (cp) { copyText(cp.dataset.copy, cp); return; }
   });
   // Gold boxes save when they change (selects) or when you leave them (text); Enter saves and jumps to the same box in the next order.
+  // Phone cards: remember which "More" folds are open across redraws (toggle does not bubble: capture).
+  document.addEventListener('toggle', e => { const d = e.target; if (!d.matches?.('details[data-more-fold]')) return; const id = Number(d.dataset.moreFold); S.moreOpen ||= new Set(); if (d.open) S.moreOpen.add(id); else S.moreOpen.delete(id); }, true);
   document.addEventListener('change', e => {
     const el = e.target;
     if (el.matches('[data-notify]')) { setNotify(el.checked).then(() => { el.checked = notifyOn(); }); return; }
