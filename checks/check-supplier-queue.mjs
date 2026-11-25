@@ -51,7 +51,9 @@ ok(await put(A, 'courier', 'China Post'));
 ok(await put(A, 'shipped', true));
 r = await row(A); assert.deepEqual([r.status, r.tracking_number, r.courier], ['shipped', 'LX123CN', 'China Post']);
 assert.equal((await get(A)).tab, 'shipped');
-assert.equal((await put(A, 'shipped', false)).status, 409, 'can’t un-ship');
+// Since 25 Nov 2026 a shipped order can be set back (a mistake), then shipped again.
+ok(await put(A, 'shipped', false)); assert.equal((await row(A)).status, 'processing', 'un-ship');
+ok(await put(A, 'shipped', true)); assert.equal((await row(A)).status, 'shipped');
 
 // Delayed + reason: the client is told, as from the sheet.
 assert.equal((await put(B, 'reason', 'Remaking')).status, 409, 'reason needs delayed first');
@@ -71,7 +73,7 @@ assert.equal((await get(C)).tab, 'cancelled');
 ok(await put(C, 'cancelFee', '4'));
 const fee = await DB.prepare("SELECT amount FROM client_balance_adjustments WHERE order_id = ? AND kind = 'cancellation_fee'").bind(C).first();
 assert.equal(Number(fee.amount), 4, 'the cancellation fee is billed');
-assert.equal((await put(C, 'cost', '5')).status, 409, 'cancelled: cost stays');
+{ const before = Number((await row(C)).price); ok(await put(C, 'cost', '5')); assert.equal(Number((await row(C)).supplier_cost), 5); assert.equal(Number((await row(C)).price), before, 'cancelled: cost recorded, not billed again'); }
 
 // Photos zip.
 { const url = new URL('http://localhost/api/portal/supplier/orders/' + B + '/photos.zip');
