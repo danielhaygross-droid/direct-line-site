@@ -20,7 +20,7 @@
               ${o.links.map((l, i) => `<dt>${o.links.length > 1 ? t('Product') + ' ' + (i + 1) : t('Product link')}</dt><dd class="sp-link"><span>${esc(l)}</span><button type="button" class="btn btn-sm" data-copy="${esc(l)}">${t('Copy link')}</button><a class="btn btn-sm" href="${esc(l)}" target="_blank" rel="noopener noreferrer">${t('Open')}</a></dd>`).join('')}
               <dt>${t('Client paid')}</dt><dd>${t(paidL)}</dd></dl></div></section>
         <section class="card sp-card"><span class="sp-eyebrow">${t('Ship to')}</span>
-          <dl class="sp-kv"><dt>${t('Customer')}</dt><dd>${esc(o.buyer || '—')}</dd><dt>${t('Delivery address & phone')}</dt><dd class="pre">${esc(o.address || '—')}</dd>
+          <dl class="sp-kv"><dt>${t('Customer')}</dt><dd>${esc(o.buyer || '—')}</dd><dt>${t('Delivery address & phone')}</dt><dd class="pre">${esc(o.address || '—')}</dd><dt></dt><dd><button type="button" class="btn btn-sm" data-edit-details="${o.id}">${t('Edit details')}</button></dd>
             ${o.taxNumber ? `<dt>${t('Tax number')}</dt><dd>${esc(o.taxNumber)}</dd>` : ''}</dl>
           <button type="button" class="btn btn-sm" data-copy-address="${o.id}">${t('Copy address')}</button></section>
         ${o.notes || o.giftMessage ? `<section class="card sp-card">${o.notes ? `<span class="sp-eyebrow">${t('Notes from Direct Line')}</span><p class="sp-note-box">${esc(o.notes)}</p>` : ''}${o.giftMessage ? `<span class="sp-eyebrow">${t('Gift message')}</span><p class="sp-note-box">${esc(o.giftMessage)}</p>` : ''}</section>` : ''}

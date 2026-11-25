@@ -7,6 +7,7 @@
 // cost revisions, shipped, delays, cancellation fees), then the new cells are written into the sheet row.
 
 import { paidOrders } from './payment-orders.mjs';
+import { changeStatus } from './order-status.mjs';
 import { applySupplierRow, writeSupplierCells, withOrderLock, addressLines, savedPriceFlag, numberedLines, SHIPPED, NOT_SHIPPED, DELAYED, ON_TIME, DEFAULT_COURIERS, updateCourierDropdown } from './supplier-sheet.mjs';
 import { syncPortalOrderToGoogleSheet, googleSheetsConfigured } from './google-sheets.mjs';
 import { photoSignature } from './sheet-photos.mjs';
@@ -77,6 +78,8 @@ function queueOrder(env, o, photos, paid, edits) {
     revision: !!o.revision_status,
     cells: { cost, itemCosts: norm(o.item_costs), tracking: norm(o.tracking_number), courier: norm(o.courier), delayed: !!o.delayed_at, reason: norm(o.delay_reason), domestic: norm(o.domestic_tracking), cancelFee: fee },
     edits: edits || {},
+    // Prefill for "Edit details" (25 Nov 2026): the same product and ship-to the card already shows, field by field.
+    details: { itemTitle: norm(o.item_title), variant: norm(o.variant), qty: Number(o.quantity || 1), multi: its.length > 1, buyer: norm(o.buyer_name), address1: norm(o.address_line_1), address2: norm(o.address_line_2), city: norm(o.city), region: norm(o.region), zip: norm(o.postal_code) },
   };
 }
 
@@ -114,7 +117,12 @@ async function sameTracking(DB, id, tracking) {
   return rows.map(r => norm(r.order_ref) || '#' + r.id);
 }
 
-const FIELDS = ['cost', 'itemCosts', 'tracking', 'courier', 'shipped', 'delayed', 'reason', 'domestic', 'cancelFee', 'bought'];
+const FIELDS = ['cost', 'itemCosts', 'tracking', 'courier', 'shipped', 'delayed', 'reason', 'domestic', 'cancelFee', 'bought', 'accept', 'details'];
+// Erwin, 25 Nov 2026: Ada and Ye may change prices, tracking and details at any time (shipped, paid or cancelled too);
+// every change is logged for the admin bell. They also accept new orders (pending -> processing).
+const DETAIL_COLS = { itemTitle: ['item_title', 300], variant: ['variant', 300], qty: ['quantity', 0], buyer: ['buyer_name', 120], address1: ['address_line_1', 200], address2: ['address_line_2', 200], city: ['city', 120], region: ['region', 120], zip: ['postal_code', 40] };
+const ADDRESS_KEYS = ['buyer', 'address1', 'address2', 'city', 'region', 'zip'];
+async function adminNote(DB, o, detail, t) { await DB.prepare("INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,'supplier_sheet','admin',?,?)").bind(o.id, o.client_id, JSON.stringify(detail), t).run(); }
 // Saves one box. Returns { order, warn } or throws { status, message }.
 export async function saveCell(DB, env, waitUntil, me, id, field, value) {
   const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
@@ -129,11 +137,14 @@ export async function saveCell(DB, env, waitUntil, me, id, field, value) {
     const cells = { cost: o.sheet_cost, tracking: o.sheet_tracking, courier: o.sheet_courier, shipped: o.sheet_shipped, delayed: o.sheet_delayed, reason: o.sheet_delay_reason, cancelFee: o.sheet_cancel_fee, by };
     let sheetField = true;
     if (field === 'cost') {
-      if (o.status === 'cancelled') fail(409, 'This order is cancelled: its cost can’t change.');
       if (v !== '' && !(/^\d{1,5}(\.\d{1,2})?$/.test(v)) && !(o.revision_status && NO_WORD.test(v))) fail(400, 'Type the total cost in US dollars, e.g. 17.90.');
-      cells.cost = v;
+      if (o.status === 'cancelled') {
+        // A cancelled order is not billed again: the cost is recorded for the team, the admin is told.
+        const n = v === '' ? null : Number(v);
+        await DB.prepare('UPDATE client_orders SET supplier_cost=?, sheet_cost=?, updated_at=? WHERE id=?').bind(n, v, t, id).run();
+        await adminNote(DB, o, { f: 'cost', from: norm(o.sheet_cost), to: v, by: by.slice(0, 60) }, t); sheetField = false;
+      } else cells.cost = v;
     } else if (field === 'tracking') {
-      if (o.status === 'cancelled') fail(409, 'This order is cancelled.');
       if (v.length > 120 || /\s/.test(v)) fail(400, 'Type one tracking number, without spaces.');
       if (shipped && !v) fail(409, 'This order is shipped: its tracking number can’t be cleared.');
       cells.tracking = v;
@@ -142,11 +153,39 @@ export async function saveCell(DB, env, waitUntil, me, id, field, value) {
       if (v && !(await courierList(DB)).includes(v)) fail(400, 'Pick a courier from the list.');
       cells.courier = v;
     } else if (field === 'shipped') {
-      if (value !== true) fail(409, 'A shipped order can’t be set back here. Ask Direct Line.');
+      if (value !== true) {
+        // Set back to not shipped (a mistake): the order is open again, the client and admin see the status change.
+        if (!shipped) fail(409, 'This order is not shipped.');
+        await changeStatus(DB, o, 'status', { status: 'processing' }, true, 'admin');
+        await DB.prepare("UPDATE client_orders SET sheet_shipped='' WHERE id=?").bind(id).run();
+        await adminNote(DB, o, { f: 'unshipped', by: by.slice(0, 60) }, t);
+        sheetField = false;
+      } else {
       if (o.status === 'cancellation_requested') fail(409, 'The client asked to cancel this order: don’t ship it. Direct Line will tell you.');
       if (!['pending', 'processing'].includes(o.status)) fail(409, 'This order can’t be shipped.');
       if (!norm(o.tracking_number)) fail(409, 'Add the tracking number first.');
-      cells.shipped = SHIPPED;
+      cells.shipped = SHIPPED; }
+    } else if (field === 'accept') {
+      if (o.status !== 'pending') fail(409, 'This order is already accepted.');
+      await changeStatus(DB, o, 'status', { status: 'processing' }, true, 'admin');
+      await adminNote(DB, o, { f: 'accepted', by: by.slice(0, 60) }, t);
+      sheetField = false;
+    } else if (field === 'details') {
+      const d = value && typeof value === 'object' ? value : fail(400, 'Nothing to save.'), set = [], binds = [], changed = [];
+      for (const [k, [col, max]] of Object.entries(DETAIL_COLS)) {
+        if (d[k] === undefined) continue;
+        let nv;
+        if (k === 'qty') { nv = Number(d[k]); if (!Number.isInteger(nv) || nv < 1 || nv > 999) fail(400, 'Quantity must be a whole number from 1 to 999.'); }
+        else { nv = norm(d[k]).replace(/[\r\n]+/g, ' '); if (nv.length > max) fail(400, 'Too long: ' + k + '.'); if (['itemTitle', 'buyer', 'address1', 'city'].includes(k) && !nv) fail(400, 'This can’t be empty: ' + k + '.'); }
+        if (String(nv) === String(k === 'qty' ? Number(o.quantity || 1) : norm(o[col]))) continue;
+        set.push(col + '=?'); binds.push(nv); changed.push(k);
+      }
+      if (!changed.length) return { order: await queueOne(DB, env, id), warn: null };
+      if (changed.some(k => ADDRESS_KEYS.includes(k))) { set.push('address_changed_at=?'); binds.push(t); }
+      await DB.prepare(`UPDATE client_orders SET ${set.join(', ')}, updated_at=? WHERE id=?`).bind(...binds, t, id).run();
+      await DB.prepare("INSERT INTO order_events (order_id, client_id, kind, actor, detail, created_at) VALUES (?,?,'edited','admin',?,?)").bind(id, o.client_id, changed.every(k => ADDRESS_KEYS.includes(k)) ? 'customer' : '', t).run();
+      await adminNote(DB, o, { f: 'details', fields: changed, by: by.slice(0, 60) }, t);
+      sheetField = false;
     } else if (field === 'delayed') {
       if (!open) fail(409, 'Only orders that are not shipped yet can be delayed.');
       cells.delayed = value === true ? DELAYED : ON_TIME; cells.reason = value === true ? norm(o.delay_reason) : '';

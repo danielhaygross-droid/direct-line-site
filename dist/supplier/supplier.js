@@ -277,7 +277,7 @@
     'Orders': '订单', 'Newest first. Type in the gold columns: each change saves by itself.': '最新的在最上面。在金色栏里填写：每次修改都会自动保存。',
     'New': '新订单', 'Bought': '已购买', 'Shipped': '已发货', 'Cancelled': '已取消', 'Not bought': '未购买', 'Cancel requested': '客户申请取消',
     'cancel requests': '个取消申请', 'cancel request': '个取消申请', 'don’t buy or ship them. Wait for Direct Line.': '不要购买或发货。请等 Direct Line 通知。',
-    'Show them': '查看', 'Show all': '显示全部', 'More': '更多', 'Filled in': '已填写', 'All': '全部', 'Period': '时间段', 'All time': '全部时间', 'This week': '本周', 'Last week': '上周', 'This month': '本月', 'Last month': '上个月', 'Custom range': '自定义日期', 'From': '从', 'To': '到', 'Order number, shop, product or tracking': '订单号、店铺、商品或运单号', 'Filters': '筛选', 'Clear filters': '清除筛选',
+    'Show them': '查看', 'Show all': '显示全部', 'More': '更多', 'Accept': '接单', 'Accept all new': '全部接单', 'Edit details': '修改信息', 'Save': '保存', 'Cancel': '取消', 'City': '城市', 'Postal code': '邮编', 'Address line 1': '地址1', 'Address line 2': '地址2', 'State / region': '州/省', 'Change what was ordered or where it ships. Direct Line and the client see the change.': '修改商品或收货地址。Direct Line 和客户会看到。', 'Set this order back to not shipped? The client will see it as processing again.': '改回未发货？客户会看到订单回到处理中。', 'This order is already accepted.': '这个订单已接单。', 'Quantity must be a whole number from 1 to 999.': '数量请填1到999的整数。', 'Nothing to save.': '没有要保存的内容。', 'This order is not shipped.': '这个订单还没发货。', 'Filled in': '已填写', 'All': '全部', 'Period': '时间段', 'All time': '全部时间', 'This week': '本周', 'Last week': '上周', 'This month': '本月', 'Last month': '上个月', 'Custom range': '自定义日期', 'From': '从', 'To': '到', 'Order number, shop, product or tracking': '订单号、店铺、商品或运单号', 'Filters': '筛选', 'Clear filters': '清除筛选',
     'All clients': '所有客户', 'All countries': '所有国家', 'Only orders without a total cost': '只看没有总成本的订单',
     'Order': '订单号', 'Product / variation': '商品 / 款式', 'Qty': '数量', 'Ship to': '寄往', 'Total cost (USD)': '总成本（美元）', 'Cost per product (USD)': '每件商品成本（美元）',
     'Shipping status': '发货状态', 'Tracking number': '运单号', 'Courier': '快递公司', 'Delayed? + reason': '延迟？+ 原因', 'Domestic express tracking': '国内快递单号',
@@ -332,10 +332,10 @@
   // Tab counts follow the week / month picker (19 Nov 2026).
   const tabCount = tab => (S.queue?.orders || []).filter(o => (tab === 'all' || o.tab === tab) && window.DLPeriod.match(o.createdAt, S.period)).length;
   const disabledFor = (o, field) => {
+    // Erwin, 25 Nov 2026: Ada and Ye can change prices, tracking and details at any time (shipped, paid, cancelled).
+    // Only "possibly delayed" stays for orders still on their way to being shipped.
     if (field === 'cancelFee') return !(o.status === 'cancelled' || o.cancelRequested);
-    if (o.status === 'cancelled') return true;
-    if (o.cancelRequested) return field !== 'domestic';
-    if (o.ship === 'shipped') return !['tracking', 'courier', 'domestic', 'itemCosts'].includes(field);
+    if (field === 'delayed' || field === 'reason') return o.ship === 'shipped' || o.status === 'cancelled';
     return false;
   };
   const dis = (o, f) => (disabledFor(o, f) ? ' disabled' : '');
@@ -344,7 +344,7 @@
     const c = o.cells, id = o.id;
     if (field === 'cost') return `<span class="sp-money"><span>$</span><input inputmode="decimal" data-o="${id}" data-f="cost" value="${esc(c.cost)}" placeholder="0.00" aria-label="${esc(t('Total cost (USD)'))}"${dis(o, 'cost')}></span>`;
     if (field === 'itemCosts') return `<input data-o="${id}" data-f="itemCosts" value="${esc(c.itemCosts)}" placeholder="—" aria-label="${esc(t('Cost per product (USD)'))}"${dis(o, 'itemCosts')}>`;
-    if (field === 'ship') return `<select data-o="${id}" data-f="ship" aria-label="${esc(t('Shipping status'))}"${o.ship === 'shipped' || o.status === 'cancelled' || o.cancelRequested ? ' disabled' : ''}>${SHIP_OPTS.map(([v, l]) => `<option value="${v}"${shipState(o) === v ? ' selected' : ''}>${t(l)}</option>`).join('')}</select>`;
+    if (field === 'ship') return `<select data-o="${id}" data-f="ship" aria-label="${esc(t('Shipping status'))}"${o.status === 'cancelled' || o.cancelRequested ? ' disabled' : ''}>${SHIP_OPTS.map(([v, l]) => `<option value="${v}"${shipState(o) === v ? ' selected' : ''}>${t(l)}</option>`).join('')}</select>`;
     if (field === 'tracking') return `<input class="mono" data-o="${id}" data-f="tracking" value="${esc(c.tracking)}" placeholder="${esc(t('Tracking number'))}" aria-label="${esc(t('Tracking number'))}"${dis(o, 'tracking')}>`;
     if (field === 'courier') { const list = S.queue.couriers.includes(c.courier) || !c.courier ? S.queue.couriers : [c.courier, ...S.queue.couriers], sug = !c.courier && !disabledFor(o, 'courier') ? lastCourier() : '', pick = c.courier || sug;
       return `<select data-o="${id}" data-f="courier" aria-label="${esc(t('Courier'))}"${pick ? ` title="${esc(pick)}"` : ''}${sug ? ' class="sp-suggest"' : ''}${dis(o, 'courier')}><option value="">${t('Pick')}</option>${list.map(v => `<option${v === pick ? ' selected' : ''}>${esc(v)}</option>`).join('')}<option value="__add">${t('+ Add courier…')}</option></select>`; }
@@ -361,7 +361,9 @@
   // Client paid (Erwin, 16 Nov 2026: the supplier confirms which orders are paid already). Cancelled orders don't need it.
   const PAID = { paid: ['Paid', 'mint'], not_paid: ['Not paid', 'red'], no_bill: ['No bill yet', ''] };
   const paidTag = o => (o.status === 'cancelled' || o.clientPaid === 'no_bill' || !PAID[o.clientPaid] ? '' : ` <span class="sp-tag ${PAID[o.clientPaid][1]}" data-paid="${o.clientPaid}">${t(PAID[o.clientPaid][0])}</span>`);
-  const orderHead = o => `<button type="button" class="sp-ref" data-open="${o.id}">${esc(o.ref)}${ICON.next}</button>${isNew(o) ? ` <span class="sp-tag gold">${t('New')}</span>` : ''}${paidTag(o)}
+  // New orders wait for Accept (25 Nov 2026): the order moves to Processing, the client and admin see it.
+  const acceptBtn = o => (o.status === 'pending' ? ` <button type="button" class="btn btn-sm btn-primary sp-accept" data-accept="${o.id}">${t('Accept')}</button>` : '');
+  const orderHead = o => `<span class="sp-oh1"><button type="button" class="sp-ref" data-open="${o.id}">${esc(o.ref)}${ICON.next}</button>${o.status === 'pending' ? acceptBtn(o) : isNew(o) ? ` <span class="sp-tag gold">${t('New')}</span>` : ''}</span>${paidTag(o)}
     <small>${esc(o.client)}${o.shop ? ' · ' + esc(o.shop) : ''} · <span class="nw">${esc(fmtDay(o.createdAt))}</span></small>${savedLine(o)}`;
   const cancelNote = o => (S.tab === 'all' && o.status === 'cancelled' ? `<span class="sp-tag red">${t('Cancelled')}</span>` : o.cancelRequested ? `<span class="sp-tag red">${t('Cancel requested')}</span><p class="sp-warn">${t('don’t buy or ship them. Wait for Direct Line.')}</p>` : o.revision ? `<span class="sp-tag orange">${t('Cost revision requested')}</span>` : '');
   function rowHTML(o) {
@@ -386,7 +388,7 @@
         ${f(t('Tracking number'), cellBox(o, 'tracking') + warnLine(o))}${cx ? '' : f(t('Courier'), cellBox(o, 'courier'))}</div>
       <details class="sp-fold" data-more-fold="${o.id}"${S.moreOpen?.has(o.id) ? ' open' : ''}><summary>${t('More')}${moreFilled(o) ? ` <span class="sp-dot" title="${esc(t('Filled in'))}"></span>` : ''}</summary>
         <div class="sp-fgrid">${f(t('Cost per product (USD)'), cellBox(o, 'itemCosts'))}${cx ? '' : f(t('Delayed? + reason'), cellBox(o, 'delayed'))}${f(t('Domestic express tracking'), cellBox(o, 'domestic'))}</div>
-        <div class="sp-ocard-a"><button type="button" class="btn btn-sm" data-copy-address="${o.id}">${t('Copy address')}</button>${o.photos.length ? `<a class="btn btn-sm" href="/api/portal/supplier/orders/${o.id}/photos.zip">${t('All photos (zip)')}</a>` : ''}</div></details></article>`;
+        <div class="sp-ocard-a"><button type="button" class="btn btn-sm" data-edit-details="${o.id}">${t('Edit details')}</button><button type="button" class="btn btn-sm" data-copy-address="${o.id}">${t('Copy address')}</button>${o.photos.length ? `<a class="btn btn-sm" href="/api/portal/supplier/orders/${o.id}/photos.zip">${t('All photos (zip)')}</a>` : ''}</div></details></article>`;
   }
   function ordersHTML() {
     const Q = S.queue; if (!Q) return S.error || `<p class="sp-empty">${t('Loading…')}</p>`;
@@ -402,7 +404,7 @@
     const head = `<tr><th>${t('Order')}</th><th>${t('Product / variation')}</th><th class="num">${t('Qty')}</th><th>${t('Ship to')}</th><th class="g">${t('Total cost (USD)')}</th><th class="g">${t('Cost per product (USD)')}</th>
       ${cx ? `<th class="g">${t('Cancellation fee (USD)')}</th><th class="g">${t('Tracking number')}</th>` : `<th class="g">${t('Shipping status')}</th><th class="g">${t('Tracking number')}</th><th class="g">${t('Courier')}</th><th class="g">${t('Delayed? + reason')}</th>`}<th class="g">${t('Domestic express tracking')}</th></tr>`;
     return `<div class="sp-head"><div><h1>${t('Orders')}</h1><p class="sp-intro">${t('Newest first. Type in the gold columns: each change saves by itself.')}</p></div>
-        <button type="button" class="btn" data-export-orders>${t('Export to Excel')}</button></div>
+        <div class="sp-head-a">${Q.orders.some(o => o.status === 'pending') ? `<button type="button" class="btn btn-primary" data-accept-all>${t('Accept all new')} (${Q.orders.filter(o => o.status === 'pending').length})</button>` : ''}<button type="button" class="btn" data-export-orders>${t('Export to Excel')}</button></div></div>
       ${notifyBannerHTML()}
       ${req.length ? `<div class="sp-alert"><b>${req.length} ${t(req.length === 1 ? 'cancel request' : 'cancel requests')}</b><span>${req.slice(0, 4).map(o => esc(o.ref)).join(', ')}${req.length > 4 ? '…' : ''}: ${t('don’t buy or ship them. Wait for Direct Line.')}</span><button type="button" class="btn btn-sm" data-cxreq>${t(S.onlyCancelReq ? 'Show all' : 'Show them')}</button></div>` : ''}
       <div class="sp-bar"><div class="sp-chips">${tabs}</div>
@@ -430,7 +432,11 @@
         for (const sel of document.querySelectorAll('select[data-f="courier"]')) if (![...sel.options].some(op => op.value === value)) sel.querySelector('option[value="__add"]')?.before(new Option(value, value)); }
       catch (e) { S.err[id] = e.message; redrawOrder(id); return; }
     }
-    if (f === 'ship') { field = value === 'shipped' ? 'shipped' : 'bought'; value = value === 'shipped' ? true : value === 'bought'; if (field === 'bought' && !!o.boughtAt === value) return; }
+    if (f === 'ship' && o.ship === 'shipped' && value !== 'shipped') {
+      // Set back from Shipped (a mistake): ask first, the client sees the status go back to Processing.
+      if (!window.confirm(t('Set this order back to not shipped? The client will see it as processing again.'))) { redrawOrder(id); return; }
+      field = 'shipped'; value = false;
+    } else if (f === 'ship') { field = value === 'shipped' ? 'shipped' : 'bought'; value = value === 'shipped' ? true : value === 'bought'; if (field === 'bought' && !!o.boughtAt === value) return; }
     else if (f === 'delayed') { value = value === '1'; if (value === o.cells.delayed) return; }
     else if ((o.cells[f] ?? '') === value) return;
     const key = id + ':' + f, sent = JSON.stringify(value); if (S.pending[key] === sent) return; S.pending[key] = sent;
@@ -457,6 +463,44 @@
     if (S.drawer === id) drawerFill();
     if (keep) { const el = document.querySelector(`${sel}[data-row="${id}"] [data-f="${keep}"]`); if (el) { if (el.value !== active.value) el.value = active.value; el.focus(); } }
   }
+  // ---------- Accept new orders and edit details (Erwin, 25 Nov 2026) ----------
+  async function acceptOrders(ids) {
+    for (const id of ids) {
+      const o = S.queue.orders.find(x => x.id === id); if (!o || o.status !== 'pending') continue;
+      S.saving[id] = 'saving'; delete S.err[id];
+      try { const r = await api('/supplier/orders/' + id, { method: 'PUT', body: { field: 'accept', value: true } }); Object.assign(o, r.order); delete S.saving[id]; }
+      catch (e) { S.saving[id] = 'err'; S.err[id] = e.message; }
+    }
+    render();
+  }
+  function detailsWindow(o) {
+    document.querySelector('dialog.sp-dw')?.remove();
+    const d = o.details || {}, dlg = document.createElement('dialog'); dlg.className = 'sp-dw'; dlg.setAttribute('aria-labelledby', 'sp-dw-h');
+    const fld = (k, label, attrs = '') => `<label class="sp-f"><span>${t(label)}</span><input name="${k}" value="${esc(d[k] ?? '')}"${attrs}></label>`;
+    dlg.innerHTML = `<form method="dialog" class="sp-dw-box" novalidate>
+      <h3 id="sp-dw-h">${t('Edit details')} · <span data-no-i18n>${esc(o.ref)}</span></h3>
+      <p class="sp-intro">${t('Change what was ordered or where it ships. Direct Line and the client see the change.')}</p>
+      <div class="sp-dw-sec"><b>${t('Product')}</b>${fld('itemTitle', 'Product', ' maxlength="300" required')}${d.multi ? '' : fld('variant', 'Variation', ' maxlength="300"')}${fld('qty', 'Qty', ' inputmode="numeric" maxlength="3" required')}</div>
+      <div class="sp-dw-sec"><b>${t('Ship to')}</b>${fld('buyer', 'Customer', ' maxlength="120" required')}${fld('address1', 'Address line 1', ' maxlength="200" required')}${fld('address2', 'Address line 2', ' maxlength="200"')}
+        <div class="sp-dw-row">${fld('city', 'City', ' maxlength="120" required')}${fld('region', 'State / region', ' maxlength="120"')}${fld('zip', 'Postal code', ' maxlength="40"')}</div></div>
+      <p class="sp-err" data-dw-msg role="alert"></p>
+      <div class="sp-dw-a"><button type="submit" class="btn btn-primary">${t('Save')}</button><button type="button" class="btn" data-dw-close>${t('Cancel')}</button></div></form>`;
+    const f = dlg.querySelector('form'), close = () => { if (dlg.open) dlg.close(); dlg.remove(); };
+    dlg.addEventListener('click', e => { if (e.target.closest('[data-dw-close]') || e.target === dlg) close(); });
+    f.addEventListener('submit', async e => {
+      e.preventDefault(); const msg = dlg.querySelector('[data-dw-msg]'), body = {};
+      for (const el of f.querySelectorAll('input[name]')) body[el.name] = el.name === 'qty' ? Number(el.value) : el.value.trim();
+      const btn = f.querySelector('[type=submit]'); btn.disabled = true; msg.textContent = '';
+      try { const r = await api('/supplier/orders/' + o.id, { method: 'PUT', body: { field: 'details', value: body } }); Object.assign(o, r.order); close(); redrawOrder(o.id); flashSaved(o.id, 'cost'); }
+      catch (ex) { msg.textContent = t(ex.message); btn.disabled = false; }
+    });
+    document.body.append(dlg); dlg.showModal(); f.itemTitle.focus();
+  }
+  document.addEventListener('click', e => {
+    const a = e.target.closest?.('[data-accept]'); if (a) { e.preventDefault(); e.stopPropagation(); a.disabled = true; acceptOrders([Number(a.dataset.accept)]); return; }
+    const all = e.target.closest?.('[data-accept-all]'); if (all) { all.disabled = true; acceptOrders(S.queue.orders.filter(o => o.status === 'pending').map(o => o.id)); return; }
+    const ed = e.target.closest?.('[data-edit-details]'); if (ed) { const o = S.queue?.orders.find(x => x.id === Number(ed.dataset.editDetails)); if (o) detailsWindow(o); }
+  }, true);
   function exportOrders() {
     const X = window.DLExcelExport; if (!X) return;
     const list = visibleOrders(), stateL = o => t(o.status === 'cancelled' ? 'Cancelled' : o.cancelRequested ? 'Cancel requested' : SHIP_OPTS.find(x => x[0] === shipState(o))[1]);
@@ -486,7 +530,7 @@
               ${o.links.map((l, i) => `<dt>${o.links.length > 1 ? t('Product') + ' ' + (i + 1) : t('Product link')}</dt><dd class="sp-link"><span>${esc(l)}</span><button type="button" class="btn btn-sm" data-copy="${esc(l)}">${t('Copy link')}</button><a class="btn btn-sm" href="${esc(l)}" target="_blank" rel="noopener noreferrer">${t('Open')}</a></dd>`).join('')}
               <dt>${t('Client paid')}</dt><dd>${t(paidL)}</dd></dl></div></section>
         <section class="card sp-card"><span class="sp-eyebrow">${t('Ship to')}</span>
-          <dl class="sp-kv"><dt>${t('Customer')}</dt><dd>${esc(o.buyer || '—')}</dd><dt>${t('Delivery address & phone')}</dt><dd class="pre">${esc(o.address || '—')}</dd>
+          <dl class="sp-kv"><dt>${t('Customer')}</dt><dd>${esc(o.buyer || '—')}</dd><dt>${t('Delivery address & phone')}</dt><dd class="pre">${esc(o.address || '—')}</dd><dt></dt><dd><button type="button" class="btn btn-sm" data-edit-details="${o.id}">${t('Edit details')}</button></dd>
             ${o.taxNumber ? `<dt>${t('Tax number')}</dt><dd>${esc(o.taxNumber)}</dd>` : ''}</dl>
           <button type="button" class="btn btn-sm" data-copy-address="${o.id}">${t('Copy address')}</button></section>
         ${o.notes || o.giftMessage ? `<section class="card sp-card">${o.notes ? `<span class="sp-eyebrow">${t('Notes from Direct Line')}</span><p class="sp-note-box">${esc(o.notes)}</p>` : ''}${o.giftMessage ? `<span class="sp-eyebrow">${t('Gift message')}</span><p class="sp-note-box">${esc(o.giftMessage)}</p>` : ''}</section>` : ''}
