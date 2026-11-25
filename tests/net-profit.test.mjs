@@ -50,7 +50,7 @@ test('portal: Earned / Cost / Profit, panel lines, "Your numbers" form with "You
   assert.ok(!portal.includes('Net profit') && !portal.includes('netProfit'), 'no separate Net profit any more');
   assert.ok(portal.includes('id="numbers-form"') && portal.includes('name="etsyEarned"') && portal.includes('etsyEarned: f.etsyEarned.value') && portal.includes('etsyEarned: form.etsyEarned.value'));
   assert.ok(portal.includes("$('#numbers-form')?.dataset.dirty"), 'the open form is not redrawn');
-  assert.ok(portal.includes('S.me.preview || o.status === \'cancelled\' ? \'\' : `<section class="card card-pad"><h3 class="sec-title">Your numbers</h3>'), 'no form in the admin preview or on cancelled orders');
+  assert.ok(portal.includes('S.me.preview || o.status === \'cancelled\' ? \'\' : `<details class="card card-pad more" data-numbers-fold>'), 'no form in the admin preview or on cancelled orders');
   assert.ok(!/etsy_fee_percent|feeRates|etsyFeePercent|6\.5%|9\.5%|3%/.test(portal), 'no invented fee rates anywhere');
   for (const s of ['Earned', 'You earned', 'Or: You earned', 'Add Etsy fee', 'Etsy fee', 'Your profit', 'Your numbers', 'Save numbers', 'Numbers saved', 'The Etsy fee must be zero or more', 'What you earned must be zero or more', 'orders missing Etsy earnings']) assert.ok(i18n.includes(`'${s}':`), s);
 });

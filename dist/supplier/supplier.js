@@ -277,7 +277,7 @@
     'Orders': '订单', 'Newest first. Type in the gold columns: each change saves by itself.': '最新的在最上面。在金色栏里填写：每次修改都会自动保存。',
     'New': '新订单', 'Bought': '已购买', 'Shipped': '已发货', 'Cancelled': '已取消', 'Not bought': '未购买', 'Cancel requested': '客户申请取消',
     'cancel requests': '个取消申请', 'cancel request': '个取消申请', 'don’t buy or ship them. Wait for Direct Line.': '不要购买或发货。请等 Direct Line 通知。',
-    'Show them': '查看', 'Show all': '显示全部', 'All': '全部', 'Period': '时间段', 'All time': '全部时间', 'This week': '本周', 'Last week': '上周', 'This month': '本月', 'Last month': '上个月', 'Custom range': '自定义日期', 'From': '从', 'To': '到', 'Order number, shop, product or tracking': '订单号、店铺、商品或运单号', 'Filters': '筛选', 'Clear filters': '清除筛选',
+    'Show them': '查看', 'Show all': '显示全部', 'More': '更多', 'Filled in': '已填写', 'All': '全部', 'Period': '时间段', 'All time': '全部时间', 'This week': '本周', 'Last week': '上周', 'This month': '本月', 'Last month': '上个月', 'Custom range': '自定义日期', 'From': '从', 'To': '到', 'Order number, shop, product or tracking': '订单号、店铺、商品或运单号', 'Filters': '筛选', 'Clear filters': '清除筛选',
     'All clients': '所有客户', 'All countries': '所有国家', 'Only orders without a total cost': '只看没有总成本的订单',
     'Order': '订单号', 'Product / variation': '商品 / 款式', 'Qty': '数量', 'Ship to': '寄往', 'Total cost (USD)': '总成本（美元）', 'Cost per product (USD)': '每件商品成本（美元）',
     'Shipping status': '发货状态', 'Tracking number': '运单号', 'Courier': '快递公司', 'Delayed? + reason': '延迟？+ 原因', 'Domestic express tracking': '国内快递单号',
@@ -374,16 +374,19 @@
       ${cx ? `<td class="g">${cellBox(o, 'cancelFee')}</td><td class="g">${cellBox(o, 'tracking')}</td>` : `<td class="g">${cellBox(o, 'ship')}</td><td class="g">${cellBox(o, 'tracking')}${warnLine(o)}</td><td class="g">${cellBox(o, 'courier')}</td><td class="g dl">${cellBox(o, 'delayed')}</td>`}
       <td class="g">${cellBox(o, 'domestic')}</td></tr>`;
   }
+  // Phone card (QA 19 Nov 2026, item 5): cost, shipping status, tracking and courier first; the rest under "More", with a
+  // dot when something is filled in there. What is open stays open while she types (S.moreOpen).
+  const moreFilled = o => !!(o.cells.itemCosts || o.cells.domestic || (o.cells.delayed && o.cells.delayed !== 'On time'));
   function cardHTML(o) {
     const cx = S.tab === 'cancelled' || (S.tab === 'all' && o.status === 'cancelled'), st = shipState(o), f = (label, box) => `<label class="sp-f"><span>${label}</span>${box}</label>`;
     return `<article class="sp-ocard${o.cancelRequested ? ' cxreq' : ''}" data-row="${o.id}">
       <div class="sp-ocard-h"><div>${orderHead(o)}</div><span class="sp-pill ${o.status === 'cancelled' ? 'red' : st}">${t(o.status === 'cancelled' ? 'Cancelled' : SHIP_OPTS.find(x => x[0] === st)[1])}</span></div>
-      <div class="sp-prod">${thumb(o)}<span><b>${esc(prodText(o.product) || '—')}</b>${cancelNote(o)}</span></div>
-      <div class="sp-fgrid">${f(t('Qty'), `<b>${o.qty}</b>`)}${f(t('Ship to'), `<b>${esc(o.country)}</b>`)}
-        ${f(t('Total cost (USD)'), cellBox(o, 'cost') + errLine(o))}${cx ? f(t('Cancellation fee (USD)'), cellBox(o, 'cancelFee')) : f(t('Shipping status'), cellBox(o, 'ship'))}
-        ${f(t('Cost per product (USD)'), cellBox(o, 'itemCosts'))}${f(t('Tracking number'), cellBox(o, 'tracking') + warnLine(o))}
-        ${cx ? '' : f(t('Courier'), cellBox(o, 'courier')) + f(t('Delayed? + reason'), cellBox(o, 'delayed'))}${f(t('Domestic express tracking'), cellBox(o, 'domestic'))}</div>
-      <div class="sp-ocard-a"><button type="button" class="btn btn-sm" data-copy-address="${o.id}">${t('Copy address')}</button>${o.photos.length ? `<a class="btn btn-sm" href="/api/portal/supplier/orders/${o.id}/photos.zip">${t('All photos (zip)')}</a>` : ''}</div></article>`;
+      <div class="sp-prod">${thumb(o)}<span><b>${esc(prodText(o.product) || '—')}</b><small class="sp-qty">${t('Qty')} ${o.qty} · ${t('Ship to')} ${esc(o.country)}</small>${cancelNote(o)}</span></div>
+      <div class="sp-fgrid">${f(t('Total cost (USD)'), cellBox(o, 'cost') + errLine(o))}${cx ? f(t('Cancellation fee (USD)'), cellBox(o, 'cancelFee')) : f(t('Shipping status'), cellBox(o, 'ship'))}
+        ${f(t('Tracking number'), cellBox(o, 'tracking') + warnLine(o))}${cx ? '' : f(t('Courier'), cellBox(o, 'courier'))}</div>
+      <details class="sp-fold" data-more-fold="${o.id}"${S.moreOpen?.has(o.id) ? ' open' : ''}><summary>${t('More')}${moreFilled(o) ? ` <span class="sp-dot" title="${esc(t('Filled in'))}"></span>` : ''}</summary>
+        <div class="sp-fgrid">${f(t('Cost per product (USD)'), cellBox(o, 'itemCosts'))}${cx ? '' : f(t('Delayed? + reason'), cellBox(o, 'delayed'))}${f(t('Domestic express tracking'), cellBox(o, 'domestic'))}</div>
+        <div class="sp-ocard-a"><button type="button" class="btn btn-sm" data-copy-address="${o.id}">${t('Copy address')}</button>${o.photos.length ? `<a class="btn btn-sm" href="/api/portal/supplier/orders/${o.id}/photos.zip">${t('All photos (zip)')}</a>` : ''}</div></details></article>`;
   }
   function ordersHTML() {
     const Q = S.queue; if (!Q) return S.error || `<p class="sp-empty">${t('Loading…')}</p>`;
@@ -449,7 +452,8 @@
   }
   function redrawOrder(id) {
     const o = S.queue.orders.find(x => x.id === id), active = document.activeElement, keep = active?.dataset?.o == id && !active.closest('#sp-drawer') ? active.dataset.f : null, sel = keep && active.closest('.sp-ocard') ? '.sp-ocard' : 'tr';
-    for (const el of document.querySelectorAll(`[data-row="${id}"]`)) el.outerHTML = el.matches('tr') ? rowHTML(o) : cardHTML(o);
+    // A phone card's open "More" stays open, read from the card itself (the toggle event can come after a quick save).
+    for (const el of document.querySelectorAll(`[data-row="${id}"]`)) { if (el.querySelector('details[data-more-fold][open]')) (S.moreOpen ||= new Set()).add(id); el.outerHTML = el.matches('tr') ? rowHTML(o) : cardHTML(o); }
     if (S.drawer === id) drawerFill();
     if (keep) { const el = document.querySelector(`${sel}[data-row="${id}"] [data-f="${keep}"]`); if (el) { if (el.value !== active.value) el.value = active.value; el.focus(); } }
   }
@@ -837,6 +841,8 @@
     const cp = e.target.closest('[data-copy]'); if (cp) { copyText(cp.dataset.copy, cp); return; }
   });
   // Gold boxes save when they change (selects) or when you leave them (text); Enter saves and jumps to the same box in the next order.
+  // Phone cards: remember which "More" folds are open across redraws (toggle does not bubble: capture).
+  document.addEventListener('toggle', e => { const d = e.target; if (!d.matches?.('details[data-more-fold]')) return; const id = Number(d.dataset.moreFold); S.moreOpen ||= new Set(); if (d.open) S.moreOpen.add(id); else S.moreOpen.delete(id); }, true);
   document.addEventListener('change', e => {
     const el = e.target;
     if (el.matches('[data-notify]')) { setNotify(el.checked).then(() => { el.checked = notifyOn(); }); return; }

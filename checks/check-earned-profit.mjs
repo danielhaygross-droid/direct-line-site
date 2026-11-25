@@ -61,7 +61,7 @@ try {
     await page.locator('[data-orders-list]').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, `${tag}-orders.png`) });
     if (lang === 'en' && width === 1440) { const t = await page.locator('[data-orders-list]').innerText(); assert.ok(/earned/i.test(t) && !/net profit/i.test(t)); await page.goto(`${base}/portal/?lang=${lang}#/home`); await page.waitForSelector('.stats .stat'); assert.match(await page.locator('.stat', { hasText: /profit/i }).first().innerText(), /\$97\.40/); await page.goto(`${base}/portal/?lang=${lang}#/orders`); await page.waitForSelector('[data-orders-list] tr'); assert.ok(t.includes('$56.20') && t.includes('$20.80') && t.includes('$104.00') && t.includes('$76.60') && t.includes('Add Etsy fee'), t.slice(0, 400)); }
     // Order panel: sale & cost + "Your numbers" with "Or: You earned".
-    await page.locator(`[data-open-order="${b.id}"]`).first().click(); await page.waitForSelector('#numbers-form');
+    await page.locator(`[data-open-order="${b.id}"]`).first().click(); await page.waitForSelector('#numbers-form', { state: 'attached' }); await page.evaluate(() => { const f = document.querySelector('[data-numbers-fold]'); if (f) f.open = true; }); // folded since QA batch 3
     await page.locator('#numbers-form [name=etsyEarned]').fill('38.10'); await page.locator('#numbers-form [type=submit]').click(); await page.waitForTimeout(800);
     await page.locator('.drawer.open .money-rows').scrollIntoViewIfNeeded(); await page.waitForTimeout(300);
     await page.screenshot({ path: path.join(out, `${tag}-panel.png`) });

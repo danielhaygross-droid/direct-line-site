@@ -51,6 +51,7 @@
  "check-portal-sessions.mjs": 3,
  "check-price-change-note.mjs": 12,
  "check-product-api.mjs": 3,
+ "check-qa-batch3.mjs": 70,
  "check-quick-fixes.mjs": 40,
  "check-quote-sheet.mjs": 6,
  "check-quote-shipping-ui.mjs": 19,

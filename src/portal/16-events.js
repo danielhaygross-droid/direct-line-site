@@ -51,6 +51,8 @@
   document.addEventListener('change',e=>{const s=e.target.closest?.('[data-sort]');if(!s)return;setSort(s.dataset.sort,s.value);if(s.dataset.sort==='portal-orders-2')renderOrdersList();else if(s.dataset.sort==='portal-products'){const l=$('[data-plist]');if(l)l.innerHTML=productListHTML();}else renderView(true);});
   document.addEventListener('change',e=>{const f=e.target.closest('[data-period-form]');if(!f)return;if(e.target.name==='period'){S.period=f.period.value;renderView();}else {S.from=f.from.value;S.to=f.to.value;if(window.DLClientStoreMath.periodRange('custom',S.from,S.to))renderView();}});
   document.addEventListener('submit',e=>{if(e.target.matches('[data-period-form]'))e.preventDefault();});
+  // Order window: "Add your numbers" opens the folded Etsy numbers form (QA 19 Nov 2026, item 15).
+  document.addEventListener('click', e => { const b = e.target.closest?.('[data-open-numbers]'); if (!b) return; const f = document.querySelector('[data-numbers-fold]'); if (!f) return; f.open = true; f.scrollIntoView({ block: 'start', behavior: 'smooth' }); f.querySelector('input')?.focus({ preventScroll: true }); });
   // Orders list: week / month picker (19 Nov 2026).
   document.addEventListener('change', e => { if (S.route !== 'orders' || !window.DLPeriod.read(S.ordersPeriod, e.target)) return; if (e.target.matches('[data-period-pick]')) renderPeriod(); renderChips(); renderOrdersList(); });
   document.addEventListener('input', e => { const f = e.target.closest?.('[data-rev-form]'); if (!f) return; $$('.field.bad', f).forEach(x => x.classList.remove('bad')); const m = $('[data-rev-msg]', f); m.textContent = ''; m.className = 'form-msg'; });
