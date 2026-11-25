@@ -15,7 +15,7 @@
     const h1 = document.documentElement.lang !== 'he' && title.includes(' & ') ? title.split(' & ').map(esc).join(' <span>&amp;</span> ') : esc(title);
     // The month picker sits on the title line of Clients overview (7 Nov 2026: one row less); renderKpis fills it.
     const btn = tab === 'overview' ? `<label class="kpi-month"><span>Show</span><select data-kpi-month aria-label="Month"></select></label>` : act === 'order' ? `<button type="button" class="btn btn-primary" data-new-order>${ic('plus')}New order</button>` : act === 'client' ? `<button type="button" class="btn btn-primary" data-add-account="client">${ic('users')}Add client</button>` : '';
-    return `<div><p class="eyebrow">Direct Line clients</p><h1>${h1}</h1><p>${esc(line)}</p></div>${btn ? `<div class="adm-actions">${btn}</div>` : ''}`;
+    return `<div><p class="eyebrow">Direct Line clients</p><h1>${h1}</h1><p>${esc(line)}</p></div><div class="adm-actions">${gsHTML()}${btn}</div>`;
   }
   function shell() {
     $('#app').innerHTML = `

@@ -1415,6 +1415,16 @@ async function routePortal(request, url, ctx, meta) {
     if (!row) return json({ ok: false, error: 'Not found' }, 404);
     return json({ ok: true, id: Number(row.id), orderId: Number(row.order_id), kind: row.kind, clientHidden: !!row.client_hidden });
   }
+  // Search from anywhere in admin (QA item 17): payments by amount, method or note, newest first, 6 at most.
+  if (path === '/admin/search-payments' && method === 'GET') {
+    if (!who.admin) return json({ ok: false, error: 'Not found' }, 404);
+    const q = String(url.searchParams.get('q') || '').trim().toLowerCase().slice(0, 80);
+    if (!q) return json({ ok: true, payments: [] });
+    const n = Number(q.replace(/[$,\s]/g, '')), like = '%' + q.replace(/[%_\\]/g, m => '\\' + m) + '%';
+    const rows = (await DB.prepare("SELECT id, client_id, amount, method, note, paid_at FROM client_payments WHERE NOT COALESCE(archived, FALSE) AND (LOWER(COALESCE(note, '')) LIKE ? OR LOWER(COALESCE(method, '')) LIKE ? OR (? AND ABS(amount - ?) < 0.005)) ORDER BY paid_at DESC, id DESC LIMIT 6")
+      .bind(like, like, Number.isFinite(n) && n > 0, Number.isFinite(n) ? n : 0).all()).results || [];
+    return json({ ok: true, payments: rows.map(r => ({ id: r.id, clientId: r.client_id, amount: Number(r.amount), method: r.method, note: r.note, paidAt: Number(r.paid_at) })) });
+  }
   if (path === '/admin/payments' && method === 'GET') {
     const clientId = Number(url.searchParams.get('clientId') || 0);
     const rows = (await DB.prepare('SELECT * FROM client_payments WHERE client_id = ? ORDER BY paid_at DESC, id DESC').bind(clientId).all()).results || [];

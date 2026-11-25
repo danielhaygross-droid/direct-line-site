@@ -1,5 +1,6 @@
 {
  "check-account-statement.mjs": 39,
+ "check-admin-search.mjs": 20,
  "check-address-api.mjs": 3,
  "check-address-flag.mjs": 4,
  "check-admin-cards.mjs": 46,
