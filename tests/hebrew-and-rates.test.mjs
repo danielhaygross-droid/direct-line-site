@@ -33,6 +33,9 @@ test('Hebrew: translator handles fixed text, counts, dates and "a · b" combinat
   assert.equal(t('United States (US)'), 'ארצות הברית (US)');
   assert.equal(t('Import 3 orders'), 'ייבוא 3 הזמנות');
   assert.equal(t('Blue Fern Studio'), 'Blue Fern Studio'); // customer data stays as typed
+  assert.equal(t('Order sent'), 'ההזמנה נשלחה'); // pop-up after sending an order
+  assert.equal(t('3412345678 is pending. Direct Line will add the fulfilment details next.'), '3412345678 ממתינה. Direct Line תוסיף את פרטי הטיפול בהמשך.');
+  assert.equal(t('3412345678 was saved.'), '3412345678 נשמרה.');
   assert.equal(t('0.5 kg × $18.00/kg = $9.00 + $4.00 registration + $4.00 EU tax'), '0.5 ק״ג × $18.00/ק״ג = $9.00 + $4.00 רישום + $4.00 מס EU');
 });
 
