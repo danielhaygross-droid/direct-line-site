@@ -4,7 +4,7 @@ Read this first in every new session, then just continue. No need to ask Erwin t
 **Keep it current:** after every task that ships (or stops halfway), rewrite sections 2, 4, 5 and 6 below.
 Lives in the repo root, so local and cloud sessions both see it; update it in the same PR as the work. How to work: `CLAUDE.md` (repo root). Older history: `docs/handoff/HISTORY.md` (cleaned copy of Erwin's notes), `git log`, PR descriptions. Working rules: `docs/handoff/RULES.md`. Agents: `.claude/agents/`.
 
-Last updated: 15 Nov 2026, after supplier-portal phase 3a (quotes + price requests in the portal).
+Last updated: 26 Nov 2026, after the Profit column in admin Client orders.
 
 ---
 
@@ -16,6 +16,7 @@ Last updated: 15 Nov 2026, after supplier-portal phase 3a (quotes + price reques
 - Hard rules (also in `CLAUDE.md`): no secrets in files/chat; no permanent deletes of real data; never touch Byzroyal; don't invent facts for clients; **never show our fee/commission to clients**; never change sheet columns without a safe one-time switch; do all work in one session (no side sessions); every number shown must add up (Erwin, 4 Nov: "do your facts straight").
 
 ## 2. Current state (14 Nov 2026)
+- **Profit per order** (26 Nov, Daniel asked): admin Client orders has a "Profit" column (phone: a row in the card) = our fee + the supplier share on an order that isn't cancelled; a cancelled order shows only the fee we keep. Same rule as the Overview "Our earnings" card (`orderProfit` in `src/admin/05-orders-tab.js`). Admins only; never in the client or supplier portal. Promised next to Daniel: the dashboard on its own address on his domain (e.g. portal.direct-line-supply.com) instead of vercel.app.
 - **Supplier Orders "All" tab** (19 Nov): first tab, every order of every tab (count follows the week / month picker); a cancelled order shows a red "Cancelled" tag there (phone card: its cancellation fee box). New stays the tab the page opens on.
 - **Orders by week / month** (19 Nov, order-period): client Orders, admin Client orders and supplier Orders have one picker (`dist/p/order-period.js`, `window.DLPeriod`): All time, This week, Last week, This month, Last month, each past month, Custom range (from–to, both days included). Erwin chose: the date the order was sent in (`createdAt`, viewer's time zone), weeks start Monday, the chip / tab counts follow it, not remembered (opens on All time). The Excel export of the client and supplier lists follows it too (it exports what is on screen). State: client `S.ordersPeriod`, admin `S.ordersPeriod`, supplier `S.period` (Clear filters resets it). Check: `checks/check-order-period.mjs`.
 - **Live:** `main` = `origin/main`, last PR **supplier-portal-p3** (quotes + price requests). Versions: portal.js 112, admin.js 127, supplier.js 4, supplier.css 3, excel-export.js 5, real-ui.js 17, admin.css 43, i18n 122, ui.css 45, portal.css 49, payment-orders.js 14, common.js 32, order-ui.js 25, notify.js 6.

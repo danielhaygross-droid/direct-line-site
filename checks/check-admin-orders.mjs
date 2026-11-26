@@ -96,6 +96,9 @@ try {
     // Paid / Not paid pill sits right under the price (19 Nov 2026: a .pay-line name clash pushed it left with a line above).
     if (width > 700) { const off = await ui.evaluate(() => [...document.querySelectorAll('td .pay-tagline')].map(l => { const b = l.parentElement.querySelector('b').getBoundingClientRect(), p = l.querySelector('.pay-tag').getBoundingClientRect(); const rtl = getComputedStyle(l).direction === 'rtl'; return [Math.round(Math.abs(rtl ? b.left - p.left : b.right - p.right)), getComputedStyle(l).borderTopStyle]; }));
       assert.ok(off.length > 0, tag + ' pills in the list'); for (const [dx, line] of off) { assert.ok(dx <= 3, tag + ' pill under the price, off by ' + dx); assert.equal(line, 'none', tag + ' no line above the pill'); } }
+    // Profit per order in the list (Daniel, 26 Nov 2026): our fee + the supplier share, admins only.
+    const prof = await ui.locator(`tr[data-open-order="${o.id}"] td.profit-cell`).innerText(); assert.match(prof, /\d/, tag + ' profit on the order: ' + prof);
+    await page.screenshot({ path: path.join(out, `${lang}-${width}-profit.png`) });
     await ui.locator(`tr[data-open-order="${o.id}"]`).click(); await ui.waitForSelector('[data-set-status]');
     assert.deepEqual(await ui.locator('[data-set-status]').evaluateAll(b => b.map(x => x.dataset.setStatus)), ['pending', 'processing', 'shipped', 'delivered'], tag + ' all four statuses');
     await ui.locator('[data-set-status="shipped"]').click(); await ui.waitForSelector('dialog.shipw[open]'); await ui.locator('dialog.shipw [data-sw-skip]').click(); // no tracking yet: the ship window asks first (QA batch 3)
