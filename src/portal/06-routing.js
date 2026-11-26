@@ -31,7 +31,7 @@
     if(soft && S.route==='stores' && [...document.querySelectorAll('[data-client-store-form]')].some(f=>f.dataset.dirty))return;
     if (soft && S.route === 'orders' && $('[data-orders-list]')) {const sw=$('[data-store-switcher]');if(sw)sw.outerHTML=storeSwitcher(); renderChips(); renderOrdersList(); return; }
     if (!soft && S.route === 'products' && !S.me.preview) { S.productsSeenBefore = store.get(productsSeenKey(), 0); store.set(productsSeenKey(), Math.floor(Date.now() / 1000)); }
-    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, products:viewProducts, stores:viewStores, terms: viewTerms }[S.route]();
+    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, products:viewProducts, stores:viewStores, guides: viewGuides, terms: viewTerms }[S.route]();
     if(['home','orders','payments'].includes(S.route))view.insertAdjacentHTML('afterbegin',storeSwitcher());
     if (soft) view.querySelectorAll(':scope > *').forEach(el => { el.style.animation = 'none'; });
     mountClientChart();

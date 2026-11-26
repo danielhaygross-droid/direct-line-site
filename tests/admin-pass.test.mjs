@@ -32,7 +32,7 @@ test('portal: offline retry, Copy resets, distinct menu icons; Hebrew for every 
   const portal = await read('portal/portal.js'), i18n = await read('p/i18n.js');
   assert.ok(portal.includes('function bootError(ex)') && portal.includes('data-boot-retry') && !portal.includes("$('#boot').textContent = e.message"));
   assert.ok(portal.includes('cp._copyTimer = setTimeout'));
-  assert.ok(portal.includes("['stores','My Stores','store'], ['products','My Products','tag'], ['terms', 'Terms of Service', 'doc']"));
+  assert.ok(portal.includes("['stores','My Stores','store'], ['products','My Products','tag'], ['guides', 'Video guides', 'play'], ['terms', 'Terms of Service', 'doc']"));
   for (const s of ['Needs cost', 'Needs the sale price', 'Try again', 'Couldn’t connect. Check your internet connection and try again.', 'Bank transfer'])
     assert.ok(i18n.includes(`'${s}':`), s);
   assert.ok(i18n.includes('[/^Couldn’t load payments: (.*)$/'));

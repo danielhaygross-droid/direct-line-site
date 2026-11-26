@@ -61,6 +61,7 @@
     store: '<path d="M4 9l1.5-5h13L20 9"/><path d="M5 9v11h14V9"/><path d="M4 9a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0"/><path d="M10 20v-5h4v5"/>',
     tag: '<path d="M20 12l-8 8-8-8V4h8z"/><circle cx="8.5" cy="8.5" r="1.5"/>',
     doc: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>',
+    play: '<circle cx="12" cy="12" r="9" fill="none"/><path d="M10 8.5v7l6-3.5z" fill="currentColor" stroke="none"/>',
   };
   const ic = n => UI.svg(P[n]);
   const ROUTES = {
@@ -71,10 +72,11 @@
     new: { title: 'Send a new order', sub: 'Fill in 3 short steps and press Send' },
     edit: { title: 'Edit order', sub: 'Change the details of an order' },
     messages: { title: 'Messages', sub: 'Your conversations with Direct Line' },
+    guides: { title: 'Video guides', sub: 'Short videos that show how the portal works' },
     terms: { title: 'Terms of Service', sub: 'Service, fulfillment and after-sales policy' },
     payments: { title: 'Payments', sub: 'What you’ve been billed and paid' },
   };
-  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['stores','My Stores','store'], ['products','My Products','tag'], ['terms', 'Terms of Service', 'doc']];
+  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['stores','My Stores','store'], ['products','My Products','tag'], ['guides', 'Video guides', 'play'], ['terms', 'Terms of Service', 'doc']];
   const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
   const place = d => (d ? countryName(d) : '—');
   const ago = sec => N.timeAgo(sec * 1000);
@@ -399,7 +401,7 @@
     if(soft && S.route==='stores' && [...document.querySelectorAll('[data-client-store-form]')].some(f=>f.dataset.dirty))return;
     if (soft && S.route === 'orders' && $('[data-orders-list]')) {const sw=$('[data-store-switcher]');if(sw)sw.outerHTML=storeSwitcher(); renderChips(); renderOrdersList(); return; }
     if (!soft && S.route === 'products' && !S.me.preview) { S.productsSeenBefore = store.get(productsSeenKey(), 0); store.set(productsSeenKey(), Math.floor(Date.now() / 1000)); }
-    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, products:viewProducts, stores:viewStores, terms: viewTerms }[S.route]();
+    view.innerHTML = { home: viewHome, orders: viewOrders, new: viewForm, edit: viewForm, messages: viewMessages, payments: viewPayments, products:viewProducts, stores:viewStores, guides: viewGuides, terms: viewTerms }[S.route]();
     if(['home','orders','payments'].includes(S.route))view.insertAdjacentHTML('afterbegin',storeSwitcher());
     if (soft) view.querySelectorAll(':scope > *').forEach(el => { el.style.animation = 'none'; });
     mountClientChart();
@@ -455,6 +457,7 @@
       <section data-home-hello class="tw:flex tw:items-end tw:justify-between tw:gap-5 tw:flex-wrap"><div><h2 class="tw:mt-2 tw:text-[clamp(26px,3vw,36px)] tw:font-semibold tw:tracking-[-.02em]">${hello}, <span class="tw:text-gold">${esc((me.name || '').split(' ')[0] || me.username)}</span></h2><p class="tw:m-0 tw:mt-1 tw:text-muted">${all.length ? `You have ${active} order${active === 1 ? '' : 's'} in progress.` : 'Send us your first order to get started.'}</p></div>
         <div class="hello-actions tw:flex tw:gap-2 tw:flex-wrap tw:max-md:hidden"><a class="btn btn-primary btn-big" href="#/new">${ic('plus')}Send a new order</a></div></section>
       ${payStrip()}
+      ${guideHomeCard()}
       ${subBanner(me.subscription)}
       ${moneyNow()}
       ${window.DLClientStoreUI.periodFields(S.period,S.from,S.to,window.DLClientStoreMath.monthsOf(S.orders))}
@@ -1323,6 +1326,52 @@
 
 
 
+
+  // ---------- video guides (26 Nov 2026) ----------
+  // Erwin + Daniel: the 7 portal guides live inside the portal. Hebrew videos (Daniel's voice) when the portal is in
+  // Hebrew, English otherwise. Files: /p/guides/<lang>-<nn>.mp4 + .webp poster (720p, captions burned in, sample data,
+  // no prices or bank details). Videos load only when played. Home shows a card for the tour until the client closes it.
+  const GUIDES = [
+    ['00', 'Portal tour', 'Everything in your portal in two minutes', { en: '1:48', he: '1:58' }],
+    ['01', 'Send a new order', 'The three steps to send us an order', { en: '0:46', he: '0:51' }],
+    ['02', 'Follow your orders and tracking', 'Filters, search, status and tracking', { en: '0:45', he: '0:50' }],
+    ['03', 'Send us a message', 'Ask us about an order and read our reply', { en: '0:31', he: '0:32' }],
+    ['04', 'Pay for your orders', 'Tick the orders, transfer, upload the confirmation', { en: '0:38', he: '0:47' }],
+    ['05', 'Add your stores', 'Add a store and switch between stores', { en: '0:31', he: '0:37' }],
+    ['06', 'Check a product price', 'Get a price before you start selling', { en: '0:35', he: '0:43' }],
+  ];
+  const guideLang = () => (window.DLi18n?.lang === 'he' ? 'he' : 'en');
+  const guideCardKey = () => 'dl-guide-card-' + S.me.id;
+  function viewGuides() {
+    const L = guideLang();
+    return `<section class="guides-grid" data-guides>${GUIDES.map(([n, title, sub, len]) => `
+      <article class="card guide-card" data-guide="${n}">
+        <div class="guide-media"><button class="guide-play" type="button" data-guide-play="/p/guides/${L}-${n}.mp4" aria-label="${esc(title)}"><img src="/p/guides/${L}-${n}.webp" alt="" width="640" height="360" loading="lazy"><span class="guide-play-dot" aria-hidden="true">${UI.svg('<path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none"/>')}</span></button></div>
+        <div class="guide-body"><h3>${esc(title)}</h3><p class="muted">${esc(sub)}</p><span class="guide-len" data-no-i18n>${len[L]}</span></div>
+      </article>`).join('')}</section>`;
+  }
+  // The cover (title card) with a play button; the video loads and starts only when it is clicked. One plays at a time.
+  document.addEventListener('play', e => { if (e.target.closest?.('[data-guides]')) document.querySelectorAll('[data-guides] video').forEach(v => { if (v !== e.target) v.pause(); }); }, true);
+  function guideHomeCard() {
+    if (store.get(guideCardKey(), 0)) return '';
+    return `<section class="card card-pad guide-home" data-guide-home>
+      <div class="guide-home-icon" aria-hidden="true">${UI.svg('<path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none"/>')}</div>
+      <div class="guide-home-text"><h3>New here? Watch the 2-minute tour</h3><p class="muted">A quick look at everything you can do in your portal.</p></div>
+      <div class="guide-home-actions"><a class="btn btn-primary" href="#/guides">${ic('play')}Watch the tour</a><a class="btn btn-ghost" href="#/guides">All video guides</a></div>
+      <button class="guide-home-close" type="button" data-guide-home-close aria-label="Close">${UI.svg('<path d="M6 6l12 12M18 6L6 18"/>')}</button>
+    </section>`;
+  }
+  document.addEventListener('click', e => {
+    const play = e.target.closest('[data-guide-play]');
+    if (play) {
+      const v = document.createElement('video');
+      Object.assign(v, { controls: true, autoplay: true, playsInline: true, src: play.dataset.guidePlay });
+      v.setAttribute('aria-label', play.getAttribute('aria-label'));
+      play.replaceWith(v); v.focus();
+      return;
+    }
+    if (e.target.closest('[data-guide-home-close]')) { store.set(guideCardKey(), 1); e.target.closest('[data-guide-home]')?.remove(); }
+  });
   // ---------- events ----------
   function onClick(e) {
     const t = e.target;

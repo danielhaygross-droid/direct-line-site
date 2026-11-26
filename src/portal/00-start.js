@@ -61,6 +61,7 @@
     store: '<path d="M4 9l1.5-5h13L20 9"/><path d="M5 9v11h14V9"/><path d="M4 9a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0"/><path d="M10 20v-5h4v5"/>',
     tag: '<path d="M20 12l-8 8-8-8V4h8z"/><circle cx="8.5" cy="8.5" r="1.5"/>',
     doc: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>',
+    play: '<circle cx="12" cy="12" r="9" fill="none"/><path d="M10 8.5v7l6-3.5z" fill="currentColor" stroke="none"/>',
   };
   const ic = n => UI.svg(P[n]);
   const ROUTES = {
@@ -71,10 +72,11 @@
     new: { title: 'Send a new order', sub: 'Fill in 3 short steps and press Send' },
     edit: { title: 'Edit order', sub: 'Change the details of an order' },
     messages: { title: 'Messages', sub: 'Your conversations with Direct Line' },
+    guides: { title: 'Video guides', sub: 'Short videos that show how the portal works' },
     terms: { title: 'Terms of Service', sub: 'Service, fulfillment and after-sales policy' },
     payments: { title: 'Payments', sub: 'What you’ve been billed and paid' },
   };
-  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['stores','My Stores','store'], ['products','My Products','tag'], ['terms', 'Terms of Service', 'doc']];
+  const NAV = [['home', 'Home', 'home'], ['orders', 'Orders', 'orders'], ['new', 'New order', 'plus'], ['messages', 'Messages', 'chat'], ['payments', 'Payments', 'wallet'], ['stores','My Stores','store'], ['products','My Products','tag'], ['guides', 'Video guides', 'play'], ['terms', 'Terms of Service', 'doc']];
   const shortCat = c => ({ general: 'General goods', battery: 'Battery / sensitive', cosmetic: 'Cosmetics / liquids' }[c] || c || '—');
   const place = d => (d ? countryName(d) : '—');
   const ago = sec => N.timeAgo(sec * 1000);
